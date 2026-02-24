@@ -1,0 +1,80 @@
+// @see - https://www.electron.build/configuration/configuration
+{
+  "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
+  "appId": "com.blueberrycongee.cursorlens",
+  "asar": true,
+  "productName": "CursorLens",
+  "npmRebuild": true,
+  "buildDependenciesFromSource": true,
+  "compression": "normal",
+  "directories": {
+    "output": "release/${version}"
+  },
+  "files": [
+    "dist",
+    "dist-electron",
+    "!*.png",
+    "!preview*.png",
+    "!*.md",
+    "!README.md",
+    "!CONTRIBUTING.md",
+    "!LICENSE"
+  ],
+  "extraResources": [
+    {
+      "from": "public/wallpapers",
+      "to": "assets/wallpapers"
+    },
+    {
+      "from": "electron/native/bin/sck-recorder",
+      "to": "native/sck-recorder"
+    },
+    {
+      "from": "electron/native/bin/cursor-kind-monitor",
+      "to": "native/cursor-kind-monitor"
+    },
+    {
+      "from": "electron/native/bin/mouse-button-monitor",
+      "to": "native/mouse-button-monitor"
+    },
+    {
+      "from": "electron/native/bin/speech-transcriber",
+      "to": "native/speech-transcriber"
+    }
+  ],
+
+  "mac": {
+    "hardenedRuntime": true,
+    "gatekeeperAssess": false,
+    "entitlements": "build/entitlements.mac.plist",
+    "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+    "extendInfo": {
+      "NSScreenCaptureUsageDescription": "CursorLens needs screen recording access to capture your screen.",
+      "NSCameraUsageDescription": "CursorLens needs camera access to render camera overlays while recording.",
+      "NSMicrophoneUsageDescription": "CursorLens needs microphone access to record your voice during screen capture.",
+      "NSSpeechRecognitionUsageDescription": "CursorLens needs speech recognition access to generate subtitles from recordings."
+    },
+    "target": [
+      {
+        "target": "dmg",
+        "arch": ["x64", "arm64"]
+      }
+    ],
+    "icon": "icons/icons/mac/icon.icns",
+    "artifactName": "${productName}-Mac-${arch}-${version}-Installer.${ext}"
+  },
+  "linux": {
+    "target": [
+      "AppImage"
+    ],
+    "icon": "icons/icons/png",
+    "artifactName": "${productName}-Linux-${version}.${ext}",
+    "category": "AudioVideo"
+  },
+  "win": {
+    "target": [
+      "nsis"
+    ],
+    "icon": "icons/icons/win/icon.ico"
+  }
+}

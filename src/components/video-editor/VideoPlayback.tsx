@@ -1,0 +1,1190 @@
+import type React from "react";
+import { useEffect, useRef, useImperativeHandle, forwardRef, useState, useMemo, useCallback } from "react";
+import { getAssetPath } from "@/lib/assetPath";
+import { Application, Container, Sprite, Graphics, BlurFilter, Texture, VideoSource } from 'pixi.js';
+import { ZOOM_DEPTH_SCALES, type ZoomRegion, type ZoomFocus, type ZoomDepth, type TrimRegion, type AnnotationRegion, type AudioEditRegion } from "./types";
+import { DEFAULT_FOCUS, MIN_DELTA, resolveAdaptiveSmoothingAlpha } from "./videoPlayback/constants";
+import { clamp01 } from "./videoPlayback/mathUtils";
+import { findDominantRegion } from "./videoPlayback/zoomRegionUtils";
+import { clampFocusToStage as clampFocusToStageUtil } from "./videoPlayback/focusUtils";
+import { updateOverlayIndicator } from "./videoPlayback/overlayUtils";
+import { layoutVideoContent as layoutVideoContentUtil } from "./videoPlayback/layoutUtils";
+import { applyZoomTransform } from "./videoPlayback/zoomTransform";
+import { createVideoEventHandlers } from "./videoPlayback/videoEventHandlers";
+import { type AspectRatio, formatAspectRatioForCSS } from "@/utils/aspectRatioUtils";
+import { AnnotationOverlay } from "./AnnotationOverlay";
+import { getRenderableAnnotations } from "@/lib/annotations/renderOrder";
+import { getPreviewBackgroundFilter } from "@/lib/rendering/backgroundBlur";
+import type { SubtitleCue } from "@/lib/analysis/types";
+import { findSubtitleCueAtTime, normalizeSubtitleCues } from "@/lib/analysis/subtitleTrack";
+import { resolvePreviewAudioState } from "@/lib/audio/audioEditRegions";
+import {
+  DEFAULT_CURSOR_STYLE,
+  drawCompositedCursor,
+  projectCursorToViewport,
+  resolveCursorState,
+  type CursorStyleConfig,
+  type CursorTrack,
+} from "@/lib/cursor";
+
+interface VideoPlaybackProps {
+  videoPath: string;
+  onDurationChange: (duration: number) => void;
+  onTimeUpdate: (time: number) => void;
+  currentTime: number;
+  onPlayStateChange: (playing: boolean) => void;
+  onError: (error: string) => void;
+  wallpaper?: string;
+  zoomRegions: ZoomRegion[];
+  selectedZoomId: string | null;
+  onSelectZoom: (id: string | null) => void;
+  onZoomFocusChange: (id: string, focus: ZoomFocus) => void;
+  isPlaying: boolean;
+  showShadow?: boolean;
+  shadowIntensity?: number;
+  showBlur?: boolean;
+  motionBlurEnabled?: boolean;
+  borderRadius?: number;
+  padding?: number;
+  cropRegion?: import('./types').CropRegion;
+  trimRegions?: TrimRegion[];
+  aspectRatio: AspectRatio;
+  annotationRegions?: AnnotationRegion[];
+  selectedAnnotationId?: string | null;
+  onSelectAnnotation?: (id: string | null) => void;
+  onAnnotationPositionChange?: (id: string, position: { x: number; y: number }) => void;
+  onAnnotationSizeChange?: (id: string, size: { width: number; height: number }) => void;
+  subtitleCues?: SubtitleCue[];
+  preferredFps?: number;
+  cursorTrack?: CursorTrack | null;
+  cursorStyle?: Partial<CursorStyleConfig>;
+  hasAudioTrack?: boolean;
+  audioEnabled?: boolean;
+  audioGain?: number;
+  audioLimiterDb?: number;
+  audioEditRegions?: AudioEditRegion[];
+  onVideoDimensionsChange?: (dimensions: { width: number; height: number }) => void;
+}
+
+export interface VideoPlaybackRef {
+  video: HTMLVideoElement | null;
+  app: Application | null;
+  videoSprite: Sprite | null;
+  videoContainer: Container | null;
+  containerRef: React.RefObject<HTMLDivElement>;
+  play: () => Promise<void>;
+  pause: () => void;
+}
+
+const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
+  videoPath,
+  onDurationChange,
+  onTimeUpdate,
+  currentTime,
+  onPlayStateChange,
+  onError,
+  wallpaper,
+  zoomRegions,
+  selectedZoomId,
+  onSelectZoom,
+  onZoomFocusChange,
+  isPlaying,
+  showShadow,
+  shadowIntensity = 0,
+  showBlur,
+  motionBlurEnabled = false,
+  borderRadius = 0,
+  padding = 50,
+  cropRegion,
+  trimRegions = [],
+  aspectRatio,
+  annotationRegions = [],
+  selectedAnnotationId,
+  onSelectAnnotation,
+  onAnnotationPositionChange,
+  onAnnotationSizeChange,
+  subtitleCues = [],
+  preferredFps = 60,
+  cursorTrack = null,
+  cursorStyle,
+  hasAudioTrack = true,
+  audioEnabled = true,
+  audioGain = 1,
+  audioLimiterDb = -1,
+  audioEditRegions = [],
+  onVideoDimensionsChange,
+}, ref) => {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const appRef = useRef<Application | null>(null);
+  const videoSpriteRef = useRef<Sprite | null>(null);
+  const videoContainerRef = useRef<Container | null>(null);
+  const cameraContainerRef = useRef<Container | null>(null);
+  const timeUpdateAnimationRef = useRef<number | null>(null);
+  const [pixiReady, setPixiReady] = useState(false);
+  const [videoReady, setVideoReady] = useState(false);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const focusIndicatorRef = useRef<HTMLDivElement | null>(null);
+  const currentTimeRef = useRef(0);
+  const zoomRegionsRef = useRef<ZoomRegion[]>([]);
+  const selectedZoomIdRef = useRef<string | null>(null);
+  const animationStateRef = useRef({ scale: 1, focusX: DEFAULT_FOCUS.cx, focusY: DEFAULT_FOCUS.cy, lastTimeMs: null as number | null });
+  const blurFilterRef = useRef<BlurFilter | null>(null);
+  const isDraggingFocusRef = useRef(false);
+  const stageSizeRef = useRef({ width: 0, height: 0 });
+  const videoSizeRef = useRef({ width: 0, height: 0 });
+  const baseScaleRef = useRef(1);
+  const baseOffsetRef = useRef({ x: 0, y: 0 });
+  const baseMaskRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
+  const cropBoundsRef = useRef({ startX: 0, endX: 0, startY: 0, endY: 0 });
+  const maskGraphicsRef = useRef<Graphics | null>(null);
+  const isPlayingRef = useRef(isPlaying);
+  const isSeekingRef = useRef(false);
+  const allowPlaybackRef = useRef(false);
+  const lockedVideoDimensionsRef = useRef<{ width: number; height: number } | null>(null);
+  const layoutVideoContentRef = useRef<(() => void) | null>(null);
+  const trimRegionsRef = useRef<TrimRegion[]>([]);
+  const motionBlurEnabledRef = useRef(motionBlurEnabled);
+  const videoReadyRafRef = useRef<number | null>(null);
+  const preferredFpsRef = useRef(preferredFps);
+  const cursorCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const cursorCanvasCtxRef = useRef<CanvasRenderingContext2D | null>(null);
+  const cursorTrackRef = useRef<CursorTrack | null>(cursorTrack);
+  const cursorStyleRef = useRef<Partial<CursorStyleConfig>>(cursorStyle ?? DEFAULT_CURSOR_STYLE);
+  const cropRegionRef = useRef(cropRegion);
+  const previewAudioContextRef = useRef<AudioContext | null>(null);
+  const previewAudioSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const previewAudioGainRef = useRef<GainNode | null>(null);
+  const previewAudioLimiterRef = useRef<DynamicsCompressorNode | null>(null);
+  const previewAudioGraphEnabledRef = useRef(false);
+
+  const normalizeTickerFps = useCallback((fps: number) => {
+    if (!Number.isFinite(fps)) return 60;
+    return Math.max(30, Math.min(120, Math.round(fps)));
+  }, []);
+
+  const clampFocusToStage = useCallback((focus: ZoomFocus, depth: ZoomDepth) => {
+    return clampFocusToStageUtil(focus, depth, stageSizeRef.current);
+  }, []);
+
+  const ensurePreviewAudioGraph = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return false;
+    if (
+      previewAudioGraphEnabledRef.current
+      && previewAudioContextRef.current
+      && previewAudioGainRef.current
+      && previewAudioLimiterRef.current
+    ) {
+      return true;
+    }
+
+    const AudioContextConstructor = window.AudioContext
+      || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioContextConstructor) {
+      return false;
+    }
+
+    try {
+      const context = new AudioContextConstructor();
+      const sourceNode = context.createMediaElementSource(video);
+      const gainNode = context.createGain();
+      const limiterNode = context.createDynamicsCompressor();
+      limiterNode.knee.value = 0;
+      limiterNode.ratio.value = 20;
+      limiterNode.attack.value = 0.003;
+      limiterNode.release.value = 0.1;
+
+      sourceNode.connect(gainNode);
+      gainNode.connect(limiterNode);
+      limiterNode.connect(context.destination);
+
+      previewAudioContextRef.current = context;
+      previewAudioSourceRef.current = sourceNode;
+      previewAudioGainRef.current = gainNode;
+      previewAudioLimiterRef.current = limiterNode;
+      previewAudioGraphEnabledRef.current = true;
+      return true;
+    } catch (error) {
+      console.warn("Failed to initialize preview audio processing graph; falling back to HTML media volume.", error);
+      return false;
+    }
+  }, []);
+
+  const updateOverlayForRegion = useCallback((region: ZoomRegion | null, focusOverride?: ZoomFocus) => {
+    const overlayEl = overlayRef.current;
+    const indicatorEl = focusIndicatorRef.current;
+    
+    if (!overlayEl || !indicatorEl) {
+      return;
+    }
+
+    // Update stage size from overlay dimensions
+    const stageWidth = overlayEl.clientWidth;
+    const stageHeight = overlayEl.clientHeight;
+    if (stageWidth && stageHeight) {
+      stageSizeRef.current = { width: stageWidth, height: stageHeight };
+    }
+
+    updateOverlayIndicator({
+      overlayEl,
+      indicatorEl,
+      region,
+      focusOverride,
+      videoSize: videoSizeRef.current,
+      baseScale: baseScaleRef.current,
+      isPlaying: isPlayingRef.current,
+    });
+  }, []);
+
+  const layoutVideoContent = useCallback(() => {
+    const container = containerRef.current;
+    const app = appRef.current;
+    const videoSprite = videoSpriteRef.current;
+    const maskGraphics = maskGraphicsRef.current;
+    const videoElement = videoRef.current;
+    const cameraContainer = cameraContainerRef.current;
+
+    if (!container || !app || !videoSprite || !maskGraphics || !videoElement || !cameraContainer) {
+      return;
+    }
+
+    // Lock video dimensions on first layout to prevent resize issues
+    if (!lockedVideoDimensionsRef.current && videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
+      lockedVideoDimensionsRef.current = {
+        width: videoElement.videoWidth,
+        height: videoElement.videoHeight,
+      };
+    }
+
+    const result = layoutVideoContentUtil({
+      container,
+      app,
+      videoSprite,
+      maskGraphics,
+      videoElement,
+      cropRegion,
+      lockedVideoDimensions: lockedVideoDimensionsRef.current,
+      borderRadius,
+      padding,
+    });
+
+    if (result) {
+      stageSizeRef.current = result.stageSize;
+      videoSizeRef.current = result.videoSize;
+      baseScaleRef.current = result.baseScale;
+      baseOffsetRef.current = result.baseOffset;
+      baseMaskRef.current = result.maskRect;
+      cropBoundsRef.current = result.cropBounds;
+
+      // Reset camera container to identity
+      cameraContainer.scale.set(1);
+      cameraContainer.position.set(0, 0);
+
+      const selectedId = selectedZoomIdRef.current;
+      const activeRegion = selectedId
+        ? zoomRegionsRef.current.find((region) => region.id === selectedId) ?? null
+        : null;
+
+      updateOverlayForRegion(activeRegion);
+    }
+  }, [updateOverlayForRegion, cropRegion, borderRadius, padding]);
+
+  useEffect(() => {
+    layoutVideoContentRef.current = layoutVideoContent;
+  }, [layoutVideoContent]);
+
+  const selectedZoom = useMemo(() => {
+    if (!selectedZoomId) return null;
+    return zoomRegions.find((region) => region.id === selectedZoomId) ?? null;
+  }, [zoomRegions, selectedZoomId]);
+
+  const normalizedSubtitleCues = useMemo(() => normalizeSubtitleCues(subtitleCues), [subtitleCues]);
+  const activeSubtitleCue = useMemo(
+    () => findSubtitleCueAtTime(normalizedSubtitleCues, Math.round(currentTime * 1000)),
+    [normalizedSubtitleCues, currentTime],
+  );
+
+  useImperativeHandle(ref, () => ({
+    video: videoRef.current,
+    app: appRef.current,
+    videoSprite: videoSpriteRef.current,
+    videoContainer: videoContainerRef.current,
+    containerRef,
+    play: async () => {
+      const vid = videoRef.current;
+      if (!vid) return;
+      try {
+        allowPlaybackRef.current = true;
+        await vid.play();
+      } catch (error) {
+        allowPlaybackRef.current = false;
+        throw error;
+      }
+    },
+    pause: () => {
+      const video = videoRef.current;
+      allowPlaybackRef.current = false;
+      if (!video) {
+        return;
+      }
+      video.pause();
+    },
+  }));
+
+  const updateFocusFromClientPoint = (clientX: number, clientY: number) => {
+    const overlayEl = overlayRef.current;
+    if (!overlayEl) return;
+
+    const regionId = selectedZoomIdRef.current;
+    if (!regionId) return;
+
+    const region = zoomRegionsRef.current.find((r) => r.id === regionId);
+    if (!region) return;
+
+    const rect = overlayEl.getBoundingClientRect();
+    const stageWidth = rect.width;
+    const stageHeight = rect.height;
+
+    if (!stageWidth || !stageHeight) {
+      return;
+    }
+
+    stageSizeRef.current = { width: stageWidth, height: stageHeight };
+
+    const localX = clientX - rect.left;
+    const localY = clientY - rect.top;
+
+    const unclampedFocus: ZoomFocus = {
+      cx: clamp01(localX / stageWidth),
+      cy: clamp01(localY / stageHeight),
+    };
+    const clampedFocus = clampFocusToStage(unclampedFocus, region.depth);
+
+    onZoomFocusChange(region.id, clampedFocus);
+    updateOverlayForRegion({ ...region, focus: clampedFocus }, clampedFocus);
+  };
+
+  const handleOverlayPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (isPlayingRef.current) return;
+    const regionId = selectedZoomIdRef.current;
+    if (!regionId) return;
+    const region = zoomRegionsRef.current.find((r) => r.id === regionId);
+    if (!region) return;
+    onSelectZoom(region.id);
+    event.preventDefault();
+    isDraggingFocusRef.current = true;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    updateFocusFromClientPoint(event.clientX, event.clientY);
+  };
+
+  const handleOverlayPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDraggingFocusRef.current) return;
+    event.preventDefault();
+    updateFocusFromClientPoint(event.clientX, event.clientY);
+  };
+
+  const endFocusDrag = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDraggingFocusRef.current) return;
+    isDraggingFocusRef.current = false;
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {
+      // no-op
+    }
+  };
+
+  const handleOverlayPointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
+    endFocusDrag(event);
+  };
+
+  const handleOverlayPointerLeave = (event: React.PointerEvent<HTMLDivElement>) => {
+    endFocusDrag(event);
+  };
+
+  useEffect(() => {
+    zoomRegionsRef.current = zoomRegions;
+  }, [zoomRegions]);
+
+  useEffect(() => {
+    selectedZoomIdRef.current = selectedZoomId;
+  }, [selectedZoomId]);
+
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
+
+  useEffect(() => {
+    trimRegionsRef.current = trimRegions;
+  }, [trimRegions]);
+
+  useEffect(() => {
+    motionBlurEnabledRef.current = motionBlurEnabled;
+  }, [motionBlurEnabled]);
+
+  useEffect(() => {
+    cursorTrackRef.current = cursorTrack;
+  }, [cursorTrack]);
+
+  useEffect(() => {
+    cursorStyleRef.current = cursorStyle ?? DEFAULT_CURSOR_STYLE;
+  }, [cursorStyle]);
+
+  useEffect(() => {
+    cropRegionRef.current = cropRegion;
+  }, [cropRegion]);
+
+  useEffect(() => {
+    return () => {
+      previewAudioSourceRef.current?.disconnect();
+      previewAudioGainRef.current?.disconnect();
+      previewAudioLimiterRef.current?.disconnect();
+      previewAudioSourceRef.current = null;
+      previewAudioGainRef.current = null;
+      previewAudioLimiterRef.current = null;
+      previewAudioGraphEnabledRef.current = false;
+
+      if (previewAudioContextRef.current) {
+        void previewAudioContextRef.current.close().catch((error) => {
+          console.warn("Failed to close preview AudioContext during cleanup.", error);
+        });
+        previewAudioContextRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const nextState = resolvePreviewAudioState({
+      hasAudioTrack,
+      audioEnabled,
+      baseGain: audioGain,
+      timeMs: Math.max(0, Math.round(currentTime * 1000)),
+      regions: audioEditRegions,
+    });
+
+    if (ensurePreviewAudioGraph()) {
+      const context = previewAudioContextRef.current;
+      const gainNode = previewAudioGainRef.current;
+      const limiterNode = previewAudioLimiterRef.current;
+      if (context && gainNode && limiterNode) {
+        const limiterThreshold = Number.isFinite(audioLimiterDb)
+          ? Math.max(-6, Math.min(-0.1, audioLimiterDb))
+          : -1;
+        limiterNode.threshold.value = limiterThreshold;
+        const targetGain = nextState.muted ? 0 : nextState.volume;
+        if (Math.abs(gainNode.gain.value - targetGain) > 0.0005) {
+          gainNode.gain.setValueAtTime(targetGain, context.currentTime);
+        }
+
+        video.muted = false;
+        if (Math.abs(video.volume - 1) > 0.0005) {
+          video.volume = 1;
+        }
+        if (!nextState.muted && context.state === "suspended" && !video.paused) {
+          void context.resume().catch((error) => {
+            console.warn("Failed to resume preview AudioContext during playback.", error);
+          });
+        }
+        return;
+      }
+    }
+
+    video.muted = nextState.muted;
+    const clampedVolume = Math.max(0, Math.min(1, nextState.volume));
+    if (Math.abs(video.volume - clampedVolume) > 0.0005) {
+      video.volume = clampedVolume;
+    }
+  }, [hasAudioTrack, audioEnabled, audioGain, audioLimiterDb, currentTime, audioEditRegions, videoPath, ensurePreviewAudioGraph]);
+
+  useEffect(() => {
+    preferredFpsRef.current = preferredFps;
+    const app = appRef.current;
+    if (app?.ticker) {
+      app.ticker.maxFPS = normalizeTickerFps(preferredFps);
+    }
+  }, [preferredFps, normalizeTickerFps]);
+
+  useEffect(() => {
+    if (!pixiReady || !videoReady) return;
+
+    const app = appRef.current;
+    const cameraContainer = cameraContainerRef.current;
+    const video = videoRef.current;
+
+    if (!app || !cameraContainer || !video) return;
+
+    const tickerWasStarted = app.ticker?.started || false;
+    if (tickerWasStarted && app.ticker) {
+      app.ticker.stop();
+    }
+
+    const wasPlaying = !video.paused;
+    if (wasPlaying) {
+      video.pause();
+    }
+
+    animationStateRef.current = {
+      scale: 1,
+      focusX: DEFAULT_FOCUS.cx,
+      focusY: DEFAULT_FOCUS.cy,
+      lastTimeMs: null,
+    };
+
+    if (blurFilterRef.current) {
+      blurFilterRef.current.blur = 0;
+    }
+
+    requestAnimationFrame(() => {
+      const container = cameraContainerRef.current;
+      const videoStage = videoContainerRef.current;
+      const sprite = videoSpriteRef.current;
+      const currentApp = appRef.current;
+      if (!container || !videoStage || !sprite || !currentApp) {
+        return;
+      }
+
+      container.scale.set(1);
+      container.position.set(0, 0);
+      videoStage.scale.set(1);
+      videoStage.position.set(0, 0);
+      sprite.scale.set(1);
+      sprite.position.set(0, 0);
+
+      layoutVideoContent();
+
+      applyZoomTransform({
+        cameraContainer: container,
+        blurFilter: blurFilterRef.current,
+        stageSize: stageSizeRef.current,
+        baseMask: baseMaskRef.current,
+        zoomScale: 1,
+        focusX: DEFAULT_FOCUS.cx,
+        focusY: DEFAULT_FOCUS.cy,
+        motionIntensity: 0,
+        isPlaying: false,
+        motionBlurEnabled: motionBlurEnabledRef.current,
+      });
+
+      requestAnimationFrame(() => {
+        const finalApp = appRef.current;
+        if (wasPlaying && video) {
+          video.play().catch(() => {
+          });
+        }
+        if (tickerWasStarted && finalApp?.ticker) {
+          finalApp.ticker.start();
+        }
+      });
+    });
+  }, [pixiReady, videoReady, layoutVideoContent, cropRegion]);
+
+  useEffect(() => {
+    if (!pixiReady || !videoReady) return;
+    const container = containerRef.current;
+    if (!container) return;
+
+    if (typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const observer = new ResizeObserver(() => {
+      layoutVideoContent();
+    });
+
+    observer.observe(container);
+    return () => {
+      observer.disconnect();
+    };
+  }, [pixiReady, videoReady, layoutVideoContent]);
+
+  const ensureCursorCanvas = useCallback(() => {
+    const canvas = cursorCanvasRef.current;
+    const overlayEl = overlayRef.current;
+    if (!canvas || !overlayEl) return;
+
+    const width = overlayEl.clientWidth;
+    const height = overlayEl.clientHeight;
+    if (width <= 0 || height <= 0) return;
+
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const nextWidth = Math.max(1, Math.round(width * dpr));
+    const nextHeight = Math.max(1, Math.round(height * dpr));
+
+    if (canvas.width !== nextWidth || canvas.height !== nextHeight) {
+      canvas.width = nextWidth;
+      canvas.height = nextHeight;
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+    }
+
+    let ctx = cursorCanvasCtxRef.current;
+    if (!ctx) {
+      ctx = canvas.getContext('2d', { alpha: true });
+      cursorCanvasCtxRef.current = ctx;
+    }
+    if (!ctx) return;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }, []);
+
+  const renderCursorOverlay = useCallback((timeMs: number) => {
+    ensureCursorCanvas();
+    const ctx = cursorCanvasCtxRef.current;
+    const layout = {
+      stageSize: stageSizeRef.current,
+      baseOffset: baseOffsetRef.current,
+      maskRect: baseMaskRef.current,
+    };
+    const cameraContainer = cameraContainerRef.current;
+
+    if (!ctx || !cameraContainer) return;
+    if (layout.stageSize.width <= 0 || layout.stageSize.height <= 0 || layout.maskRect.width <= 0 || layout.maskRect.height <= 0) {
+      return;
+    }
+
+    ctx.clearRect(0, 0, layout.stageSize.width, layout.stageSize.height);
+
+    const drawCursorState = resolveCursorState({
+      timeMs,
+      track: cursorTrackRef.current,
+      zoomRegions: zoomRegionsRef.current,
+      fallbackFocus: { cx: animationStateRef.current.focusX, cy: animationStateRef.current.focusY },
+      style: cursorStyleRef.current,
+    });
+
+    if (!drawCursorState.visible) return;
+
+    const drawProjected = projectCursorToViewport({
+      normalizedX: drawCursorState.x,
+      normalizedY: drawCursorState.y,
+      cropRegion: cropRegionRef.current ?? { x: 0, y: 0, width: 1, height: 1 },
+      baseOffset: layout.baseOffset,
+      maskRect: layout.maskRect,
+      cameraScale: {
+        x: cameraContainer.scale.x,
+        y: cameraContainer.scale.y,
+      },
+      cameraPosition: {
+        x: cameraContainer.position.x,
+        y: cameraContainer.position.y,
+      },
+      stageSize: layout.stageSize,
+    });
+
+    if (!drawProjected.inViewport) return;
+
+    drawCompositedCursor(
+      ctx,
+      { x: drawProjected.x, y: drawProjected.y },
+      drawCursorState,
+      cursorStyleRef.current,
+      Math.max(0.1, (Math.abs(cameraContainer.scale.x) + Math.abs(cameraContainer.scale.y)) / 2),
+    );
+  }, [ensureCursorCanvas]);
+
+  useEffect(() => {
+    if (!pixiReady || !videoReady) return;
+    updateOverlayForRegion(selectedZoom);
+  }, [selectedZoom, pixiReady, videoReady, updateOverlayForRegion]);
+
+  useEffect(() => {
+    const overlayEl = overlayRef.current;
+    if (!overlayEl) return;
+    overlayEl.style.cursor = selectedZoom ? (isPlaying ? 'not-allowed' : 'grab') : 'default';
+    overlayEl.style.pointerEvents = selectedZoom ? (isPlaying ? 'none' : 'auto') : 'none';
+  }, [selectedZoom, isPlaying]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    let mounted = true;
+    let app: Application | null = null;
+
+    (async () => {
+      app = new Application();
+      
+      await app.init({
+        width: container.clientWidth,
+        height: container.clientHeight,
+        backgroundAlpha: 0,
+        antialias: true,
+        // Keep high-DPI sharpness in preview while still guarding extreme render cost.
+        resolution: preferredFpsRef.current > 60 ? 1 : Math.min(window.devicePixelRatio || 1, 2),
+        autoDensity: true,
+      });
+
+      app.ticker.maxFPS = normalizeTickerFps(preferredFpsRef.current);
+
+      if (!mounted) {
+        app.destroy(true, { children: true, texture: true, textureSource: true });
+        return;
+      }
+
+      appRef.current = app;
+      container.appendChild(app.canvas);
+
+      // Camera container - this will be scaled/positioned for zoom
+      const cameraContainer = new Container();
+      cameraContainerRef.current = cameraContainer;
+      app.stage.addChild(cameraContainer);
+
+      // Video container - holds the masked video sprite
+      const videoContainer = new Container();
+      videoContainerRef.current = videoContainer;
+      cameraContainer.addChild(videoContainer);
+      
+      setPixiReady(true);
+    })();
+
+    return () => {
+      mounted = false;
+      setPixiReady(false);
+      if (app && app.renderer) {
+        app.destroy(true, { children: true, texture: true, textureSource: true });
+      }
+      appRef.current = null;
+      cameraContainerRef.current = null;
+      videoContainerRef.current = null;
+      videoSpriteRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.pause();
+    video.currentTime = 0;
+    allowPlaybackRef.current = false;
+    lockedVideoDimensionsRef.current = null;
+    setVideoReady(false);
+    if (videoReadyRafRef.current) {
+      cancelAnimationFrame(videoReadyRafRef.current);
+      videoReadyRafRef.current = null;
+    }
+  }, [videoPath]);
+
+
+
+  useEffect(() => {
+    if (!pixiReady || !videoReady) return;
+
+    const video = videoRef.current;
+    const app = appRef.current;
+    const videoContainer = videoContainerRef.current;
+    
+    if (!video || !app || !videoContainer) return;
+    if (video.videoWidth === 0 || video.videoHeight === 0) return;
+    
+    const source = VideoSource.from(video);
+    if ('autoPlay' in source) {
+      (source as { autoPlay?: boolean }).autoPlay = false;
+    }
+    if ('autoUpdate' in source) {
+      (source as { autoUpdate?: boolean }).autoUpdate = true;
+    }
+    const videoTexture = Texture.from(source);
+    
+    const videoSprite = new Sprite(videoTexture);
+    videoSpriteRef.current = videoSprite;
+    
+    const maskGraphics = new Graphics();
+    videoContainer.addChild(videoSprite);
+    videoContainer.addChild(maskGraphics);
+    videoContainer.mask = maskGraphics;
+    maskGraphicsRef.current = maskGraphics;
+
+    animationStateRef.current = {
+      scale: 1,
+      focusX: DEFAULT_FOCUS.cx,
+      focusY: DEFAULT_FOCUS.cy,
+      lastTimeMs: null,
+    };
+
+    const blurFilter = new BlurFilter();
+    blurFilter.quality = 3;
+    blurFilter.resolution = app.renderer.resolution;
+    blurFilter.blur = 0;
+    videoContainer.filters = [blurFilter];
+    blurFilterRef.current = blurFilter;
+    
+    layoutVideoContent();
+    video.pause();
+
+    const { handlePlay, handlePause, handleSeeked, handleSeeking } = createVideoEventHandlers({
+      video,
+      isSeekingRef,
+      isPlayingRef,
+      allowPlaybackRef,
+      currentTimeRef,
+      timeUpdateAnimationRef,
+      onPlayStateChange,
+      onTimeUpdate,
+      trimRegionsRef,
+    });
+    
+    video.addEventListener('play', handlePlay);
+    video.addEventListener('pause', handlePause);
+    video.addEventListener('ended', handlePause);
+    video.addEventListener('seeked', handleSeeked);
+    video.addEventListener('seeking', handleSeeking);
+    
+    return () => {
+      video.removeEventListener('play', handlePlay);
+      video.removeEventListener('pause', handlePause);
+      video.removeEventListener('ended', handlePause);
+      video.removeEventListener('seeked', handleSeeked);
+      video.removeEventListener('seeking', handleSeeking);
+      
+      if (timeUpdateAnimationRef.current) {
+        cancelAnimationFrame(timeUpdateAnimationRef.current);
+      }
+      
+      if (videoSprite) {
+        videoContainer.removeChild(videoSprite);
+        videoSprite.destroy();
+      }
+      if (maskGraphics) {
+        videoContainer.removeChild(maskGraphics);
+        maskGraphics.destroy();
+      }
+      videoContainer.mask = null;
+      maskGraphicsRef.current = null;
+      if (blurFilterRef.current) {
+        videoContainer.filters = [];
+        blurFilterRef.current.destroy();
+        blurFilterRef.current = null;
+      }
+      videoTexture.destroy(true);
+      
+      videoSpriteRef.current = null;
+    };
+  }, [pixiReady, videoReady, onTimeUpdate, updateOverlayForRegion]);
+
+  useEffect(() => {
+    if (!pixiReady || !videoReady) return;
+
+    const app = appRef.current;
+    const videoSprite = videoSpriteRef.current;
+    const videoContainer = videoContainerRef.current;
+    if (!app || !videoSprite || !videoContainer) return;
+
+    const applyTransform = (motionIntensity: number) => {
+      const cameraContainer = cameraContainerRef.current;
+      if (!cameraContainer) return;
+
+      const state = animationStateRef.current;
+
+      applyZoomTransform({
+        cameraContainer,
+        blurFilter: blurFilterRef.current,
+        stageSize: stageSizeRef.current,
+        baseMask: baseMaskRef.current,
+        zoomScale: state.scale,
+        focusX: state.focusX,
+        focusY: state.focusY,
+        motionIntensity,
+        isPlaying: isPlayingRef.current,
+        motionBlurEnabled: motionBlurEnabledRef.current,
+      });
+    };
+
+    const ticker = () => {
+      const { region, strength } = findDominantRegion(zoomRegionsRef.current, currentTimeRef.current);
+      
+      const defaultFocus = DEFAULT_FOCUS;
+      let targetScaleFactor = 1;
+      let targetFocus = defaultFocus;
+
+      // If a zoom is selected but video is not playing, show default unzoomed view
+      // (the overlay will show where the zoom will be)
+      const selectedId = selectedZoomIdRef.current;
+      const hasSelectedZoom = selectedId !== null;
+      const shouldShowUnzoomedView = hasSelectedZoom && !isPlayingRef.current;
+
+      if (region && strength > 0 && !shouldShowUnzoomedView) {
+        const zoomScale = ZOOM_DEPTH_SCALES[region.depth];
+        const regionFocus = clampFocusToStage(region.focus, region.depth);
+        
+        // Interpolate scale and focus based on region strength
+        targetScaleFactor = 1 + (zoomScale - 1) * strength;
+        targetFocus = {
+          cx: defaultFocus.cx + (regionFocus.cx - defaultFocus.cx) * strength,
+          cy: defaultFocus.cy + (regionFocus.cy - defaultFocus.cy) * strength,
+        };
+      }
+
+      const state = animationStateRef.current;
+      const previousTimeMs = state.lastTimeMs;
+      const deltaMs = previousTimeMs === null ? 0 : currentTimeRef.current - previousTimeMs;
+      const smoothingAlpha = resolveAdaptiveSmoothingAlpha(deltaMs);
+      state.lastTimeMs = currentTimeRef.current;
+
+      const prevScale = state.scale;
+      const prevFocusX = state.focusX;
+      const prevFocusY = state.focusY;
+
+      const scaleDelta = targetScaleFactor - state.scale;
+      const focusXDelta = targetFocus.cx - state.focusX;
+      const focusYDelta = targetFocus.cy - state.focusY;
+
+      let nextScale = prevScale;
+      let nextFocusX = prevFocusX;
+      let nextFocusY = prevFocusY;
+
+      if (Math.abs(scaleDelta) > MIN_DELTA) {
+        nextScale = prevScale + scaleDelta * smoothingAlpha;
+      } else {
+        nextScale = targetScaleFactor;
+      }
+
+      if (Math.abs(focusXDelta) > MIN_DELTA) {
+        nextFocusX = prevFocusX + focusXDelta * smoothingAlpha;
+      } else {
+        nextFocusX = targetFocus.cx;
+      }
+
+      if (Math.abs(focusYDelta) > MIN_DELTA) {
+        nextFocusY = prevFocusY + focusYDelta * smoothingAlpha;
+      } else {
+        nextFocusY = targetFocus.cy;
+      }
+
+      state.scale = nextScale;
+      state.focusX = nextFocusX;
+      state.focusY = nextFocusY;
+
+      const motionIntensity = Math.max(
+        Math.abs(nextScale - prevScale),
+        Math.abs(nextFocusX - prevFocusX),
+        Math.abs(nextFocusY - prevFocusY)
+      );
+
+      applyTransform(motionIntensity);
+      renderCursorOverlay(currentTimeRef.current);
+    };
+
+    app.ticker.add(ticker);
+    return () => {
+      if (app && app.ticker) {
+        app.ticker.remove(ticker);
+      }
+    };
+  }, [pixiReady, videoReady, clampFocusToStage, renderCursorOverlay]);
+
+  const handleLoadedMetadata = (e: React.SyntheticEvent<HTMLVideoElement, Event>) => {
+    const video = e.currentTarget;
+    onDurationChange(video.duration);
+    if (video.videoWidth > 0 && video.videoHeight > 0) {
+      onVideoDimensionsChange?.({
+        width: video.videoWidth,
+        height: video.videoHeight,
+      });
+    }
+    video.currentTime = 0;
+    video.pause();
+    allowPlaybackRef.current = false;
+    currentTimeRef.current = 0;
+
+    if (videoReadyRafRef.current) {
+      cancelAnimationFrame(videoReadyRafRef.current);
+      videoReadyRafRef.current = null;
+    }
+
+    const waitForRenderableFrame = () => {
+      const hasDimensions = video.videoWidth > 0 && video.videoHeight > 0;
+      const hasData = video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
+      if (hasDimensions && hasData) {
+        videoReadyRafRef.current = null;
+        setVideoReady(true);
+        return;
+      }
+      videoReadyRafRef.current = requestAnimationFrame(waitForRenderableFrame);
+    };
+
+    videoReadyRafRef.current = requestAnimationFrame(waitForRenderableFrame);
+  };
+
+  const [resolvedWallpaper, setResolvedWallpaper] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true
+    ;(async () => {
+      try {
+        if (!wallpaper) {
+          const def = await getAssetPath('wallpapers/wallpaper1.jpg')
+          if (mounted) setResolvedWallpaper(def)
+          return
+        }
+
+        if (wallpaper.startsWith('#') || wallpaper.startsWith('linear-gradient') || wallpaper.startsWith('radial-gradient')) {
+          if (mounted) setResolvedWallpaper(wallpaper)
+          return
+        }
+
+        // If it's a data URL (custom uploaded image), use as-is
+        if (wallpaper.startsWith('data:')) {
+          if (mounted) setResolvedWallpaper(wallpaper)
+          return
+        }
+
+        // If it's an absolute web/http or file path, use as-is
+        if (wallpaper.startsWith('http') || wallpaper.startsWith('file://') || wallpaper.startsWith('/')) {
+          // If it's an absolute server path (starts with '/'), resolve via getAssetPath as well
+          if (wallpaper.startsWith('/')) {
+            const rel = wallpaper.replace(/^\//, '')
+            const p = await getAssetPath(rel)
+            if (mounted) setResolvedWallpaper(p)
+            return
+          }
+          if (mounted) setResolvedWallpaper(wallpaper)
+          return
+        }
+        const p = await getAssetPath(wallpaper.replace(/^\//, ''))
+        if (mounted) setResolvedWallpaper(p)
+      } catch (err) {
+        if (mounted) setResolvedWallpaper(wallpaper || '/wallpapers/wallpaper1.jpg')
+      }
+    })()
+    return () => { mounted = false }
+  }, [wallpaper])
+
+  useEffect(() => {
+    return () => {
+      if (videoReadyRafRef.current) {
+        cancelAnimationFrame(videoReadyRafRef.current);
+        videoReadyRafRef.current = null;
+      }
+    };
+  }, [])
+
+  const isImageUrl = Boolean(resolvedWallpaper && (resolvedWallpaper.startsWith('file://') || resolvedWallpaper.startsWith('http') || resolvedWallpaper.startsWith('/') || resolvedWallpaper.startsWith('data:')))
+  const backgroundStyle = isImageUrl
+    ? { backgroundImage: `url(${resolvedWallpaper || ''})` }
+    : { background: resolvedWallpaper || '' };
+
+  return (
+    <div className="relative rounded-sm overflow-hidden" style={{ width: '100%', aspectRatio: formatAspectRatioForCSS(aspectRatio) }}>
+      {/* Background layer - always render as DOM element with blur */}
+      <div
+        className="absolute inset-0 bg-cover bg-center"
+        style={{
+          ...backgroundStyle,
+          filter: getPreviewBackgroundFilter(Boolean(showBlur)),
+        }}
+      />
+      <div
+        ref={containerRef}
+        className="absolute inset-0"
+        style={{
+          filter: (showShadow && shadowIntensity > 0)
+            ? `drop-shadow(0 ${shadowIntensity * 12}px ${shadowIntensity * 48}px rgba(0,0,0,${shadowIntensity * 0.7})) drop-shadow(0 ${shadowIntensity * 4}px ${shadowIntensity * 16}px rgba(0,0,0,${shadowIntensity * 0.5})) drop-shadow(0 ${shadowIntensity * 2}px ${shadowIntensity * 8}px rgba(0,0,0,${shadowIntensity * 0.3}))`
+            : 'none',
+        }}
+      />
+      {/* Only render overlay after PIXI and video are fully initialized */}
+      {pixiReady && videoReady && (
+        <div
+          ref={overlayRef}
+          className="absolute inset-0 select-none"
+          style={{ pointerEvents: 'none' }}
+          onPointerDown={handleOverlayPointerDown}
+          onPointerMove={handleOverlayPointerMove}
+          onPointerUp={handleOverlayPointerUp}
+          onPointerLeave={handleOverlayPointerLeave}
+        >
+          <canvas
+            ref={cursorCanvasRef}
+            className="absolute inset-0 pointer-events-none"
+          />
+          <div
+            ref={focusIndicatorRef}
+            className="absolute rounded-md border border-[#34B27B]/80 bg-[#34B27B]/20 shadow-[0_0_0_1px_rgba(52,178,123,0.35)]"
+            style={{ display: 'none', pointerEvents: 'none' }}
+          />
+          {(() => {
+            const timeMs = Math.round(currentTime * 1000);
+            const sorted = getRenderableAnnotations(annotationRegions || [], timeMs);
+
+            // Handle click-through cycling: when clicking same annotation, cycle to next
+            const handleAnnotationClick = (clickedId: string) => {
+              if (!onSelectAnnotation) return;
+              
+              // If clicking on already selected annotation and there are multiple overlapping
+              if (clickedId === selectedAnnotationId && sorted.length > 1) {
+                // Find current index and cycle to next
+                const currentIndex = sorted.findIndex(a => a.id === clickedId);
+                const nextIndex = (currentIndex + 1) % sorted.length;
+                onSelectAnnotation(sorted[nextIndex].id);
+              } else {
+                // First click or clicking different annotation
+                onSelectAnnotation(clickedId);
+              }
+            };
+            
+            return sorted.map((annotation) => (
+              <AnnotationOverlay
+                key={annotation.id}
+                annotation={annotation}
+                isSelected={annotation.id === selectedAnnotationId}
+                containerWidth={overlayRef.current?.clientWidth || 800}
+                containerHeight={overlayRef.current?.clientHeight || 600}
+                onPositionChange={(id, position) => onAnnotationPositionChange?.(id, position)}
+                onSizeChange={(id, size) => onAnnotationSizeChange?.(id, size)}
+                onClick={handleAnnotationClick}
+                zIndex={annotation.zIndex}
+              />
+            ));
+          })()}
+          {activeSubtitleCue ? (
+            <div className="absolute left-1/2 bottom-[6%] -translate-x-1/2 z-40 pointer-events-none max-w-[82%]">
+              <div className="px-3 py-1.5 rounded-xl bg-black/70 backdrop-blur-[2px] border border-white/10 shadow-lg">
+                <p className="text-white text-base leading-tight font-semibold text-center whitespace-pre-wrap break-words">
+                  {activeSubtitleCue.text}
+                </p>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      )}
+      <video
+        ref={videoRef}
+        src={videoPath}
+        className="hidden"
+        preload="metadata"
+        playsInline
+        onLoadedMetadata={handleLoadedMetadata}
+        onDurationChange={e => {
+          onDurationChange(e.currentTarget.duration);
+        }}
+        onError={() => {
+          const video = videoRef.current;
+          const mediaError = video?.error;
+          const mediaErrorMap: Record<number, string> = {
+            1: "aborted",
+            2: "network",
+            3: "decode",
+            4: "src_not_supported",
+          };
+          const errorCode = mediaError?.code ?? 0;
+          const errorReason = mediaErrorMap[errorCode] ?? "unknown";
+          const src = video?.currentSrc || videoPath;
+          console.error("Video failed to load.", {
+            errorCode,
+            errorReason,
+            src,
+            readyState: video?.readyState,
+            networkState: video?.networkState,
+          });
+          onError(`Failed to load video (code=${errorCode}, reason=${errorReason})`);
+        }}
+      />
+    </div>
+  );
+});
+
+VideoPlayback.displayName = 'VideoPlayback';
+
+export default VideoPlayback;
