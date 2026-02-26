@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import Block from '@uiw/react-color-block';
-import { Trash2, Download, Crop, X, Bug, Upload, Star, Film, Image, Sparkles, Palette, Captions, Scissors } from "lucide-react";
+import { Trash2, Download, Crop, X, Bug, Upload, Star, Film, Image, Sparkles, Palette, Captions, Scissors, ScanSearch } from "lucide-react";
 import { toast } from "sonner";
 import type { ZoomDepth, CropRegion, AnnotationRegion, AnnotationType, FigureData } from "./types";
 import { CropControl } from "./CropControl";
@@ -58,8 +58,9 @@ interface SettingsPanelProps {
   onZoomDepthChange?: (depth: ZoomDepth) => void;
   selectedZoomId?: string | null;
   onZoomDelete?: (id: string) => void;
-  selectedTrimId?: string | null;
-  onTrimDelete?: (id: string) => void;
+  selectedSegment?: import('./types').VideoSegment | null;
+  onDeleteSegment?: () => void;
+  onSegmentSpeedChange?: (id: string, speed: number) => void;
   shadowIntensity?: number;
   onShadowChange?: (intensity: number) => void;
   showBlur?: boolean;
@@ -113,6 +114,8 @@ interface SettingsPanelProps {
   hasCursorTrack?: boolean;
   onAutoEdit?: () => void;
   autoEditDisabled?: boolean;
+  onAnalyzeCursor?: () => void;
+  cursorAnalysisProgress?: number | null;
   onGenerateSubtitles?: () => void;
   onApplyRoughCut?: () => void;
   analysisRunning?: boolean;
@@ -149,8 +152,9 @@ export function SettingsPanel({
   onZoomDepthChange, 
   selectedZoomId, 
   onZoomDelete, 
-  selectedTrimId,
-  onTrimDelete,
+  selectedSegment = null,
+  onDeleteSegment,
+  onSegmentSpeedChange,
   shadowIntensity = 0, 
   onShadowChange, 
   showBlur, 
@@ -203,6 +207,8 @@ export function SettingsPanel({
   hasCursorTrack = true,
   onAutoEdit,
   autoEditDisabled = false,
+  onAnalyzeCursor,
+  cursorAnalysisProgress = null,
   onGenerateSubtitles,
   onApplyRoughCut,
   analysisRunning = false,
@@ -256,19 +262,16 @@ export function SettingsPanel({
   const activeExportAspectRatios = exportAspectRatios;
 
   const zoomEnabled = Boolean(selectedZoomDepth);
-  const trimEnabled = Boolean(selectedTrimId);
-  
+  const segmentSelected = Boolean(selectedSegment);
+
   const handleDeleteClick = () => {
     if (selectedZoomId && onZoomDelete) {
       onZoomDelete(selectedZoomId);
     }
   };
 
-  const handleTrimDeleteClick = () => {
-    if (selectedTrimId && onTrimDelete) {
-      onTrimDelete(selectedTrimId);
-    }
-  };
+  const SEGMENT_SPEED_PRESETS = [1, 1.5, 1.75, 2, 2.5, 3, 5, 8, 10, 20, 40] as const;
+  const [customSegmentSpeed, setCustomSegmentSpeed] = useState("");
 
   const toggleExportAspectRatio = (ratio: AspectRatio) => {
     onPreviewAspectRatioChange?.(ratio);
@@ -466,17 +469,72 @@ export function SettingsPanel({
           </div>
         </div>
 
-        {trimEnabled && (
-          <div className="mb-4">
-            <Button
-              onClick={handleTrimDeleteClick}
-              variant="destructive"
-              size="sm"
-              className="w-full gap-2 bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 transition-all h-8 text-xs"
+        {segmentSelected && selectedSegment && (
+          <div className="mb-4 rounded-xl bg-white/[0.02] border border-white/5 p-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-medium text-slate-300">{t("timeline.segmentSpeed")}</span>
+              <span className="text-[10px] text-slate-500 tabular-nums">
+                {(selectedSegment.startMs / 1000).toFixed(1)}s – {(selectedSegment.endMs / 1000).toFixed(1)}s
+              </span>
+            </div>
+
+            {/* Speed preset grid */}
+            <div className="flex flex-wrap gap-1">
+              {SEGMENT_SPEED_PRESETS.map((speed) => (
+                <button
+                  key={speed}
+                  onClick={() => onSegmentSpeedChange?.(selectedSegment.id, speed)}
+                  className={cn(
+                    "px-2 py-1 rounded text-[10px] font-medium transition-colors",
+                    selectedSegment.speed === speed
+                      ? "bg-[#34B27B] text-white"
+                      : "bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white border border-white/5"
+                  )}
+                >
+                  {speed}x
+                </button>
+              ))}
+            </div>
+
+            {/* Custom speed input */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const val = parseFloat(customSegmentSpeed);
+                if (val >= 0.25 && val <= 40) {
+                  onSegmentSpeedChange?.(selectedSegment.id, val);
+                  setCustomSegmentSpeed("");
+                }
+              }}
+              className="flex items-center gap-1.5"
             >
-              <Trash2 className="w-3 h-3" />
-              {t("settings.deleteTrim")}
-            </Button>
+              <input
+                type="number"
+                min="0.25"
+                max="40"
+                step="0.25"
+                value={customSegmentSpeed}
+                onChange={(e) => setCustomSegmentSpeed(e.target.value)}
+                placeholder="0.25–40"
+                className="flex-1 text-[10px] bg-white/5 border border-white/10 rounded px-2 py-1 text-white outline-none focus:border-[#34B27B]/50"
+              />
+              <button type="submit" className="text-[10px] text-[#34B27B] hover:text-[#34B27B]/80 px-1.5 py-1">
+                {t("common.apply")}
+              </button>
+            </form>
+
+            {/* Delete / Restore segment */}
+            {!selectedSegment.deleted ? (
+              <Button
+                onClick={() => onDeleteSegment?.()}
+                variant="destructive"
+                size="sm"
+                className="w-full gap-2 bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 transition-all h-7 text-[10px]"
+              >
+                <Trash2 className="w-3 h-3" />
+                {t("settings.deleteTrim")}
+              </Button>
+            ) : null}
           </div>
         )}
 
@@ -520,6 +578,30 @@ export function SettingsPanel({
                 {cursorStyle.enabled && !hasCursorTrack && (
                   <div className="rounded-md bg-amber-500/10 border border-amber-500/20 p-2 mb-2">
                     <div className="text-[10px] text-amber-400/90">{t("settings.cursorTrackUnavailable")}</div>
+                    {onAnalyzeCursor && (
+                      <div className="mt-2">
+                        <Button
+                          onClick={() => onAnalyzeCursor()}
+                          variant="outline"
+                          size="sm"
+                          disabled={cursorAnalysisProgress !== null}
+                          className="w-full gap-2 bg-[#34B27B]/10 text-[#9DF3CB] border border-[#34B27B]/20 hover:bg-[#34B27B]/20 hover:border-[#34B27B]/30 transition-all h-7 text-[10px] disabled:opacity-50"
+                        >
+                          <ScanSearch className="w-3 h-3" />
+                          {cursorAnalysisProgress !== null
+                            ? t("settings.analyzingCursor", { progress: cursorAnalysisProgress })
+                            : t("settings.analyzeCursor")}
+                        </Button>
+                        {cursorAnalysisProgress !== null && (
+                          <div className="mt-1.5 h-1 rounded-full bg-white/10 overflow-hidden">
+                            <div
+                              className="h-full bg-[#34B27B] rounded-full transition-all duration-300"
+                              style={{ width: `${cursorAnalysisProgress}%` }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
                 <div className="rounded-md bg-black/20 border border-white/5 p-2 mb-2 space-y-2">

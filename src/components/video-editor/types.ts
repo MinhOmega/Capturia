@@ -19,6 +19,14 @@ export interface TrimRegion {
   endMs: number;
 }
 
+export interface VideoSegment {
+  id: string;
+  startMs: number;   // source time
+  endMs: number;     // source time
+  deleted: boolean;
+  speed: number;     // 1.0 = normal
+}
+
 export type AudioEditMode = 'mute' | 'duck';
 
 export interface AudioEditRegion {

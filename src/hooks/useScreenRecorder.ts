@@ -8,8 +8,14 @@ import { reportUserActionError } from "@/lib/userErrorFeedback";
 
 type UseScreenRecorderReturn = {
   recording: boolean;
-  recordingState: "idle" | "starting" | "recording" | "stopping";
+  recordingState: "idle" | "starting" | "recording" | "stopping" | "paused";
   toggleRecording: () => void;
+  pauseRecording: () => void;
+  resumeRecording: () => void;
+  discardRecording: () => void;
+  startTimeRef: React.RefObject<number>;
+  cumulativePauseMsRef: React.RefObject<number>;
+  pauseStartTimeRef: React.RefObject<number>;
 };
 
 type UseScreenRecorderOptions = {
@@ -140,7 +146,7 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
   const recordSystemCursor = options.recordSystemCursor ?? true;
   const microphoneGain = normalizeMicrophoneGain(options.microphoneGain);
   const [recording, setRecording] = useState(false);
-  const [recordingState, setRecordingPhase] = useState<"idle" | "starting" | "recording" | "stopping">("idle");
+  const [recordingState, setRecordingPhase] = useState<"idle" | "starting" | "recording" | "stopping" | "paused">("idle");
   const mediaRecorder = useRef<MediaRecorder | null>(null);
   const stream = useRef<MediaStream | null>(null);
   const cameraStream = useRef<MediaStream | null>(null);
@@ -153,6 +159,9 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
   const cursorTrackingActive = useRef(false);
   const nativeRecordingActive = useRef(false);
   const transitionInFlight = useRef(false);
+  const cumulativePauseMs = useRef(0);
+  const pauseStartTime = useRef(0);
+  const discardFlag = useRef(false);
   const nativeRecordingMetadata = useRef<{
     frameRate: number;
     width: number;
@@ -445,7 +454,12 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
       return;
     }
     const recorder = mediaRecorder.current;
-    if (recorder?.state === "recording") {
+    if (recorder?.state === "recording" || recorder?.state === "paused") {
+      // Account for any in-progress pause
+      if (pauseStartTime.current > 0) {
+        cumulativePauseMs.current += Date.now() - pauseStartTime.current;
+        pauseStartTime.current = 0;
+      }
       transitionInFlight.current = true;
       setRecording(false);
       setRecordingPhase("stopping");
@@ -921,6 +935,9 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
         }
 
         startTime.current = Date.now();
+        cumulativePauseMs.current = 0;
+        pauseStartTime.current = 0;
+        discardFlag.current = false;
         setRecording(true);
         setRecordingPhase("recording");
         window.electronAPI?.setRecordingState(true);
@@ -1060,6 +1077,21 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
         if (e.data && e.data.size > 0) chunks.current.push(e.data);
       };
       recorder.onstop = async () => {
+        // Discard: skip saving, just clean up
+        if (discardFlag.current) {
+          discardFlag.current = false;
+          chunks.current = [];
+          if (cursorTrackingActive.current) {
+            cursorTrackingActive.current = false;
+            try { await window.electronAPI.stopCursorTracking(); } catch { /* ignore */ }
+          }
+          cleanupActiveMedia();
+          mediaRecorder.current = null;
+          setRecordingPhase("idle");
+          transitionInFlight.current = false;
+          return;
+        }
+
         try {
           let capturedCursorTrack:
             | {
@@ -1179,6 +1211,9 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
         cleanupActiveMedia();
       };
       startTime.current = Date.now();
+      cumulativePauseMs.current = 0;
+      pauseStartTime.current = 0;
+      discardFlag.current = false;
       recorder.start(1000);
       setRecording(true);
       setRecordingPhase("recording");
@@ -1219,6 +1254,56 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
     }
   };
 
+  const pauseRecording = () => {
+    const recorder = mediaRecorder.current;
+    if (!recorder || nativeRecordingActive.current) return;
+    if (recorder.state === "recording") {
+      pauseStartTime.current = Date.now();
+      recorder.pause();
+      setRecordingPhase("paused");
+    }
+  };
+
+  const resumeRecording = () => {
+    const recorder = mediaRecorder.current;
+    if (!recorder || nativeRecordingActive.current) return;
+    if (recorder.state === "paused") {
+      if (pauseStartTime.current > 0) {
+        cumulativePauseMs.current += Date.now() - pauseStartTime.current;
+        pauseStartTime.current = 0;
+      }
+      recorder.resume();
+      setRecordingPhase("recording");
+    }
+  };
+
+  const discardRecording = () => {
+    if (transitionInFlight.current) return;
+    if (!recording && recordingState !== "recording" && recordingState !== "paused") return;
+    discardFlag.current = true;
+    transitionInFlight.current = true;
+    setRecording(false);
+    setRecordingPhase("stopping");
+    window.electronAPI?.setRecordingState(false);
+
+    if (nativeRecordingActive.current) {
+      // For native recording, just stop normally (discard not supported)
+      void window.electronAPI?.stopNativeScreenRecording?.();
+      return;
+    }
+
+    const recorder = mediaRecorder.current;
+    if (recorder && (recorder.state === "recording" || recorder.state === "paused")) {
+      recorder.stop();
+    } else {
+      cleanupActiveMedia();
+      chunks.current = [];
+      discardFlag.current = false;
+      setRecordingPhase("idle");
+      transitionInFlight.current = false;
+    }
+  };
+
   const toggleRecording = () => {
     if (transitionInFlight.current) {
       return;
@@ -1228,7 +1313,7 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
       return;
     }
 
-    if (recording || recordingState === "recording") {
+    if (recording || recordingState === "recording" || recordingState === "paused") {
       stopRecording.current();
       return;
     }
@@ -1236,5 +1321,15 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
     void startRecording();
   };
 
-  return { recording, recordingState, toggleRecording };
+  return {
+    recording,
+    recordingState,
+    toggleRecording,
+    pauseRecording,
+    resumeRecording,
+    discardRecording,
+    startTimeRef: startTime,
+    cumulativePauseMsRef: cumulativePauseMs,
+    pauseStartTimeRef: pauseStartTime,
+  };
 }

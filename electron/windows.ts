@@ -18,7 +18,31 @@ ipcMain.on('hud-overlay-hide', () => {
   }
 });
 
+// Recording mode: keep the full-size transparent overlay window — the renderer
+// handles compact-bar layout via CSS.  Resizing/repositioning is unreliable on
+// Wayland (compositor ignores setBounds) and can place the window off-center
+// or in the top-left corner.  Instead we just ensure always-on-top is enforced.
+
+ipcMain.on('hud-overlay-resize', () => {
+  if (!hudOverlayWindow || hudOverlayWindow.isDestroyed()) return;
+  // Re-apply always-on-top so the recording bar stays visible over other apps
+  hudOverlayWindow.setAlwaysOnTop(true, 'screen-saver');
+  hudOverlayWindow.setVisibleOnAllWorkspaces(true);
+});
+
+ipcMain.on('hud-overlay-restore', () => {
+  if (!hudOverlayWindow || hudOverlayWindow.isDestroyed()) return;
+  // Un-minimize if the window was hidden during recording
+  if (hudOverlayWindow.isMinimized()) {
+    hudOverlayWindow.restore();
+  }
+  hudOverlayWindow.showInactive();
+  hudOverlayWindow.setAlwaysOnTop(true, 'screen-saver');
+  hudOverlayWindow.setVisibleOnAllWorkspaces(true);
+});
+
 export function createHudOverlayWindow(): BrowserWindow {
+  const isLinux = process.platform === 'linux';
   const primaryDisplay = screen.getPrimaryDisplay();
   const { workArea } = primaryDisplay;
 
@@ -46,6 +70,9 @@ export function createHudOverlayWindow(): BrowserWindow {
     alwaysOnTop: true,
     skipTaskbar: true,
     hasShadow: false,
+    // On Linux, focusable: false stops WM from managing stacking — window stays
+    // visible even when other apps are focused.  Buttons still receive clicks.
+    ...(isLinux && { focusable: false }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
       nodeIntegration: false,
@@ -54,6 +81,14 @@ export function createHudOverlayWindow(): BrowserWindow {
     },
   })
 
+  // Re-apply always-on-top after creation and after show — some Linux X11 WMs
+  // ignore the constructor option and need a post-show re-apply.
+  win.setAlwaysOnTop(true, 'screen-saver');
+  win.setVisibleOnAllWorkspaces(true);
+  win.once('show', () => {
+    win.setAlwaysOnTop(true, 'screen-saver');
+    win.setVisibleOnAllWorkspaces(true);
+  });
 
   win.webContents.on('did-finish-load', () => {
     win?.webContents.send('main-process-message', (new Date).toLocaleString())
@@ -67,12 +102,11 @@ export function createHudOverlayWindow(): BrowserWindow {
     }
   });
 
-
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL + '?windowType=hud-overlay')
   } else {
-    win.loadFile(path.join(RENDERER_DIST, 'index.html'), { 
-      query: { windowType: 'hud-overlay' } 
+    win.loadFile(path.join(RENDERER_DIST, 'index.html'), {
+      query: { windowType: 'hud-overlay' }
     })
   }
 

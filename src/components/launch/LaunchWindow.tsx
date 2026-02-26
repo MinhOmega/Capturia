@@ -14,7 +14,7 @@ import { MdMonitor } from "react-icons/md";
 import { RxDragHandleDots2 } from "react-icons/rx";
 import { FaFolderMinus } from "react-icons/fa6";
 import { FiCamera, FiMinus, FiMousePointer, FiX } from "react-icons/fi";
-import { EyeOff, Keyboard, RotateCcw, Shield, SlidersHorizontal, Timer } from "lucide-react";
+import { EyeOff, Keyboard, Pause, Play, RotateCcw, Shield, SlidersHorizontal, Timer, Trash2 } from "lucide-react";
 import { useI18n } from "@/i18n";
 import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -193,10 +193,12 @@ export function LaunchWindow() {
   });
   const [autoHideHudOnRecord, setAutoHideHudOnRecord] = useState(() => {
     try {
-      return window.localStorage.getItem(AUTO_HIDE_HUD_ON_RECORD_STORAGE_KEY) === "1";
+      const stored = window.localStorage.getItem(AUTO_HIDE_HUD_ON_RECORD_STORAGE_KEY);
+      if (stored !== null) return stored === "1";
     } catch {
-      return false;
+      // no-op
     }
+    return false;
   });
   const [stopRecordingShortcut, setStopRecordingShortcut] = useState(() => {
     try {
@@ -222,7 +224,17 @@ export function LaunchWindow() {
     }
     return 0;
   });
-  const { recording, recordingState, toggleRecording } = useScreenRecorder({
+  const {
+    recording,
+    recordingState,
+    toggleRecording,
+    pauseRecording,
+    resumeRecording,
+    discardRecording,
+    startTimeRef,
+    cumulativePauseMsRef,
+    pauseStartTimeRef,
+  } = useScreenRecorder({
     includeCamera,
     cameraShape,
     cameraSizePercent,
@@ -238,27 +250,30 @@ export function LaunchWindow() {
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
   const previousRecordingRef = useRef(false);
   const selectedSourceSyncErrorAtRef = useRef(0);
-  const [recordingStart, setRecordingStart] = useState<number | null>(null);
   const [elapsed, setElapsed] = useState(0);
 
   useEffect(() => {
     let timer: NodeJS.Timeout | null = null;
-    if (recording) {
-      if (!recordingStart) setRecordingStart(Date.now());
+    const isActive = recording || recordingState === "paused";
+    if (isActive && (startTimeRef.current ?? 0) > 0) {
       timer = setInterval(() => {
-        if (recordingStart) {
-          setElapsed(Math.floor((Date.now() - recordingStart) / 1000));
+        const now = Date.now();
+        const totalMs = now - (startTimeRef.current ?? now);
+        let pauseMs = cumulativePauseMsRef.current ?? 0;
+        // Include the in-progress pause duration so the timer freezes while paused
+        const pauseStart = pauseStartTimeRef.current ?? 0;
+        if (pauseStart > 0) {
+          pauseMs += now - pauseStart;
         }
-      }, 1000);
+        setElapsed(Math.max(0, Math.floor((totalMs - pauseMs) / 1000)));
+      }, 500);
     } else {
-      setRecordingStart(null);
       setElapsed(0);
-      if (timer) clearInterval(timer);
     }
     return () => {
       if (timer) clearInterval(timer);
     };
-  }, [recording, recordingStart]);
+  }, [recording, recordingState, startTimeRef, cumulativePauseMsRef, pauseStartTimeRef]);
 
   const clearRecordCountdown = useCallback(() => {
     if (countdownTimerRef.current) {
@@ -713,11 +728,23 @@ export function LaunchWindow() {
 
   useEffect(() => {
     const justStartedRecording = recording && !previousRecordingRef.current;
+    const justStoppedRecording = !recording && previousRecordingRef.current;
     previousRecordingRef.current = recording;
-    if (justStartedRecording && autoHideHudOnRecord) {
-      sendHudOverlayHide();
+    if (justStartedRecording) {
+      // Re-enforce always-on-top
+      window.electronAPI?.hudOverlayResize?.();
+      // Hide the HUD so it doesn't appear in the screen capture.
+      // On Linux there is no OS-level way to exclude a window from capture,
+      // so we hide it entirely.  The user stops recording via the keyboard
+      // shortcut (displayed in the idle HUD).
+      if (autoHideHudOnRecord) {
+        window.electronAPI?.hudOverlayHide?.();
+      }
     }
-  }, [autoHideHudOnRecord, recording, sendHudOverlayHide]);
+    if (justStoppedRecording) {
+      window.electronAPI?.hudOverlayRestore?.();
+    }
+  }, [recording, autoHideHudOnRecord]);
 
   const displayedStopShortcut = formatAccelerator(stopRecordingShortcut, isMacPlatform);
 
@@ -732,6 +759,68 @@ export function LaunchWindow() {
       }
     })();
   };
+
+  // Compact recording bar: shown during active recording or paused state
+  const showCompactBar = recording || recordingState === "paused";
+
+  if (showCompactBar) {
+    return (
+      <div className="w-full h-full flex items-end justify-center bg-transparent overflow-hidden pointer-events-none" style={{ paddingBottom: 60 }}>
+        <div
+          className={`inline-flex items-center gap-2 px-3 py-1.5 pointer-events-auto ${styles.electronDrag}`}
+          style={{
+            borderRadius: 12,
+            background: 'linear-gradient(135deg, rgba(30,30,40,0.94) 0%, rgba(20,20,30,0.88) 100%)',
+            backdropFilter: 'blur(32px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(32px) saturate(180%)',
+            boxShadow: '0 4px 24px 0 rgba(0,0,0,0.32), 0 1px 3px 0 rgba(0,0,0,0.14) inset',
+            border: '1px solid rgba(80,80,120,0.22)',
+            minHeight: 40,
+          }}
+        >
+          {/* Left: Red dot + elapsed time + Stop */}
+          <div className={`flex items-center gap-1.5 shrink-0 ${styles.electronNoDrag}`}>
+            <div className={`w-2 h-2 rounded-full ${recordingState === "paused" ? "bg-amber-400" : "bg-red-500 animate-pulse"}`} />
+            <span className="text-white text-[11px] font-medium tabular-nums">{formatTime(elapsed)}</span>
+            <button
+              onClick={toggleRecording}
+              className="p-1 rounded hover:bg-white/10 transition-colors"
+              title={t("launch.stopRecording")}
+            >
+              <FaRegStopCircle size={14} className="text-red-400" />
+            </button>
+          </div>
+
+          {/* Center: Drag handle */}
+          <div className={`flex items-center px-1 ${styles.electronDrag}`}>
+            <RxDragHandleDots2 size={16} className="text-white/30" />
+          </div>
+
+          {/* Right: Pause/Resume + Discard */}
+          <div className={`flex items-center gap-1 shrink-0 ${styles.electronNoDrag}`}>
+            <button
+              onClick={recordingState === "paused" ? resumeRecording : pauseRecording}
+              className="p-1 rounded hover:bg-white/10 transition-colors"
+              title={recordingState === "paused" ? t("launch.resumeRecording") : t("launch.pauseRecording")}
+            >
+              {recordingState === "paused" ? (
+                <Play size={14} className="text-green-400" />
+              ) : (
+                <Pause size={14} className="text-amber-300" />
+              )}
+            </button>
+            <button
+              onClick={discardRecording}
+              className="p-1 rounded hover:bg-white/10 transition-colors"
+              title={t("launch.discardRecording")}
+            >
+              <Trash2 size={13} className="text-white/50 hover:text-red-400" />
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full h-full flex items-end justify-center pb-2 bg-transparent overflow-hidden pointer-events-none">
@@ -775,12 +864,7 @@ export function LaunchWindow() {
               : undefined
           }
         >
-          {recording ? (
-            <>
-              <FaRegStopCircle size={14} className="text-red-400" />
-              <span className="text-red-400">{formatTime(elapsed)}</span>
-            </>
-          ) : countdownRemaining !== null ? (
+          {countdownRemaining !== null ? (
             <>
               <BsRecordCircle size={14} className="text-amber-300 animate-pulse" />
               <span className="text-amber-300">{t("launch.countdownStarting", { seconds: countdownRemaining })}</span>

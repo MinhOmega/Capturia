@@ -9,6 +9,7 @@ interface PlaybackControlsProps {
   duration: number;
   onTogglePlayPause: () => void;
   onSeek: (time: number) => void;
+  playbackSpeed?: number;
 }
 
 export default function PlaybackControls({
@@ -17,6 +18,7 @@ export default function PlaybackControls({
   duration,
   onTogglePlayPause,
   onSeek,
+  playbackSpeed = 1,
 }: PlaybackControlsProps) {
   const { t } = useI18n();
   function formatTime(seconds: number) {
@@ -88,6 +90,18 @@ export default function PlaybackControls({
       
       <span className="text-[9px] font-medium text-slate-500 tabular-nums w-[30px]">
         {formatTime(duration)}
+      </span>
+
+      {/* Read-only speed indicator — speed is set per-segment in timeline */}
+      <span
+        className={cn(
+          "text-[9px] font-medium px-1.5 py-0.5 rounded tabular-nums shrink-0",
+          playbackSpeed === 1
+            ? "text-slate-400 bg-white/5"
+            : "text-[#34B27B] bg-[#34B27B]/10"
+        )}
+      >
+        {playbackSpeed}x
       </span>
     </div>
   );

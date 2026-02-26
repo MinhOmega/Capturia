@@ -2,7 +2,8 @@ import type { ExportConfig, ExportProgress, ExportResult } from './types';
 import { VideoFileDecoder } from './videoDecoder';
 import { FrameRenderer } from './frameRenderer';
 import { VideoMuxer } from './muxer';
-import type { ZoomRegion, CropRegion, TrimRegion, AnnotationRegion, AudioEditRegion } from '@/components/video-editor/types';
+import type { ZoomRegion, CropRegion, TrimRegion, AnnotationRegion, AudioEditRegion, VideoSegment } from '@/components/video-editor/types';
+import { effectiveToSourceMsWithSegments, getEffectiveDurationMsWithSegments } from '@/lib/trim/timeMapping';
 import type { SubtitleCue } from '@/lib/analysis/types';
 import { frameDurationUs, frameIndexToTimestampUs, normalizeFrameRate } from './frameClock';
 import type { CursorStyleConfig, CursorTrack } from '@/lib/cursor';
@@ -36,6 +37,8 @@ interface VideoExporterConfig extends ExportConfig {
   cursorTrack?: CursorTrack | null;
   cursorStyle?: Partial<CursorStyleConfig>;
   onProgress?: (progress: ExportProgress) => void;
+  playbackSpeed?: number;
+  segments?: VideoSegment[];
 }
 
 type TimeRangeMs = {
@@ -60,6 +63,7 @@ const DEFAULT_AUDIO_GAIN = 1;
 const MAX_AUDIO_GAIN = 2;
 const EXPORT_WARNING_AUDIO_TRACK_UNAVAILABLE = 'editor.exportWarningAudioTrackUnavailable';
 const EXPORT_WARNING_AUDIO_CODEC_UNSUPPORTED = 'editor.exportWarningAudioCodecUnsupported';
+const EXPORT_WARNING_SPEED_AUDIO_UNAVAILABLE = 'editor.exportWarningSpeedAudioUnavailable';
 
 async function isAacEncodingSupported(): Promise<boolean> {
   if (typeof AudioEncoder === 'undefined') return false;
@@ -307,9 +311,15 @@ export class VideoExporter {
       return 0;
     }
 
+    // Use segment-aware calculation if segments are provided
+    if (this.config.segments?.length) {
+      return getEffectiveDurationMsWithSegments(this.config.segments) / 1000;
+    }
+
     const trimRanges = this.getSourceTrimRanges(totalDurationMs);
     const trimmedMs = trimRanges.reduce((sum, region) => sum + (region.endMs - region.startMs), 0);
-    return Math.max(0, (totalDurationMs - trimmedMs) / 1000);
+    const speed = Math.max(0.25, this.config.playbackSpeed ?? 1);
+    return Math.max(0, (totalDurationMs - trimmedMs) / speed / 1000);
   }
 
   private mapEffectiveToSourceTime(effectiveTimeMs: number): number {
@@ -617,6 +627,16 @@ export class VideoExporter {
         this.addWarning(EXPORT_WARNING_AUDIO_TRACK_UNAVAILABLE);
       }
 
+      // Audio is not supported when playback speed is not 1x (time-stretching not implemented).
+      const hasSegmentSpeed = this.config.segments?.some((s) => !s.deleted && s.speed !== 1) ?? false;
+      const exportSpeed = this.config.playbackSpeed ?? 1;
+      if (hasSourceAudio && (exportSpeed !== 1 || hasSegmentSpeed)) {
+        console.warn('[VideoExporter] Non-1x speed detected — exporting without audio');
+        hasSourceAudio = false;
+        this.sourceAudioTrack = null;
+        this.addWarning(EXPORT_WARNING_SPEED_AUDIO_UNAVAILABLE);
+      }
+
       // AAC encoding is required for MP4 audio but may not be available
       // on some platforms (e.g. Chromium on Linux without proprietary codecs).
       if (hasSourceAudio) {
@@ -737,8 +757,17 @@ export class VideoExporter {
   }
 
   private getSourceTimeMsForFrame(frameIndex: number): number {
-    const timeStepMs = 1000 / this.config.frameRate;
-    const effectiveTimeMs = frameIndex * timeStepMs;
+    const outputTimeStepMs = 1000 / this.config.frameRate;
+    const outputTimeMs = frameIndex * outputTimeStepMs;
+
+    // Use segment-aware mapping if segments are provided
+    if (this.config.segments?.length) {
+      return effectiveToSourceMsWithSegments(outputTimeMs, this.config.segments);
+    }
+
+    const speed = Math.max(0.25, this.config.playbackSpeed ?? 1);
+    // Output time advances at 1/speed rate through effective timeline
+    const effectiveTimeMs = outputTimeMs * speed;
     return this.mapEffectiveToSourceTime(effectiveTimeMs);
   }
 

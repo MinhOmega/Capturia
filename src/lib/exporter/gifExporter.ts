@@ -2,7 +2,8 @@ import GIF from 'gif.js';
 import type { ExportProgress, ExportResult, GifFrameRate, GifSizePreset, GIF_SIZE_PRESETS } from './types';
 import { VideoFileDecoder } from './videoDecoder';
 import { FrameRenderer } from './frameRenderer';
-import type { ZoomRegion, CropRegion, TrimRegion, AnnotationRegion } from '@/components/video-editor/types';
+import type { ZoomRegion, CropRegion, TrimRegion, AnnotationRegion, VideoSegment } from '@/components/video-editor/types';
+import { effectiveToSourceMsWithSegments, getEffectiveDurationMsWithSegments } from '@/lib/trim/timeMapping';
 import type { SubtitleCue } from '@/lib/analysis/types';
 import type { CursorStyleConfig, CursorTrack } from '@/lib/cursor';
 
@@ -33,6 +34,8 @@ interface GifExporterConfig {
   cursorTrack?: CursorTrack | null;
   cursorStyle?: Partial<CursorStyleConfig>;
   onProgress?: (progress: ExportProgress) => void;
+  playbackSpeed?: number;
+  segments?: VideoSegment[];
 }
 
 /**
@@ -85,11 +88,17 @@ export class GifExporter {
    * Calculate the total duration excluding trim regions (in seconds)
    */
   private getEffectiveDuration(totalDuration: number): number {
+    // Use segment-aware calculation if segments are provided
+    if (this.config.segments?.length) {
+      return getEffectiveDurationMsWithSegments(this.config.segments) / 1000;
+    }
+
     const trimRegions = this.config.trimRegions || [];
     const totalTrimDuration = trimRegions.reduce((sum, region) => {
       return sum + (region.endMs - region.startMs) / 1000;
     }, 0);
-    return totalDuration - totalTrimDuration;
+    const speed = Math.max(0.25, this.config.playbackSpeed ?? 1);
+    return (totalDuration - totalTrimDuration) / speed;
   }
 
   /**
@@ -190,9 +199,16 @@ export class GifExporter {
         const i = frameIndex;
         const timestamp = i * (1_000_000 / this.config.frameRate); // in microseconds
 
-        // Map effective time to source time (accounting for trim regions)
-        const effectiveTimeMs = (i * timeStep) * 1000;
-        const sourceTimeMs = this.mapEffectiveToSourceTime(effectiveTimeMs);
+        // Map effective time to source time (accounting for trim regions + per-segment speed)
+        let sourceTimeMs: number;
+        if (this.config.segments?.length) {
+          const effectiveTimeMs = (i * timeStep) * 1000;
+          sourceTimeMs = effectiveToSourceMsWithSegments(effectiveTimeMs, this.config.segments);
+        } else {
+          const speed = Math.max(0.25, this.config.playbackSpeed ?? 1);
+          const effectiveTimeMs = (i * timeStep) * 1000 * speed;
+          sourceTimeMs = this.mapEffectiveToSourceTime(effectiveTimeMs);
+        }
         const videoTime = sourceTimeMs / 1000;
 
         // Seek if needed

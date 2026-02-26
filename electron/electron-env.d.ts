@@ -267,6 +267,8 @@ interface Window {
     }>
     hudOverlayHide: () => void;
     hudOverlayClose: () => void;
+    hudOverlayResize: (width?: number, height?: number) => void;
+    hudOverlayRestore: () => void;
   }
 }
 

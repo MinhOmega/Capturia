@@ -7,6 +7,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     hudOverlayClose: () => {
       ipcRenderer.send('hud-overlay-close');
     },
+    hudOverlayResize: (_width?: number, _height?: number) => {
+      ipcRenderer.send('hud-overlay-resize');
+    },
+    hudOverlayRestore: () => {
+      ipcRenderer.send('hud-overlay-restore');
+    },
   getAssetBasePath: async () => {
     // ask main process for the correct base path (production vs dev)
     return await ipcRenderer.invoke('get-asset-base-path')

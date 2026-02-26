@@ -1,5 +1,5 @@
 import type React from 'react';
-import type { TrimRegion } from '../types';
+import type { TrimRegion, VideoSegment } from '../types';
 
 interface VideoEventHandlersParams {
   video: HTMLVideoElement;
@@ -11,6 +11,7 @@ interface VideoEventHandlersParams {
   onPlayStateChange: (playing: boolean) => void;
   onTimeUpdate: (time: number) => void;
   trimRegionsRef: React.MutableRefObject<TrimRegion[]>;
+  segmentsRef: React.MutableRefObject<VideoSegment[]>;
 }
 
 export function createVideoEventHandlers(params: VideoEventHandlersParams) {
@@ -24,6 +25,7 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
     onPlayStateChange,
     onTimeUpdate,
     trimRegionsRef,
+    segmentsRef,
   } = params;
 
   const UI_TIME_UPDATE_INTERVAL_MS = 1000 / 30;
@@ -40,7 +42,14 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
     }
   };
 
-  // Helper function to check if current time is within a trim region
+  // Find the segment containing the given source time (ms)
+  const findSegmentAtTime = (timeMs: number): VideoSegment | null => {
+    const segs = segmentsRef.current;
+    if (segs.length === 0) return null;
+    return segs.find((s) => timeMs >= s.startMs && timeMs < s.endMs) ?? null;
+  };
+
+  // Fallback: check trim regions (backward compat when segments not available)
   const findActiveTrimRegion = (currentTimeMs: number): TrimRegion | null => {
     const trimRegions = trimRegionsRef.current;
     return trimRegions.find(
@@ -48,27 +57,62 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
     ) || null;
   };
 
+  // Find the next non-deleted segment boundary after a given source time
+  const findNextKeptSegmentStart = (afterMs: number): number | null => {
+    const segs = segmentsRef.current;
+    for (const seg of segs) {
+      if (seg.startMs >= afterMs && !seg.deleted) {
+        return seg.startMs;
+      }
+    }
+    return null;
+  };
+
   function updateTime() {
     if (!video) return;
-    
+
     const currentTimeMs = video.currentTime * 1000;
-    const activeTrimRegion = findActiveTrimRegion(currentTimeMs);
-    
-    // If we're in a trim region during playback, skip to the end of it
-    if (activeTrimRegion && !video.paused && !video.ended) {
-      const skipToTime = activeTrimRegion.endMs / 1000;
-      
-      // If the skip would take us past the video duration, pause instead
-      if (skipToTime >= video.duration) {
-        video.pause();
+    const segs = segmentsRef.current;
+
+    if (segs.length > 0) {
+      // Segment-aware playback
+      const seg = findSegmentAtTime(currentTimeMs);
+
+      if (seg && seg.deleted && !video.paused && !video.ended) {
+        // Inside a deleted segment — skip to next kept segment
+        const nextStart = findNextKeptSegmentStart(seg.endMs);
+        if (nextStart !== null) {
+          video.currentTime = nextStart / 1000;
+          emitTime(nextStart / 1000, true);
+        } else {
+          video.pause();
+        }
+      } else if (seg && !seg.deleted) {
+        // Apply per-segment speed (clamped to browser max of 16x)
+        const targetRate = Math.max(0.25, Math.min(16, seg.speed));
+        if (Math.abs(video.playbackRate - targetRate) > 0.001) {
+          video.playbackRate = targetRate;
+        }
+        emitTime(video.currentTime);
       } else {
-        video.currentTime = skipToTime;
-        emitTime(skipToTime, true);
+        emitTime(video.currentTime);
       }
     } else {
-      emitTime(video.currentTime);
+      // Legacy trim-region path
+      const activeTrimRegion = findActiveTrimRegion(currentTimeMs);
+      if (activeTrimRegion && !video.paused && !video.ended) {
+        const skipToTime = activeTrimRegion.endMs / 1000;
+        if (skipToTime >= video.duration) {
+          video.pause();
+        } else {
+          video.currentTime = skipToTime;
+          emitTime(skipToTime, true);
+        }
+      } else {
+        emitTime(video.currentTime);
+      }
     }
-    
+
     if (!video.paused && !video.ended) {
       timeUpdateAnimationRef.current = requestAnimationFrame(updateTime);
     }
@@ -131,23 +175,41 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
     isSeekingRef.current = false;
 
     const currentTimeMs = video.currentTime * 1000;
-    const activeTrimRegion = findActiveTrimRegion(currentTimeMs);
-    
-    // If we seeked into a trim region while playing, skip to the end
-    if (activeTrimRegion && isPlayingRef.current && !video.paused) {
-      const skipToTime = activeTrimRegion.endMs / 1000;
-      
-      if (skipToTime >= video.duration) {
-        video.pause();
+    const segs = segmentsRef.current;
+
+    if (segs.length > 0) {
+      const seg = findSegmentAtTime(currentTimeMs);
+      if (seg && seg.deleted && isPlayingRef.current && !video.paused) {
+        const nextStart = findNextKeptSegmentStart(seg.endMs);
+        if (nextStart !== null) {
+          video.currentTime = nextStart / 1000;
+          emitTime(nextStart / 1000, true);
+        } else {
+          video.pause();
+        }
       } else {
-        video.currentTime = skipToTime;
-        emitTime(skipToTime, true);
+        if (!isPlayingRef.current && !video.paused) {
+          video.pause();
+        }
+        emitTime(video.currentTime, true);
       }
     } else {
-      if (!isPlayingRef.current && !video.paused) {
-        video.pause();
+      // Legacy trim path
+      const activeTrimRegion = findActiveTrimRegion(currentTimeMs);
+      if (activeTrimRegion && isPlayingRef.current && !video.paused) {
+        const skipToTime = activeTrimRegion.endMs / 1000;
+        if (skipToTime >= video.duration) {
+          video.pause();
+        } else {
+          video.currentTime = skipToTime;
+          emitTime(skipToTime, true);
+        }
+      } else {
+        if (!isPlayingRef.current && !video.paused) {
+          video.pause();
+        }
+        emitTime(video.currentTime, true);
       }
-      emitTime(video.currentTime, true);
     }
   };
 

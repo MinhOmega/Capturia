@@ -24,6 +24,7 @@ import {
   type ZoomFocus,
   type ZoomRegion,
   type TrimRegion,
+  type VideoSegment,
   type AudioEditRegion,
   type AnnotationRegion,
   type CropRegion,
@@ -61,6 +62,18 @@ import {
   type SelectedZoomIdByAspect,
   type ZoomRegionsByAspect,
 } from "@/lib/zoom/aspectZoomState";
+import {
+  normalizeTrimRanges,
+  sourceToEffectiveMs,
+  effectiveToSourceMs,
+  getEffectiveDurationMs,
+  sourceToEffectiveMsWithSegments,
+  effectiveToSourceMsWithSegments,
+  getEffectiveDurationMsWithSegments,
+  segmentsToTrimRegions,
+  findSegmentAtSourceTime,
+} from "@/lib/trim/timeMapping";
+import { VideoMouseAnalyzer } from "@/lib/analysis/videoMouseAnalyzer";
 
 const WALLPAPER_COUNT = 18;
 const WALLPAPER_PATHS = Array.from({ length: WALLPAPER_COUNT }, (_, i) => `/wallpapers/wallpaper${i + 1}.jpg`);
@@ -288,6 +301,8 @@ export default function VideoEditor() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [segments, setSegments] = useState<VideoSegment[]>([]);
+  const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
   const [wallpaper, setWallpaper] = useState<string>(WALLPAPER_PATHS[0]);
   const [shadowIntensity, setShadowIntensity] = useState(0);
   const [showBlur, setShowBlur] = useState(false);
@@ -300,9 +315,7 @@ export default function VideoEditor() {
   });
   const [zoomRegionsByAspect, setZoomRegionsByAspect] = useState<ZoomRegionsByAspect>({});
   const [selectedZoomIdByAspect, setSelectedZoomIdByAspect] = useState<SelectedZoomIdByAspect>({});
-  const [trimRegions, setTrimRegions] = useState<TrimRegion[]>([]);
   const [audioEditRegions, setAudioEditRegions] = useState<AudioEditRegion[]>([]);
-  const [selectedTrimId, setSelectedTrimId] = useState<string | null>(null);
   const [annotationRegions, setAnnotationRegions] = useState<AnnotationRegion[]>([]);
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
@@ -335,10 +348,12 @@ export default function VideoEditor() {
   const [analysisJobId, setAnalysisJobId] = useState<string | null>(null);
   const [analysisInProgress, setAnalysisInProgress] = useState(false);
   const analysisPollingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [cursorAnalysisProgress, setCursorAnalysisProgress] = useState<number | null>(null);
+  const cursorAnalyzerRef = useRef<VideoMouseAnalyzer | null>(null);
 
   const videoPlaybackRef = useRef<VideoPlaybackRef>(null);
   const nextZoomIdRef = useRef(1);
-  const nextTrimIdRef = useRef(1);
+  const nextSegIdRef = useRef(2);
   const nextAnnotationIdRef = useRef(1);
   const nextAnnotationZIndexRef = useRef(1); // Track z-index for stacking order
   const exporterRef = useRef<{ cancel: () => void } | null>(null);
@@ -372,6 +387,101 @@ export default function VideoEditor() {
     [selectedZoomIdByAspect, aspectRatio],
   );
   const showAspectCropOverlay = exportFormat === "mp4" && normalizedExportAspectRatios.includes(aspectRatio);
+
+  // --- Segment-derived values ---
+  const totalDurationMs = useMemo(() => Math.max(0, duration * 1000), [duration]);
+
+  // Initialize segments when duration becomes known
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (totalDurationMs > 0 && segments.length === 0) {
+      setSegments([{
+        id: 'seg-1',
+        startMs: 0,
+        endMs: totalDurationMs,
+        deleted: false,
+        speed: 1,
+      }]);
+    }
+  }, [totalDurationMs]);
+
+  // Derive trimRegions from deleted segments (backward compatibility)
+  const trimRegions: TrimRegion[] = useMemo(
+    () => segmentsToTrimRegions(segments),
+    [segments],
+  );
+  const normalizedTrims = useMemo(
+    () => normalizeTrimRanges(trimRegions, totalDurationMs),
+    [trimRegions, totalDurationMs],
+  );
+  const normalizedTrimsRef = useRef(normalizedTrims);
+  normalizedTrimsRef.current = normalizedTrims;
+
+  // Segments ref for playback handlers
+  const segmentsRef = useRef(segments);
+  segmentsRef.current = segments;
+
+  // Current segment's speed (for playback indicator)
+  const currentSegmentSpeed = useMemo(() => {
+    const seg = findSegmentAtSourceTime(currentTime * 1000, segments);
+    return seg && !seg.deleted ? seg.speed : 1;
+  }, [currentTime, segments]);
+
+  const effectiveDuration = useMemo(
+    () => {
+      if (segments.length > 0) {
+        return getEffectiveDurationMsWithSegments(segments) / 1000;
+      }
+      return normalizedTrims.length > 0 ? getEffectiveDurationMs(totalDurationMs, normalizedTrims) / 1000 : duration;
+    },
+    [segments, totalDurationMs, normalizedTrims, duration],
+  );
+  const effectiveCurrentTime = useMemo(
+    () => {
+      if (segments.length > 0) {
+        return sourceToEffectiveMsWithSegments(currentTime * 1000, segments) / 1000;
+      }
+      return normalizedTrims.length > 0 ? sourceToEffectiveMs(currentTime * 1000, normalizedTrims) / 1000 : currentTime;
+    },
+    [currentTime, segments, normalizedTrims],
+  );
+
+  // Map zoom / annotation / subtitle / audio-edit regions to effective space for the timeline
+  const effectiveZoomRegions = useMemo(() => {
+    if (normalizedTrims.length === 0) return zoomRegions;
+    return zoomRegions.map((r) => ({
+      ...r,
+      startMs: sourceToEffectiveMs(r.startMs, normalizedTrims),
+      endMs: sourceToEffectiveMs(r.endMs, normalizedTrims),
+    }));
+  }, [zoomRegions, normalizedTrims]);
+
+  const effectiveAnnotationRegions = useMemo(() => {
+    if (normalizedTrims.length === 0) return annotationRegions;
+    return annotationRegions.map((r) => ({
+      ...r,
+      startMs: sourceToEffectiveMs(r.startMs, normalizedTrims),
+      endMs: sourceToEffectiveMs(r.endMs, normalizedTrims),
+    }));
+  }, [annotationRegions, normalizedTrims]);
+
+  const effectiveSubtitleCues = useMemo(() => {
+    if (normalizedTrims.length === 0) return subtitleCues;
+    return subtitleCues.map((c) => ({
+      ...c,
+      startMs: sourceToEffectiveMs(c.startMs, normalizedTrims),
+      endMs: sourceToEffectiveMs(c.endMs, normalizedTrims),
+    }));
+  }, [subtitleCues, normalizedTrims]);
+
+  const effectiveAudioEditRegions = useMemo(() => {
+    if (normalizedTrims.length === 0) return audioEditRegions;
+    return audioEditRegions.map((r) => ({
+      ...r,
+      startMs: sourceToEffectiveMs(r.startMs, normalizedTrims),
+      endMs: sourceToEffectiveMs(r.endMs, normalizedTrims),
+    }));
+  }, [audioEditRegions, normalizedTrims]);
 
   const setZoomRegionsForActiveAspect = useCallback((updater: (regions: ZoomRegion[]) => ZoomRegion[]) => {
     setZoomRegionsByAspect((previous) => {
@@ -498,16 +608,27 @@ export default function VideoEditor() {
   function handleSeek(time: number) {
     const video = videoPlaybackRef.current?.video;
     if (!video) return;
-    video.currentTime = time;
+    // time comes from the UI in effective seconds; convert to source
+    const segs = segmentsRef.current;
+    if (segs.length > 0) {
+      video.currentTime = effectiveToSourceMsWithSegments(time * 1000, segs) / 1000;
+    } else {
+      const trims = normalizedTrimsRef.current;
+      if (trims.length > 0) {
+        video.currentTime = effectiveToSourceMs(time * 1000, trims) / 1000;
+      } else {
+        video.currentTime = time;
+      }
+    }
   }
 
   const handleSelectZoom = useCallback((id: string | null) => {
     setSelectedZoomIdForActiveAspect(id);
-    if (id) setSelectedTrimId(null);
+    if (id) setSelectedSegmentId(null);
   }, [setSelectedZoomIdForActiveAspect]);
 
-  const handleSelectTrim = useCallback((id: string | null) => {
-    setSelectedTrimId(id);
+  const handleSelectSegment = useCallback((id: string | null) => {
+    setSelectedSegmentId(id);
     if (id) {
       setSelectedZoomIdForActiveAspect(null);
       setSelectedAnnotationId(null);
@@ -518,65 +639,89 @@ export default function VideoEditor() {
     setSelectedAnnotationId(id);
     if (id) {
       setSelectedZoomIdForActiveAspect(null);
-      setSelectedTrimId(null);
+      setSelectedSegmentId(null);
     }
   }, [setSelectedZoomIdForActiveAspect]);
 
   const handleZoomAdded = useCallback((span: Span) => {
+    const trims = normalizedTrimsRef.current;
+    const startMs = trims.length > 0 ? effectiveToSourceMs(span.start, trims) : span.start;
+    const endMs = trims.length > 0 ? effectiveToSourceMs(span.end, trims) : span.end;
     const id = `zoom-${nextZoomIdRef.current++}`;
     const newRegion: ZoomRegion = {
       id,
-      startMs: Math.round(span.start),
-      endMs: Math.round(span.end),
+      startMs: Math.round(startMs),
+      endMs: Math.round(endMs),
       depth: DEFAULT_ZOOM_DEPTH,
       focus: { cx: 0.5, cy: 0.5 },
     };
     setZoomRegionsForActiveAspect((prev) => [...prev, newRegion]);
     setSelectedZoomIdForActiveAspect(id);
-    setSelectedTrimId(null);
+    setSelectedSegmentId(null);
     setSelectedAnnotationId(null);
   }, [setSelectedZoomIdForActiveAspect, setZoomRegionsForActiveAspect]);
 
-  const handleTrimAdded = useCallback((span: Span) => {
-    const id = `trim-${nextTrimIdRef.current++}`;
-    const newRegion: TrimRegion = {
-      id,
-      startMs: Math.round(span.start),
-      endMs: Math.round(span.end),
-    };
-    setTrimRegions((prev) => [...prev, newRegion]);
-    setSelectedTrimId(id);
-    setSelectedZoomIdForActiveAspect(null);
-    setSelectedAnnotationId(null);
-  }, [setSelectedZoomIdForActiveAspect]);
+  const handleSplit = useCallback(() => {
+    if (segments.length === 0 || !Number.isFinite(duration) || duration <= 0) return;
+    // Convert effective playhead to source time
+    const sourceMs = segments.length > 0
+      ? effectiveToSourceMsWithSegments(effectiveCurrentTime * 1000, segments)
+      : currentTime * 1000;
+    // Find the non-deleted segment containing this source time
+    const segIdx = segments.findIndex(
+      (s) => !s.deleted && sourceMs > s.startMs && sourceMs < s.endMs,
+    );
+    if (segIdx === -1) return;
+    const seg = segments[segIdx];
+    const splitPoint = Math.round(sourceMs);
+    // Guard: don't split too close to edges
+    if (splitPoint - seg.startMs < 50 || seg.endMs - splitPoint < 50) return;
+    const newSegments = [...segments];
+    newSegments.splice(segIdx, 1,
+      { ...seg, endMs: splitPoint },
+      { id: `seg-${nextSegIdRef.current++}`, startMs: splitPoint, endMs: seg.endMs, deleted: false, speed: seg.speed },
+    );
+    setSegments(newSegments);
+  }, [segments, duration, effectiveCurrentTime, currentTime]);
+
+  const handleDeleteSegment = useCallback(() => {
+    if (!selectedSegmentId) return;
+    const nonDeletedCount = segments.filter((s) => !s.deleted).length;
+    if (nonDeletedCount <= 1) {
+      toast.error(t("timeline.cannotDeleteLastSegment"));
+      return;
+    }
+    setSegments((prev) => prev.map((s) =>
+      s.id === selectedSegmentId ? { ...s, deleted: true } : s,
+    ));
+    setSelectedSegmentId(null);
+  }, [selectedSegmentId, segments, t]);
+
+  const handleSegmentSpeedChange = useCallback((id: string, speed: number) => {
+    const clampedSpeed = Math.max(0.25, Math.min(40, speed));
+    setSegments((prev) => prev.map((s) =>
+      s.id === id ? { ...s, speed: clampedSpeed } : s,
+    ));
+  }, []);
 
   const handleZoomSpanChange = useCallback((id: string, span: Span) => {
+    const trims = normalizedTrimsRef.current;
+    const startMs = trims.length > 0 ? effectiveToSourceMs(span.start, trims) : span.start;
+    const endMs = trims.length > 0 ? effectiveToSourceMs(span.end, trims) : span.end;
     setZoomRegionsForActiveAspect((prev) =>
       prev.map((region) =>
         region.id === id
           ? {
               ...region,
-              startMs: Math.round(span.start),
-              endMs: Math.round(span.end),
+              startMs: Math.round(startMs),
+              endMs: Math.round(endMs),
             }
           : region,
       ),
     );
   }, [setZoomRegionsForActiveAspect]);
 
-  const handleTrimSpanChange = useCallback((id: string, span: Span) => {
-    setTrimRegions((prev) =>
-      prev.map((region) =>
-        region.id === id
-          ? {
-              ...region,
-              startMs: Math.round(span.start),
-              endMs: Math.round(span.end),
-            }
-          : region,
-      ),
-    );
-  }, []);
+  // handleTrimSpanChange removed — trims are now derived from deleted segments
 
   const handleZoomFocusChange = useCallback((id: string, focus: ZoomFocus) => {
     setZoomRegionsForActiveAspect((prev) =>
@@ -646,7 +791,7 @@ export default function VideoEditor() {
       setZoomRegionsForAspect(previous, aspectRatio, generatedZoomRegions),
     );
     setSelectedZoomIdForActiveAspect(generatedZoomRegions[0]?.id ?? null);
-    setSelectedTrimId(null);
+    setSelectedSegmentId(null);
     setSelectedAnnotationId(null);
 
     if (!options?.silent) {
@@ -661,20 +806,18 @@ export default function VideoEditor() {
     applyAutoZoomEdits();
   }, [applyAutoZoomEdits, aspectRatio]);
 
-  const handleTrimDelete = useCallback((id: string) => {
-    setTrimRegions((prev) => prev.filter((region) => region.id !== id));
-    if (selectedTrimId === id) {
-      setSelectedTrimId(null);
-    }
-  }, [selectedTrimId]);
+
 
   const handleAnnotationAdded = useCallback((span: Span) => {
+    const trims = normalizedTrimsRef.current;
+    const startMs = trims.length > 0 ? effectiveToSourceMs(span.start, trims) : span.start;
+    const endMs = trims.length > 0 ? effectiveToSourceMs(span.end, trims) : span.end;
     const id = `annotation-${nextAnnotationIdRef.current++}`;
     const zIndex = nextAnnotationZIndexRef.current++; // Assign z-index based on creation order
     const newRegion: AnnotationRegion = {
       id,
-      startMs: Math.round(span.start),
-      endMs: Math.round(span.end),
+      startMs: Math.round(startMs),
+      endMs: Math.round(endMs),
       type: 'text',
       content: 'Enter text...',
       position: { ...DEFAULT_ANNOTATION_POSITION },
@@ -685,17 +828,20 @@ export default function VideoEditor() {
     setAnnotationRegions((prev) => [...prev, newRegion]);
     setSelectedAnnotationId(id);
     setSelectedZoomIdForActiveAspect(null);
-    setSelectedTrimId(null);
+    setSelectedSegmentId(null);
   }, [setSelectedZoomIdForActiveAspect]);
 
   const handleAnnotationSpanChange = useCallback((id: string, span: Span) => {
+    const trims = normalizedTrimsRef.current;
+    const startMs = trims.length > 0 ? effectiveToSourceMs(span.start, trims) : span.start;
+    const endMs = trims.length > 0 ? effectiveToSourceMs(span.end, trims) : span.end;
     setAnnotationRegions((prev) =>
       prev.map((region) =>
         region.id === id
           ? {
               ...region,
-              startMs: Math.round(span.start),
-              endMs: Math.round(span.end),
+              startMs: Math.round(startMs),
+              endMs: Math.round(endMs),
             }
           : region,
       ),
@@ -832,10 +978,10 @@ export default function VideoEditor() {
   }, [aspectRatio, zoomRegionsByAspect]);
 
   useEffect(() => {
-    if (selectedTrimId && !trimRegions.some((region) => region.id === selectedTrimId)) {
-      setSelectedTrimId(null);
+    if (selectedSegmentId && !segments.some((s) => s.id === selectedSegmentId && !s.deleted)) {
+      setSelectedSegmentId(null);
     }
-  }, [selectedTrimId, trimRegions]);
+  }, [selectedSegmentId, segments]);
 
   useEffect(() => {
     if (selectedAnnotationId && !annotationRegions.some((region) => region.id === selectedAnnotationId)) {
@@ -874,6 +1020,39 @@ export default function VideoEditor() {
     applyAutoZoomEdits({ silent: true });
   }, [applyAutoZoomEdits, aspectRatio, cursorTrack, duration, loading, zoomRegions.length]);
 
+  const handleAnalyzeCursor = useCallback(async () => {
+    if (cursorAnalysisProgress !== null) return;
+    const video = videoPlaybackRef.current?.video;
+    if (!video || !videoPath || !Number.isFinite(duration) || duration <= 0) {
+      toast.error(t("editor.analyzeCursorNoVideo"));
+      return;
+    }
+
+    const w = video.videoWidth || 1920;
+    const h = video.videoHeight || 1080;
+    const analyzer = new VideoMouseAnalyzer();
+    cursorAnalyzerRef.current = analyzer;
+    setCursorAnalysisProgress(0);
+
+    try {
+      const track = await analyzer.analyze(videoPath, duration, w, h, (pct) => {
+        setCursorAnalysisProgress(pct);
+      });
+
+      if (track && track.samples.length > 0) {
+        setCursorTrack(track);
+        toast.success(t("editor.analyzeCursorDone", { count: track.samples.length }));
+      } else {
+        toast.warning(t("editor.analyzeCursorEmpty"));
+      }
+    } catch (err) {
+      toast.error(t("editor.analyzeCursorError", { message: String(err) }));
+    } finally {
+      setCursorAnalysisProgress(null);
+      cursorAnalyzerRef.current = null;
+    }
+  }, [cursorAnalysisProgress, videoPath, duration, t]);
+
   const stopAnalysisPolling = useCallback(() => {
     if (analysisPollingTimerRef.current) {
       clearInterval(analysisPollingTimerRef.current);
@@ -884,6 +1063,7 @@ export default function VideoEditor() {
   useEffect(() => {
     return () => {
       stopAnalysisPolling();
+      cursorAnalyzerRef.current?.cancel();
     };
   }, [stopAnalysisPolling]);
 
@@ -1065,7 +1245,7 @@ export default function VideoEditor() {
     );
     setAudioEditRegions(nextAudioEditRegions);
     setSelectedZoomIdForActiveAspect(null);
-    setSelectedTrimId(null);
+    setSelectedSegmentId(null);
     setSelectedAnnotationId(null);
 
     toast.success(t('editor.analysisApplyRoughCutSuccess', {
@@ -1141,6 +1321,7 @@ export default function VideoEditor() {
           previewHeight,
           cursorTrack,
           cursorStyle,
+          segments,
           onProgress: (progress: ExportProgress) => {
             setExportProgress(progress);
           },
@@ -1254,6 +1435,7 @@ export default function VideoEditor() {
               targetLufs: audioTargetLufs,
               limiterDb: audioLimiterDb,
             },
+            segments,
             onProgress: (progress: ExportProgress) => {
               setExportProgress(progress);
             },
@@ -1451,6 +1633,7 @@ export default function VideoEditor() {
                       audioLimiterDb={audioLimiterDb}
                       audioEditRegions={audioEditRegions}
                       onVideoDimensionsChange={setSourceVideoDimensions}
+                      segmentsRef={segmentsRef}
                     />
                     {showAspectCropOverlay ? (
                       <PreviewAspectCropOverlay
@@ -1468,10 +1651,11 @@ export default function VideoEditor() {
                   <div style={{ width: '100%', maxWidth: '700px' }}>
                     <PlaybackControls
                       isPlaying={isPlaying}
-                      currentTime={currentTime}
-                      duration={duration}
+                      currentTime={effectiveCurrentTime}
+                      duration={effectiveDuration}
                       onTogglePlayPause={togglePlayPause}
                       onSeek={handleSeek}
+                      playbackSpeed={currentSegmentSpeed}
                     />
                   </div>
                 </div>
@@ -1486,34 +1670,33 @@ export default function VideoEditor() {
             <Panel defaultSize={30} minSize={20}>
               <div className="h-full bg-[#09090b] rounded-2xl border border-white/5 shadow-lg overflow-hidden flex flex-col">
                 <TimelineEditor
-              videoDuration={duration}
-              currentTime={currentTime}
+              videoDuration={effectiveDuration}
+              currentTime={effectiveCurrentTime}
               onSeek={handleSeek}
-              zoomRegions={zoomRegions}
+              zoomRegions={effectiveZoomRegions}
               onZoomAdded={handleZoomAdded}
               onZoomSpanChange={handleZoomSpanChange}
               onZoomDelete={handleZoomDelete}
               selectedZoomId={selectedZoomId}
               onSelectZoom={handleSelectZoom}
-              trimRegions={trimRegions}
-              onTrimAdded={handleTrimAdded}
-              onTrimSpanChange={handleTrimSpanChange}
-              onTrimDelete={handleTrimDelete}
-              selectedTrimId={selectedTrimId}
-              onSelectTrim={handleSelectTrim}
-              annotationRegions={annotationRegions}
+              segments={segments}
+              onSplit={handleSplit}
+              onDeleteSegment={handleDeleteSegment}
+              selectedSegmentId={selectedSegmentId}
+              onSelectSegment={handleSelectSegment}
+              annotationRegions={effectiveAnnotationRegions}
               onAnnotationAdded={handleAnnotationAdded}
               onAnnotationSpanChange={handleAnnotationSpanChange}
               onAnnotationDelete={handleAnnotationDelete}
               selectedAnnotationId={selectedAnnotationId}
               onSelectAnnotation={handleSelectAnnotation}
-              subtitleCues={subtitleCues}
+              subtitleCues={effectiveSubtitleCues}
               aspectRatio={aspectRatio}
               onAspectRatioChange={setAspectRatio}
               hasAudioTrack={sourceHasAudio}
               audioEnabled={audioEnabled}
               audioGain={audioGain}
-              audioEditRegions={audioEditRegions}
+              audioEditRegions={effectiveAudioEditRegions}
             />
               </div>
             </Panel>
@@ -1528,8 +1711,9 @@ export default function VideoEditor() {
           onZoomDepthChange={(depth) => selectedZoomId && handleZoomDepthChange(depth)}
           selectedZoomId={selectedZoomId}
           onZoomDelete={handleZoomDelete}
-          selectedTrimId={selectedTrimId}
-          onTrimDelete={handleTrimDelete}
+          selectedSegment={segments.find((s) => s.id === selectedSegmentId) ?? null}
+          onDeleteSegment={handleDeleteSegment}
+          onSegmentSpeedChange={handleSegmentSpeedChange}
           shadowIntensity={shadowIntensity}
           onShadowChange={setShadowIntensity}
           showBlur={showBlur}
@@ -1587,6 +1771,8 @@ export default function VideoEditor() {
           hasCursorTrack={Boolean(cursorTrack?.samples?.length)}
           onAutoEdit={handleAutoEdit}
           autoEditDisabled={!cursorTrack?.samples?.length || !Number.isFinite(duration) || duration <= 0}
+          onAnalyzeCursor={handleAnalyzeCursor}
+          cursorAnalysisProgress={cursorAnalysisProgress}
           onGenerateSubtitles={handleGenerateSubtitles}
           onApplyRoughCut={handleApplyRoughCut}
           analysisRunning={analysisInProgress}
