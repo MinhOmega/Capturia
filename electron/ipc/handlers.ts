@@ -1170,6 +1170,22 @@ export function registerIpcHandlers(
   }
 
   ipcMain.handle('cursor-tracker-start', async (_, options?: CursorTrackerStartOptions) => {
+    // On Linux/Wayland, screen.getCursorScreenPoint() returns stale/frozen
+    // values because Wayland's security model prevents apps from querying
+    // the global cursor position. Skip cursor tracking entirely and let the
+    // video stream's embedded cursor be used instead.
+    if (process.platform === 'linux') {
+      const sessionType = process.env['XDG_SESSION_TYPE'] || ''
+      if (sessionType === 'wayland') {
+        console.warn('[cursor-tracker] Wayland detected — cursor position tracking is not supported. The cursor embedded in the video stream will be used instead.')
+        return {
+          success: false,
+          warningCode: 'WAYLAND_UNSUPPORTED',
+          warningMessage: 'Cursor position tracking is not available on Wayland. The cursor will be captured directly in the video stream.',
+        }
+      }
+    }
+
     stopCursorTracker()
     await startNativeCursorKindMonitor()
     const nativeMouseMonitorReady = await startNativeMouseButtonMonitor()
@@ -1179,6 +1195,13 @@ export function registerIpcHandlers(
     const sourceRef = normalizeSourceRef(options?.source) ?? normalizeSourceRef(selectedSource)
     const captureSize = normalizeCaptureSize(options?.captureSize)
     const windowId = parseWindowIdFromSourceId(sourceRef?.id)
+    console.log('[cursor-tracker] starting:', {
+      sourceId: sourceRef?.id,
+      windowId,
+      captureSize,
+      initialPoint,
+      platform: process.platform,
+    })
     const displayObjects = screen.getAllDisplays()
     const displaySnapshot = displayObjects.map((display) => ({
       id: display.id,
@@ -1224,6 +1247,14 @@ export function registerIpcHandlers(
         'Native window bounds are unavailable for cursor tracking; using fallback bounds mapping for this recording.',
       )
     }
+
+    console.log('[cursor-tracker] resolved bounds:', {
+      captureBounds,
+      captureMode,
+      captureDisplayId,
+      hasNativeWindowBounds,
+      usingWindowBoundsFallback,
+    })
 
     const tracker: CursorTrackerRuntime = {
       timer: globalThis.setInterval(() => {
@@ -1396,6 +1427,13 @@ export function registerIpcHandlers(
 
   ipcMain.handle('cursor-tracker-stop', () => {
     const track = stopCursorTracker()
+    console.log('[cursor-tracker] stopped:', {
+      sampleCount: track?.samples?.length ?? 0,
+      eventCount: track?.events?.length ?? 0,
+      firstSample: track?.samples?.[0],
+      lastSample: track?.samples?.[track.samples.length - 1],
+      bounds: track?.space?.bounds,
+    })
     return { success: true, track }
   })
 

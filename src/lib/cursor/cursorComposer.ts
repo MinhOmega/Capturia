@@ -519,7 +519,23 @@ export function resolveCursorState(params: CursorResolveParams): CursorResolvedS
 
   const sampleTimeMs = params.timeMs + style.timeOffsetMs;
   const preparedTrack = getPreparedCursorTrack(params.track);
-  const sortedSamples = preparedTrack?.sortedSamples ?? [];
+
+  // No cursor track data available — don't render a synthetic cursor.
+  // On Wayland the real cursor is already embedded in the video stream.
+  if (!preparedTrack) {
+    return {
+      visible: false,
+      x: 0.5,
+      y: 0.5,
+      scale: style.size,
+      highlightAlpha: 0,
+      rippleScale: 0,
+      rippleAlpha: 0,
+      cursorKind: 'arrow',
+    };
+  }
+
+  const sortedSamples = preparedTrack.sortedSamples;
 
   const fromTrackRaw = sortedSamples.length
     ? smoothFromTrack(sortedSamples, sampleTimeMs, style.smoothingMs)

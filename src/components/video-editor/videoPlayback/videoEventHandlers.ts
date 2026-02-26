@@ -27,7 +27,9 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
   } = params;
 
   const UI_TIME_UPDATE_INTERVAL_MS = 1000 / 30;
+  const MAX_SPURIOUS_PAUSE_RETRIES = 3;
   let lastUiUpdateAt = 0;
+  let spuriousPauseRetries = 0;
 
   const emitTime = (timeValue: number, force = false) => {
     currentTimeRef.current = timeValue * 1000;
@@ -74,15 +76,19 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
 
   const handlePlay = () => {
     if (isSeekingRef.current) {
+      console.warn('[videoEvents] handlePlay: pausing because isSeeking=true');
       video.pause();
       return;
     }
 
     if (!allowPlaybackRef.current) {
+      console.warn('[videoEvents] handlePlay: pausing because allowPlayback=false');
       video.pause();
       return;
     }
 
+    console.log('[videoEvents] handlePlay: allowing playback, isPlaying=true');
+    spuriousPauseRetries = 0;
     isPlayingRef.current = true;
     onPlayStateChange(true);
     if (timeUpdateAnimationRef.current) {
@@ -92,6 +98,26 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
   };
 
     const handlePause = () => {
+    // On some platforms (notably Chromium on Linux/Wayland) the browser may
+    // emit a native pause event right after play() succeeds — e.g. because
+    // of a WebGL video texture interaction.  When allowPlayback is still
+    // true we treat this as a spurious pause and retry playback once.
+    if (allowPlaybackRef.current && !isSeekingRef.current && !video.ended && spuriousPauseRetries < MAX_SPURIOUS_PAUSE_RETRIES) {
+      spuriousPauseRetries += 1;
+      console.log('[videoEvents] handlePause: spurious native pause detected, retry', spuriousPauseRetries);
+      video.play().catch(() => {
+        // Retry failed — accept the pause
+        isPlayingRef.current = false;
+        onPlayStateChange(false);
+        if (timeUpdateAnimationRef.current) {
+          cancelAnimationFrame(timeUpdateAnimationRef.current);
+          timeUpdateAnimationRef.current = null;
+        }
+        emitTime(video.currentTime, true);
+      });
+      return;
+    }
+
     isPlayingRef.current = false;
     onPlayStateChange(false);
     if (timeUpdateAnimationRef.current) {

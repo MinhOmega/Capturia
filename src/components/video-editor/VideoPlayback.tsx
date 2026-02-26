@@ -27,6 +27,16 @@ import {
   type CursorTrack,
 } from "@/lib/cursor";
 
+// WeakMap to persist AudioContext+MediaElementSource across React StrictMode
+// remounts. createMediaElementSource permanently captures the video element's
+// audio output — closing the context after that silently kills audio with no
+// recovery path.  By keeping the context alive on the element we can reconnect
+// gain/limiter nodes on the second mount without touching the source capture.
+const videoAudioContextCache = new WeakMap<HTMLVideoElement, {
+  context: AudioContext;
+  source: MediaElementAudioSourceNode;
+}>();
+
 interface VideoPlaybackProps {
   videoPath: string;
   onDurationChange: (duration: number) => void;
@@ -167,6 +177,8 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
     return clampFocusToStageUtil(focus, depth, stageSizeRef.current);
   }, []);
 
+  const audioGraphFailedRef = useRef(false);
+
   const ensurePreviewAudioGraph = useCallback(() => {
     const video = videoRef.current;
     if (!video) return false;
@@ -179,15 +191,33 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
       return true;
     }
 
+    if (audioGraphFailedRef.current) {
+      return false;
+    }
+
     const AudioContextConstructor = window.AudioContext
       || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AudioContextConstructor) {
+      audioGraphFailedRef.current = true;
       return false;
     }
 
     try {
-      const context = new AudioContextConstructor();
-      const sourceNode = context.createMediaElementSource(video);
+      // Reuse existing AudioContext+source if this video element was already
+      // captured (e.g. after React StrictMode remount).
+      let cached = videoAudioContextCache.get(video);
+      if (!cached || cached.context.state === 'closed') {
+        const context = new AudioContextConstructor();
+        const source = context.createMediaElementSource(video);
+        cached = { context, source };
+        videoAudioContextCache.set(video, cached);
+      }
+
+      const { context, source } = cached;
+
+      // Disconnect previous connections before wiring new graph
+      try { source.disconnect(); } catch { /* no prior connections */ }
+
       const gainNode = context.createGain();
       const limiterNode = context.createDynamicsCompressor();
       limiterNode.knee.value = 0;
@@ -195,18 +225,19 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
       limiterNode.attack.value = 0.003;
       limiterNode.release.value = 0.1;
 
-      sourceNode.connect(gainNode);
+      source.connect(gainNode);
       gainNode.connect(limiterNode);
       limiterNode.connect(context.destination);
 
       previewAudioContextRef.current = context;
-      previewAudioSourceRef.current = sourceNode;
+      previewAudioSourceRef.current = source;
       previewAudioGainRef.current = gainNode;
       previewAudioLimiterRef.current = limiterNode;
       previewAudioGraphEnabledRef.current = true;
       return true;
     } catch (error) {
       console.warn("Failed to initialize preview audio processing graph; falling back to HTML media volume.", error);
+      audioGraphFailedRef.current = true;
       return false;
     }
   }, []);
@@ -313,11 +344,24 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
     containerRef,
     play: async () => {
       const vid = videoRef.current;
-      if (!vid) return;
+      if (!vid) {
+        console.error('[VideoPlayback] play() called but video ref is null');
+        return;
+      }
+      const ctx = previewAudioContextRef.current;
+      console.log('[VideoPlayback] play() called, readyState:', vid.readyState, 'networkState:', vid.networkState, 'src:', vid.currentSrc?.slice(-40), 'duration:', vid.duration, 'paused:', vid.paused, 'muted:', vid.muted, 'audioCtx:', ctx?.state);
       try {
+        // Resume AudioContext before playing — a suspended context with
+        // createMediaElementSource active can cause the browser to
+        // immediately pause the video on some platforms.
+        if (ctx && ctx.state === 'suspended') {
+          await ctx.resume().catch(() => {});
+        }
         allowPlaybackRef.current = true;
         await vid.play();
+        console.log('[VideoPlayback] play() succeeded');
       } catch (error) {
+        console.error('[VideoPlayback] play() failed:', error);
         allowPlaybackRef.current = false;
         throw error;
       }
@@ -436,20 +480,17 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
 
   useEffect(() => {
     return () => {
-      previewAudioSourceRef.current?.disconnect();
+      // Disconnect processing nodes but do NOT close the AudioContext.
+      // The context + source are cached on the video element via
+      // videoAudioContextCache so they survive React StrictMode remounts.
+      // Closing the context would permanently break the video's audio routing.
       previewAudioGainRef.current?.disconnect();
       previewAudioLimiterRef.current?.disconnect();
       previewAudioSourceRef.current = null;
       previewAudioGainRef.current = null;
       previewAudioLimiterRef.current = null;
+      previewAudioContextRef.current = null;
       previewAudioGraphEnabledRef.current = false;
-
-      if (previewAudioContextRef.current) {
-        void previewAudioContextRef.current.close().catch((error) => {
-          console.warn("Failed to close preview AudioContext during cleanup.", error);
-        });
-        previewAudioContextRef.current = null;
-      }
     };
   }, []);
 
@@ -523,6 +564,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
 
     const wasPlaying = !video.paused;
     if (wasPlaying) {
+      console.warn('[VideoPlayback] layout-reset effect pausing video, wasPlaying:', wasPlaying);
       video.pause();
     }
 
@@ -759,6 +801,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
     video.currentTime = 0;
     allowPlaybackRef.current = false;
     lockedVideoDimensionsRef.current = null;
+    audioGraphFailedRef.current = false;
     setVideoReady(false);
     if (videoReadyRafRef.current) {
       cancelAnimationFrame(videoReadyRafRef.current);
@@ -811,6 +854,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
     blurFilterRef.current = blurFilter;
     
     layoutVideoContent();
+    console.warn('[VideoPlayback] pixi-texture setup pausing video');
     video.pause();
 
     const { handlePlay, handlePause, handleSeeked, handleSeeking } = createVideoEventHandlers({
@@ -976,6 +1020,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
 
   const handleLoadedMetadata = (e: React.SyntheticEvent<HTMLVideoElement, Event>) => {
     const video = e.currentTarget;
+    console.log('[VideoPlayback] loadedmetadata:', 'duration:', video.duration, 'dimensions:', video.videoWidth, 'x', video.videoHeight, 'readyState:', video.readyState, 'src:', video.currentSrc?.slice(-50));
     onDurationChange(video.duration);
     if (video.videoWidth > 0 && video.videoHeight > 0) {
       onVideoDimensionsChange?.({

@@ -408,24 +408,24 @@ export default function VideoEditor() {
   // Helper to convert file path to proper file:// URL
   const toFileUrl = (filePath: string): string => {
     if (!filePath) return filePath;
-    if (filePath.startsWith("file://")) return filePath;
+    if (filePath.startsWith("local-media://") || filePath.startsWith("file://")) return filePath;
 
     // Normalize path separators to forward slashes
     const normalized = filePath.replace(/\\/g, '/');
     const encoded = encodeURI(normalized);
-    
-    // Check if it's a Windows absolute path (e.g., C:/Users/...)
+
+    // Use local-media:// custom protocol to serve local files. In dev mode
+    // the renderer runs on http://localhost which blocks file:// as cross-origin.
+    // A dummy "host" is required because standard schemes treat the first path
+    // component as the hostname (e.g. local-media:///home → host="home").
     if (encoded.match(/^[a-zA-Z]:/)) {
-      const fileUrl = `file:///${encoded}`;
-      return fileUrl;
+      return `local-media://host/${encoded}`;
     }
 
     if (encoded.startsWith('/')) {
-      // Unix-style absolute path
-      return `file://${encoded}`;
+      return `local-media://host${encoded}`;
     }
 
-    // Relative paths or other URLs are returned as-is after encoding.
     return encoded;
   };
 
@@ -1584,6 +1584,7 @@ export default function VideoEditor() {
           onAudioLimiterDbChange={setAudioLimiterDb}
           cursorStyle={cursorStyle}
           onCursorStyleChange={setCursorStyle}
+          hasCursorTrack={Boolean(cursorTrack?.samples?.length)}
           onAutoEdit={handleAutoEdit}
           autoEditDisabled={!cursorTrack?.samples?.length || !Number.isFinite(duration) || duration <= 0}
           onGenerateSubtitles={handleGenerateSubtitles}

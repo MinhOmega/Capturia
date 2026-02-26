@@ -110,6 +110,7 @@ interface SettingsPanelProps {
   onAudioLimiterDbChange?: (value: number) => void;
   cursorStyle?: CursorStyleConfig;
   onCursorStyleChange?: (style: CursorStyleConfig) => void;
+  hasCursorTrack?: boolean;
   onAutoEdit?: () => void;
   autoEditDisabled?: boolean;
   onGenerateSubtitles?: () => void;
@@ -199,6 +200,7 @@ export function SettingsPanel({
   onAudioLimiterDbChange,
   cursorStyle = DEFAULT_CURSOR_STYLE,
   onCursorStyleChange,
+  hasCursorTrack = true,
   onAutoEdit,
   autoEditDisabled = false,
   onGenerateSubtitles,
@@ -515,6 +517,11 @@ export function SettingsPanel({
                     className="data-[state=checked]:bg-[#34B27B] scale-90"
                   />
                 </div>
+                {cursorStyle.enabled && !hasCursorTrack && (
+                  <div className="rounded-md bg-amber-500/10 border border-amber-500/20 p-2 mb-2">
+                    <div className="text-[10px] text-amber-400/90">{t("settings.cursorTrackUnavailable")}</div>
+                  </div>
+                )}
                 <div className="rounded-md bg-black/20 border border-white/5 p-2 mb-2 space-y-2">
                   <div className="flex items-center justify-between">
                     <div className="text-[10px] text-slate-300">{t("settings.cursorMovementStyle")}</div>

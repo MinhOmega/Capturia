@@ -705,8 +705,9 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
     cursorMode: CursorMode,
   ): Promise<MediaStream> => {
     const captureWithLegacyDesktopConstraints = async (): Promise<MediaStream> => {
-      const getLegacyUserMedia = navigator.mediaDevices.getUserMedia as unknown as LegacyDesktopGetUserMedia;
-      return await getLegacyUserMedia({
+      console.log("[capture] using legacy getUserMedia with chromeMediaSource=desktop, cursor:", cursorMode, "sourceId:", selectedSource.id);
+      const getLegacyUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices) as unknown as LegacyDesktopGetUserMedia;
+      const stream = await getLegacyUserMedia({
         audio: false,
         video: {
           mandatory: {
@@ -718,6 +719,9 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
           cursor: cursorMode,
         },
       });
+      const trackSettings = stream.getVideoTracks()[0]?.getSettings();
+      console.log("[capture] legacy stream obtained, track settings:", trackSettings);
+      return stream;
     };
 
     // Hide-native-cursor path: prefer legacy constraints first because this path is
@@ -733,15 +737,18 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
     const getDisplayMedia = navigator.mediaDevices.getDisplayMedia?.bind(navigator.mediaDevices);
     if (typeof getDisplayMedia === "function") {
       try {
-        return await getDisplayMedia({
+        console.log("[capture] trying getDisplayMedia with cursor:", cursorMode);
+        const stream = await getDisplayMedia({
           audio: false,
           video: {
             frameRate: { ideal: TARGET_CAPTURE_FPS, max: MAX_CAPTURE_FPS },
             cursor: cursorMode,
           } as MediaTrackConstraints,
         });
+        console.log("[capture] getDisplayMedia succeeded");
+        return stream;
       } catch (error) {
-        console.warn("getDisplayMedia capture failed, falling back to legacy desktop capture constraints.", error);
+        console.warn("[capture] getDisplayMedia failed, falling back to legacy desktop capture constraints.", error);
       }
     }
 

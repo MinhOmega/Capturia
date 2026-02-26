@@ -1,7 +1,8 @@
-import { app, BrowserWindow, Tray, Menu, nativeImage, session, desktopCapturer, globalShortcut, ipcMain, dialog, shell } from 'electron'
+import { app, BrowserWindow, Tray, Menu, nativeImage, session, desktopCapturer, globalShortcut, ipcMain, dialog, shell, protocol } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import fs from 'node:fs/promises'
+import { readFileSync, statSync, openSync, readSync, closeSync } from 'node:fs'
 import {
   createHudOverlayWindow,
   createEditorWindow,
@@ -61,6 +62,23 @@ let shutdownInProgress = false
 let shutdownFinished = false
 let ipcRuntime: { shutdown: () => Promise<void> } | null = null
 let runtimeErrorDialogOpen = false
+
+// Register custom protocol for serving local media files to the renderer.
+// In dev mode the renderer runs on http://localhost, which makes file:// URLs
+// cross-origin. Electron 39 blocks cross-origin media loads even with
+// webSecurity: false, so we serve files through a custom scheme instead.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'local-media',
+    privileges: {
+      stream: true,
+      bypassCSP: true,
+      supportFetchAPI: true,
+      standard: true,
+      secure: true,
+    },
+  },
+])
 
 // Tray Icons
 const defaultTrayIcon = getTrayIcon('openscreen.png');
@@ -392,10 +410,73 @@ app.whenReady().then(async () => {
     })
   })
 
-  session.defaultSession.setDisplayMediaRequestHandler(async (_request, callback) => {
+  // Handle local-media:// requests by reading local files into Buffer.
+  // Uses Buffer (not Node.js streams) because Electron's Response constructor
+  // reliably accepts Buffer. Supports Range requests for video seeking.
+  protocol.handle('local-media', async (request) => {
     try {
+      const url = new URL(request.url)
+      const filePath = decodeURIComponent(url.pathname)
+      const stat = statSync(filePath)
+      const ext = path.extname(filePath).toLowerCase()
+      const mimeMap: Record<string, string> = {
+        '.webm': 'video/webm',
+        '.mp4': 'video/mp4',
+        '.json': 'application/json',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+      }
+      const contentType = mimeMap[ext] || 'application/octet-stream'
+
+      const rangeHeader = request.headers.get('range')
+      if (rangeHeader) {
+        const match = rangeHeader.match(/bytes=(\d+)-(\d*)/)
+        if (match) {
+          const start = parseInt(match[1], 10)
+          const end = match[2] ? parseInt(match[2], 10) : stat.size - 1
+          const chunkSize = end - start + 1
+          const buffer = Buffer.alloc(chunkSize)
+          const fd = openSync(filePath, 'r')
+          readSync(fd, buffer, 0, chunkSize, start)
+          closeSync(fd)
+          console.log('[local-media] range:', start, '-', end, '/', stat.size, filePath)
+          return new Response(buffer, {
+            status: 206,
+            headers: {
+              'Content-Type': contentType,
+              'Content-Range': `bytes ${start}-${end}/${stat.size}`,
+              'Content-Length': String(chunkSize),
+              'Accept-Ranges': 'bytes',
+            },
+          })
+        }
+      }
+
+      console.log('[local-media] full:', stat.size, 'bytes', contentType, filePath)
+      const buffer = readFileSync(filePath)
+      return new Response(buffer, {
+        status: 200,
+        headers: {
+          'Content-Type': contentType,
+          'Content-Length': String(stat.size),
+          'Accept-Ranges': 'bytes',
+        },
+      })
+    } catch (error) {
+      console.error('[local-media] failed to serve file:', request.url, error)
+      return new Response('Not Found', { status: 404 })
+    }
+  })
+
+  session.defaultSession.setDisplayMediaRequestHandler(async (_request, callback) => {
+    let callbackInvoked = false
+    try {
+      console.log('[display-media] handler invoked, selectedDesktopSourceId:', selectedDesktopSourceId)
       if (!selectedDesktopSourceId) {
-        callback({ video: undefined, audio: undefined })
+        console.warn('[display-media] no selectedDesktopSourceId, rejecting request')
+        callbackInvoked = true
+        callback({})
         return
       }
 
@@ -404,19 +485,36 @@ app.whenReady().then(async () => {
         thumbnailSize: { width: 1, height: 1 },
         fetchWindowIcons: false,
       })
-      const selectedSource = sources.find((source) => source.id === selectedDesktopSourceId)
+      console.log('[display-media] desktopCapturer returned', sources.length, 'sources:', sources.map(s => s.id))
+      let selectedSource = sources.find((source) => source.id === selectedDesktopSourceId)
+      // On Linux, window/screen IDs can change between source selection and recording.
+      // Fall back to matching by type prefix (e.g. "window:" or "screen:").
+      if (!selectedSource && selectedDesktopSourceId) {
+        const typePrefix = selectedDesktopSourceId.split(':')[0] + ':'
+        selectedSource = sources.find((source) => source.id.startsWith(typePrefix))
+        if (selectedSource) {
+          console.log('[display-media] exact ID not found, matched by type prefix:', selectedSource.id)
+        }
+      }
       if (!selectedSource) {
-        callback({ video: undefined, audio: undefined })
+        console.warn('[display-media] no matching source found in sources, rejecting')
+        callbackInvoked = true
+        callback({})
         return
       }
 
-      callback({
-        video: selectedSource,
-        audio: undefined,
-      })
+      console.log('[display-media] providing source:', selectedSource.id, selectedSource.name)
+      callbackInvoked = true
+      callback({ video: selectedSource })
     } catch (error) {
-      console.error('display-media handler failed:', error)
-      callback({ video: undefined, audio: undefined })
+      console.error('[display-media] handler failed:', error)
+      if (!callbackInvoked) {
+        try {
+          callback({})
+        } catch {
+          // callback was already consumed internally
+        }
+      }
     }
   })
 

@@ -113,11 +113,21 @@ export function createEditorWindow(): BrowserWindow {
     win?.webContents.send('main-process-message', (new Date).toLocaleString())
   })
 
+  // Forward renderer console messages to terminal for debugging
+  if (VITE_DEV_SERVER_URL) {
+    win.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+      const levelNames = ['LOG', 'WARN', 'ERR']
+      const tag = levelNames[level] ?? 'LOG'
+      const shortSource = sourceId ? sourceId.replace(/.*\//, '') : ''
+      console.log(`[editor:${tag}] ${message} (${shortSource}:${line})`)
+    })
+  }
+
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL + '?windowType=editor')
   } else {
-    win.loadFile(path.join(RENDERER_DIST, 'index.html'), { 
-      query: { windowType: 'editor' } 
+    win.loadFile(path.join(RENDERER_DIST, 'index.html'), {
+      query: { windowType: 'editor' }
     })
   }
 

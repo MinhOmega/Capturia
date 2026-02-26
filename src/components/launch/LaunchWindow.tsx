@@ -25,7 +25,7 @@ const CAMERA_SHAPE_CYCLE: CameraOverlayShape[] = ["rounded", "square", "circle"]
 const CAPTURE_PROFILE_CYCLE: CaptureProfile[] = ["balanced", "quality", "ultra"];
 const CAPTURE_FRAME_RATE_OPTIONS: CaptureFrameRate[] = [24, 30, 60, 120];
 const CAPTURE_RESOLUTION_OPTIONS: CaptureResolutionPreset[] = ["auto", "1080p", "1440p", "2160p"];
-const RECORD_COUNTDOWN_CYCLE = [3, 5, 8] as const;
+const RECORD_COUNTDOWN_CYCLE = [0, 3, 5, 8] as const;
 const STOP_SHORTCUT_STORAGE_KEY = "openscreen.stopRecordingShortcut";
 const DEFAULT_STOP_RECORDING_SHORTCUT = "CommandOrControl+Shift+2";
 const AUTO_HIDE_HUD_ON_RECORD_STORAGE_KEY = "openscreen.autoHideHudOnRecord";
@@ -214,13 +214,13 @@ export function LaunchWindow() {
   const [recordCountdownSeconds, setRecordCountdownSeconds] = useState<RecordCountdownSeconds>(() => {
     try {
       const value = Number(window.localStorage.getItem("openscreen.recordCountdownSeconds"));
-      if (value === 3 || value === 5 || value === 8) {
+      if (value === 0 || value === 3 || value === 5 || value === 8) {
         return value;
       }
     } catch {
       // no-op
     }
-    return 3;
+    return 0;
   });
   const { recording, recordingState, toggleRecording } = useScreenRecorder({
     includeCamera,
@@ -585,6 +585,11 @@ export function LaunchWindow() {
 
   const beginRecordCountdown = useCallback(() => {
     if (!hasSelectedSource || recording || isTransitioning || countdownRemaining !== null) {
+      return;
+    }
+
+    if (recordCountdownSeconds === 0) {
+      toggleRecording();
       return;
     }
 
@@ -958,10 +963,10 @@ export function LaunchWindow() {
           className={`gap-1 shrink-0 min-w-[80px] text-white bg-transparent hover:bg-transparent px-1 text-center text-xs ${styles.electronNoDrag}`}
           onClick={cycleRecordCountdown}
           disabled={controlsLocked}
-          title={t("launch.countdownLabel", { seconds: recordCountdownSeconds })}
+          title={recordCountdownSeconds === 0 ? t("launch.countdownNone") : t("launch.countdownLabel", { seconds: recordCountdownSeconds })}
         >
           <Timer size={13} className="text-white/80" />
-          <span className="text-white/90">{recordCountdownSeconds}s</span>
+          <span className="text-white/90">{recordCountdownSeconds === 0 ? t("launch.countdownNone") : `${recordCountdownSeconds}s`}</span>
         </Button>
 
         <Button
