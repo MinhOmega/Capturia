@@ -193,6 +193,13 @@ export function LaunchWindow() {
   });
   const [autoHideHudOnRecord, setAutoHideHudOnRecord] = useState(() => {
     try {
+      // Migration: the old default was true on Linux which persisted "1".
+      // Clear that stale value so users get the new default (false).
+      const migrationKey = "openscreen.autoHideHudOnRecord.v2";
+      if (!window.localStorage.getItem(migrationKey)) {
+        window.localStorage.removeItem(AUTO_HIDE_HUD_ON_RECORD_STORAGE_KEY);
+        window.localStorage.setItem(migrationKey, "1");
+      }
       const stored = window.localStorage.getItem(AUTO_HIDE_HUD_ON_RECORD_STORAGE_KEY);
       if (stored !== null) return stored === "1";
     } catch {
