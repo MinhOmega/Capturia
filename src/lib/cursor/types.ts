@@ -98,7 +98,7 @@ export interface ProjectedCursorPoint {
 
 export const DEFAULT_CURSOR_STYLE: CursorStyleConfig = {
   enabled: true,
-  size: 1.8,
+  size: 2.2,
   highlight: 0.75,
   ripple: 0.7,
   shadow: 0.45,

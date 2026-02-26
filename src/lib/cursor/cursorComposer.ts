@@ -15,7 +15,7 @@ import {
 
 const CLICK_PULSE_MS = 420;
 const CURSOR_GLYPH_HOTSPOT: Record<CursorKind, { x: number; y: number }> = {
-  arrow: { x: -4, y: -8 },
+  arrow: { x: 0, y: 0 },
   ibeam: { x: 0, y: 0 },
 };
 const SUPPORTED_MOVEMENT_STYLES: CursorMovementStyle[] = ['rapid', 'quick', 'default', 'slow', 'custom'];
@@ -599,21 +599,73 @@ export function projectCursorToViewport(args: {
   return { x, y, inViewport };
 }
 
-function drawArrowCursorGlyph(ctx: CanvasRenderingContext2D): void {
-  ctx.beginPath();
-  ctx.moveTo(-4, -8);
-  ctx.lineTo(13, 2);
-  ctx.lineTo(6, 4);
-  ctx.lineTo(9, 13);
-  ctx.lineTo(5, 14);
-  ctx.lineTo(2, 5);
-  ctx.lineTo(-2, 10);
-  ctx.closePath();
+// macOS-style cursor using Path2D (synchronous, no async image loading).
+// SVG viewBox: 0 0 1024 1024. Cursor tip at ~(384, 213).
+// We pre-scale the paths so (0,0) = cursor tip and the glyph is ~28 units tall.
+const ARROW_SVG_SCALE = 28 / 657; // 657 SVG units from y≈213 to y≈870
+const ARROW_SVG_OX = -341; // left edge of arrow in SVG space
+const ARROW_SVG_OY = -213; // top edge (cursor tip) in SVG space
 
-  ctx.fillStyle = '#f7f9ff';
+// Lazy-init cached Path2D objects
+let arrowBodyPath: Path2D | null = null;
+let arrowOutlinePath: Path2D | null = null;
+
+function getArrowBodyPath(): Path2D | null {
+  if (typeof Path2D === 'undefined') return null;
+  if (arrowBodyPath) return arrowBodyPath;
+  const p = new Path2D(
+    'M593.067 846.933c-2.134 0-4.267 0-8.534-2.133s-8.533-6.4-12.8-10.667L492.8 650.667l-96 89.6q-3.2 6.4-12.8 6.4c-2.133 0-6.4 0-8.533-2.134-6.4-2.133-12.8-10.666-12.8-19.2V256c0-8.533 4.266-17.067 12.8-19.2 2.133-2.133 6.4-2.133 8.533-2.133 4.267 0 10.667 2.133 14.933 6.4l341.334 320c6.4 6.4 8.533 14.933 6.4 23.466-2.134 8.534-10.667 12.8-19.2 14.934l-134.4 12.8 83.2 181.333c2.133 4.267 2.133 10.667 0 17.067-2.134 4.266-6.4 10.666-10.667 12.8L603.733 851.2c-4.266-4.267-8.533-4.267-10.666-4.267Z',
+  );
+  arrowBodyPath = p;
+  return p;
+}
+
+function getArrowOutlinePath(): Path2D | null {
+  if (typeof Path2D === 'undefined') return null;
+  if (arrowOutlinePath) return arrowOutlinePath;
+  const p = new Path2D(
+    'm384 256 341.333 320-164.266 14.933 96 209.067-61.867 27.733-91.733-211.2L384 725.333Zm0-42.667c-6.4 0-10.667 2.134-17.067 4.267-14.933 6.4-25.6 21.333-25.6 38.4v469.333c0 17.067 10.667 32 25.6 38.4C373.333 768 379.733 768 384 768c10.667 0 21.333-4.267 29.867-10.667l72.533-68.266L552.533 844.8A42.26 42.26 0 0 0 576 868.267c4.267 2.133 10.667 2.133 14.933 2.133 6.4 0 10.667-2.133 17.067-4.267l61.867-27.733a42.26 42.26 0 0 0 23.466-23.467c4.267-10.666 4.267-23.466 0-32l-70.4-153.6 104.534-8.533c17.066-2.133 32-12.8 36.266-27.733 6.4-14.934 2.134-34.134-10.666-44.8l-341.334-320c-6.4-10.667-17.066-14.934-27.733-14.934Z',
+  );
+  arrowOutlinePath = p;
+  return p;
+}
+
+function drawArrowCursorGlyph(ctx: CanvasRenderingContext2D): void {
+  const body = getArrowBodyPath();
+  const outline = getArrowOutlinePath();
+
+  if (body && outline) {
+    ctx.save();
+    // Scale from 1024-unit SVG space to ~28px and translate so tip is at (0,0)
+    ctx.scale(ARROW_SVG_SCALE, ARROW_SVG_SCALE);
+    ctx.translate(ARROW_SVG_OX, ARROW_SVG_OY);
+
+    // Fill body (light grey)
+    ctx.fillStyle = '#e0e0e0';
+    ctx.fill(body);
+
+    // Outline (dark, uses evenodd for inner cutout)
+    ctx.fillStyle = '#212121';
+    ctx.fill(outline, 'evenodd');
+
+    ctx.restore();
+    return;
+  }
+
+  // Fallback for environments without Path2D (e.g., test runner)
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(0, 22);
+  ctx.lineTo(6, 17);
+  ctx.lineTo(10, 26);
+  ctx.lineTo(14, 24);
+  ctx.lineTo(10, 15);
+  ctx.lineTo(16, 15);
+  ctx.closePath();
+  ctx.fillStyle = '#e0e0e0';
   ctx.fill();
-  ctx.strokeStyle = '#0f1218';
-  ctx.lineWidth = 1.4;
+  ctx.strokeStyle = '#212121';
+  ctx.lineWidth = 1.6;
   ctx.stroke();
 }
 

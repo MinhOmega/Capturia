@@ -883,12 +883,9 @@ export class VideoExporter {
       const frameDelta = frameIndex + 1 - this.lastRenderingFrameCount;
       const msDelta = now - this.lastThroughputLogAtMs;
       const renderFps = msDelta > 0 ? (frameDelta * 1000) / msDelta : 0;
-      console.log('[VideoExporter] Throughput', {
-        currentFrame: frameIndex + 1,
-        totalFrames,
-        renderFps: Number(renderFps.toFixed(2)),
-        elapsedMs: now - this.exportStartedAtMs,
-      });
+      console.log(
+        `[VideoExporter] Throughput: frame ${frameIndex + 1}/${totalFrames} | ${Number(renderFps.toFixed(1))} fps | elapsed ${Math.round((now - this.exportStartedAtMs) / 1000)}s`,
+      );
       this.lastRenderingFrameCount = frameIndex + 1;
       this.lastThroughputLogAtMs = now;
     }

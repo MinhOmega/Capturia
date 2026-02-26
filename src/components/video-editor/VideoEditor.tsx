@@ -446,42 +446,72 @@ export default function VideoEditor() {
     [currentTime, segments, normalizedTrims],
   );
 
-  // Map zoom / annotation / subtitle / audio-edit regions to effective space for the timeline
+  // Map zoom / annotation / subtitle / audio-edit regions to effective space for the timeline.
+  // When segments exist (with per-segment speed), use segment-aware conversion; otherwise fall
+  // back to the simpler trim-only conversion.
   const effectiveZoomRegions = useMemo(() => {
+    if (segments.length > 0) {
+      return zoomRegions.map((r) => ({
+        ...r,
+        startMs: sourceToEffectiveMsWithSegments(r.startMs, segments),
+        endMs: sourceToEffectiveMsWithSegments(r.endMs, segments),
+      }));
+    }
     if (normalizedTrims.length === 0) return zoomRegions;
     return zoomRegions.map((r) => ({
       ...r,
       startMs: sourceToEffectiveMs(r.startMs, normalizedTrims),
       endMs: sourceToEffectiveMs(r.endMs, normalizedTrims),
     }));
-  }, [zoomRegions, normalizedTrims]);
+  }, [zoomRegions, segments, normalizedTrims]);
 
   const effectiveAnnotationRegions = useMemo(() => {
+    if (segments.length > 0) {
+      return annotationRegions.map((r) => ({
+        ...r,
+        startMs: sourceToEffectiveMsWithSegments(r.startMs, segments),
+        endMs: sourceToEffectiveMsWithSegments(r.endMs, segments),
+      }));
+    }
     if (normalizedTrims.length === 0) return annotationRegions;
     return annotationRegions.map((r) => ({
       ...r,
       startMs: sourceToEffectiveMs(r.startMs, normalizedTrims),
       endMs: sourceToEffectiveMs(r.endMs, normalizedTrims),
     }));
-  }, [annotationRegions, normalizedTrims]);
+  }, [annotationRegions, segments, normalizedTrims]);
 
   const effectiveSubtitleCues = useMemo(() => {
+    if (segments.length > 0) {
+      return subtitleCues.map((c) => ({
+        ...c,
+        startMs: sourceToEffectiveMsWithSegments(c.startMs, segments),
+        endMs: sourceToEffectiveMsWithSegments(c.endMs, segments),
+      }));
+    }
     if (normalizedTrims.length === 0) return subtitleCues;
     return subtitleCues.map((c) => ({
       ...c,
       startMs: sourceToEffectiveMs(c.startMs, normalizedTrims),
       endMs: sourceToEffectiveMs(c.endMs, normalizedTrims),
     }));
-  }, [subtitleCues, normalizedTrims]);
+  }, [subtitleCues, segments, normalizedTrims]);
 
   const effectiveAudioEditRegions = useMemo(() => {
+    if (segments.length > 0) {
+      return audioEditRegions.map((r) => ({
+        ...r,
+        startMs: sourceToEffectiveMsWithSegments(r.startMs, segments),
+        endMs: sourceToEffectiveMsWithSegments(r.endMs, segments),
+      }));
+    }
     if (normalizedTrims.length === 0) return audioEditRegions;
     return audioEditRegions.map((r) => ({
       ...r,
       startMs: sourceToEffectiveMs(r.startMs, normalizedTrims),
       endMs: sourceToEffectiveMs(r.endMs, normalizedTrims),
     }));
-  }, [audioEditRegions, normalizedTrims]);
+  }, [audioEditRegions, segments, normalizedTrims]);
 
   const setZoomRegionsForActiveAspect = useCallback((updater: (regions: ZoomRegion[]) => ZoomRegion[]) => {
     setZoomRegionsByAspect((previous) => {
