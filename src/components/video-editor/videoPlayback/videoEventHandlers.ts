@@ -12,6 +12,7 @@ interface VideoEventHandlersParams {
   onTimeUpdate: (time: number) => void;
   trimRegionsRef: React.MutableRefObject<TrimRegion[]>;
   segmentsRef: React.MutableRefObject<VideoSegment[]>;
+  previewPlaybackRateRef: React.MutableRefObject<number>;
 }
 
 export function createVideoEventHandlers(params: VideoEventHandlersParams) {
@@ -26,6 +27,7 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
     onTimeUpdate,
     trimRegionsRef,
     segmentsRef,
+    previewPlaybackRateRef,
   } = params;
 
   const UI_TIME_UPDATE_INTERVAL_MS = 1000 / 30;
@@ -88,8 +90,9 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
           video.pause();
         }
       } else if (seg && !seg.deleted) {
-        // Apply per-segment speed (clamped to browser max of 16x)
-        const targetRate = Math.max(0.25, Math.min(16, seg.speed));
+        // Apply per-segment speed × preview playback rate (clamped to browser limits)
+        const previewRate = previewPlaybackRateRef.current;
+        const targetRate = Math.max(0.0625, Math.min(16, seg.speed * previewRate));
         if (Math.abs(video.playbackRate - targetRate) > 0.001) {
           video.playbackRate = targetRate;
         }

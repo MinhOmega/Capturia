@@ -63,6 +63,9 @@ interface TimelineEditorProps {
   onHoverPreview?: (effectiveMs: number | null) => void;
   onHoverCommit?: () => void;
   isPlaying?: boolean;
+  onVisibleRangeChange?: (info: { visibleMs: number; totalMs: number; minVisibleMs: number }) => void;
+  zoomStepRef?: React.MutableRefObject<((direction: 1 | -1) => void) | null>;
+  zoomSetRef?: React.MutableRefObject<((visibleMs: number) => void) | null>;
 }
 
 interface TimelineScaleConfig {
@@ -835,6 +838,9 @@ export default function TimelineEditor({
   onHoverPreview,
   onHoverCommit,
   isPlaying = false,
+  onVisibleRangeChange,
+  zoomStepRef,
+  zoomSetRef,
 }: TimelineEditorProps) {
   const { t } = useI18n();
   const totalMs = useMemo(() => Math.max(0, Math.round(videoDuration * 1000)), [videoDuration]);
@@ -856,6 +862,70 @@ export default function TimelineEditor({
   const timelineContainerRef = useRef<HTMLDivElement>(null);
   const currentTimeMsRef = useRef(currentTimeMs);
   currentTimeMsRef.current = currentTimeMs;
+
+  // Report visible range changes to parent
+  useEffect(() => {
+    onVisibleRangeChange?.({ visibleMs: range.end - range.start, totalMs, minVisibleMs: timelineScale.minVisibleRangeMs });
+  }, [range, totalMs, timelineScale.minVisibleRangeMs, onVisibleRangeChange]);
+
+  // Expose programmatic zoom step function
+  useEffect(() => {
+    if (!zoomStepRef) return;
+    zoomStepRef.current = (direction: 1 | -1) => {
+      setRange(prev => {
+        const dur = prev.end - prev.start;
+        const factor = direction > 0 ? 0.7 : 1.4; // zoom in = shrink range, zoom out = grow range
+        const newDur = Math.max(
+          timelineScale.minVisibleRangeMs,
+          Math.min(totalMs, dur * factor),
+        );
+        const phead = Math.max(0, Math.min(currentTimeMsRef.current, totalMs));
+        let ratio: number;
+        if (phead >= prev.start && phead <= prev.end && dur > 0) {
+          ratio = (phead - prev.start) / dur;
+        } else {
+          ratio = 0.5;
+        }
+        let start = phead - newDur * ratio;
+        let end = start + newDur;
+        if (start < 0) { start = 0; end = start + newDur; }
+        if (end > totalMs) { end = totalMs; start = end - newDur; }
+        start = Math.max(0, start);
+        end = Math.min(totalMs, end);
+        return { start, end };
+      });
+    };
+    return () => { zoomStepRef.current = null; };
+  }, [zoomStepRef, totalMs, timelineScale.minVisibleRangeMs, setRange]);
+
+  // Expose programmatic zoom-to-level function (sets visible range to exact ms)
+  useEffect(() => {
+    if (!zoomSetRef) return;
+    zoomSetRef.current = (targetVisibleMs: number) => {
+      setRange(prev => {
+        const newDur = Math.max(
+          timelineScale.minVisibleRangeMs,
+          Math.min(totalMs, targetVisibleMs),
+        );
+        const dur = prev.end - prev.start;
+        const phead = Math.max(0, Math.min(currentTimeMsRef.current, totalMs));
+        let ratio: number;
+        if (phead >= prev.start && phead <= prev.end && dur > 0) {
+          ratio = (phead - prev.start) / dur;
+        } else {
+          ratio = 0.5;
+        }
+        let start = phead - newDur * ratio;
+        let end = start + newDur;
+        if (start < 0) { start = 0; end = start + newDur; }
+        if (end > totalMs) { end = totalMs; start = end - newDur; }
+        start = Math.max(0, start);
+        end = Math.min(totalMs, end);
+        return { start, end };
+      });
+    };
+    return () => { zoomSetRef.current = null; };
+  }, [zoomSetRef, totalMs, timelineScale.minVisibleRangeMs, setRange]);
 
   useEffect(() => {
     formatShortcut(['shift', 'mod', 'Scroll']).then(pan => {

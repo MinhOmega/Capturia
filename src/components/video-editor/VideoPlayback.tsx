@@ -75,6 +75,7 @@ interface VideoPlaybackProps {
   audioEditRegions?: AudioEditRegion[];
   onVideoDimensionsChange?: (dimensions: { width: number; height: number }) => void;
   segmentsRef?: React.MutableRefObject<import('./types').VideoSegment[]>;
+  previewPlaybackRateRef?: React.MutableRefObject<number>;
 }
 
 export interface VideoPlaybackRef {
@@ -125,6 +126,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
   audioEditRegions = [],
   onVideoDimensionsChange,
   segmentsRef,
+  previewPlaybackRateRef,
 }, ref) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -870,6 +872,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
       onTimeUpdate,
       trimRegionsRef,
       segmentsRef: segmentsRef ?? { current: [] },
+      previewPlaybackRateRef: previewPlaybackRateRef ?? { current: 1 },
     });
     
     video.addEventListener('play', handlePlay);

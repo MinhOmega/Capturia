@@ -121,6 +121,8 @@ interface SettingsPanelProps {
   analysisRunning?: boolean;
   subtitleCueCount?: number;
   roughCutSuggestionCount?: number;
+  seekStepSeconds?: number;
+  onSeekStepSecondsChange?: (step: number) => void;
 }
 
 export default SettingsPanel;
@@ -214,6 +216,8 @@ export function SettingsPanel({
   analysisRunning = false,
   subtitleCueCount = 0,
   roughCutSuggestionCount = 0,
+  seekStepSeconds = 5,
+  onSeekStepSecondsChange,
 }: SettingsPanelProps) {
   const { t } = useI18n();
   const [wallpaperPaths, setWallpaperPaths] = useState<string[]>([]);
@@ -925,6 +929,20 @@ export function SettingsPanel({
                     onValueChange={(values) => onPaddingChange?.(values[0])}
                     min={0}
                     max={100}
+                    step={1}
+                    className="w-full [&_[role=slider]]:bg-[#34B27B] [&_[role=slider]]:border-[#34B27B] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
+                  />
+                </div>
+                <div className="p-2 rounded-lg bg-white/5 border border-white/5">
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="text-[10px] font-medium text-slate-300">{t("settings.seekStep")}</div>
+                    <span className="text-[10px] text-slate-500 font-mono">{seekStepSeconds}s</span>
+                  </div>
+                  <Slider
+                    value={[seekStepSeconds]}
+                    onValueChange={(values) => onSeekStepSecondsChange?.(values[0])}
+                    min={1}
+                    max={30}
                     step={1}
                     className="w-full [&_[role=slider]]:bg-[#34B27B] [&_[role=slider]]:border-[#34B27B] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
                   />

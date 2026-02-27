@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
+import { cn } from "@/lib/utils";
 
 import VideoPlayback, { VideoPlaybackRef } from "./VideoPlayback";
 import { PreviewAspectCropOverlay } from "./PreviewAspectCropOverlay";
@@ -29,6 +30,7 @@ import {
   type AnnotationRegion,
   type CropRegion,
   type FigureData,
+  type ProjectState,
 } from "./types";
 import {
   VideoExporter,
@@ -307,6 +309,15 @@ export default function VideoEditor() {
   const [shadowIntensity, setShadowIntensity] = useState(0);
   const [showBlur, setShowBlur] = useState(false);
   const [motionBlurEnabled, setMotionBlurEnabled] = useState(false);
+  const [seekStepSeconds, setSeekStepSeconds] = useState(5);
+  const [previewPlaybackRate, setPreviewPlaybackRate] = useState(1);
+  const [timelineZoomInfo, setTimelineZoomInfo] = useState<{ visibleMs: number; totalMs: number; minVisibleMs: number } | null>(null);
+  const timelineZoomStepRef = useRef<((direction: 1 | -1) => void) | null>(null);
+  const timelineZoomSetRef = useRef<((visibleMs: number) => void) | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [fullscreenControlsVisible, setFullscreenControlsVisible] = useState(true);
+  const previewContainerRef = useRef<HTMLDivElement>(null);
+  const fullscreenHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [borderRadius, setBorderRadius] = useState(0);
   const [padding, setPadding] = useState(50);
   const [sourceVideoDimensions, setSourceVideoDimensions] = useState<{ width: number; height: number } | null>(null);
@@ -593,6 +604,51 @@ export default function VideoEditor() {
             setSourceHasAudio(true);
             setAudioEnabled(true);
           }
+
+          // Restore project state if available
+          try {
+            const saved = await window.electronAPI.loadProjectState(result.path);
+            const savedState = saved.state as ProjectState | undefined;
+            if (saved.success && savedState?.version === 1) {
+              const s = savedState;
+              if (Array.isArray(s.segments) && s.segments.length > 0) setSegments(s.segments);
+              if (s.zoomRegionsByAspect && typeof s.zoomRegionsByAspect === 'object') {
+                setZoomRegionsByAspect(s.zoomRegionsByAspect as Record<string, ZoomRegion[]>);
+              }
+              if (Array.isArray(s.annotationRegions)) setAnnotationRegions(s.annotationRegions);
+              if (Array.isArray(s.audioEditRegions)) setAudioEditRegions(s.audioEditRegions);
+              if (s.cropRegionsByAspect && typeof s.cropRegionsByAspect === 'object') {
+                setCropRegionsByAspect(s.cropRegionsByAspect as Partial<Record<AspectRatio, CropRegion>>);
+              }
+              if (typeof s.aspectRatio === 'string') setAspectRatio(s.aspectRatio as AspectRatio);
+              if (typeof s.wallpaper === 'string') setWallpaper(s.wallpaper);
+              if (typeof s.shadowIntensity === 'number') setShadowIntensity(s.shadowIntensity);
+              if (typeof s.showBlur === 'boolean') setShowBlur(s.showBlur);
+              if (typeof s.motionBlurEnabled === 'boolean') setMotionBlurEnabled(s.motionBlurEnabled);
+              if (typeof s.borderRadius === 'number') setBorderRadius(s.borderRadius);
+              if (typeof s.padding === 'number') setPadding(s.padding);
+              if (typeof s.audioEnabled === 'boolean') setAudioEnabled(s.audioEnabled);
+              if (typeof s.audioGain === 'number') setAudioGain(s.audioGain);
+              if (typeof s.audioNormalizeLoudness === 'boolean') setAudioNormalizeLoudness(s.audioNormalizeLoudness);
+              if (typeof s.audioTargetLufs === 'number') setAudioTargetLufs(s.audioTargetLufs);
+              if (typeof s.audioLimiterDb === 'number') setAudioLimiterDb(s.audioLimiterDb);
+              if (typeof s.exportQuality === 'string') setExportQuality(s.exportQuality as ExportQuality);
+              if (typeof s.exportFormat === 'string') setExportFormat(s.exportFormat as ExportFormat);
+              if (typeof s.seekStepSeconds === 'number') setSeekStepSeconds(s.seekStepSeconds);
+              if (typeof s.previewPlaybackRate === 'number') setPreviewPlaybackRate(s.previewPlaybackRate);
+              // Defer playhead restore until video is loaded
+              if (typeof s.playheadPosition === 'number' && s.playheadPosition > 0) {
+                requestAnimationFrame(() => {
+                  const video = videoPlaybackRef.current?.video;
+                  if (video) {
+                    video.currentTime = s.playheadPosition;
+                  }
+                });
+              }
+            }
+          } catch {
+            // Corrupt or missing project state — ignore
+          }
         } else {
           setVideoFilePath(null);
           setError(t('editor.noVideo'));
@@ -605,6 +661,53 @@ export default function VideoEditor() {
     }
     loadVideo();
   }, [t]);
+
+  // Debounced auto-save project state (2s delay)
+  const lastSavedHashRef = useRef<string>('');
+  useEffect(() => {
+    if (!videoFilePath) return;
+    const timer = setTimeout(() => {
+      const state: ProjectState = {
+        version: 1,
+        savedAt: Date.now(),
+        videoFilePath,
+        segments,
+        zoomRegionsByAspect: zoomRegionsByAspect as Record<string, ZoomRegion[]>,
+        annotationRegions,
+        audioEditRegions,
+        cropRegionsByAspect: cropRegionsByAspect as Record<string, CropRegion>,
+        aspectRatio,
+        wallpaper,
+        shadowIntensity,
+        showBlur,
+        motionBlurEnabled,
+        borderRadius,
+        padding,
+        audioEnabled,
+        audioGain,
+        audioNormalizeLoudness,
+        audioTargetLufs,
+        audioLimiterDb,
+        exportQuality,
+        exportFormat,
+        seekStepSeconds,
+        previewPlaybackRate,
+        playheadPosition: currentTime,
+      };
+      const hash = JSON.stringify(state);
+      if (hash === lastSavedHashRef.current) return;
+      lastSavedHashRef.current = hash;
+      window.electronAPI.saveProjectState(videoFilePath, state).catch(() => {});
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [
+    videoFilePath, segments, zoomRegionsByAspect, annotationRegions,
+    audioEditRegions, cropRegionsByAspect, aspectRatio, wallpaper,
+    shadowIntensity, showBlur, motionBlurEnabled, borderRadius, padding,
+    audioEnabled, audioGain, audioNormalizeLoudness, audioTargetLufs,
+    audioLimiterDb, exportQuality, exportFormat, seekStepSeconds,
+    previewPlaybackRate, currentTime,
+  ]);
 
   // Initialize default wallpaper with resolved asset path
   useEffect(() => {
@@ -654,6 +757,18 @@ export default function VideoEditor() {
     }
   }
 
+  // Refs for the keydown handler (stale-closure avoidance — useEffect has [] deps)
+  const effectiveCurrentTimeRef = useRef(effectiveCurrentTime);
+  effectiveCurrentTimeRef.current = effectiveCurrentTime;
+  const effectiveDurationRef = useRef(effectiveDuration);
+  effectiveDurationRef.current = effectiveDuration;
+  const seekStepSecondsRef = useRef(seekStepSeconds);
+  seekStepSecondsRef.current = seekStepSeconds;
+  const handleSeekRef = useRef(handleSeek);
+  handleSeekRef.current = handleSeek;
+  const previewPlaybackRateRef = useRef(previewPlaybackRate);
+  previewPlaybackRateRef.current = previewPlaybackRate;
+
   // Hover preview: temporarily seek video to hover position (only when paused).
   // We suppress onTimeUpdate while previewing so the real playhead doesn't move.
   const hoverPreviewActiveRef = useRef(false);
@@ -662,8 +777,6 @@ export default function VideoEditor() {
     if (hoverPreviewActiveRef.current) return; // suppress during hover
     setCurrentTime(time);
   }, []);
-  // Commit hover preview: accept current video position as the real playhead
-  // (used when user clicks timeline or starts dragging the cursor)
   // Commit hover preview: accept current video position as the real playhead
   // (used when user clicks timeline, starts dragging, or presses play)
   const commitHoverPreview = useCallback(() => {
@@ -1079,8 +1192,51 @@ export default function VideoEditor() {
           }
         }
       }
+
+      // Arrow key navigation: seek forward/backward in effective time
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+          return;
+        }
+        e.preventDefault();
+        commitHoverPreview();
+        const step = e.shiftKey ? 1 : seekStepSecondsRef.current;
+        const direction = e.key === 'ArrowRight' ? 1 : -1;
+        const current = effectiveCurrentTimeRef.current;
+        const maxTime = effectiveDurationRef.current;
+        const newTime = Math.max(0, Math.min(maxTime, current + step * direction));
+        handleSeekRef.current(newTime);
+      }
+
+      // Speed up/down: ] / [
+      if (e.key === ']' || e.key === '[') {
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+        e.preventDefault();
+        const speeds = [0.25, 0.5, 1, 1.5, 2, 3, 4, 8, 16, 32];
+        const currentRate = previewPlaybackRateRef.current;
+        const idx = speeds.findIndex(s => Math.abs(s - currentRate) < 0.01);
+        const curIdx = idx === -1 ? speeds.indexOf(1) : idx;
+        const newIdx = e.key === ']'
+          ? Math.min(speeds.length - 1, curIdx + 1)
+          : Math.max(0, curIdx - 1);
+        setPreviewPlaybackRate(speeds[newIdx]);
+      }
+
+      // Fullscreen toggle: F11
+      if (e.key === 'F11') {
+        e.preventDefault();
+        toggleFullscreen();
+      }
+
+      // Timeline zoom in/out: = / -
+      if (e.key === '=' || e.key === '-') {
+        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+        if (e.ctrlKey || e.metaKey) return; // don't hijack browser zoom
+        e.preventDefault();
+        timelineZoomStepRef.current?.(e.key === '=' ? 1 : -1);
+      }
     };
-    
+
     window.addEventListener('keydown', handleKeyDown, { capture: true });
     return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
   }, []);
@@ -1665,6 +1821,57 @@ export default function VideoEditor() {
     handleExport(settings);
   }, [videoPath, exportFormat, exportQuality, gifFrameRate, gifLoop, gifSizePreset, handleExport, normalizedExportAspectRatios.length, t]);
 
+  // Fullscreen preview mode
+  const toggleFullscreen = useCallback(() => {
+    if (!previewContainerRef.current) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      previewContainerRef.current.requestFullscreen();
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleChange = () => {
+      const fs = !!document.fullscreenElement;
+      setIsFullscreen(fs);
+      if (fs) {
+        setFullscreenControlsVisible(true);
+      }
+    };
+    document.addEventListener('fullscreenchange', handleChange);
+    return () => document.removeEventListener('fullscreenchange', handleChange);
+  }, []);
+
+  // Auto-hide controls in fullscreen after 3s of inactivity
+  const resetFullscreenHideTimer = useCallback(() => {
+    if (!isFullscreen) return;
+    setFullscreenControlsVisible(true);
+    if (fullscreenHideTimerRef.current) {
+      clearTimeout(fullscreenHideTimerRef.current);
+    }
+    fullscreenHideTimerRef.current = setTimeout(() => {
+      setFullscreenControlsVisible(false);
+    }, 3000);
+  }, [isFullscreen]);
+
+  useEffect(() => {
+    if (!isFullscreen) {
+      if (fullscreenHideTimerRef.current) {
+        clearTimeout(fullscreenHideTimerRef.current);
+        fullscreenHideTimerRef.current = null;
+      }
+      setFullscreenControlsVisible(true);
+      return;
+    }
+    resetFullscreenHideTimer();
+    return () => {
+      if (fullscreenHideTimerRef.current) {
+        clearTimeout(fullscreenHideTimerRef.current);
+      }
+    };
+  }, [isFullscreen, resetFullscreenHideTimer]);
+
   const handleCancelExport = useCallback(() => {
     if (exporterRef.current) {
       exportCancelledRef.current = true;
@@ -1705,7 +1912,15 @@ export default function VideoEditor() {
           <PanelGroup direction="vertical" className="gap-3">
             {/* Top section: video preview and controls */}
             <Panel defaultSize={70} minSize={40}>
-              <div className="w-full h-full flex flex-col items-center justify-center bg-black/40 rounded-2xl border border-white/5 shadow-2xl overflow-hidden">
+              <div
+                ref={previewContainerRef}
+                className={cn(
+                  "w-full h-full flex flex-col items-center justify-center rounded-2xl border border-white/5 shadow-2xl overflow-hidden",
+                  isFullscreen ? "bg-black" : "bg-black/40"
+                )}
+                onMouseMove={isFullscreen ? resetFullscreenHideTimer : undefined}
+                style={isFullscreen && !fullscreenControlsVisible ? { cursor: 'none' } : undefined}
+              >
                 {/* Video preview */}
                 <div className="w-full flex justify-center items-center" style={{ flex: '1 1 auto', margin: '6px 0 0' }}>
                   <div className="relative" style={{ width: 'auto', height: '100%', aspectRatio: getAspectRatioValue(aspectRatio), maxWidth: '100%', margin: '0 auto', boxSizing: 'border-box' }}>
@@ -1748,6 +1963,7 @@ export default function VideoEditor() {
                       audioEditRegions={audioEditRegions}
                       onVideoDimensionsChange={setSourceVideoDimensions}
                       segmentsRef={segmentsRef}
+                      previewPlaybackRateRef={previewPlaybackRateRef}
                     />
                     {showAspectCropOverlay ? (
                       <PreviewAspectCropOverlay
@@ -1761,7 +1977,18 @@ export default function VideoEditor() {
                   </div>
                 </div>
                 {/* Playback controls */}
-                <div className="w-full flex justify-center items-center" style={{ height: '48px', flexShrink: 0, padding: '6px 12px', margin: '6px 0 6px 0' }}>
+                <div
+                  className={cn(
+                    "w-full flex justify-center items-center transition-opacity duration-300",
+                    isFullscreen
+                      ? "absolute bottom-0 left-0 right-0 z-50 pb-4 px-6"
+                      : "",
+                    isFullscreen && !fullscreenControlsVisible
+                      ? "opacity-0 pointer-events-none"
+                      : "opacity-100"
+                  )}
+                  style={isFullscreen ? undefined : { height: '48px', flexShrink: 0, padding: '6px 12px', margin: '6px 0 6px 0' }}
+                >
                   <div style={{ width: '100%', maxWidth: '700px' }}>
                     <PlaybackControls
                       isPlaying={isPlaying}
@@ -1770,6 +1997,12 @@ export default function VideoEditor() {
                       onTogglePlayPause={togglePlayPause}
                       onSeek={handleSeek}
                       playbackSpeed={currentSegmentSpeed}
+                      previewPlaybackRate={previewPlaybackRate}
+                      onPreviewPlaybackRateChange={setPreviewPlaybackRate}
+                      timelineZoomInfo={timelineZoomInfo}
+                      onTimelineZoomChange={(visibleMs) => timelineZoomSetRef.current?.(visibleMs)}
+                      isFullscreen={isFullscreen}
+                      onToggleFullscreen={toggleFullscreen}
                     />
                   </div>
                 </div>
@@ -1814,6 +2047,9 @@ export default function VideoEditor() {
               onHoverPreview={handleHoverPreview}
               onHoverCommit={commitHoverPreview}
               isPlaying={isPlaying}
+              onVisibleRangeChange={setTimelineZoomInfo}
+              zoomStepRef={timelineZoomStepRef}
+              zoomSetRef={timelineZoomSetRef}
             />
               </div>
             </Panel>
@@ -1895,6 +2131,8 @@ export default function VideoEditor() {
           analysisRunning={analysisInProgress}
           subtitleCueCount={subtitleCues.length}
           roughCutSuggestionCount={roughCutSuggestions.length}
+          seekStepSeconds={seekStepSeconds}
+          onSeekStepSecondsChange={setSeekStepSeconds}
         />
       </div>
       <ExportDialog

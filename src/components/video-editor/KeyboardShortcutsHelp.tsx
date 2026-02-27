@@ -63,6 +63,38 @@ export function KeyboardShortcutsHelp() {
             <span className="text-slate-400">{t("shortcut.playPause")}</span>
             <kbd className="px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[#34B27B] font-mono">Space</kbd>
           </div>
+          <div className="flex items-center justify-between">
+            <span className="text-slate-400">{t("shortcut.seekForward")}</span>
+            <kbd className="px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[#34B27B] font-mono">&rarr;</kbd>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-slate-400">{t("shortcut.seekBackward")}</span>
+            <kbd className="px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[#34B27B] font-mono">&larr;</kbd>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-slate-400">{t("shortcut.seekFine")}</span>
+            <kbd className="px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[#34B27B] font-mono">Shift + &larr;/&rarr;</kbd>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-slate-400">{t("shortcut.speedUp")}</span>
+            <kbd className="px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[#34B27B] font-mono">]</kbd>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-slate-400">{t("shortcut.speedDown")}</span>
+            <kbd className="px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[#34B27B] font-mono">[</kbd>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-slate-400">{t("shortcut.zoomIn")}</span>
+            <kbd className="px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[#34B27B] font-mono">=</kbd>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-slate-400">{t("shortcut.zoomOut")}</span>
+            <kbd className="px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[#34B27B] font-mono">-</kbd>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-slate-400">{t("shortcut.fullscreen")}</span>
+            <kbd className="px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[#34B27B] font-mono">F11</kbd>
+          </div>
         </div>
       </div>
     </div>

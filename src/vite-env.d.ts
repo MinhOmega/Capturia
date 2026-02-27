@@ -233,6 +233,8 @@ interface Window {
       metadata?: { frameRate?: number; width?: number; height?: number; mimeType?: string; capturedAt?: number; systemCursorMode?: 'always' | 'never'; hasMicrophoneAudio?: boolean; cursorTrack?: CursorTrackMetadata }
     }>
     clearCurrentVideoPath: () => Promise<{ success: boolean }>
+    saveProjectState: (videoPath: string, state: unknown) => Promise<{ success: boolean; error?: string }>
+    loadProjectState: (videoPath: string) => Promise<{ success: boolean; notFound?: boolean; state?: unknown; error?: string }>
     getPlatform: () => Promise<string>
     startVideoAnalysis: (options?: {
       videoPath?: string

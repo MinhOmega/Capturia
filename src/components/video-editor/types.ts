@@ -137,6 +137,34 @@ export const ZOOM_DEPTH_SCALES: Record<ZoomDepth, number> = {
   6: 5.0,
 };
 
+export interface ProjectState {
+  version: 1;
+  savedAt: number;
+  videoFilePath: string;
+  segments: VideoSegment[];
+  zoomRegionsByAspect: Record<string, ZoomRegion[]>;
+  annotationRegions: AnnotationRegion[];
+  audioEditRegions: AudioEditRegion[];
+  cropRegionsByAspect: Record<string, CropRegion>;
+  aspectRatio: string;
+  wallpaper: string;
+  shadowIntensity: number;
+  showBlur: boolean;
+  motionBlurEnabled: boolean;
+  borderRadius: number;
+  padding: number;
+  audioEnabled: boolean;
+  audioGain: number;
+  audioNormalizeLoudness: boolean;
+  audioTargetLufs: number;
+  audioLimiterDb: number;
+  exportQuality: string;
+  exportFormat: string;
+  seekStepSeconds: number;
+  previewPlaybackRate: number;
+  playheadPosition: number;
+}
+
 export const DEFAULT_ZOOM_DEPTH: ZoomDepth = 3;
 
 export function clampFocusToDepth(focus: ZoomFocus, _depth: ZoomDepth): ZoomFocus {

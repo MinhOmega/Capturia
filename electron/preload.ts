@@ -186,6 +186,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   clearCurrentVideoPath: () => {
     return ipcRenderer.invoke('clear-current-video-path')
   },
+  saveProjectState: (videoPath: string, state: unknown) => {
+    return ipcRenderer.invoke('save-project-state', videoPath, state)
+  },
+  loadProjectState: (videoPath: string) => {
+    return ipcRenderer.invoke('load-project-state', videoPath)
+  },
   getPlatform: () => {
     return ipcRenderer.invoke('get-platform')
   },

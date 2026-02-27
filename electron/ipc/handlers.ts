@@ -2,6 +2,7 @@ import { ipcMain, desktopCapturer, BrowserWindow, shell, app, dialog, screen, sy
 
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import crypto from 'node:crypto'
 import { RECORDINGS_DIR } from '../main'
 import { scheduleRecordingsCleanup } from '../recordingsCleanup'
 import {
@@ -1914,6 +1915,42 @@ export function registerIpcHandlers(
     currentVideoPath = null;
     currentVideoMetadata = null;
     return { success: true };
+  });
+
+  // Project state persistence
+  const projectsDir = path.join(app.getPath('userData'), 'projects');
+
+  function getProjectStateKey(videoPath: string): string {
+    const basename = path.basename(videoPath).replace(/[^a-zA-Z0-9._-]/g, '_');
+    const hash = crypto.createHash('sha256').update(videoPath).digest('hex').slice(0, 16);
+    return `${basename}_${hash}.json`;
+  }
+
+  ipcMain.handle('save-project-state', async (_, videoPath: string, state: unknown) => {
+    try {
+      await fs.mkdir(projectsDir, { recursive: true });
+      const filePath = path.join(projectsDir, getProjectStateKey(videoPath));
+      await fs.writeFile(filePath, JSON.stringify(state), 'utf-8');
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to save project state:', error);
+      return { success: false, error: String(error) };
+    }
+  });
+
+  ipcMain.handle('load-project-state', async (_, videoPath: string) => {
+    try {
+      const filePath = path.join(projectsDir, getProjectStateKey(videoPath));
+      const data = await fs.readFile(filePath, 'utf-8');
+      const state = JSON.parse(data);
+      return { success: true, state };
+    } catch (error: unknown) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        return { success: false, notFound: true };
+      }
+      console.error('Failed to load project state:', error);
+      return { success: false, error: String(error) };
+    }
   });
 
   ipcMain.handle('get-platform', () => {
