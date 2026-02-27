@@ -316,6 +316,8 @@ const messages: Record<Locale, Record<string, string>> = {
     "playback.fullscreen": "Fullscreen",
     "playback.exitFullscreen": "Exit Fullscreen",
     "shortcut.fullscreen": "Fullscreen",
+    "shortcut.undo": "Undo",
+    "shortcut.redo": "Redo",
 
     "tutorial.trigger": "How trimming works",
     "tutorial.title": "How Trimming Works",
@@ -730,6 +732,8 @@ const messages: Record<Locale, Record<string, string>> = {
     "playback.fullscreen": "全屏",
     "playback.exitFullscreen": "退出全屏",
     "shortcut.fullscreen": "全屏预览",
+    "shortcut.undo": "撤销",
+    "shortcut.redo": "重做",
 
     "tutorial.trigger": "裁剪说明",
     "tutorial.title": "裁剪如何工作",

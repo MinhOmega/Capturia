@@ -1126,19 +1126,21 @@ export default function TimelineEditor({
         return;
       }
 
-      if (e.key === 'f' || e.key === 'F') {
+      // Skip single-letter shortcuts when modifier keys are held (Ctrl+Z = undo, not add zoom)
+      const hasModifier = e.ctrlKey || e.metaKey || e.altKey;
+      if (!hasModifier && (e.key === 'f' || e.key === 'F')) {
         addKeyframe();
       }
-      if (e.key === 'z' || e.key === 'Z') {
+      if (!hasModifier && (e.key === 'z' || e.key === 'Z')) {
         handleAddZoom();
       }
-      if (e.key === 's' || e.key === 'S') {
+      if (!hasModifier && (e.key === 's' || e.key === 'S')) {
         toggleScissorsMode();
       }
       if (e.key === 'Escape') {
         setScissorsMode(false);
       }
-      if (e.key === 'a' || e.key === 'A') {
+      if (!hasModifier && (e.key === 'a' || e.key === 'A')) {
         handleAddAnnotation();
       }
 

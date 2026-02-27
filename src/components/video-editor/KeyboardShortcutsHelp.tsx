@@ -8,19 +8,25 @@ export function KeyboardShortcutsHelp() {
   const [shortcuts, setShortcuts] = useState({
     delete: 'Ctrl + D',
     pan: 'Shift + Ctrl + Scroll',
-    zoom: 'Ctrl + Scroll'
+    zoom: 'Ctrl + Scroll',
+    undo: 'Ctrl + Z',
+    redo: 'Ctrl + Shift + Z',
   });
 
   useEffect(() => {
     Promise.all([
       formatShortcut(['mod', 'D']),
       formatShortcut(['shift', 'mod', 'Scroll']),
-      formatShortcut(['mod', 'Scroll'])
-    ]).then(([deleteKey, panKey, zoomKey]) => {
+      formatShortcut(['mod', 'Scroll']),
+      formatShortcut(['mod', 'Z']),
+      formatShortcut(['shift', 'mod', 'Z']),
+    ]).then(([deleteKey, panKey, zoomKey, undoKey, redoKey]) => {
       setShortcuts({
         delete: deleteKey,
         pan: panKey,
-        zoom: zoomKey
+        zoom: zoomKey,
+        undo: undoKey,
+        redo: redoKey,
       });
     });
   }, []);
@@ -94,6 +100,14 @@ export function KeyboardShortcutsHelp() {
           <div className="flex items-center justify-between">
             <span className="text-slate-400">{t("shortcut.fullscreen")}</span>
             <kbd className="px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[#34B27B] font-mono">F11</kbd>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-slate-400">{t("shortcut.undo")}</span>
+            <kbd className="px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[#34B27B] font-mono">{shortcuts.undo}</kbd>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-slate-400">{t("shortcut.redo")}</span>
+            <kbd className="px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[#34B27B] font-mono">{shortcuts.redo}</kbd>
           </div>
         </div>
       </div>

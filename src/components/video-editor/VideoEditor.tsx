@@ -367,7 +367,8 @@ export default function VideoEditor() {
   const nextSegIdRef = useRef(2);
   const nextAnnotationIdRef = useRef(1);
   const nextAnnotationZIndexRef = useRef(1); // Track z-index for stacking order
-  const projectRestoredRef = useRef(false); // Guards wallpaper init race
+  const projectRestoredRef = useRef(false); // Guards wallpaper init race (one-shot: reset after first effects)
+  const videoLoadedRef = useRef(false); // Prevents loadVideo re-trigger on locale change
   const exporterRef = useRef<{ cancel: () => void } | null>(null);
   const exportCancelledRef = useRef(false);
   const autoEditInitializedAspectsRef = useRef<Set<AspectRatio>>(new Set());
@@ -583,6 +584,9 @@ export default function VideoEditor() {
 
   useEffect(() => {
     async function loadVideo() {
+      // Only load once — prevents re-trigger on locale change
+      if (videoLoadedRef.current) return;
+      videoLoadedRef.current = true;
       try {
         const result = await window.electronAPI.getCurrentVideoPath();
         
@@ -797,6 +801,75 @@ export default function VideoEditor() {
     gifLoop, gifSizePreset, exportAspectRatios,
   ]);
 
+  // ── Undo / Redo history ──
+  // Tracks snapshots of core editable state (segments, zoom, annotations, audio edits).
+  // Pushes the PREVIOUS state onto the undo stack whenever tracked state changes.
+  interface EditorSnapshot {
+    segments: VideoSegment[];
+    zoomRegionsByAspect: ZoomRegionsByAspect;
+    annotationRegions: AnnotationRegion[];
+    audioEditRegions: AudioEditRegion[];
+  }
+  const MAX_UNDO_HISTORY = 50;
+  const undoStackRef = useRef<EditorSnapshot[]>([]);
+  const redoStackRef = useRef<EditorSnapshot[]>([]);
+  const isRestoringHistoryRef = useRef(false);
+  const prevEditableRef = useRef<EditorSnapshot | null>(null);
+  const historyReadyRef = useRef(false);
+
+  // Track state changes and push to undo stack
+  useEffect(() => {
+    const current: EditorSnapshot = { segments, zoomRegionsByAspect, annotationRegions, audioEditRegions };
+
+    // Skip when restoring from undo/redo
+    if (isRestoringHistoryRef.current) {
+      isRestoringHistoryRef.current = false;
+      prevEditableRef.current = current;
+      return;
+    }
+
+    // Wait until segments are loaded (initial load or project restore)
+    if (!historyReadyRef.current) {
+      prevEditableRef.current = current;
+      if (segments.length > 0) historyReadyRef.current = true;
+      return;
+    }
+
+    // Push previous state to undo stack
+    if (prevEditableRef.current) {
+      undoStackRef.current.push(prevEditableRef.current);
+      if (undoStackRef.current.length > MAX_UNDO_HISTORY) undoStackRef.current.shift();
+      redoStackRef.current = []; // New user action clears redo
+    }
+    prevEditableRef.current = current;
+  }, [segments, zoomRegionsByAspect, annotationRegions, audioEditRegions]);
+
+  const handleUndo = useCallback(() => {
+    if (undoStackRef.current.length === 0) return;
+    const snapshot = undoStackRef.current.pop()!;
+    // Save current state to redo stack
+    redoStackRef.current.push({ segments, zoomRegionsByAspect, annotationRegions, audioEditRegions });
+    // Restore snapshot
+    isRestoringHistoryRef.current = true;
+    setSegments(snapshot.segments);
+    setZoomRegionsByAspect(snapshot.zoomRegionsByAspect);
+    setAnnotationRegions(snapshot.annotationRegions);
+    setAudioEditRegions(snapshot.audioEditRegions);
+  }, [segments, zoomRegionsByAspect, annotationRegions, audioEditRegions]);
+
+  const handleRedo = useCallback(() => {
+    if (redoStackRef.current.length === 0) return;
+    const snapshot = redoStackRef.current.pop()!;
+    // Save current state to undo stack
+    undoStackRef.current.push({ segments, zoomRegionsByAspect, annotationRegions, audioEditRegions });
+    // Restore snapshot
+    isRestoringHistoryRef.current = true;
+    setSegments(snapshot.segments);
+    setZoomRegionsByAspect(snapshot.zoomRegionsByAspect);
+    setAnnotationRegions(snapshot.annotationRegions);
+    setAudioEditRegions(snapshot.audioEditRegions);
+  }, [segments, zoomRegionsByAspect, annotationRegions, audioEditRegions]);
+
   // Initialize default wallpaper with resolved asset path
   // Skip if project state was already restored (avoids overwriting saved wallpaper)
   useEffect(() => {
@@ -813,6 +886,16 @@ export default function VideoEditor() {
       }
     })();
     return () => { mounted = false };
+  }, []);
+
+  // Reset projectRestoredRef after initial effects have processed.
+  // This is a one-shot flag: true during first render cycle (so wallpaper init
+  // and sidecar loader can check it), then reset so future re-triggers work normally.
+  useEffect(() => {
+    if (projectRestoredRef.current) {
+      const timer = setTimeout(() => { projectRestoredRef.current = false; }, 500);
+      return () => clearTimeout(timer);
+    }
   }, []);
 
   function togglePlayPause() {
@@ -857,6 +940,10 @@ export default function VideoEditor() {
   handleSeekRef.current = handleSeek;
   const previewPlaybackRateRef = useRef(previewPlaybackRate);
   previewPlaybackRateRef.current = previewPlaybackRate;
+  const handleUndoRef = useRef(handleUndo);
+  handleUndoRef.current = handleUndo;
+  const handleRedoRef = useRef(handleRedo);
+  handleRedoRef.current = handleRedo;
 
   // Hover preview: temporarily seek video to hover position (only when paused).
   // We suppress onTimeUpdate while previewing so the real playhead doesn't move.
@@ -1354,6 +1441,18 @@ export default function VideoEditor() {
         if (e.ctrlKey || e.metaKey) return; // don't hijack browser zoom
         e.preventDefault();
         timelineZoomStepRef.current?.(e.key === '=' ? 1 : -1);
+      }
+
+      // Undo: Ctrl+Z / Cmd+Z
+      if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
+        e.preventDefault();
+        handleUndoRef.current();
+      }
+      // Redo: Ctrl+Shift+Z / Cmd+Shift+Z or Ctrl+Y / Cmd+Y
+      if (((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey) && e.shiftKey) ||
+          ((e.key === 'y' || e.key === 'Y') && (e.ctrlKey || e.metaKey))) {
+        e.preventDefault();
+        handleRedoRef.current();
       }
     };
 
