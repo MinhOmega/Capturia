@@ -1930,7 +1930,10 @@ export function registerIpcHandlers(
     try {
       await fs.mkdir(projectsDir, { recursive: true });
       const filePath = path.join(projectsDir, getProjectStateKey(videoPath));
-      await fs.writeFile(filePath, JSON.stringify(state), 'utf-8');
+      // Atomic write: write to temp file then rename to avoid corruption on crash
+      const tmpPath = filePath + '.tmp';
+      await fs.writeFile(tmpPath, JSON.stringify(state), 'utf-8');
+      await fs.rename(tmpPath, filePath);
       return { success: true };
     } catch (error) {
       console.error('Failed to save project state:', error);

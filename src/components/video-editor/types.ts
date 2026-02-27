@@ -163,6 +163,36 @@ export interface ProjectState {
   seekStepSeconds: number;
   previewPlaybackRate: number;
   playheadPosition: number;
+  // v1.1 additions (optional for backward compat with existing save files)
+  cursorStyle?: {
+    enabled: boolean;
+    size: number;
+    highlight: number;
+    ripple: number;
+    shadow: number;
+    smoothingMs: number;
+    movementStyle: string;
+    autoHideStatic: boolean;
+    staticHideDelayMs: number;
+    staticHideFadeMs: number;
+    loopCursorPosition: boolean;
+    loopBlendMs: number;
+    offsetX: number;
+    offsetY: number;
+    timeOffsetMs: number;
+  };
+  subtitleCues?: Array<{
+    id: string;
+    startMs: number;
+    endMs: number;
+    text: string;
+    source: string;
+    confidence?: number;
+  }>;
+  gifFrameRate?: number;
+  gifLoop?: boolean;
+  gifSizePreset?: string;
+  exportAspectRatios?: string[];
 }
 
 export const DEFAULT_ZOOM_DEPTH: ZoomDepth = 3;

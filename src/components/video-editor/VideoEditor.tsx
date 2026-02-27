@@ -367,6 +367,7 @@ export default function VideoEditor() {
   const nextSegIdRef = useRef(2);
   const nextAnnotationIdRef = useRef(1);
   const nextAnnotationZIndexRef = useRef(1); // Track z-index for stacking order
+  const projectRestoredRef = useRef(false); // Guards wallpaper init race
   const exporterRef = useRef<{ cancel: () => void } | null>(null);
   const exportCancelledRef = useRef(false);
   const autoEditInitializedAspectsRef = useRef<Set<AspectRatio>>(new Set());
@@ -665,11 +666,15 @@ export default function VideoEditor() {
                 nextZoomIdRef.current = globalMaxZoom + 1;
               }
 
-              // Restore annotation regions and sync counter
+              // Restore annotation regions and sync counters
               if (Array.isArray(s.annotationRegions)) {
                 setAnnotationRegions(s.annotationRegions);
                 const maxAnno = maxIdNum(s.annotationRegions, 'anno-');
                 if (maxAnno > 0) nextAnnotationIdRef.current = maxAnno + 1;
+                const maxZ = s.annotationRegions.reduce(
+                  (max: number, a: { zIndex?: number }) => Math.max(max, a.zIndex ?? 0), 0,
+                );
+                if (maxZ > 0) nextAnnotationZIndexRef.current = maxZ + 1;
               }
               if (Array.isArray(s.audioEditRegions)) setAudioEditRegions(s.audioEditRegions);
               if (s.cropRegionsByAspect && typeof s.cropRegionsByAspect === 'object') {
@@ -691,6 +696,24 @@ export default function VideoEditor() {
               if (typeof s.exportFormat === 'string') setExportFormat(s.exportFormat as ExportFormat);
               if (typeof s.seekStepSeconds === 'number') setSeekStepSeconds(s.seekStepSeconds);
               if (typeof s.previewPlaybackRate === 'number') setPreviewPlaybackRate(s.previewPlaybackRate);
+              // Restore cursor style (v1.1)
+              if (s.cursorStyle && typeof s.cursorStyle === 'object') {
+                setCursorStyle(prev => ({ ...prev, ...s.cursorStyle } as CursorStyleConfig));
+              }
+              // Restore subtitle cues (v1.1) — preserves manual edits
+              if (Array.isArray(s.subtitleCues) && s.subtitleCues.length > 0) {
+                setSubtitleCues(s.subtitleCues as SubtitleCue[]);
+              }
+              // Restore GIF export settings (v1.1)
+              if (typeof s.gifFrameRate === 'number') setGifFrameRate(s.gifFrameRate as GifFrameRate);
+              if (typeof s.gifLoop === 'boolean') setGifLoop(s.gifLoop);
+              if (typeof s.gifSizePreset === 'string') setGifSizePreset(s.gifSizePreset as GifSizePreset);
+              // Restore batch export aspect ratios (v1.1)
+              if (Array.isArray(s.exportAspectRatios) && s.exportAspectRatios.length > 0) {
+                setExportAspectRatios(s.exportAspectRatios as AspectRatio[]);
+              }
+              // Mark that project state was restored (guards wallpaper init race)
+              projectRestoredRef.current = true;
               // Defer playhead restore until video is loaded
               if (typeof s.playheadPosition === 'number' && s.playheadPosition > 0) {
                 requestAnimationFrame(() => {
@@ -718,6 +741,9 @@ export default function VideoEditor() {
   }, [t]);
 
   // Debounced auto-save project state (2s delay)
+  // Use ref for currentTime to avoid re-triggering on every playback frame
+  const currentTimeRef = useRef(currentTime);
+  currentTimeRef.current = currentTime;
   const lastSavedHashRef = useRef<string>('');
   useEffect(() => {
     if (!videoFilePath) return;
@@ -747,7 +773,13 @@ export default function VideoEditor() {
         exportFormat,
         seekStepSeconds,
         previewPlaybackRate,
-        playheadPosition: currentTime,
+        playheadPosition: currentTimeRef.current,
+        cursorStyle,
+        subtitleCues: subtitleCues as ProjectState['subtitleCues'],
+        gifFrameRate,
+        gifLoop,
+        gifSizePreset,
+        exportAspectRatios,
       };
       const hash = JSON.stringify(state);
       if (hash === lastSavedHashRef.current) return;
@@ -761,16 +793,18 @@ export default function VideoEditor() {
     shadowIntensity, showBlur, motionBlurEnabled, borderRadius, padding,
     audioEnabled, audioGain, audioNormalizeLoudness, audioTargetLufs,
     audioLimiterDb, exportQuality, exportFormat, seekStepSeconds,
-    previewPlaybackRate, currentTime,
+    previewPlaybackRate, cursorStyle, subtitleCues, gifFrameRate,
+    gifLoop, gifSizePreset, exportAspectRatios,
   ]);
 
   // Initialize default wallpaper with resolved asset path
+  // Skip if project state was already restored (avoids overwriting saved wallpaper)
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
         const resolvedPath = await getAssetPath('wallpapers/wallpaper1.jpg');
-        if (mounted) {
+        if (mounted && !projectRestoredRef.current) {
           setWallpaper(resolvedPath);
         }
       } catch (err) {
@@ -1451,12 +1485,33 @@ export default function VideoEditor() {
       return;
     }
 
-    applyAnalysis(undefined);
+    // If project state was restored with subtitle cues, don't clear them.
+    // Only clear when there is no restored project state.
+    if (!projectRestoredRef.current) {
+      applyAnalysis(undefined);
+    }
     void (async () => {
       try {
         const result = await window.electronAPI.getCurrentVideoAnalysis(videoFilePath);
         if (cancelled || !result.success) return;
-        applyAnalysis(result.analysis);
+        if (projectRestoredRef.current) {
+          // Project state was restored — only load rough cut suggestions from sidecar,
+          // keep the (possibly manually edited) subtitle cues from the project state.
+          if (result.analysis) {
+            const transcriptWords = Array.isArray(result.analysis.transcript?.words)
+              ? result.analysis.transcript.words : [];
+            const fallbackDurationMs = transcriptWords.length > 0
+              ? Math.max(0, Math.round(transcriptWords[transcriptWords.length - 1].endMs)) : 0;
+            setRoughCutSuggestions(
+              normalizeRoughCutSuggestions(
+                Array.isArray(result.analysis.roughCutSuggestions) ? result.analysis.roughCutSuggestions : [],
+                Math.max(fallbackDurationMs, Math.round(duration * 1000)),
+              ),
+            );
+          }
+        } else {
+          applyAnalysis(result.analysis);
+        }
       } catch (error) {
         console.warn('Failed to load cached analysis sidecar:', error);
       }
@@ -1465,7 +1520,7 @@ export default function VideoEditor() {
     return () => {
       cancelled = true;
     };
-  }, [applyAnalysis, videoFilePath]);
+  }, [applyAnalysis, videoFilePath, duration]);
 
   useEffect(() => {
     stopAnalysisPolling();
