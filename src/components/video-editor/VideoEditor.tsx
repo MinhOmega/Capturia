@@ -611,11 +611,66 @@ export default function VideoEditor() {
             const savedState = saved.state as ProjectState | undefined;
             if (saved.success && savedState?.version === 1) {
               const s = savedState;
-              if (Array.isArray(s.segments) && s.segments.length > 0) setSegments(s.segments);
-              if (s.zoomRegionsByAspect && typeof s.zoomRegionsByAspect === 'object') {
-                setZoomRegionsByAspect(s.zoomRegionsByAspect as Record<string, ZoomRegion[]>);
+
+              // Helper: extract numeric suffix from IDs like "seg-5" or "zoom-12"
+              const maxIdNum = (items: { id: string }[], prefix: string) =>
+                items.reduce((max, it) => {
+                  const m = it.id.match(new RegExp(`^${prefix}(\\d+)$`));
+                  return m ? Math.max(max, parseInt(m[1], 10)) : max;
+                }, 0);
+
+              // Restore segments — re-ID duplicates to guarantee uniqueness
+              if (Array.isArray(s.segments) && s.segments.length > 0) {
+                const seen = new Set<string>();
+                let maxSeg = maxIdNum(s.segments, 'seg-');
+                const fixedSegs = s.segments.map(seg => {
+                  if (seen.has(seg.id)) {
+                    return { ...seg, id: `seg-${++maxSeg}` };
+                  }
+                  seen.add(seg.id);
+                  return seg;
+                });
+                setSegments(fixedSegs);
+                nextSegIdRef.current = maxSeg + 1;
               }
-              if (Array.isArray(s.annotationRegions)) setAnnotationRegions(s.annotationRegions);
+
+              // Restore zoom regions — deduplicate exact duplicates, then re-ID remaining ID collisions
+              if (s.zoomRegionsByAspect && typeof s.zoomRegionsByAspect === 'object') {
+                const fixedByAspect: Record<string, ZoomRegion[]> = {};
+                let globalMaxZoom = 0;
+                for (const [aspect, regions] of Object.entries(s.zoomRegionsByAspect as Record<string, ZoomRegion[]>)) {
+                  if (!Array.isArray(regions)) continue;
+                  // Remove exact content duplicates (same id + startMs + endMs + depth)
+                  const contentKeys = new Set<string>();
+                  const deduped = regions.filter(r => {
+                    const key = `${r.id}|${r.startMs}|${r.endMs}|${r.depth}|${r.focus?.cx}|${r.focus?.cy}`;
+                    if (contentKeys.has(key)) return false;
+                    contentKeys.add(key);
+                    return true;
+                  });
+                  // Re-ID any remaining ID collisions
+                  let maxZ = maxIdNum(deduped, 'zoom-');
+                  const seenIds = new Set<string>();
+                  const fixed = deduped.map(r => {
+                    if (seenIds.has(r.id)) {
+                      return { ...r, id: `zoom-${++maxZ}` };
+                    }
+                    seenIds.add(r.id);
+                    return r;
+                  });
+                  fixedByAspect[aspect] = fixed;
+                  globalMaxZoom = Math.max(globalMaxZoom, maxZ);
+                }
+                setZoomRegionsByAspect(fixedByAspect);
+                nextZoomIdRef.current = globalMaxZoom + 1;
+              }
+
+              // Restore annotation regions and sync counter
+              if (Array.isArray(s.annotationRegions)) {
+                setAnnotationRegions(s.annotationRegions);
+                const maxAnno = maxIdNum(s.annotationRegions, 'anno-');
+                if (maxAnno > 0) nextAnnotationIdRef.current = maxAnno + 1;
+              }
               if (Array.isArray(s.audioEditRegions)) setAudioEditRegions(s.audioEditRegions);
               if (s.cropRegionsByAspect && typeof s.cropRegionsByAspect === 'object') {
                 setCropRegionsByAspect(s.cropRegionsByAspect as Partial<Record<AspectRatio, CropRegion>>);
