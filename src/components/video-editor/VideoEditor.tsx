@@ -631,6 +631,8 @@ export default function VideoEditor() {
     if (isPlaying) {
       playback.pause();
     } else {
+      // If hovering with ghost cursor, commit so playback starts from hover position
+      commitHoverPreview();
       playback.play().catch(err => console.error('Video play failed:', err));
     }
   }
@@ -651,6 +653,76 @@ export default function VideoEditor() {
       }
     }
   }
+
+  // Hover preview: temporarily seek video to hover position (only when paused).
+  // We suppress onTimeUpdate while previewing so the real playhead doesn't move.
+  const hoverPreviewActiveRef = useRef(false);
+  const savedCurrentTimeRef = useRef<number | null>(null);
+  const handleTimeUpdate = useCallback((time: number) => {
+    if (hoverPreviewActiveRef.current) return; // suppress during hover
+    setCurrentTime(time);
+  }, []);
+  // Commit hover preview: accept current video position as the real playhead
+  // (used when user clicks timeline or starts dragging the cursor)
+  // Commit hover preview: accept current video position as the real playhead
+  // (used when user clicks timeline, starts dragging, or presses play)
+  const commitHoverPreview = useCallback(() => {
+    if (!hoverPreviewActiveRef.current) return;
+    hoverPreviewActiveRef.current = false;
+    savedCurrentTimeRef.current = null;
+    // Immediately sync React state so PlaybackCursor jumps to the hover position
+    const video = videoPlaybackRef.current?.video;
+    if (video) {
+      setCurrentTime(video.currentTime);
+    }
+  }, []);
+
+  const handleHoverPreview = useCallback((effectiveTimeMs: number | null) => {
+    if (isPlaying) return;
+    const playback = videoPlaybackRef.current;
+    const video = playback?.video;
+    if (!video) return;
+
+    // Force PixiJS texture to re-read the video frame after seeking while paused
+    const forceTextureUpdate = () => {
+      try {
+        const sprite = playback?.videoSprite;
+        if (sprite?.texture?.source && 'update' in sprite.texture.source) {
+          (sprite.texture.source as { update: () => void }).update();
+        }
+      } catch { /* ignore */ }
+    };
+
+    if (effectiveTimeMs === null) {
+      if (hoverPreviewActiveRef.current) {
+        hoverPreviewActiveRef.current = false;
+        const saved = savedCurrentTimeRef.current;
+        savedCurrentTimeRef.current = null;
+        if (saved !== null) {
+          video.currentTime = saved;
+          // Update texture on restore too
+          video.addEventListener('seeked', forceTextureUpdate, { once: true });
+        }
+      }
+      return;
+    }
+    if (!hoverPreviewActiveRef.current) {
+      savedCurrentTimeRef.current = video.currentTime;
+      hoverPreviewActiveRef.current = true;
+    }
+    const segs = segmentsRef.current;
+    if (segs.length > 0) {
+      video.currentTime = effectiveToSourceMsWithSegments(effectiveTimeMs, segs) / 1000;
+    } else {
+      const trims = normalizedTrimsRef.current;
+      if (trims.length > 0) {
+        video.currentTime = effectiveToSourceMs(effectiveTimeMs, trims) / 1000;
+      } else {
+        video.currentTime = effectiveTimeMs / 1000;
+      }
+    }
+    video.addEventListener('seeked', forceTextureUpdate, { once: true });
+  }, [isPlaying]);
 
   const handleSelectZoom = useCallback((id: string | null) => {
     setSelectedZoomIdForActiveAspect(id);
@@ -674,9 +746,12 @@ export default function VideoEditor() {
   }, [setSelectedZoomIdForActiveAspect]);
 
   const handleZoomAdded = useCallback((span: Span) => {
+    const segs = segmentsRef.current;
     const trims = normalizedTrimsRef.current;
-    const startMs = trims.length > 0 ? effectiveToSourceMs(span.start, trims) : span.start;
-    const endMs = trims.length > 0 ? effectiveToSourceMs(span.end, trims) : span.end;
+    const startMs = segs.length > 0 ? effectiveToSourceMsWithSegments(span.start, segs)
+      : trims.length > 0 ? effectiveToSourceMs(span.start, trims) : span.start;
+    const endMs = segs.length > 0 ? effectiveToSourceMsWithSegments(span.end, segs)
+      : trims.length > 0 ? effectiveToSourceMs(span.end, trims) : span.end;
     const id = `zoom-${nextZoomIdRef.current++}`;
     const newRegion: ZoomRegion = {
       id,
@@ -691,20 +766,18 @@ export default function VideoEditor() {
     setSelectedAnnotationId(null);
   }, [setSelectedZoomIdForActiveAspect, setZoomRegionsForActiveAspect]);
 
-  const handleSplit = useCallback(() => {
+  // Split at a specific effective time (in ms). Used by scissors-mode click.
+  const handleSplitAtTime = useCallback((effectiveMs: number) => {
     if (segments.length === 0 || !Number.isFinite(duration) || duration <= 0) return;
-    // Convert effective playhead to source time
     const sourceMs = segments.length > 0
-      ? effectiveToSourceMsWithSegments(effectiveCurrentTime * 1000, segments)
-      : currentTime * 1000;
-    // Find the non-deleted segment containing this source time
+      ? effectiveToSourceMsWithSegments(effectiveMs, segments)
+      : effectiveMs;
     const segIdx = segments.findIndex(
       (s) => !s.deleted && sourceMs > s.startMs && sourceMs < s.endMs,
     );
     if (segIdx === -1) return;
     const seg = segments[segIdx];
     const splitPoint = Math.round(sourceMs);
-    // Guard: don't split too close to edges
     if (splitPoint - seg.startMs < 50 || seg.endMs - splitPoint < 50) return;
     const newSegments = [...segments];
     newSegments.splice(segIdx, 1,
@@ -712,7 +785,7 @@ export default function VideoEditor() {
       { id: `seg-${nextSegIdRef.current++}`, startMs: splitPoint, endMs: seg.endMs, deleted: false, speed: seg.speed },
     );
     setSegments(newSegments);
-  }, [segments, duration, effectiveCurrentTime, currentTime]);
+  }, [segments, duration]);
 
   const handleDeleteSegment = useCallback(() => {
     if (!selectedSegmentId) return;
@@ -735,9 +808,12 @@ export default function VideoEditor() {
   }, []);
 
   const handleZoomSpanChange = useCallback((id: string, span: Span) => {
+    const segs = segmentsRef.current;
     const trims = normalizedTrimsRef.current;
-    const startMs = trims.length > 0 ? effectiveToSourceMs(span.start, trims) : span.start;
-    const endMs = trims.length > 0 ? effectiveToSourceMs(span.end, trims) : span.end;
+    const startMs = segs.length > 0 ? effectiveToSourceMsWithSegments(span.start, segs)
+      : trims.length > 0 ? effectiveToSourceMs(span.start, trims) : span.start;
+    const endMs = segs.length > 0 ? effectiveToSourceMsWithSegments(span.end, segs)
+      : trims.length > 0 ? effectiveToSourceMs(span.end, trims) : span.end;
     setZoomRegionsForActiveAspect((prev) =>
       prev.map((region) =>
         region.id === id
@@ -839,9 +915,12 @@ export default function VideoEditor() {
 
 
   const handleAnnotationAdded = useCallback((span: Span) => {
+    const segs = segmentsRef.current;
     const trims = normalizedTrimsRef.current;
-    const startMs = trims.length > 0 ? effectiveToSourceMs(span.start, trims) : span.start;
-    const endMs = trims.length > 0 ? effectiveToSourceMs(span.end, trims) : span.end;
+    const startMs = segs.length > 0 ? effectiveToSourceMsWithSegments(span.start, segs)
+      : trims.length > 0 ? effectiveToSourceMs(span.start, trims) : span.start;
+    const endMs = segs.length > 0 ? effectiveToSourceMsWithSegments(span.end, segs)
+      : trims.length > 0 ? effectiveToSourceMs(span.end, trims) : span.end;
     const id = `annotation-${nextAnnotationIdRef.current++}`;
     const zIndex = nextAnnotationZIndexRef.current++; // Assign z-index based on creation order
     const newRegion: AnnotationRegion = {
@@ -862,9 +941,12 @@ export default function VideoEditor() {
   }, [setSelectedZoomIdForActiveAspect]);
 
   const handleAnnotationSpanChange = useCallback((id: string, span: Span) => {
+    const segs = segmentsRef.current;
     const trims = normalizedTrimsRef.current;
-    const startMs = trims.length > 0 ? effectiveToSourceMs(span.start, trims) : span.start;
-    const endMs = trims.length > 0 ? effectiveToSourceMs(span.end, trims) : span.end;
+    const startMs = segs.length > 0 ? effectiveToSourceMsWithSegments(span.start, segs)
+      : trims.length > 0 ? effectiveToSourceMs(span.start, trims) : span.start;
+    const endMs = segs.length > 0 ? effectiveToSourceMsWithSegments(span.end, segs)
+      : trims.length > 0 ? effectiveToSourceMs(span.end, trims) : span.end;
     setAnnotationRegions((prev) =>
       prev.map((region) =>
         region.id === id
@@ -985,10 +1067,12 @@ export default function VideoEditor() {
           return;
         }
         e.preventDefault();
-        
+
         const playback = videoPlaybackRef.current;
         if (playback?.video) {
           if (playback.video.paused) {
+            // If hovering with ghost cursor, commit so playback starts from hover position
+            commitHoverPreview();
             playback.play().catch(console.error);
           } else {
             playback.pause();
@@ -1631,7 +1715,7 @@ export default function VideoEditor() {
                       ref={videoPlaybackRef}
                       videoPath={videoPath || ''}
                       onDurationChange={setDuration}
-                      onTimeUpdate={setCurrentTime}
+                      onTimeUpdate={handleTimeUpdate}
                       currentTime={currentTime}
                       onPlayStateChange={setIsPlaying}
                       onError={setError}
@@ -1710,7 +1794,7 @@ export default function VideoEditor() {
               selectedZoomId={selectedZoomId}
               onSelectZoom={handleSelectZoom}
               segments={segments}
-              onSplit={handleSplit}
+              onSplitAtTime={handleSplitAtTime}
               onDeleteSegment={handleDeleteSegment}
               selectedSegmentId={selectedSegmentId}
               onSelectSegment={handleSelectSegment}
@@ -1727,6 +1811,9 @@ export default function VideoEditor() {
               audioEnabled={audioEnabled}
               audioGain={audioGain}
               audioEditRegions={effectiveAudioEditRegions}
+              onHoverPreview={handleHoverPreview}
+              onHoverCommit={commitHoverPreview}
+              isPlaying={isPlaying}
             />
               </div>
             </Panel>

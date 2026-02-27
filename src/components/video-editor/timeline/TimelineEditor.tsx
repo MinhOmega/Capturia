@@ -43,7 +43,7 @@ interface TimelineEditorProps {
   selectedZoomId: string | null;
   onSelectZoom: (id: string | null) => void;
   segments?: VideoSegment[];
-  onSplit?: () => void;
+  onSplitAtTime?: (effectiveMs: number) => void;
   onDeleteSegment?: () => void;
   selectedSegmentId?: string | null;
   onSelectSegment?: (id: string | null) => void;
@@ -60,6 +60,9 @@ interface TimelineEditorProps {
   audioEnabled?: boolean;
   audioGain?: number;
   audioEditRegions?: AudioEditRegion[];
+  onHoverPreview?: (effectiveMs: number | null) => void;
+  onHoverCommit?: () => void;
+  isPlaying?: boolean;
 }
 
 interface TimelineScaleConfig {
@@ -195,12 +198,14 @@ function PlaybackCursor({
   onSeek,
   timelineRef,
   keyframes = [],
+  onDragStateChange,
 }: {
   currentTimeMs: number;
   videoDurationMs: number;
   onSeek?: (time: number) => void;
   timelineRef: React.RefObject<HTMLDivElement>;
   keyframes?: { id: string; time: number }[];
+  onDragStateChange?: (dragging: boolean) => void;
 }) {
   const { sidebarWidth, direction, range, valueToPixels, pixelsToValue } = useTimelineContext();
   const sideProperty = direction === "rtl" ? "right" : "left";
@@ -236,6 +241,7 @@ function PlaybackCursor({
 
     const handleMouseUp = () => {
       setIsDragging(false);
+      onDragStateChange?.(false);
       document.body.style.cursor = '';
     };
 
@@ -248,7 +254,7 @@ function PlaybackCursor({
       window.removeEventListener('mouseup', handleMouseUp);
       document.body.style.cursor = '';
     };
-  }, [isDragging, onSeek, timelineRef, sidebarWidth, range.start, range.end, videoDurationMs, pixelsToValue, keyframes]);
+  }, [isDragging, onSeek, timelineRef, sidebarWidth, range.start, range.end, videoDurationMs, pixelsToValue, keyframes, onDragStateChange]);
 
   if (videoDurationMs <= 0 || currentTimeMs < 0) {
     return null;
@@ -270,22 +276,68 @@ function PlaybackCursor({
         pointerEvents: 'none', // Allow clicks to pass through to timeline, but we'll enable pointer events on the handle
       }}
     >
+      {/* Invisible wider hit area for easier grabbing */}
       <div
-        className="absolute top-0 bottom-0 w-[2px] bg-[#34B27B] shadow-[0_0_10px_rgba(52,178,123,0.5)] cursor-ew-resize pointer-events-auto hover:shadow-[0_0_15px_rgba(52,178,123,0.7)] transition-shadow"
+        className="absolute top-0 bottom-0 w-[12px] cursor-ew-resize pointer-events-auto"
         style={{
-          [sideProperty]: `${offset}px`,
+          [sideProperty]: `${offset - 5}px`,
         }}
         onMouseDown={(e) => {
           e.stopPropagation(); // Prevent timeline click
           setIsDragging(true);
+          onDragStateChange?.(true);
         }}
       >
+        {/* Visible 2px line centered in the hit area */}
+        <div
+          className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-[2px] bg-[#34B27B] shadow-[0_0_10px_rgba(52,178,123,0.5)] hover:shadow-[0_0_15px_rgba(52,178,123,0.7)] transition-shadow"
+        />
         <div
           className="absolute -top-1 left-1/2 -translate-x-1/2 hover:scale-125 transition-transform"
           style={{ width: '16px', height: '16px' }}
         >
           <div className="w-3 h-3 mx-auto mt-[2px] bg-[#34B27B] rotate-45 rounded-sm shadow-lg border border-white/20" />
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** Imperatively-positioned ghost cursor — updates via ref, zero React re-renders. */
+function GhostCursor({
+  ghostRef,
+  scissorsMode,
+}: {
+  ghostRef: React.RefObject<HTMLDivElement>;
+  scissorsMode: boolean;
+}) {
+  const { sidebarWidth, direction } = useTimelineContext();
+  const sideProperty = direction === "rtl" ? "right" : "left";
+
+  return (
+    <div
+      className="absolute top-0 bottom-0 z-40 pointer-events-none"
+      style={{
+        [sideProperty === "right" ? "marginRight" : "marginLeft"]: `${sidebarWidth - 1}px`,
+        display: 'none', // hidden by default; shown imperatively
+      }}
+      ref={ghostRef}
+    >
+      <div
+        className="absolute top-0 bottom-0 w-[1px]"
+        style={{
+          left: '0px',
+          backgroundColor: scissorsMode ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.25)',
+        }}
+      >
+        {scissorsMode && (
+          <div
+            className="absolute -top-1 left-1/2 -translate-x-1/2"
+            style={{ width: '14px', height: '14px' }}
+          >
+            <div className="w-2.5 h-2.5 mx-auto mt-[2px] bg-red-500/60 rotate-45 rounded-sm" />
+          </div>
+        )}
       </div>
     </div>
   );
@@ -425,6 +477,12 @@ function Timeline({
   audioGain,
   keyframes = [],
   segments = [],
+  scissorsMode,
+  onSplitAtTime,
+  onScissorsDone,
+  onHoverPreview,
+  onHoverCommit,
+  isPlaying = false,
 }: {
   items: TimelineRenderItem[];
   videoDurationMs: number;
@@ -442,57 +500,170 @@ function Timeline({
   audioGain: number;
   keyframes?: { id: string; time: number }[];
   segments?: VideoSegment[];
+  scissorsMode?: boolean;
+  onSplitAtTime?: (effectiveMs: number) => void;
+  onScissorsDone?: () => void;
+  onHoverPreview?: (effectiveMs: number | null) => void;
+  onHoverCommit?: () => void;
+  isPlaying?: boolean;
 }) {
   const { t } = useI18n();
   const { setTimelineRef, style, sidebarWidth, range, pixelsToValue, valueToPixels } = useTimelineContext();
   const localTimelineRef = useRef<HTMLDivElement | null>(null);
+  const ghostRef = useRef<HTMLDivElement>(null);
+  const isDraggingCursorRef = useRef(false);
+  const onHoverPreviewRef = useRef(onHoverPreview);
+  onHoverPreviewRef.current = onHoverPreview;
+  const onHoverCommitRef = useRef(onHoverCommit);
+  onHoverCommitRef.current = onHoverCommit;
+
+  // Hide ghost cursor immediately when playback starts
+  useEffect(() => {
+    if (isPlaying) {
+      const el = ghostRef.current;
+      if (el) el.style.display = 'none';
+    }
+  }, [isPlaying]);
 
   const setRefs = useCallback((node: HTMLDivElement | null) => {
     setTimelineRef(node);
     localTimelineRef.current = node;
   }, [setTimelineRef]);
 
-  const handleTimelineClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (!onSeek || videoDurationMs <= 0) return;
+  const getTimeFromMouseEvent = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clickX = e.clientX - rect.left - sidebarWidth;
+    if (clickX < 0) return null;
+    const relativeMs = pixelsToValue(clickX);
+    return Math.max(0, Math.min(range.start + relativeMs, videoDurationMs));
+  }, [sidebarWidth, range.start, pixelsToValue, videoDurationMs]);
 
-    // Only clear selection if clicking on empty space (not on items)
-    // This is handled by event propagation - items stop propagation
+  const handleTimelineClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (videoDurationMs <= 0) return;
+
+    // Commit hover preview so the playhead accepts the new position
+    onHoverCommitRef.current?.();
+    // Hide ghost cursor
+    const el = ghostRef.current;
+    if (el) el.style.display = 'none';
+    if (hoverRafRef.current !== null) {
+      cancelAnimationFrame(hoverRafRef.current);
+      hoverRafRef.current = null;
+    }
+
+    if (scissorsMode && onSplitAtTime) {
+      const timeMs = getTimeFromMouseEvent(e);
+      if (timeMs !== null) {
+        onSplitAtTime(timeMs);
+        onScissorsDone?.();
+      }
+      return;
+    }
+
+    if (!onSeek) return;
+
     onSelectZoom?.(null);
     onSelectSegment?.(null);
     onSelectAnnotation?.(null);
 
+    const timeMs = getTimeFromMouseEvent(e);
+    if (timeMs !== null) {
+      onSeek(timeMs / 1000);
+    }
+  }, [onSeek, onSelectZoom, onSelectSegment, onSelectAnnotation, videoDurationMs, scissorsMode, onSplitAtTime, onScissorsDone, getTimeFromMouseEvent]);
+
+  // Imperatively position ghost cursor & trigger hover preview — no React state, no re-renders
+  const hoverRafRef = useRef<number | null>(null);
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    // Skip ghost cursor + hover preview while dragging or playing
+    if (isDraggingCursorRef.current || isPlaying) return;
+    const el = ghostRef.current;
+    if (!el) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const clickX = e.clientX - rect.left - sidebarWidth;
-
-    if (clickX < 0) return;
-
+    if (clickX < 0 || videoDurationMs <= 0) {
+      el.style.display = 'none';
+      return;
+    }
     const relativeMs = pixelsToValue(clickX);
-    const absoluteMs = Math.max(0, Math.min(range.start + relativeMs, videoDurationMs));
-    const timeInSeconds = absoluteMs / 1000;
+    const timeMs = Math.max(0, Math.min(range.start + relativeMs, videoDurationMs));
+    const clamped = Math.max(0, Math.min(timeMs, videoDurationMs));
+    if (clamped < range.start || clamped > range.end) {
+      el.style.display = 'none';
+      return;
+    }
+    const offset = valueToPixels(clamped - range.start);
+    el.style.display = '';
+    const line = el.firstElementChild as HTMLElement | null;
+    if (line) line.style.left = `${offset}px`;
 
-    onSeek(timeInSeconds);
-  }, [onSeek, onSelectZoom, onSelectSegment, onSelectAnnotation, videoDurationMs, sidebarWidth, range.start, pixelsToValue]);
+    // Throttled hover preview via rAF — avoids flooding seeks
+    if (hoverRafRef.current !== null) cancelAnimationFrame(hoverRafRef.current);
+    hoverRafRef.current = requestAnimationFrame(() => {
+      hoverRafRef.current = null;
+      onHoverPreviewRef.current?.(timeMs);
+    });
+  }, [sidebarWidth, range.start, range.end, pixelsToValue, valueToPixels, videoDurationMs, isPlaying]);
+
+  const handleCursorDragStateChange = useCallback((dragging: boolean) => {
+    isDraggingCursorRef.current = dragging;
+    if (dragging) {
+      // Commit hover preview so seek updates flow through to setCurrentTime
+      onHoverCommitRef.current?.();
+      // Hide ghost cursor during drag
+      const el = ghostRef.current;
+      if (el) el.style.display = 'none';
+      if (hoverRafRef.current !== null) {
+        cancelAnimationFrame(hoverRafRef.current);
+        hoverRafRef.current = null;
+      }
+    }
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    const el = ghostRef.current;
+    if (el) el.style.display = 'none';
+    if (hoverRafRef.current !== null) {
+      cancelAnimationFrame(hoverRafRef.current);
+      hoverRafRef.current = null;
+    }
+    // Don't restore hover preview during cursor drag — it's already committed
+    if (!isDraggingCursorRef.current) {
+      onHoverPreviewRef.current?.(null);
+    }
+  }, []);
 
   const zoomItems = items.filter(item => item.rowId === ZOOM_ROW_ID);
   const annotationItems = items.filter(item => item.rowId === ANNOTATION_ROW_ID);
   const subtitleItems = items.filter(item => item.rowId === SUBTITLE_ROW_ID);
   const audioEditItems = items.filter(item => item.rowId === AUDIO_ROW_ID);
 
+  const timelineStyle = useMemo(() => {
+    if (!scissorsMode) return { ...style, cursor: 'pointer' };
+    // Scissors SVG cursor (white, 24x24, hotspot at center)
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 512 512"><path d="M193.117 345.188a88.7 88.7 0 0 0-41.172-10.125 88.16 88.16 0 0 0-48.938 14.797c-12.75 8.484-22.688 19.828-29.344 32.547a88.8 88.8 0 0 0-10.141 41.188c-.016 16.797 4.828 33.922 14.813 48.922 8.469 12.75 19.813 22.703 32.547 29.359A88.8 88.8 0 0 0 152.07 512a88.04 88.04 0 0 0 48.922-14.813c12.75-8.469 22.703-19.813 29.344-32.547a88.5 88.5 0 0 0 10.141-41.172 88.3 88.3 0 0 0-14.813-48.938 88.1 88.1 0 0 0-32.547-29.342m-1.547 99.14c-3.359 6.422-8.297 12.078-14.813 16.422-7.688 5.094-16.172 7.469-24.688 7.484-7.25 0-14.453-1.766-20.875-5.141s-12.078-8.281-16.422-14.813c-5.094-7.688-7.469-16.172-7.484-24.688a45.1 45.1 0 0 1 5.141-20.875c3.375-6.422 8.281-12.063 14.813-16.406 7.688-5.094 16.172-7.484 24.703-7.5 7.234 0 14.438 1.766 20.859 5.141s12.063 8.297 16.422 14.828c5.094 7.672 7.469 16.156 7.484 24.688a44.96 44.96 0 0 1-5.14 20.86m242.094-69.797a88.16 88.16 0 0 0-32.531-29.344 88.8 88.8 0 0 0-41.188-10.125 88.1 88.1 0 0 0-48.922 14.797c-12.766 8.484-22.703 19.828-29.359 32.547a88.8 88.8 0 0 0-10.141 41.188c-.016 16.797 4.828 33.922 14.813 48.922 8.484 12.75 19.813 22.703 32.547 29.359A88.8 88.8 0 0 0 360.07 512a88.04 88.04 0 0 0 48.922-14.813c12.75-8.469 22.703-19.813 29.359-32.547a88.7 88.7 0 0 0 10.125-41.172c.016-16.812-4.828-33.937-14.812-48.937m-34.078 69.797c-3.375 6.422-8.297 12.078-14.828 16.422-7.688 5.094-16.172 7.469-24.688 7.484-7.25 0-14.453-1.766-20.875-5.141s-12.078-8.281-16.422-14.813c-5.094-7.688-7.469-16.172-7.484-24.688a45.1 45.1 0 0 1 5.141-20.875c3.375-6.422 8.297-12.063 14.828-16.406 7.672-5.094 16.156-7.484 24.688-7.5a45.15 45.15 0 0 1 20.859 5.141c6.438 3.375 12.078 8.297 16.422 14.828 5.094 7.672 7.469 16.156 7.484 24.688a45.15 45.15 0 0 1-5.125 20.86M429.164 0 256.008 256.766 82.852 0C46.914 245.094 256.008 329.719 256.008 329.719S465.102 245.094 429.164 0" fill="%23fff"/></svg>`;
+    return { ...style, cursor: `url('data:image/svg+xml,${svg}') 12 12, crosshair` };
+  }, [style, scissorsMode]);
+
   return (
     <div
       ref={setRefs}
-      style={style}
-      className="select-none bg-[#09090b] min-h-[140px] relative cursor-pointer group"
+      style={timelineStyle}
+      className="select-none bg-[#09090b] min-h-[140px] relative group"
       onClick={handleTimelineClick}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
     >
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff03_1px,transparent_1px)] bg-[length:20px_100%] pointer-events-none" />
       <TimelineAxis intervalMs={intervalMs} videoDurationMs={videoDurationMs} currentTimeMs={currentTimeMs} />
+      <GhostCursor ghostRef={ghostRef} scissorsMode={!!scissorsMode} />
       <PlaybackCursor
         currentTimeMs={currentTimeMs}
         videoDurationMs={videoDurationMs}
         onSeek={onSeek}
         timelineRef={localTimelineRef}
         keyframes={keyframes}
+        onDragStateChange={handleCursorDragStateChange}
       />
 
       <Row id={ZOOM_ROW_ID}>
@@ -644,7 +815,7 @@ export default function TimelineEditor({
   selectedZoomId,
   onSelectZoom,
   segments = [],
-  onSplit,
+  onSplitAtTime,
   onDeleteSegment,
   selectedSegmentId,
   onSelectSegment,
@@ -661,6 +832,9 @@ export default function TimelineEditor({
   audioEnabled = true,
   audioGain = 1,
   audioEditRegions = [],
+  onHoverPreview,
+  onHoverCommit,
+  isPlaying = false,
 }: TimelineEditorProps) {
   const { t } = useI18n();
   const totalMs = useMemo(() => Math.max(0, Math.round(videoDuration * 1000)), [videoDuration]);
@@ -678,6 +852,7 @@ export default function TimelineEditor({
     pan: 'Shift + Ctrl + Scroll',
     zoom: 'Ctrl + Scroll'
   });
+  const [scissorsMode, setScissorsMode] = useState(false);
   const timelineContainerRef = useRef<HTMLDivElement>(null);
   const currentTimeMsRef = useRef(currentTimeMs);
   currentTimeMsRef.current = currentTimeMs;
@@ -812,9 +987,9 @@ export default function TimelineEditor({
     onZoomAdded({ start: startPos, end: startPos + actualDuration });
   }, [videoDuration, totalMs, currentTimeMs, zoomRegions, onZoomAdded, t]);
 
-  const handleSplit = useCallback(() => {
-    onSplit?.();
-  }, [onSplit]);
+  const toggleScissorsMode = useCallback(() => {
+    setScissorsMode(prev => !prev);
+  }, []);
 
   const handleAddAnnotation = useCallback(() => {
     if (!videoDuration || videoDuration === 0 || totalMs === 0 || !onAnnotationAdded) {
@@ -846,7 +1021,10 @@ export default function TimelineEditor({
         handleAddZoom();
       }
       if (e.key === 's' || e.key === 'S') {
-        handleSplit();
+        toggleScissorsMode();
+      }
+      if (e.key === 'Escape') {
+        setScissorsMode(false);
       }
       if (e.key === 'a' || e.key === 'A') {
         handleAddAnnotation();
@@ -889,7 +1067,7 @@ export default function TimelineEditor({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [addKeyframe, handleAddZoom, handleSplit, handleAddAnnotation, deleteSelectedKeyframe, deleteSelectedZoom, deleteSelectedSegment, deleteSelectedAnnotation, selectedKeyframeId, selectedZoomId, selectedSegmentId, selectedAnnotationId, annotationRegions, currentTime, onSelectAnnotation]);
+  }, [addKeyframe, handleAddZoom, toggleScissorsMode, handleAddAnnotation, deleteSelectedKeyframe, deleteSelectedZoom, deleteSelectedSegment, deleteSelectedAnnotation, selectedKeyframeId, selectedZoomId, selectedSegmentId, selectedAnnotationId, annotationRegions, currentTime, onSelectAnnotation]);
 
   // Custom smooth zoom (centered on playhead) and pan handler
   // Intercepts Ctrl+Scroll before dnd-timeline's default handler via capture phase
@@ -1094,11 +1272,16 @@ export default function TimelineEditor({
             <ZoomIn className="w-4 h-4" />
           </Button>
           <Button
-            onClick={handleSplit}
+            onClick={toggleScissorsMode}
             variant="ghost"
             size="icon"
-            className="h-7 w-7 text-slate-400 hover:text-[#ef4444] hover:bg-[#ef4444]/10 transition-all"
-            title={t("timeline.split") + " (S)"}
+            className={cn(
+              "h-7 w-7 transition-all",
+              scissorsMode
+                ? "text-[#ef4444] bg-[#ef4444]/20 ring-1 ring-[#ef4444]/40"
+                : "text-slate-400 hover:text-[#ef4444] hover:bg-[#ef4444]/10",
+            )}
+            title={scissorsMode ? t("timeline.split") + " (Esc)" : t("timeline.split") + " (S)"}
           >
             <Scissors className="w-4 h-4" />
           </Button>
@@ -1192,6 +1375,12 @@ export default function TimelineEditor({
             audioGain={audioGain}
             keyframes={keyframes}
             segments={segments}
+            scissorsMode={scissorsMode}
+            onSplitAtTime={onSplitAtTime}
+            onScissorsDone={() => setScissorsMode(false)}
+            onHoverPreview={onHoverPreview}
+            onHoverCommit={onHoverCommit}
+            isPlaying={isPlaying}
           />
         </TimelineWrapper>
       </div>
