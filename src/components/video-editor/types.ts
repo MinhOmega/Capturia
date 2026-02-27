@@ -193,6 +193,7 @@ export interface ProjectState {
   gifLoop?: boolean;
   gifSizePreset?: string;
   exportAspectRatios?: string[];
+  timelineZoomVisibleMs?: number;
 }
 
 export const DEFAULT_ZOOM_DEPTH: ZoomDepth = 3;

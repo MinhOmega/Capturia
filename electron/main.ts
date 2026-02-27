@@ -522,6 +522,14 @@ app.whenReady().then(async () => {
   ipcMain.on('hud-overlay-close', () => {
     app.quit()
   })
+  ipcMain.handle('switch-to-launch', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.close()
+      mainWindow = null
+    }
+    createWindow()
+  })
+
   ipcMain.handle('set-stop-recording-shortcut', (_, accelerator: string) => {
     return registerStopRecordingShortcut(accelerator)
   })

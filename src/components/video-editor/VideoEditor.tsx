@@ -716,6 +716,14 @@ export default function VideoEditor() {
               if (Array.isArray(s.exportAspectRatios) && s.exportAspectRatios.length > 0) {
                 setExportAspectRatios(s.exportAspectRatios as AspectRatio[]);
               }
+              // Restore timeline zoom level (v1.1)
+              if (typeof s.timelineZoomVisibleMs === 'number' && s.timelineZoomVisibleMs > 0) {
+                const savedZoom = s.timelineZoomVisibleMs;
+                // Defer until TimelineEditor mounts and registers its zoomSetRef
+                setTimeout(() => {
+                  timelineZoomSetRef.current?.(savedZoom);
+                }, 200);
+              }
               // Mark that project state was restored (guards wallpaper init race)
               projectRestoredRef.current = true;
               // Defer playhead restore until video is loaded
@@ -784,6 +792,7 @@ export default function VideoEditor() {
         gifLoop,
         gifSizePreset,
         exportAspectRatios,
+        timelineZoomVisibleMs: timelineZoomInfo?.visibleMs,
       };
       const hash = JSON.stringify(state);
       if (hash === lastSavedHashRef.current) return;
@@ -798,7 +807,7 @@ export default function VideoEditor() {
     audioEnabled, audioGain, audioNormalizeLoudness, audioTargetLufs,
     audioLimiterDb, exportQuality, exportFormat, seekStepSeconds,
     previewPlaybackRate, cursorStyle, subtitleCues, gifFrameRate,
-    gifLoop, gifSizePreset, exportAspectRatios,
+    gifLoop, gifSizePreset, exportAspectRatios, timelineZoomInfo,
   ]);
 
   // ── Undo / Redo history ──
@@ -2121,6 +2130,56 @@ export default function VideoEditor() {
     }
   }, [t]);
 
+  const handleCloseEditor = useCallback(() => {
+    // Immediate save before switching (bypass debounce)
+    if (videoFilePath) {
+      const state: ProjectState = {
+        version: 1,
+        savedAt: Date.now(),
+        videoFilePath,
+        segments,
+        zoomRegionsByAspect: zoomRegionsByAspect as Record<string, ZoomRegion[]>,
+        annotationRegions,
+        audioEditRegions,
+        cropRegionsByAspect: cropRegionsByAspect as Record<string, CropRegion>,
+        aspectRatio,
+        wallpaper,
+        shadowIntensity,
+        showBlur,
+        motionBlurEnabled,
+        borderRadius,
+        padding,
+        audioEnabled,
+        audioGain,
+        audioNormalizeLoudness,
+        audioTargetLufs,
+        audioLimiterDb,
+        exportQuality,
+        exportFormat,
+        seekStepSeconds,
+        previewPlaybackRate,
+        playheadPosition: currentTimeRef.current,
+        cursorStyle,
+        subtitleCues: subtitleCues as ProjectState['subtitleCues'],
+        gifFrameRate,
+        gifLoop,
+        gifSizePreset,
+        exportAspectRatios,
+        timelineZoomVisibleMs: timelineZoomInfo?.visibleMs,
+      };
+      window.electronAPI.saveProjectState(videoFilePath, state).catch(() => {});
+    }
+    window.electronAPI.switchToLaunch();
+  }, [
+    videoFilePath, segments, zoomRegionsByAspect, annotationRegions,
+    audioEditRegions, cropRegionsByAspect, aspectRatio, wallpaper,
+    shadowIntensity, showBlur, motionBlurEnabled, borderRadius, padding,
+    audioEnabled, audioGain, audioNormalizeLoudness, audioTargetLufs,
+    audioLimiterDb, exportQuality, exportFormat, seekStepSeconds,
+    previewPlaybackRate, cursorStyle, subtitleCues, gifFrameRate,
+    gifLoop, gifSizePreset, exportAspectRatios, timelineZoomInfo,
+  ]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen bg-background">
@@ -2139,10 +2198,21 @@ export default function VideoEditor() {
 
   return (
     <div className="flex flex-col h-screen bg-[#09090b] text-slate-200 overflow-hidden selection:bg-[#34B27B]/30">
-      <div 
+      <div
         className="h-10 flex-shrink-0 bg-[#09090b]/80 backdrop-blur-md border-b border-white/5 flex items-center justify-between px-6 z-50"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
       >
+        <button
+          onClick={handleCloseEditor}
+          className="flex items-center gap-1.5 px-2 py-1 text-xs text-slate-400 hover:text-slate-200 hover:bg-white/5 rounded transition-colors"
+          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+          title={t("editor.closeEditor")}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M19 12H5" /><path d="m12 19-7-7 7-7" />
+          </svg>
+          {t("editor.closeEditor")}
+        </button>
         <div className="flex-1" />
       </div>
 

@@ -137,6 +137,7 @@ interface Window {
     openPermissionSettings: (target: PermissionSettingsTarget) => Promise<{ success: boolean; message?: string }>
     openPermissionChecker: () => Promise<{ success: boolean }>
     switchToEditor: () => Promise<void>
+    switchToLaunch: () => Promise<void>
     openSourceSelector: () => Promise<void>
     selectSource: (source: unknown) => Promise<unknown>
     getSelectedSource: () => Promise<unknown>
