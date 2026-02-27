@@ -70,9 +70,10 @@ export function createHudOverlayWindow(): BrowserWindow {
     alwaysOnTop: true,
     skipTaskbar: true,
     hasShadow: false,
-    // On Linux, focusable: false stops WM from managing stacking — window stays
-    // visible even when other apps are focused.  Buttons still receive clicks.
-    ...(isLinux && { focusable: false }),
+    // On Linux:
+    //   focusable: false — stops WM from managing stacking, buttons still receive clicks
+    //   type: 'dock' — maps to _NET_WM_WINDOW_TYPE_DOCK (highest X11 stacking level)
+    ...(isLinux && { focusable: false, type: 'dock' as const }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
       nodeIntegration: false,
@@ -89,6 +90,29 @@ export function createHudOverlayWindow(): BrowserWindow {
     win.setAlwaysOnTop(true, 'screen-saver');
     win.setVisibleOnAllWorkspaces(true);
   });
+
+  // Safety net: if the WM drops always-on-top, re-apply immediately.
+  win.on('always-on-top-changed', (_event, isAlwaysOnTop) => {
+    if (!isAlwaysOnTop && !win.isDestroyed()) {
+      win.setAlwaysOnTop(true, 'screen-saver');
+    }
+  });
+
+  // Fallback for Linux: periodically toggle always-on-top to force WM re-evaluation.
+  // Some compositors (especially Wayland/Mutter) silently drop the state.
+  if (isLinux) {
+    const alwaysOnTopTimer = setInterval(() => {
+      if (win.isDestroyed()) {
+        clearInterval(alwaysOnTopTimer);
+        return;
+      }
+      if (!win.isMinimized()) {
+        win.setAlwaysOnTop(false);
+        win.setAlwaysOnTop(true, 'screen-saver');
+      }
+    }, 3000);
+    win.on('closed', () => clearInterval(alwaysOnTopTimer));
+  }
 
   win.webContents.on('did-finish-load', () => {
     win?.webContents.send('main-process-message', (new Date).toLocaleString())
