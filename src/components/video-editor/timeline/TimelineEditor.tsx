@@ -80,6 +80,13 @@ interface TimelineRenderItem {
 }
 
 const SCALE_CANDIDATES = [
+  { intervalSeconds: 0.001, gridSeconds: 0.001 },
+  { intervalSeconds: 0.002, gridSeconds: 0.001 },
+  { intervalSeconds: 0.005, gridSeconds: 0.001 },
+  { intervalSeconds: 0.01, gridSeconds: 0.002 },
+  { intervalSeconds: 0.02, gridSeconds: 0.005 },
+  { intervalSeconds: 0.05, gridSeconds: 0.01 },
+  { intervalSeconds: 0.1, gridSeconds: 0.02 },
   { intervalSeconds: 0.25, gridSeconds: 0.05 },
   { intervalSeconds: 0.5, gridSeconds: 0.1 },
   { intervalSeconds: 1, gridSeconds: 0.25 },
@@ -118,9 +125,15 @@ function calculateTimelineScale(durationSeconds: number): TimelineScaleConfig {
     totalMs > 0 ? totalMs : intervalMs * 2,
   );
 
+  // Dynamic max zoom based on video length:
+  //   ≤ 5s  → down to 50ms visible  (up to ~100x)
+  //   ≤ 30s → down to 50ms visible  (up to ~600x)
+  //   ≤ 5m  → down to 100ms visible (up to ~3000x)
+  //   > 5m  → down to 200ms visible
+  // This lets users zoom to individual milliseconds on any video length.
   const minVisibleRangeMs = totalMs > 0
-    ? Math.min(Math.max(intervalMs * 3, minItemDurationMs * 6, 1000), totalMs)
-    : Math.max(intervalMs * 3, minItemDurationMs * 6, 1000);
+    ? Math.max(50, totalMs <= 5000 ? 50 : totalMs <= 30000 ? 50 : totalMs <= 300000 ? 100 : 200)
+    : 1000;
 
   return {
     intervalMs,
@@ -139,13 +152,25 @@ function createInitialRange(totalMs: number): Range {
   return { start: 0, end: FALLBACK_RANGE_MS };
 }
 
+/** Compute axis interval & grid dynamically from the currently visible range */
+function calculateDisplayInterval(visibleRangeMs: number): { intervalMs: number; gridMs: number } {
+  const visibleSeconds = Math.max(visibleRangeMs, 1) / 1000;
+  const candidate = SCALE_CANDIDATES.find(
+    (c) => visibleSeconds / c.intervalSeconds <= TARGET_MARKER_COUNT,
+  ) ?? SCALE_CANDIDATES[SCALE_CANDIDATES.length - 1];
+  return {
+    intervalMs: Math.round(candidate.intervalSeconds * 1000),
+    gridMs: Math.round(candidate.gridSeconds * 1000),
+  };
+}
+
 function formatTimeLabel(milliseconds: number, intervalMs: number) {
   const totalSeconds = milliseconds / 1000;
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
 
-  const fractionalDigits = intervalMs < 250 ? 2 : intervalMs < 1000 ? 1 : 0;
+  const fractionalDigits = intervalMs < 10 ? 3 : intervalMs < 250 ? 2 : intervalMs < 1000 ? 1 : 0;
 
   if (hours > 0) {
     const minutesString = minutes.toString().padStart(2, "0");
@@ -654,6 +679,8 @@ export default function TimelineEditor({
     zoom: 'Ctrl + Scroll'
   });
   const timelineContainerRef = useRef<HTMLDivElement>(null);
+  const currentTimeMsRef = useRef(currentTimeMs);
+  currentTimeMsRef.current = currentTimeMs;
 
   useEffect(() => {
     formatShortcut(['shift', 'mod', 'Scroll']).then(pan => {
@@ -864,6 +891,103 @@ export default function TimelineEditor({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [addKeyframe, handleAddZoom, handleSplit, handleAddAnnotation, deleteSelectedKeyframe, deleteSelectedZoom, deleteSelectedSegment, deleteSelectedAnnotation, selectedKeyframeId, selectedZoomId, selectedSegmentId, selectedAnnotationId, annotationRegions, currentTime, onSelectAnnotation]);
 
+  // Custom smooth zoom (centered on playhead) and pan handler
+  // Intercepts Ctrl+Scroll before dnd-timeline's default handler via capture phase
+  useEffect(() => {
+    const container = timelineContainerRef.current;
+    if (!container || totalMs <= 0) return;
+
+    let rafId: number | null = null;
+    let accZoom = 0;
+    let accPan = 0;
+
+    const handleWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (e.shiftKey) {
+        accPan += e.deltaX || e.deltaY;
+      } else {
+        accZoom += e.deltaY;
+      }
+
+      if (rafId !== null) return;
+
+      rafId = requestAnimationFrame(() => {
+        const zd = accZoom;
+        const pd = accPan;
+        accZoom = 0;
+        accPan = 0;
+        rafId = null;
+
+        setRange(prev => {
+          let start = prev.start;
+          let end = prev.end;
+          let dur = end - start;
+
+          // Pan (Shift + Ctrl/Cmd + Scroll)
+          if (pd !== 0) {
+            const w = container.clientWidth;
+            const shift = w > 0 ? (pd / w) * dur : 0;
+            start += shift;
+            end += shift;
+          }
+
+          // Zoom centered on playhead (Ctrl/Cmd + Scroll)
+          if (zd !== 0) {
+            const factor = Math.pow(1.0015, zd);
+            const newDur = Math.max(
+              timelineScale.minVisibleRangeMs,
+              Math.min(totalMs, dur * factor),
+            );
+
+            const phead = Math.max(0, Math.min(currentTimeMsRef.current, totalMs));
+            let ratio: number;
+            if (phead >= start && phead <= end && dur > 0) {
+              // Playhead visible — keep it at same screen position
+              ratio = (phead - start) / dur;
+            } else {
+              // Playhead off-screen — center view on it
+              ratio = 0.5;
+            }
+
+            start = phead - newDur * ratio;
+            end = start + newDur;
+          }
+
+          // Clamp to video bounds
+          let finalDur = end - start;
+          if (start < 0) { start = 0; end = start + finalDur; }
+          if (end > totalMs) { end = totalMs; start = end - finalDur; }
+          start = Math.max(0, start);
+          end = Math.min(totalMs, end);
+
+          // Enforce minimum visible range
+          finalDur = end - start;
+          if (finalDur < timelineScale.minVisibleRangeMs) {
+            const mid = (start + end) / 2;
+            const half = timelineScale.minVisibleRangeMs / 2;
+            start = Math.max(0, mid - half);
+            end = start + timelineScale.minVisibleRangeMs;
+            if (end > totalMs) {
+              end = totalMs;
+              start = Math.max(0, end - timelineScale.minVisibleRangeMs);
+            }
+          }
+
+          return { start, end };
+        });
+      });
+    };
+
+    container.addEventListener('wheel', handleWheel, { passive: false, capture: true });
+    return () => {
+      container.removeEventListener('wheel', handleWheel, { capture: true });
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
+  }, [totalMs, timelineScale.minVisibleRangeMs, setRange]);
+
   const clampedRange = useMemo<Range>(() => {
     if (totalMs === 0) {
       return range;
@@ -874,6 +998,12 @@ export default function TimelineEditor({
       end: Math.min(range.end, totalMs),
     };
   }, [range, totalMs]);
+
+  // Dynamic axis scale — adapts markers/grid to the current zoom level
+  const displayInterval = useMemo(
+    () => calculateDisplayInterval(clampedRange.end - clampedRange.start),
+    [clampedRange],
+  );
 
   const timelineItems = useMemo<TimelineRenderItem[]>(() => {
     const zooms: TimelineRenderItem[] = zoomRegions.map((region, index) => ({
@@ -1034,7 +1164,7 @@ export default function TimelineEditor({
           onRangeChange={setRange}
           minItemDurationMs={timelineScale.minItemDurationMs}
           minVisibleRangeMs={timelineScale.minVisibleRangeMs}
-          gridSizeMs={timelineScale.gridMs}
+          gridSizeMs={displayInterval.gridMs}
           onItemSpanChange={handleItemSpanChange}
         >
           <KeyframeMarkers
@@ -1048,7 +1178,7 @@ export default function TimelineEditor({
           <Timeline
             items={timelineItems}
             videoDurationMs={totalMs}
-            intervalMs={timelineScale.intervalMs}
+            intervalMs={displayInterval.intervalMs}
             currentTimeMs={currentTimeMs}
             onSeek={onSeek}
             onSelectZoom={onSelectZoom}
