@@ -790,31 +790,53 @@ export default function VideoEditor() {
     }
   }, []);
 
+  // Hover preview seek queue: wait for each seek to complete before starting the next.
+  // This prevents seeks from piling up and skipping frames during slow mouse movement.
+  const hoverSeekBusyRef = useRef(false);
+  const hoverSeekPendingRef = useRef<number | null>(null);
+
+  const forceTextureUpdate = useCallback(() => {
+    try {
+      const sprite = videoPlaybackRef.current?.videoSprite;
+      if (sprite?.texture?.source && 'update' in sprite.texture.source) {
+        (sprite.texture.source as { update: () => void }).update();
+      }
+    } catch { /* ignore */ }
+  }, []);
+
+  const executeHoverSeek = useCallback((sourceTimeSec: number) => {
+    const video = videoPlaybackRef.current?.video;
+    if (!video) return;
+    hoverSeekBusyRef.current = true;
+    const onSeeked = () => {
+      forceTextureUpdate();
+      hoverSeekBusyRef.current = false;
+      // Process pending seek if one arrived while we were busy
+      const pending = hoverSeekPendingRef.current;
+      if (pending !== null) {
+        hoverSeekPendingRef.current = null;
+        executeHoverSeek(pending);
+      }
+    };
+    video.addEventListener('seeked', onSeeked, { once: true });
+    video.currentTime = sourceTimeSec;
+  }, [forceTextureUpdate]);
+
   const handleHoverPreview = useCallback((effectiveTimeMs: number | null) => {
     if (isPlaying) return;
-    const playback = videoPlaybackRef.current;
-    const video = playback?.video;
+    const video = videoPlaybackRef.current?.video;
     if (!video) return;
 
-    // Force PixiJS texture to re-read the video frame after seeking while paused
-    const forceTextureUpdate = () => {
-      try {
-        const sprite = playback?.videoSprite;
-        if (sprite?.texture?.source && 'update' in sprite.texture.source) {
-          (sprite.texture.source as { update: () => void }).update();
-        }
-      } catch { /* ignore */ }
-    };
-
     if (effectiveTimeMs === null) {
+      // Cancel any pending seek
+      hoverSeekPendingRef.current = null;
       if (hoverPreviewActiveRef.current) {
         hoverPreviewActiveRef.current = false;
         const saved = savedCurrentTimeRef.current;
         savedCurrentTimeRef.current = null;
         if (saved !== null) {
-          video.currentTime = saved;
-          // Update texture on restore too
           video.addEventListener('seeked', forceTextureUpdate, { once: true });
+          video.currentTime = saved;
         }
       }
       return;
@@ -823,19 +845,28 @@ export default function VideoEditor() {
       savedCurrentTimeRef.current = video.currentTime;
       hoverPreviewActiveRef.current = true;
     }
+
+    // Convert effective time to source time
+    let sourceTimeSec: number;
     const segs = segmentsRef.current;
     if (segs.length > 0) {
-      video.currentTime = effectiveToSourceMsWithSegments(effectiveTimeMs, segs) / 1000;
+      sourceTimeSec = effectiveToSourceMsWithSegments(effectiveTimeMs, segs) / 1000;
     } else {
       const trims = normalizedTrimsRef.current;
       if (trims.length > 0) {
-        video.currentTime = effectiveToSourceMs(effectiveTimeMs, trims) / 1000;
+        sourceTimeSec = effectiveToSourceMs(effectiveTimeMs, trims) / 1000;
       } else {
-        video.currentTime = effectiveTimeMs / 1000;
+        sourceTimeSec = effectiveTimeMs / 1000;
       }
     }
-    video.addEventListener('seeked', forceTextureUpdate, { once: true });
-  }, [isPlaying]);
+
+    if (hoverSeekBusyRef.current) {
+      // A seek is in progress — queue this one (latest wins)
+      hoverSeekPendingRef.current = sourceTimeSec;
+    } else {
+      executeHoverSeek(sourceTimeSec);
+    }
+  }, [isPlaying, executeHoverSeek, forceTextureUpdate]);
 
   const handleSelectZoom = useCallback((id: string | null) => {
     setSelectedZoomIdForActiveAspect(id);

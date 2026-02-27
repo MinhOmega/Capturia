@@ -974,9 +974,51 @@ export default function TimelineEditor({
     onSelectAnnotation(null);
   }, [selectedAnnotationId, onAnnotationDelete, onSelectAnnotation]);
 
+  // Scale the visible range proportionally when totalMs changes (e.g. segment speed edit),
+  // instead of resetting to the full timeline. Only reset on initial load (prevTotalMs === 0).
+  const prevTotalMsRef = useRef(0);
   useEffect(() => {
-    setRange(createInitialRange(totalMs));
-  }, [totalMs]);
+    const prevTotal = prevTotalMsRef.current;
+    prevTotalMsRef.current = totalMs;
+    if (totalMs <= 0) return;
+    if (prevTotal <= 0) {
+      // First load — show full timeline
+      setRange(createInitialRange(totalMs));
+      return;
+    }
+    // Proportional scale: keep the same relative viewport centered on playhead
+    const ratio = totalMs / prevTotal;
+    setRange(prev => {
+      const dur = prev.end - prev.start;
+      const newDur = Math.max(timelineScale.minVisibleRangeMs, Math.min(totalMs, dur * ratio));
+      const phead = Math.max(0, Math.min(currentTimeMsRef.current, totalMs));
+      const oldRatio = dur > 0 && phead >= prev.start && phead <= prev.end
+        ? (phead - prev.start) / dur
+        : 0.5;
+      let start = phead - newDur * oldRatio;
+      let end = start + newDur;
+      if (start < 0) { start = 0; end = start + newDur; }
+      if (end > totalMs) { end = totalMs; start = end - newDur; }
+      start = Math.max(0, start);
+      end = Math.min(totalMs, end);
+      return { start, end };
+    });
+  }, [totalMs, timelineScale.minVisibleRangeMs]);
+
+  // Auto-follow playhead: pan viewport when playhead exits visible range during playback
+  useEffect(() => {
+    if (!isPlaying || totalMs <= 0) return;
+    setRange(prev => {
+      if (currentTimeMs >= prev.start && currentTimeMs <= prev.end) return prev;
+      // Playhead outside viewport — pan so playhead is at ~15% from left edge
+      const dur = prev.end - prev.start;
+      let start = currentTimeMs - dur * 0.15;
+      let end = start + dur;
+      if (start < 0) { start = 0; end = dur; }
+      if (end > totalMs) { end = totalMs; start = Math.max(0, end - dur); }
+      return { start, end };
+    });
+  }, [currentTimeMs, isPlaying, totalMs]);
 
   useEffect(() => {
     if (totalMs === 0 || safeMinDurationMs <= 0) {
