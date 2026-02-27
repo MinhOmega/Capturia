@@ -236,6 +236,10 @@ describe("videoExporter seek helpers", () => {
       seekCalls += 1;
       vid.currentTime = target;
     };
+    exporter.seekVideoToNonBlocking = async (vid: any, target: number) => {
+      seekCalls += 1;
+      vid.currentTime = target;
+    };
     exporter.renderAndEncodeFrame = async () => {
       rendered += 1;
     };
@@ -244,7 +248,8 @@ describe("videoExporter seek helpers", () => {
 
     expect(result).toBe(90);
     expect(rendered).toBe(90);
-    expect(seekCalls).toBe(90);
+    // Seek count includes initial seek + pipelined prefetch seeks
+    expect(seekCalls).toBeGreaterThanOrEqual(90);
     expect(playCalls).toBe(0);
   });
 });

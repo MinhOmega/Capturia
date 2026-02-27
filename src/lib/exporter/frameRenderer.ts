@@ -79,6 +79,9 @@ export class FrameRenderer {
   private currentVideoTime = 0;
   private currentVideoSource: HTMLVideoElement | VideoFrame | null = null;
   private subtitleCues: SubtitleCue[];
+  // Cached CSS filter strings — constant across frames, computed once.
+  private cachedShadowFilter: string | null = null;
+  private cachedBgFilter: string | null = null;
 
   constructor(config: FrameRenderConfig) {
     this.config = config;
@@ -691,11 +694,14 @@ export class FrameRenderer {
       
       if (this.config.showBlur) {
         ctx.save();
-        ctx.filter = getExportBackgroundFilter({
-          showBlur: true,
-          outputWidth: this.config.width,
-          previewWidth: this.config.previewWidth,
-        });
+        if (!this.cachedBgFilter) {
+          this.cachedBgFilter = getExportBackgroundFilter({
+            showBlur: true,
+            outputWidth: this.config.width,
+            previewWidth: this.config.previewWidth,
+          });
+        }
+        ctx.filter = this.cachedBgFilter;
         ctx.drawImage(bgCanvas, 0, 0, w, h);
         ctx.restore();
       } else {
@@ -710,18 +716,22 @@ export class FrameRenderer {
       const shadowCtx = this.shadowCtx;
       shadowCtx.clearRect(0, 0, w, h);
       shadowCtx.save();
-      
-      // Calculate shadow parameters based on intensity (0-1)
-      const intensity = this.config.shadowIntensity;
-      const baseBlur1 = 48 * intensity;
-      const baseBlur2 = 16 * intensity;
-      const baseBlur3 = 8 * intensity;
-      const baseAlpha1 = 0.7 * intensity;
-      const baseAlpha2 = 0.5 * intensity;
-      const baseAlpha3 = 0.3 * intensity;
-      const baseOffset = 12 * intensity;
-      
-      shadowCtx.filter = `drop-shadow(0 ${baseOffset}px ${baseBlur1}px rgba(0,0,0,${baseAlpha1})) drop-shadow(0 ${baseOffset/3}px ${baseBlur2}px rgba(0,0,0,${baseAlpha2})) drop-shadow(0 ${baseOffset/6}px ${baseBlur3}px rgba(0,0,0,${baseAlpha3}))`;
+
+      // Use cached shadow filter string — shadow intensity is constant across
+      // all frames, so computing the string once avoids per-frame allocation.
+      if (!this.cachedShadowFilter) {
+        const intensity = this.config.shadowIntensity;
+        const baseBlur1 = 48 * intensity;
+        const baseBlur2 = 16 * intensity;
+        const baseBlur3 = 8 * intensity;
+        const baseAlpha1 = 0.7 * intensity;
+        const baseAlpha2 = 0.5 * intensity;
+        const baseAlpha3 = 0.3 * intensity;
+        const baseOffset = 12 * intensity;
+        this.cachedShadowFilter = `drop-shadow(0 ${baseOffset}px ${baseBlur1}px rgba(0,0,0,${baseAlpha1})) drop-shadow(0 ${baseOffset/3}px ${baseBlur2}px rgba(0,0,0,${baseAlpha2})) drop-shadow(0 ${baseOffset/6}px ${baseBlur3}px rgba(0,0,0,${baseAlpha3}))`;
+      }
+
+      shadowCtx.filter = this.cachedShadowFilter;
       shadowCtx.drawImage(videoCanvas, 0, 0, w, h);
       shadowCtx.restore();
       ctx.drawImage(this.shadowCanvas, 0, 0, w, h);

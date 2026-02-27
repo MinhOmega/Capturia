@@ -195,59 +195,74 @@ export class GifExporter {
       const timeStep = 1 / this.config.frameRate;
       let frameIndex = 0;
 
+      // Helper to compute source time for a given frame index
+      const getSourceTimeMs = (idx: number): number => {
+        if (this.config.segments?.length) {
+          return effectiveToSourceMsWithSegments((idx * timeStep) * 1000, this.config.segments);
+        }
+        const speed = Math.max(0.25, this.config.playbackSpeed ?? 1);
+        return this.mapEffectiveToSourceTime((idx * timeStep) * 1000 * speed);
+      };
+
+      // Seek to the first frame upfront
+      if (frameIndex < totalFrames && !this.cancelled) {
+        const firstVideoTime = getSourceTimeMs(frameIndex) / 1000;
+        const seekedPromise = new Promise<void>(resolve => {
+          videoElement.addEventListener('seeked', () => resolve(), { once: true });
+        });
+        videoElement.currentTime = firstVideoTime;
+        await seekedPromise;
+        await new Promise<void>(resolve => {
+          videoElement.requestVideoFrameCallback(() => resolve());
+        });
+      }
+
       while (frameIndex < totalFrames && !this.cancelled) {
         const i = frameIndex;
-        const timestamp = i * (1_000_000 / this.config.frameRate); // in microseconds
+        const timestamp = i * (1_000_000 / this.config.frameRate);
+        const sourceTimeMs = getSourceTimeMs(i);
 
-        // Map effective time to source time (accounting for trim regions + per-segment speed)
-        let sourceTimeMs: number;
-        if (this.config.segments?.length) {
-          const effectiveTimeMs = (i * timeStep) * 1000;
-          sourceTimeMs = effectiveToSourceMsWithSegments(effectiveTimeMs, this.config.segments);
-        } else {
-          const speed = Math.max(0.25, this.config.playbackSpeed ?? 1);
-          const effectiveTimeMs = (i * timeStep) * 1000 * speed;
-          sourceTimeMs = this.mapEffectiveToSourceTime(effectiveTimeMs);
-        }
-        const videoTime = sourceTimeMs / 1000;
-
-        // Seek if needed
-        const needsSeek = Math.abs(videoElement.currentTime - videoTime) > 0.001;
-
-        if (needsSeek) {
-          const seekedPromise = new Promise<void>(resolve => {
-            videoElement.addEventListener('seeked', () => resolve(), { once: true });
-          });
-          
-          videoElement.currentTime = videoTime;
-          await seekedPromise;
-        } else if (i === 0) {
-          // Only for the very first frame, wait for it to be ready
-          await new Promise<void>(resolve => {
-            videoElement.requestVideoFrameCallback(() => resolve());
-          });
+        // Pipeline: start seeking to the NEXT frame while we render the current one
+        let nextSeekPromise: Promise<void> | null = null;
+        if (i + 1 < totalFrames) {
+          const nextVideoTime = getSourceTimeMs(i + 1) / 1000;
+          const needsNextSeek = Math.abs(videoElement.currentTime - nextVideoTime) > 0.001;
+          if (needsNextSeek) {
+            // We'll start the seek after capturing the current frame data
+          }
         }
 
         // Create a VideoFrame from the video element
-        const videoFrame = new VideoFrame(videoElement, {
-          timestamp,
-        });
+        const videoFrame = new VideoFrame(videoElement, { timestamp });
 
-        // Render the frame with all effects using source timestamp
-        const sourceTimestamp = sourceTimeMs * 1000; // Convert to microseconds
+        // Start seeking to next frame AFTER we've captured the current VideoFrame
+        if (i + 1 < totalFrames) {
+          const nextVideoTime = getSourceTimeMs(i + 1) / 1000;
+          if (Math.abs(videoElement.currentTime - nextVideoTime) > 0.001) {
+            const seeked = new Promise<void>(resolve => {
+              videoElement.addEventListener('seeked', () => resolve(), { once: true });
+            });
+            videoElement.currentTime = nextVideoTime;
+            nextSeekPromise = seeked;
+          }
+        }
+
+        // Render the frame with all effects (CPU work overlaps seek I/O)
+        const sourceTimestamp = sourceTimeMs * 1000;
         await this.renderer!.renderFrame(videoFrame, sourceTimestamp);
-        
         videoFrame.close();
 
         // Get the rendered canvas and add to GIF
         const canvas = this.renderer!.getCanvas();
-        
-        // Add frame to GIF encoder with delay
         this.gif!.addFrame(canvas, { delay: frameDelay, copy: true });
+
+        // Wait for next frame seek to complete
+        if (nextSeekPromise) {
+          await nextSeekPromise;
+        }
 
         frameIndex++;
 
-        // Update progress
         if (this.config.onProgress) {
           this.config.onProgress({
             currentFrame: frameIndex,
