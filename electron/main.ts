@@ -81,7 +81,7 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 // Tray Icons
-const defaultTrayIcon = getTrayIcon('openscreen.png');
+const defaultTrayIcon = getTrayIcon('cursorlens.png');
 const recordingTrayIcon = getTrayIcon('rec-button.png');
 
 function createWindow() {

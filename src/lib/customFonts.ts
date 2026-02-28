@@ -7,8 +7,16 @@ export interface CustomFont {
   importUrl: string; // Google Fonts @import URL
 }
 
-const STORAGE_KEY = 'openscreen_custom_fonts';
+const STORAGE_KEY = 'cursorlens_custom_fonts';
 const loadedFonts = new Set<string>();
+
+// Migrate old storage key (one-time)
+try {
+  const OLD_KEY = 'openscreen_custom_fonts';
+  if (!localStorage.getItem(STORAGE_KEY) && localStorage.getItem(OLD_KEY)) {
+    localStorage.setItem(STORAGE_KEY, localStorage.getItem(OLD_KEY)!);
+  }
+} catch { /* no-op */ }
 
 // Load custom fonts from localStorage
 export function getCustomFonts(): CustomFont[] {

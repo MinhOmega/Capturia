@@ -95,16 +95,40 @@ export class VideoFileDecoder {
     return new Promise((resolve, reject) => {
       this.videoElement!.addEventListener('loadedmetadata', () => {
         const video = this.videoElement!;
-        
-        this.info = {
-          width: video.videoWidth,
-          height: video.videoHeight,
-          duration: video.duration,
-          frameRate: 60,
-          codec: 'avc1.640033',
+        const reportedDuration = video.duration;
+        const isWebm = videoUrl.toLowerCase().includes('.webm');
+
+        const finalize = (duration: number) => {
+          this.info = {
+            width: video.videoWidth,
+            height: video.videoHeight,
+            duration,
+            frameRate: 60,
+            codec: 'avc1.640033',
+          };
+          resolve(this.info);
         };
 
-        resolve(this.info);
+        // WebM files from MediaRecorder can report inflated durations.
+        // Probe actual content end by seeking to a very large time.
+        if (isWebm && (reportedDuration > 600 || !Number.isFinite(reportedDuration))) {
+          const onSeeked = () => {
+            video.removeEventListener('seeked', onSeeked);
+            const actualDuration = video.currentTime;
+            if (actualDuration > 0 && actualDuration < reportedDuration * 0.9) {
+              console.warn('[VideoDecoder] WebM duration fix: reported', reportedDuration, 's → actual', actualDuration, 's');
+              video.currentTime = 0;
+              finalize(actualDuration);
+            } else {
+              video.currentTime = 0;
+              finalize(reportedDuration);
+            }
+          };
+          video.addEventListener('seeked', onSeeked);
+          video.currentTime = 1e10;
+        } else {
+          finalize(reportedDuration);
+        }
       });
 
       this.videoElement!.addEventListener('error', (e) => {

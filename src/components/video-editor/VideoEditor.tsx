@@ -404,10 +404,13 @@ export default function VideoEditor() {
   // --- Segment-derived values ---
   const totalDurationMs = useMemo(() => Math.max(0, duration * 1000), [duration]);
 
-  // Initialize segments when duration becomes known
+  // Initialize segments when duration becomes known.
+  // Also clamp restored segments if the WebM duration probe found a shorter actual duration
+  // (segments saved with the inflated duration would extend past the real content end).
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
-    if (totalDurationMs > 0 && segments.length === 0) {
+    if (totalDurationMs <= 0) return;
+    if (segments.length === 0) {
       setSegments([{
         id: 'seg-1',
         startMs: 0,
@@ -415,6 +418,19 @@ export default function VideoEditor() {
         deleted: false,
         speed: 1,
       }]);
+    } else {
+      // Clamp segments that extend past actual duration (WebM duration fix)
+      const lastSeg = segments[segments.length - 1];
+      if (lastSeg && lastSeg.endMs > totalDurationMs + 500) {
+        setSegments(prev => {
+          const clamped = prev
+            .filter(s => s.startMs < totalDurationMs)
+            .map(s => s.endMs > totalDurationMs ? { ...s, endMs: totalDurationMs } : s);
+          return clamped.length > 0 ? clamped : [{
+            id: 'seg-1', startMs: 0, endMs: totalDurationMs, deleted: false, speed: 1,
+          }];
+        });
+      }
     }
   }, [totalDurationMs]);
 

@@ -26,12 +26,30 @@ const CAPTURE_PROFILE_CYCLE: CaptureProfile[] = ["balanced", "quality", "ultra"]
 const CAPTURE_FRAME_RATE_OPTIONS: CaptureFrameRate[] = [24, 30, 60, 120];
 const CAPTURE_RESOLUTION_OPTIONS: CaptureResolutionPreset[] = ["auto", "1080p", "1440p", "2160p"];
 const RECORD_COUNTDOWN_CYCLE = [0, 3, 5, 8] as const;
-const STOP_SHORTCUT_STORAGE_KEY = "openscreen.stopRecordingShortcut";
+
+// Migrate old "openscreen.*" localStorage keys to "cursorlens.*" (one-time)
+try {
+  if (!window.localStorage.getItem("cursorlens._migrated")) {
+    const OLD_PREFIX = "openscreen.";
+    const NEW_PREFIX = "cursorlens.";
+    const keys = Object.keys(window.localStorage).filter(k => k.startsWith(OLD_PREFIX));
+    for (const oldKey of keys) {
+      const newKey = NEW_PREFIX + oldKey.slice(OLD_PREFIX.length);
+      if (!window.localStorage.getItem(newKey)) {
+        const value = window.localStorage.getItem(oldKey);
+        if (value !== null) window.localStorage.setItem(newKey, value);
+      }
+    }
+    window.localStorage.setItem("cursorlens._migrated", "1");
+  }
+} catch { /* no-op */ }
+
+const STOP_SHORTCUT_STORAGE_KEY = "cursorlens.stopRecordingShortcut";
 const DEFAULT_STOP_RECORDING_SHORTCUT = "CommandOrControl+Shift+2";
-const AUTO_HIDE_HUD_ON_RECORD_STORAGE_KEY = "openscreen.autoHideHudOnRecord";
-const CAPTURE_MODE_STORAGE_KEY = "openscreen.captureMode";
-const CAPTURE_FRAME_RATE_STORAGE_KEY = "openscreen.captureFrameRate";
-const CAPTURE_RESOLUTION_STORAGE_KEY = "openscreen.captureResolutionPreset";
+const AUTO_HIDE_HUD_ON_RECORD_STORAGE_KEY = "cursorlens.autoHideHudOnRecord";
+const CAPTURE_MODE_STORAGE_KEY = "cursorlens.captureMode";
+const CAPTURE_FRAME_RATE_STORAGE_KEY = "cursorlens.captureFrameRate";
+const CAPTURE_RESOLUTION_STORAGE_KEY = "cursorlens.captureResolutionPreset";
 type RecordCountdownSeconds = (typeof RECORD_COUNTDOWN_CYCLE)[number];
 type CaptureMode = "standard" | "pro";
 type SelectedSourceSnapshot = {
@@ -112,14 +130,14 @@ export function LaunchWindow() {
   const { t, locale, setLocale } = useI18n();
   const [includeCamera, setIncludeCamera] = useState(() => {
     try {
-      return window.localStorage.getItem("openscreen.includeCamera") === "1";
+      return window.localStorage.getItem("cursorlens.includeCamera") === "1";
     } catch {
       return false;
     }
   });
   const [cameraShape, setCameraShape] = useState<CameraOverlayShape>(() => {
     try {
-      const value = window.localStorage.getItem("openscreen.cameraShape");
+      const value = window.localStorage.getItem("cursorlens.cameraShape");
       if (value === "rounded" || value === "square" || value === "circle") {
         return value;
       }
@@ -130,7 +148,7 @@ export function LaunchWindow() {
   });
   const [cameraSizePercent, setCameraSizePercent] = useState<number>(() => {
     try {
-      const value = Number(window.localStorage.getItem("openscreen.cameraSizePercent"));
+      const value = Number(window.localStorage.getItem("cursorlens.cameraSizePercent"));
       if (Number.isFinite(value)) {
         return clamp(Math.round(value), 14, 40);
       }
@@ -141,7 +159,7 @@ export function LaunchWindow() {
   });
   const [captureProfile, setCaptureProfile] = useState<CaptureProfile>(() => {
     try {
-      const value = window.localStorage.getItem("openscreen.captureProfile");
+      const value = window.localStorage.getItem("cursorlens.captureProfile");
       if (value === "balanced" || value === "quality" || value === "ultra") {
         return value;
       }
@@ -185,7 +203,7 @@ export function LaunchWindow() {
   });
   const [recordSystemCursor, setRecordSystemCursor] = useState(() => {
     try {
-      const value = window.localStorage.getItem("openscreen.recordSystemCursor");
+      const value = window.localStorage.getItem("cursorlens.recordSystemCursor");
       return value === null ? true : value === "1";
     } catch {
       return true;
@@ -195,7 +213,7 @@ export function LaunchWindow() {
     try {
       // Migration: the old default was true on Linux which persisted "1".
       // Clear that stale value so users get the new default (false).
-      const migrationKey = "openscreen.autoHideHudOnRecord.v2";
+      const migrationKey = "cursorlens.autoHideHudOnRecord.v2";
       if (!window.localStorage.getItem(migrationKey)) {
         window.localStorage.removeItem(AUTO_HIDE_HUD_ON_RECORD_STORAGE_KEY);
         window.localStorage.setItem(migrationKey, "1");
@@ -222,7 +240,7 @@ export function LaunchWindow() {
   });
   const [recordCountdownSeconds, setRecordCountdownSeconds] = useState<RecordCountdownSeconds>(() => {
     try {
-      const value = Number(window.localStorage.getItem("openscreen.recordCountdownSeconds"));
+      const value = Number(window.localStorage.getItem("cursorlens.recordCountdownSeconds"));
       if (value === 0 || value === 3 || value === 5 || value === 8) {
         return value;
       }
@@ -300,7 +318,7 @@ export function LaunchWindow() {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem("openscreen.includeCamera", includeCamera ? "1" : "0");
+      window.localStorage.setItem("cursorlens.includeCamera", includeCamera ? "1" : "0");
     } catch {
       // no-op
     }
@@ -308,7 +326,7 @@ export function LaunchWindow() {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem("openscreen.cameraShape", cameraShape);
+      window.localStorage.setItem("cursorlens.cameraShape", cameraShape);
     } catch {
       // no-op
     }
@@ -316,7 +334,7 @@ export function LaunchWindow() {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem("openscreen.cameraSizePercent", String(cameraSizePercent));
+      window.localStorage.setItem("cursorlens.cameraSizePercent", String(cameraSizePercent));
     } catch {
       // no-op
     }
@@ -324,7 +342,7 @@ export function LaunchWindow() {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem("openscreen.captureProfile", captureProfile);
+      window.localStorage.setItem("cursorlens.captureProfile", captureProfile);
     } catch {
       // no-op
     }
@@ -356,7 +374,7 @@ export function LaunchWindow() {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem("openscreen.recordSystemCursor", recordSystemCursor ? "1" : "0");
+      window.localStorage.setItem("cursorlens.recordSystemCursor", recordSystemCursor ? "1" : "0");
     } catch {
       // no-op
     }
@@ -372,7 +390,7 @@ export function LaunchWindow() {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem("openscreen.recordCountdownSeconds", String(recordCountdownSeconds));
+      window.localStorage.setItem("cursorlens.recordCountdownSeconds", String(recordCountdownSeconds));
     } catch {
       // no-op
     }
