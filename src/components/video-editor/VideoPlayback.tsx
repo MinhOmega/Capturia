@@ -1029,60 +1029,67 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
     const reportedDuration = video.duration;
     console.log('[VideoPlayback] loadedmetadata:', 'duration:', reportedDuration, 'dimensions:', video.videoWidth, 'x', video.videoHeight, 'readyState:', video.readyState, 'src:', video.currentSrc?.slice(-50));
 
-    // WebM files from MediaRecorder often report inflated durations.
-    // Probe the actual content end by seeking to a very large time —
-    // the browser clamps currentTime to the real last frame.
-    const isWebm = video.currentSrc?.toLowerCase().includes('.webm');
-    const durationSeemsInflated = !Number.isFinite(reportedDuration) || reportedDuration > 36000;
+    onDurationChange(reportedDuration);
+    if (video.videoWidth > 0 && video.videoHeight > 0) {
+      onVideoDimensionsChange?.({
+        width: video.videoWidth,
+        height: video.videoHeight,
+      });
+    }
+    video.currentTime = 0;
+    video.pause();
+    allowPlaybackRef.current = false;
+    currentTimeRef.current = 0;
 
-    const finishSetup = (finalDuration: number) => {
-      onDurationChange(finalDuration);
-      if (video.videoWidth > 0 && video.videoHeight > 0) {
-        onVideoDimensionsChange?.({
-          width: video.videoWidth,
-          height: video.videoHeight,
-        });
-      }
-      video.currentTime = 0;
-      video.pause();
-      allowPlaybackRef.current = false;
-      currentTimeRef.current = 0;
+    if (videoReadyRafRef.current) {
+      cancelAnimationFrame(videoReadyRafRef.current);
+      videoReadyRafRef.current = null;
+    }
 
-      if (videoReadyRafRef.current) {
-        cancelAnimationFrame(videoReadyRafRef.current);
+    const waitForRenderableFrame = () => {
+      const hasDimensions = video.videoWidth > 0 && video.videoHeight > 0;
+      const hasData = video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
+      if (hasDimensions && hasData) {
         videoReadyRafRef.current = null;
+        setVideoReady(true);
+        return;
       }
-
-      const waitForRenderableFrame = () => {
-        const hasDimensions = video.videoWidth > 0 && video.videoHeight > 0;
-        const hasData = video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
-        if (hasDimensions && hasData) {
-          videoReadyRafRef.current = null;
-          setVideoReady(true);
-          return;
-        }
-        videoReadyRafRef.current = requestAnimationFrame(waitForRenderableFrame);
-      };
-
       videoReadyRafRef.current = requestAnimationFrame(waitForRenderableFrame);
     };
 
-    if (isWebm && (durationSeemsInflated || reportedDuration > 600)) {
-      // Probe actual duration by seeking to end
-      const onSeeked = () => {
-        video.removeEventListener('seeked', onSeeked);
-        const actualDuration = video.currentTime;
-        if (actualDuration > 0 && actualDuration < reportedDuration * 0.9) {
-          console.warn('[VideoPlayback] WebM duration fix: reported', reportedDuration, 's → actual', actualDuration, 's');
-          finishSetup(actualDuration);
-        } else {
-          finishSetup(reportedDuration);
-        }
+    videoReadyRafRef.current = requestAnimationFrame(waitForRenderableFrame);
+
+    // Background probe for WebM files with potentially inflated duration.
+    // Uses a separate offscreen video element so the main video is never disrupted.
+    const isWebm = video.currentSrc?.toLowerCase().includes('.webm');
+    if (isWebm && Number.isFinite(reportedDuration) && reportedDuration > 300) {
+      const probeVideo = document.createElement('video');
+      probeVideo.preload = 'metadata';
+      probeVideo.muted = true;
+      let probeCleanedUp = false;
+      const cleanupProbe = () => {
+        if (probeCleanedUp) return;
+        probeCleanedUp = true;
+        probeVideo.removeAttribute('src');
+        probeVideo.load();
       };
-      video.addEventListener('seeked', onSeeked);
-      video.currentTime = 1e10; // Seek far past end — browser clamps to real end
-    } else {
-      finishSetup(reportedDuration);
+      probeVideo.addEventListener('loadedmetadata', () => {
+        const onSeeked = () => {
+          probeVideo.removeEventListener('seeked', onSeeked);
+          const actualEnd = probeVideo.currentTime;
+          if (actualEnd > 0 && actualEnd < reportedDuration * 0.8) {
+            console.warn('[VideoPlayback] WebM duration correction: reported', reportedDuration, 's → actual', actualEnd, 's');
+            onDurationChange(actualEnd);
+          }
+          cleanupProbe();
+        };
+        probeVideo.addEventListener('seeked', onSeeked);
+        probeVideo.currentTime = 1e10;
+      });
+      probeVideo.addEventListener('error', cleanupProbe);
+      // Timeout safety — abandon the probe if it takes too long
+      setTimeout(cleanupProbe, 10000);
+      probeVideo.src = video.currentSrc;
     }
   };
 

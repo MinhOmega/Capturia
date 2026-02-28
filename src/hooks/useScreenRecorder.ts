@@ -1135,7 +1135,7 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
           cleanupActiveMedia();
           mediaRecorder.current = null;
           if (chunks.current.length === 0) return;
-          const duration = Date.now() - startTime.current;
+          const duration = Date.now() - startTime.current - cumulativePauseMs.current;
           const recordedChunks = chunks.current;
           const buggyBlob = new Blob(recordedChunks, { type: recordedMimeType });
           // Clear chunks early to free memory immediately after blob creation

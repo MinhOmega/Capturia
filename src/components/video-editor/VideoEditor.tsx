@@ -11,6 +11,7 @@ import PlaybackControls from "./PlaybackControls";
 import TimelineEditor from "./timeline/TimelineEditor";
 import { SettingsPanel } from "./SettingsPanel";
 import { ExportDialog } from "./ExportDialog";
+import { ExportProgressFloat } from "./ExportProgressFloat";
 
 import type { Span } from "dnd-timeline";
 import {
@@ -2041,8 +2042,6 @@ export default function VideoEditor() {
       exporterRef.current = null;
       exportCancelledRef.current = false;
       setActiveBatchExport(null);
-      setShowExportDialog(false);
-      setExportProgress(null);
     }
   }, [videoPath, wallpaper, zoomRegions, zoomRegionsByAspect, trimRegions, shadowIntensity, showBlur, motionBlurEnabled, borderRadius, padding, activeCropRegion, cropRegionsByAspect, sourceAspectRatio, annotationRegions, subtitleCues, isPlaying, normalizedExportAspectRatios, exportQuality, locale, sourceFrameRate, sourceHasAudio, audioEnabled, audioGain, audioNormalizeLoudness, audioTargetLufs, audioLimiterDb, audioEditRegions, cursorTrack, cursorStyle, t]);
 
@@ -2143,8 +2142,21 @@ export default function VideoEditor() {
       exporterRef.current.cancel();
       toast.info(t('editor.exportCancelled'));
       setShowExportDialog(false);
+      setExportProgress(null);
+      setExportError(null);
     }
   }, [t]);
+
+  // Auto-clear export progress float after export is done and dialog is closed
+  useEffect(() => {
+    if (isExporting || showExportDialog) return;
+    if (!exportProgress && !exportError) return;
+    const timer = setTimeout(() => {
+      setExportProgress(null);
+      setExportError(null);
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [isExporting, showExportDialog, exportProgress, exportError]);
 
   const handleCloseEditor = useCallback(() => {
     // Immediate save before switching (bypass debounce)
@@ -2471,6 +2483,16 @@ export default function VideoEditor() {
         exportFormat={exportFormat}
         batchProgress={activeBatchExport}
       />
+      {(isExporting || exportProgress || exportError) && !showExportDialog && (
+        <ExportProgressFloat
+          progress={exportProgress}
+          isExporting={isExporting}
+          error={exportError}
+          exportFormat={exportFormat}
+          batchProgress={activeBatchExport}
+          onClick={() => setShowExportDialog(true)}
+        />
+      )}
     </div>
   );
 }
