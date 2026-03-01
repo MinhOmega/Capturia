@@ -48,6 +48,8 @@ import {
 } from "@/lib/exporter";
 import { ASPECT_RATIOS, type AspectRatio, getAspectRatioValue } from "@/utils/aspectRatioUtils";
 import { getAssetPath } from "@/lib/assetPath";
+import { useShortcuts } from "@/contexts/ShortcutsContext";
+import { matchesShortcut } from "@/lib/shortcuts";
 import { useI18n } from "@/i18n";
 import { DEFAULT_CURSOR_STYLE, type CursorStyleConfig, type CursorTrack, type CursorTrackEvent } from "@/lib/cursor";
 import { cropRegionEquals, getCenteredAspectCropRegion, normalizeAspectCropRegion } from "@/lib/crop/aspectCrop";
@@ -362,6 +364,12 @@ export default function VideoEditor() {
   const analysisPollingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [cursorAnalysisProgress, setCursorAnalysisProgress] = useState<number | null>(null);
   const cursorAnalyzerRef = useRef<VideoMouseAnalyzer | null>(null);
+
+  const { shortcuts: keyShortcuts, isMac: isMacPlatform } = useShortcuts();
+  const keyShortcutsRef = useRef(keyShortcuts);
+  keyShortcutsRef.current = keyShortcuts;
+  const isMacRef = useRef(isMacPlatform);
+  isMacRef.current = isMacPlatform;
 
   const videoPlaybackRef = useRef<VideoPlaybackRef>(null);
   const nextZoomIdRef = useRef(1);
@@ -1407,7 +1415,7 @@ export default function VideoEditor() {
         e.preventDefault();
       }
 
-      if (e.key === ' ' || e.code === 'Space') {
+      if (matchesShortcut(e, keyShortcutsRef.current.playPause, isMacRef.current)) {
         // Allow space only in inputs/textareas
         if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
           return;
@@ -1441,15 +1449,17 @@ export default function VideoEditor() {
         handleSeekRef.current(newTime);
       }
 
-      // Speed up/down: ] / [
-      if (e.key === ']' || e.key === '[') {
+      // Speed up/down
+      const isSpeedUp = matchesShortcut(e, keyShortcutsRef.current.speedUp, isMacRef.current);
+      const isSpeedDown = matchesShortcut(e, keyShortcutsRef.current.speedDown, isMacRef.current);
+      if (isSpeedUp || isSpeedDown) {
         if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
         e.preventDefault();
         const speeds = [0.25, 0.5, 1, 1.5, 2, 3, 4, 8, 16, 32];
         const currentRate = previewPlaybackRateRef.current;
         const idx = speeds.findIndex(s => Math.abs(s - currentRate) < 0.01);
         const curIdx = idx === -1 ? speeds.indexOf(1) : idx;
-        const newIdx = e.key === ']'
+        const newIdx = isSpeedUp
           ? Math.min(speeds.length - 1, curIdx + 1)
           : Math.max(0, curIdx - 1);
         setPreviewPlaybackRate(speeds[newIdx]);

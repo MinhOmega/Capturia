@@ -2069,6 +2069,28 @@ export function registerIpcHandlers(
     }
   })
 
+  // --- Keyboard shortcuts persistence ---
+  const SHORTCUTS_FILE = path.join(app.getPath('userData'), 'shortcuts.json')
+
+  ipcMain.handle('get-shortcuts', async () => {
+    try {
+      const data = await fs.readFile(SHORTCUTS_FILE, 'utf-8')
+      return JSON.parse(data)
+    } catch {
+      return null
+    }
+  })
+
+  ipcMain.handle('save-shortcuts', async (_, shortcuts: unknown) => {
+    try {
+      await fs.writeFile(SHORTCUTS_FILE, JSON.stringify(shortcuts, null, 2), 'utf-8')
+      return { success: true }
+    } catch (error) {
+      console.error('Failed to save shortcuts:', error)
+      return { success: false, error: String(error) }
+    }
+  })
+
   const shutdown = async (): Promise<void> => {
     try {
       stopCursorTracker()

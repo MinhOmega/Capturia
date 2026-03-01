@@ -231,6 +231,8 @@ interface Window {
     saveProjectState: (videoPath: string, state: unknown) => Promise<{ success: boolean; error?: string }>
     loadProjectState: (videoPath: string) => Promise<{ success: boolean; notFound?: boolean; state?: unknown; error?: string }>
     getPlatform: () => Promise<string>
+    getShortcuts: () => Promise<Record<string, unknown> | null>
+    saveShortcuts: (shortcuts: unknown) => Promise<{ success: boolean; error?: string }>
     startVideoAnalysis: (options?: {
       videoPath?: string
       locale?: string

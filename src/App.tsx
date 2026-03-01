@@ -7,6 +7,8 @@ import { GlobalErrorObserver } from "./components/app/GlobalErrorObserver";
 import { Toaster } from "./components/ui/sonner";
 import { loadAllCustomFonts } from "./lib/customFonts";
 import { useI18n } from "./i18n";
+import { ShortcutsProvider } from "./contexts/ShortcutsContext";
+import { ShortcutsConfigDialog } from "./components/video-editor/ShortcutsConfigDialog";
 
 export default function App() {
   const { t } = useI18n();
@@ -43,7 +45,12 @@ export default function App() {
       content = <PermissionCheckerWindow />;
       break;
     case 'editor':
-      content = <VideoEditor />;
+      content = (
+        <ShortcutsProvider>
+          <VideoEditor />
+          <ShortcutsConfigDialog />
+        </ShortcutsProvider>
+      );
       break;
     default:
       content = (
