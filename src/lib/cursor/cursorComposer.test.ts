@@ -48,7 +48,7 @@ describe('cursorComposer', () => {
     expect(state.cursorKind).toBe('ibeam');
   });
 
-  it('uses fallback focus when no cursor track exists', () => {
+  it('returns default position when cursor track has no samples', () => {
     const state = resolveCursorState({
       timeMs: 100,
       track: { samples: [] },
@@ -56,8 +56,9 @@ describe('cursorComposer', () => {
       fallbackFocus: { cx: 0.62, cy: 0.34 },
     });
 
-    expect(state.x).toBeCloseTo(0.62, 3);
-    expect(state.y).toBeCloseTo(0.34, 3);
+    // Empty samples → getPreparedCursorTrack returns null → default (0.5, 0.5)
+    expect(state.x).toBeCloseTo(0.5, 3);
+    expect(state.y).toBeCloseTo(0.5, 3);
     expect(state.visible).toBe(false);
   });
 
