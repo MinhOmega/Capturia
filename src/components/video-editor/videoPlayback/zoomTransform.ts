@@ -56,6 +56,6 @@ export function applyZoomTransform({
   if (blurFilter) {
     const shouldBlur = motionBlurEnabled && isPlaying && motionIntensity > 0.0005;
     const motionBlur = shouldBlur ? Math.min(6, motionIntensity * 120) : 0;
-    blurFilter.blur = motionBlur;
+    blurFilter.strength = motionBlur;
   }
 }

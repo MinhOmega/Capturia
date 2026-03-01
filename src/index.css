@@ -82,9 +82,32 @@
     scrollbar-width: none; /* Firefox */
     -ms-overflow-style: none; /* IE/Edge */
   }
-  
+
   .custom-scrollbar::-webkit-scrollbar {
     display: none; /* Chrome, Safari, Opera */
+  }
+
+  /* Themed thin scrollbar — visible but subtle */
+  .themed-scrollbar {
+    scrollbar-width: thin; /* Firefox */
+    scrollbar-color: rgba(255,255,255,0.12) transparent;
+  }
+
+  .themed-scrollbar::-webkit-scrollbar {
+    width: 5px;
+  }
+
+  .themed-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .themed-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.12);
+    border-radius: 9999px;
+  }
+
+  .themed-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgba(52,178,123,0.4);
   }
   
   /* Smooth playback scrubber */
@@ -137,5 +160,51 @@
 
   input[type="range"]::-moz-range-thumb:active {
     transform: scale(1.25);
+  }
+}
+
+/* Export dialog ↔ float transition animations */
+@keyframes export-minimize {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(30vw, 30vh) scale(0.35);
+    border-radius: 16px;
+  }
+}
+
+@keyframes export-maximize {
+  0% {
+    opacity: 0;
+    transform: translate(30vw, 30vh) scale(0.35);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes float-enter {
+  0% {
+    opacity: 0;
+    transform: scale(1.8) translateY(-60px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes float-exit {
+  0% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.8) translateY(-60px);
   }
 }

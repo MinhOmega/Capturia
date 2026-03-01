@@ -19,6 +19,8 @@ interface ExportDialogProps {
     total: number;
     aspectRatio: string;
   } | null;
+  isMinimizing?: boolean;
+  onMinimizeEnd?: () => void;
 }
 
 export function ExportDialog({
@@ -31,6 +33,8 @@ export function ExportDialog({
   exportFormat = 'mp4',
   exportedFilePath,
   batchProgress = null,
+  isMinimizing = false,
+  onMinimizeEnd,
 }: ExportDialogProps) {
   const { t } = useI18n();
   const [showSuccess, setShowSuccess] = useState(false);
@@ -141,10 +145,22 @@ export function ExportDialog({
   return (
     <>
       <div
-        className="fixed inset-0 bg-black/80 backdrop-blur-md z-50 animate-in fade-in duration-200"
+        className={`fixed inset-0 bg-black/80 backdrop-blur-md z-50 transition-opacity duration-250 ${
+          isMinimizing ? 'opacity-0' : 'animate-in fade-in duration-200'
+        }`}
         onClick={onClose}
       />
-      <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[60] bg-[#09090b] rounded-2xl shadow-2xl border border-white/10 p-8 w-[90vw] max-w-md animate-in zoom-in-95 duration-200">
+      <div
+        className="fixed top-1/2 left-1/2 z-[60] bg-[#09090b] rounded-2xl shadow-2xl border border-white/10 p-8 w-[90vw] max-w-md"
+        style={{
+          animation: isMinimizing
+            ? 'export-minimize 250ms ease-in forwards'
+            : 'export-maximize 250ms ease-out forwards',
+        }}
+        onAnimationEnd={() => {
+          if (isMinimizing && onMinimizeEnd) onMinimizeEnd();
+        }}
+      >
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-4">
             {showSuccess ? (

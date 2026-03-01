@@ -288,6 +288,15 @@ async function renderImage(
   ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
 }
 
+/** Pre-load all image annotations so renderAnnotations never blocks on I/O. */
+export async function preloadAnnotationImages(annotations: AnnotationRegion[]): Promise<void> {
+  const imageAnnotations = annotations.filter(
+    (a) => a.type === 'image' && a.content && a.content.startsWith('data:image'),
+  );
+  if (imageAnnotations.length === 0) return;
+  await Promise.all(imageAnnotations.map((a) => loadAnnotationImage(a.content)));
+}
+
 export async function renderAnnotations(
   ctx: CanvasRenderingContext2D,
   annotations: AnnotationRegion[],

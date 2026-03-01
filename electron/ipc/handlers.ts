@@ -117,6 +117,7 @@ type NativeRecorderStartOptions = {
 
 type SaveExportedVideoOptions = {
   directoryPath?: string | null
+  targetFilePath?: string | null
 }
 
 type StartVideoAnalysisOptions = {
@@ -1794,12 +1795,19 @@ export function registerIpcHandlers(
       const filters = isGif 
         ? [{ name: 'GIF', extensions: ['gif'] }]
         : [{ name: 'MP4', extensions: ['mp4'] }];
+      const targetFilePath = typeof options?.targetFilePath === 'string' && options.targetFilePath.trim().length > 0
+        ? options.targetFilePath.trim()
+        : null
       const directoryPath = typeof options?.directoryPath === 'string' && options.directoryPath.trim().length > 0
         ? options.directoryPath.trim()
         : null
 
       let targetPath: string
-      if (directoryPath) {
+      if (targetFilePath) {
+        // Path was pre-selected by the user before export started
+        await fs.mkdir(path.dirname(targetFilePath), { recursive: true })
+        targetPath = targetFilePath
+      } else if (directoryPath) {
         await fs.mkdir(directoryPath, { recursive: true })
         targetPath = path.join(directoryPath, fileName)
       } else {
@@ -1834,6 +1842,32 @@ export function registerIpcHandlers(
         message: tt(normalizeLocale(), 'exportSaveFailed'),
         error: String(error)
       }
+    }
+  })
+
+  ipcMain.handle('pick-save-file-path', async (_, fileName: string, localeInput?: string) => {
+    try {
+      const locale = normalizeLocale(localeInput)
+      const isGif = fileName.toLowerCase().endsWith('.gif')
+      const filters = isGif
+        ? [{ name: 'GIF', extensions: ['gif'] }]
+        : [{ name: 'MP4', extensions: ['mp4'] }]
+
+      const result = await dialog.showSaveDialog({
+        title: isGif ? tt(locale, 'saveGif') : tt(locale, 'saveVideo'),
+        defaultPath: path.join(app.getPath('downloads'), fileName),
+        filters,
+        properties: ['createDirectory', 'showOverwriteConfirmation'],
+      })
+
+      if (result.canceled || !result.filePath) {
+        return { success: false, cancelled: true, message: tt(locale, 'exportCancelled') }
+      }
+
+      return { success: true, path: result.filePath }
+    } catch (error) {
+      console.error('Failed to pick save file path:', error)
+      return { success: false, message: tt(normalizeLocale(), 'exportSaveFailed'), error: String(error) }
     }
   })
 

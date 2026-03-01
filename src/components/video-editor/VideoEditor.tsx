@@ -336,6 +336,7 @@ export default function VideoEditor() {
   const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [showExportDialog, setShowExportDialog] = useState(false);
+  const [exportDialogAnim, setExportDialogAnim] = useState<'idle' | 'minimizing' | 'maximizing'>('idle');
   const [exportedFilePath, setExportedFilePath] = useState<string | undefined>(undefined);
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('16:9');
   const [exportAspectRatios, setExportAspectRatios] = useState<AspectRatio[]>(['16:9']);
@@ -1800,7 +1801,7 @@ export default function VideoEditor() {
     }));
   }, [audioEditRegions, duration, roughCutSuggestions, setSelectedZoomIdForActiveAspect, t]);
 
-  const handleExport = useCallback(async (settings: ExportSettings) => {
+  const handleExport = useCallback(async (settings: ExportSettings, preSelectedSavePath?: string) => {
     if (!videoPath) {
       toast.error(t('editor.noVideoLoaded'));
       return;
@@ -1887,7 +1888,10 @@ export default function VideoEditor() {
           const timestamp = Date.now();
           const fileName = `export-${timestamp}.gif`;
 
-          const saveResult = await window.electronAPI.saveExportedVideo(arrayBuffer, fileName, locale);
+          const saveResult = await window.electronAPI.saveExportedVideo(
+            arrayBuffer, fileName, locale,
+            preSelectedSavePath ? { targetFilePath: preSelectedSavePath } : undefined,
+          );
 
           if (saveResult.cancelled) {
             toast.info(t('editor.exportCancelled'));
@@ -2013,11 +2017,16 @@ export default function VideoEditor() {
           const ratioSuffix = ratiosToExport.length > 1 ? `-${currentRatio.replace(':', 'x')}` : '';
           const fileName = `export-${timestamp}${ratioSuffix}.mp4`;
 
+          const saveOptions = exportDirectoryPath
+            ? { directoryPath: exportDirectoryPath }
+            : preSelectedSavePath
+              ? { targetFilePath: preSelectedSavePath }
+              : undefined;
           const saveResult = await window.electronAPI.saveExportedVideo(
             arrayBuffer,
             fileName,
             locale,
-            exportDirectoryPath ? { directoryPath: exportDirectoryPath } : undefined,
+            saveOptions,
           );
 
           if (saveResult.cancelled) {
@@ -2058,7 +2067,7 @@ export default function VideoEditor() {
     }
   }, [videoPath, wallpaper, zoomRegions, zoomRegionsByAspect, trimRegions, shadowIntensity, showBlur, motionBlurEnabled, borderRadius, padding, activeCropRegion, cropRegionsByAspect, sourceAspectRatio, annotationRegions, subtitleCues, isPlaying, normalizedExportAspectRatios, exportQuality, locale, sourceFrameRate, sourceHasAudio, audioEnabled, audioGain, audioNormalizeLoudness, audioTargetLufs, audioLimiterDb, audioEditRegions, cursorTrack, cursorStyle, t]);
 
-  const handleOpenExportDialog = useCallback(() => {
+  const handleOpenExportDialog = useCallback(async () => {
     if (!videoPath) {
       toast.error(t('editor.noVideoLoaded'));
       return;
@@ -2091,12 +2100,26 @@ export default function VideoEditor() {
       } : undefined,
     };
 
+    // Ask user to pick save location BEFORE starting export
+    // (batch export with multiple aspect ratios uses a directory picker inside handleExport)
+    const isBatchExport = exportFormat === 'mp4' && normalizedExportAspectRatios.length > 1;
+    let preSelectedSavePath: string | undefined;
+
+    if (!isBatchExport) {
+      const ext = exportFormat === 'gif' ? 'gif' : 'mp4';
+      const defaultFileName = `export-${Date.now()}.${ext}`;
+      const pickResult = await window.electronAPI.pickSaveFilePath(defaultFileName, locale);
+      if (pickResult.cancelled || !pickResult.path) {
+        return;
+      }
+      preSelectedSavePath = pickResult.path;
+    }
+
     setShowExportDialog(true);
     setExportError(null);
 
-    // Start export immediately
-    handleExport(settings);
-  }, [videoPath, exportFormat, exportQuality, gifFrameRate, gifLoop, gifSizePreset, handleExport, normalizedExportAspectRatios.length, t]);
+    handleExport(settings, preSelectedSavePath);
+  }, [videoPath, exportFormat, exportQuality, gifFrameRate, gifLoop, gifSizePreset, handleExport, normalizedExportAspectRatios.length, locale, t]);
 
   // Fullscreen preview mode
   const toggleFullscreen = useCallback(() => {
@@ -2162,8 +2185,27 @@ export default function VideoEditor() {
   }, [t]);
 
   const handleExportDialogClose = useCallback(() => {
+    // If export is running, animate minimize to float
+    if (isExporting) {
+      setExportDialogAnim('minimizing');
+    } else {
+      setShowExportDialog(false);
+      setExportedFilePath(undefined);
+    }
+  }, [isExporting]);
+
+  const handleMinimizeEnd = useCallback(() => {
     setShowExportDialog(false);
-    setExportedFilePath(undefined);
+    setExportDialogAnim('idle');
+  }, []);
+
+  const handleFloatClick = useCallback(() => {
+    setExportDialogAnim('maximizing');
+  }, []);
+
+  const handleFloatExitEnd = useCallback(() => {
+    setShowExportDialog(true);
+    setExportDialogAnim('idle');
   }, []);
 
   const showExportSuccessToast = useCallback((filePath: string) => {
@@ -2511,7 +2553,7 @@ export default function VideoEditor() {
         />
       </div>
       <ExportDialog
-        isOpen={showExportDialog}
+        isOpen={showExportDialog || exportDialogAnim === 'minimizing'}
         onClose={handleExportDialogClose}
         progress={exportProgress}
         isExporting={isExporting}
@@ -2520,6 +2562,8 @@ export default function VideoEditor() {
         exportFormat={exportFormat}
         exportedFilePath={exportedFilePath}
         batchProgress={activeBatchExport}
+        isMinimizing={exportDialogAnim === 'minimizing'}
+        onMinimizeEnd={handleMinimizeEnd}
       />
       {(isExporting || exportProgress || exportError) && !showExportDialog && (
         <ExportProgressFloat
@@ -2528,7 +2572,10 @@ export default function VideoEditor() {
           error={exportError}
           exportFormat={exportFormat}
           batchProgress={activeBatchExport}
-          onClick={() => setShowExportDialog(true)}
+          onClick={handleFloatClick}
+          isExiting={exportDialogAnim === 'maximizing'}
+          onExitEnd={handleFloatExitEnd}
+          isEntering={exportDialogAnim === 'idle'}
         />
       )}
     </div>

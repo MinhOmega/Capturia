@@ -13,6 +13,9 @@ interface ExportProgressFloatProps {
     aspectRatio: string;
   } | null;
   onClick: () => void;
+  isExiting?: boolean;
+  onExitEnd?: () => void;
+  isEntering?: boolean;
 }
 
 export function ExportProgressFloat({
@@ -22,6 +25,9 @@ export function ExportProgressFloat({
   exportFormat,
   batchProgress,
   onClick,
+  isExiting = false,
+  onExitEnd,
+  isEntering = false,
 }: ExportProgressFloatProps) {
   const { t } = useI18n();
 
@@ -51,7 +57,17 @@ export function ExportProgressFloat({
   return (
     <div
       onClick={onClick}
-      className="fixed bottom-6 right-6 z-40 cursor-pointer select-none animate-in slide-in-from-bottom-4 duration-300"
+      className="fixed bottom-6 right-6 z-40 cursor-pointer select-none"
+      style={{
+        animation: isExiting
+          ? 'float-exit 250ms ease-in forwards'
+          : isEntering
+            ? 'float-enter 250ms ease-out forwards'
+            : 'float-enter 300ms ease-out forwards',
+      }}
+      onAnimationEnd={() => {
+        if (isExiting && onExitEnd) onExitEnd();
+      }}
     >
       <div className="bg-[#0a0a0c] border border-white/10 rounded-xl shadow-2xl shadow-black/40 px-4 py-3 min-w-[280px] max-w-[340px] hover:border-white/20 transition-colors">
         {/* Header row */}

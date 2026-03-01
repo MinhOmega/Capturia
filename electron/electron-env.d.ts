@@ -211,12 +211,13 @@ interface Window {
     getStopRecordingShortcut: () => Promise<{ success: boolean; accelerator: string; message?: string }>
     openExternalUrl: (url: string) => Promise<{ success: boolean; error?: string }>
     revealInFolder: (filePath: string) => Promise<{ success: boolean; error?: string; message?: string }>
+    pickSaveFilePath: (fileName: string, locale?: string) => Promise<{ success: boolean; path?: string; message?: string; cancelled?: boolean }>
     pickExportDirectory: (locale?: string) => Promise<{ success: boolean; path?: string; message?: string; cancelled?: boolean }>
     saveExportedVideo: (
       videoData: ArrayBuffer,
       fileName: string,
       locale?: string,
-      options?: { directoryPath?: string | null }
+      options?: { directoryPath?: string | null; targetFilePath?: string | null }
     ) => Promise<{ success: boolean; path?: string; message?: string; cancelled?: boolean }>
     openVideoFilePicker: (locale?: string) => Promise<{ success: boolean; path?: string; cancelled?: boolean }>
     setCurrentVideoPath: (

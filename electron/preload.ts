@@ -141,6 +141,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   revealInFolder: (filePath: string) => {
     return ipcRenderer.invoke('reveal-in-folder', filePath)
   },
+  pickSaveFilePath: (fileName: string, locale?: string) => {
+    return ipcRenderer.invoke('pick-save-file-path', fileName, locale)
+  },
   pickExportDirectory: (locale?: string) => {
     return ipcRenderer.invoke('pick-export-directory', locale)
   },

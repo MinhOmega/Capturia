@@ -580,7 +580,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
     };
 
     if (blurFilterRef.current) {
-      blurFilterRef.current.blur = 0;
+      blurFilterRef.current.strength = 0;
     }
 
     requestAnimationFrame(() => {
@@ -853,7 +853,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
     const blurFilter = new BlurFilter();
     blurFilter.quality = 3;
     blurFilter.resolution = app.renderer.resolution;
-    blurFilter.blur = 0;
+    blurFilter.strength = 0;
     videoContainer.filters = [blurFilter];
     blurFilterRef.current = blurFilter;
     

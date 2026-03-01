@@ -118,7 +118,7 @@ export function ShortcutsConfigDialog() {
 
   return (
     <Dialog open={isConfigOpen} onOpenChange={(open: boolean) => { if (!open) handleClose(); }}>
-      <DialogContent className="bg-[#09090b] border-white/10 text-white max-w-[420px] max-h-[85vh] !p-0 flex flex-col">
+      <DialogContent aria-describedby={undefined} className="bg-[#09090b] border-white/10 text-white max-w-[420px] max-h-[85vh] !p-0 flex flex-col">
         {/* Header */}
         <DialogHeader className="px-5 pt-5 pb-3 shrink-0">
           <DialogTitle className="flex items-center gap-2 text-sm">
@@ -131,7 +131,7 @@ export function ShortcutsConfigDialog() {
         </DialogHeader>
 
         {/* Scrollable content */}
-        <div className="flex-1 overflow-y-auto min-h-0 px-5">
+        <div className="flex-1 overflow-y-auto min-h-0 px-5 themed-scrollbar">
           {/* Configurable shortcuts */}
           <div className="space-y-0.5">
             <p className="text-[10px] text-slate-500 mb-2 uppercase tracking-wide font-semibold">

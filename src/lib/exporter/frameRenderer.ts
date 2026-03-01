@@ -5,7 +5,7 @@ import { findDominantRegion } from '@/components/video-editor/videoPlayback/zoom
 import { applyZoomTransform } from '@/components/video-editor/videoPlayback/zoomTransform';
 import { DEFAULT_FOCUS, MIN_DELTA, resolveAdaptiveSmoothingAlpha } from '@/components/video-editor/videoPlayback/constants';
 import { clampFocusToStage as clampFocusToStageUtil } from '@/components/video-editor/videoPlayback/focusUtils';
-import { renderAnnotations } from './annotationRenderer';
+import { renderAnnotations, preloadAnnotationImages } from './annotationRenderer';
 import { getExportBackgroundFilter } from '@/lib/rendering/backgroundBlur';
 import { getAssetPath } from '@/lib/assetPath';
 import type { SubtitleCue } from '@/lib/analysis/types';
@@ -80,9 +80,8 @@ export class FrameRenderer {
   private currentVideoTime = 0;
   private currentVideoSource: HTMLVideoElement | VideoFrame | null = null;
   private subtitleCues: SubtitleCue[];
-  // Cached CSS filter strings — constant across frames, computed once.
+  // Cached CSS filter string — constant across frames, computed once.
   private cachedShadowFilter: string | null = null;
-  private cachedBgFilter: string | null = null;
 
   constructor(config: FrameRenderConfig) {
     this.config = config;
@@ -135,9 +134,9 @@ export class FrameRenderer {
 
     // Setup blur filter for video container
     this.blurFilter = new BlurFilter();
-    this.blurFilter.quality = 5;
+    this.blurFilter.quality = 3;
     this.blurFilter.resolution = this.app.renderer.resolution;
-    this.blurFilter.blur = 0;
+    this.blurFilter.strength = 0;
     this.videoContainer.filters = [this.blurFilter];
 
     // Setup composite canvas for final output with shadows
@@ -166,6 +165,11 @@ export class FrameRenderer {
     this.maskGraphics = new Graphics();
     this.videoContainer.addChild(this.maskGraphics);
     this.videoContainer.mask = this.maskGraphics;
+
+    // Pre-load annotation images so renderFrame never blocks on I/O
+    if (this.config.annotationRegions && this.config.annotationRegions.length > 0) {
+      await preloadAnnotationImages(this.config.annotationRegions);
+    }
   }
 
   private async setupBackground(): Promise<void> {
@@ -281,8 +285,25 @@ export class FrameRenderer {
       bgCtx.fillRect(0, 0, this.config.width, this.config.height);
     }
 
-    // Store the background canvas for compositing
-    this.backgroundSprite = bgCanvas as any;
+    // Pre-bake background blur into the canvas so compositeWithShadows() can
+    // skip the per-frame CSS filter — the background never changes between frames.
+    if (this.config.showBlur) {
+      const blurFilterStr = getExportBackgroundFilter({
+        showBlur: true,
+        outputWidth: this.config.width,
+        previewWidth: this.config.previewWidth,
+      });
+      const blurredCanvas = document.createElement('canvas');
+      blurredCanvas.width = this.config.width;
+      blurredCanvas.height = this.config.height;
+      const blurredCtx = blurredCanvas.getContext('2d')!;
+      blurredCtx.filter = blurFilterStr;
+      blurredCtx.drawImage(bgCanvas, 0, 0, this.config.width, this.config.height);
+      this.backgroundSprite = blurredCanvas as any;
+    } else {
+      // Store the background canvas for compositing
+      this.backgroundSprite = bgCanvas as any;
+    }
   }
 
   private updateVideoSpriteSource(videoSource: HTMLVideoElement | VideoFrame): void {
@@ -689,25 +710,10 @@ export class FrameRenderer {
     // Clear composite canvas
     ctx.clearRect(0, 0, w, h);
 
-    // Step 1: Draw background layer (with optional blur, not affected by zoom)
+    // Step 1: Draw background layer (blur already pre-baked during init)
     if (this.backgroundSprite) {
       const bgCanvas = this.backgroundSprite as any as HTMLCanvasElement;
-      
-      if (this.config.showBlur) {
-        ctx.save();
-        if (!this.cachedBgFilter) {
-          this.cachedBgFilter = getExportBackgroundFilter({
-            showBlur: true,
-            outputWidth: this.config.width,
-            previewWidth: this.config.previewWidth,
-          });
-        }
-        ctx.filter = this.cachedBgFilter;
-        ctx.drawImage(bgCanvas, 0, 0, w, h);
-        ctx.restore();
-      } else {
-        ctx.drawImage(bgCanvas, 0, 0, w, h);
-      }
+      ctx.drawImage(bgCanvas, 0, 0, w, h);
     } else {
       console.warn('[FrameRenderer] No background sprite found during compositing!');
     }
