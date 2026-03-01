@@ -7,6 +7,7 @@ import { DEFAULT_FOCUS, MIN_DELTA, resolveAdaptiveSmoothingAlpha } from '@/compo
 import { clampFocusToStage as clampFocusToStageUtil } from '@/components/video-editor/videoPlayback/focusUtils';
 import { renderAnnotations } from './annotationRenderer';
 import { getExportBackgroundFilter } from '@/lib/rendering/backgroundBlur';
+import { getAssetPath } from '@/lib/assetPath';
 import type { SubtitleCue } from '@/lib/analysis/types';
 import { findSubtitleCueAtTime, normalizeSubtitleCues } from '@/lib/analysis/subtitleTrack';
 import { buildSubtitleLines } from '@/lib/rendering/subtitleLayout';
@@ -181,8 +182,6 @@ export class FrameRenderer {
       if (wallpaper.startsWith('file://') || wallpaper.startsWith('data:') || wallpaper.startsWith('/') || wallpaper.startsWith('http')) {
         // Image background
         const img = new Image();
-        // Don't set crossOrigin for same-origin images to avoid CORS taint
-        // Only set it for cross-origin URLs
         let imageUrl: string;
         if (wallpaper.startsWith('http')) {
           imageUrl = wallpaper;
@@ -192,7 +191,9 @@ export class FrameRenderer {
         } else if (wallpaper.startsWith('file://') || wallpaper.startsWith('data:')) {
           imageUrl = wallpaper;
         } else {
-          imageUrl = window.location.origin + wallpaper;
+          // Resolve relative paths (e.g. "/wallpapers/wallpaper1.jpg") via
+          // getAssetPath so they work in both dev server and packaged Electron.
+          imageUrl = await getAssetPath(wallpaper.replace(/^\//, ''));
         }
         
         await new Promise<void>((resolve, reject) => {
