@@ -283,6 +283,9 @@ const messages: Record<Locale, Record<string, string>> = {
     "export.ready": "Your {{format}} is ready",
     "export.cancelExport": "Cancel Export",
     "export.saved": "{{format}} saved successfully!",
+    "export.showInFolder": "Show in Folder",
+    "export.exportedTo": "Exported to {{path}}",
+    "export.revealFailed": "Failed to reveal file in folder",
 
     "format.mp4.label": "MP4 Video",
     "format.mp4.desc": "High quality video file",
@@ -713,6 +716,9 @@ const messages: Record<Locale, Record<string, string>> = {
     "export.ready": "你的 {{format}} 已就绪",
     "export.cancelExport": "取消导出",
     "export.saved": "{{format}} 已保存成功！",
+    "export.showInFolder": "在文件夹中显示",
+    "export.exportedTo": "已导出到 {{path}}",
+    "export.revealFailed": "无法在文件夹中显示文件",
 
     "format.mp4.label": "MP4 视频",
     "format.mp4.desc": "高质量视频文件",

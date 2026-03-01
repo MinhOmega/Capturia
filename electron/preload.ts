@@ -138,6 +138,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openExternalUrl: (url: string) => {
     return ipcRenderer.invoke('open-external-url', url)
   },
+  revealInFolder: (filePath: string) => {
+    return ipcRenderer.invoke('reveal-in-folder', filePath)
+  },
   pickExportDirectory: (locale?: string) => {
     return ipcRenderer.invoke('pick-export-directory', locale)
   },

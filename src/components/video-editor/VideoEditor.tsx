@@ -336,6 +336,7 @@ export default function VideoEditor() {
   const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [showExportDialog, setShowExportDialog] = useState(false);
+  const [exportedFilePath, setExportedFilePath] = useState<string | undefined>(undefined);
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('16:9');
   const [exportAspectRatios, setExportAspectRatios] = useState<AspectRatio[]>(['16:9']);
   const [activeBatchExport, setActiveBatchExport] = useState<{
@@ -1890,9 +1891,10 @@ export default function VideoEditor() {
 
           if (saveResult.cancelled) {
             toast.info(t('editor.exportCancelled'));
-          } else if (saveResult.success) {
-            toast.success(t('editor.gifExportSuccess', { path: saveResult.path ?? '' }));
-          } else {
+          } else if (saveResult.success && saveResult.path) {
+            showExportSuccessToast(saveResult.path);
+            setExportedFilePath(saveResult.path);
+          } else if (!saveResult.success) {
             setExportError(saveResult.message || t('editor.saveGifFailed'));
             toast.error(saveResult.message || t('editor.saveGifFailed'));
           }
@@ -2022,12 +2024,13 @@ export default function VideoEditor() {
             toast.info(t('editor.exportCancelled'));
             aborted = true;
             break;
-          } else if (saveResult.success) {
+          } else if (saveResult.success && saveResult.path) {
             completedCount += 1;
+            setExportedFilePath(saveResult.path);
             if (ratiosToExport.length === 1) {
-              toast.success(t('editor.videoExportSuccess', { path: saveResult.path ?? '' }));
+              showExportSuccessToast(saveResult.path);
             }
-          } else {
+          } else if (!saveResult.success) {
             setExportError(saveResult.message || t('editor.saveVideoFailed'));
             toast.error(saveResult.message || t('editor.saveVideoFailed'));
             aborted = true;
@@ -2036,7 +2039,7 @@ export default function VideoEditor() {
         }
 
         if (!aborted && completedCount > 1 && exportDirectoryPath) {
-          toast.success(t('editor.batchVideoExportSuccess', { count: completedCount, path: exportDirectoryPath }));
+          showExportSuccessToast(exportDirectoryPath);
         }
       }
     } catch (error) {
@@ -2154,7 +2157,31 @@ export default function VideoEditor() {
       setShowExportDialog(false);
       setExportProgress(null);
       setExportError(null);
+      setExportedFilePath(undefined);
     }
+  }, [t]);
+
+  const handleExportDialogClose = useCallback(() => {
+    setShowExportDialog(false);
+    setExportedFilePath(undefined);
+  }, []);
+
+  const showExportSuccessToast = useCallback((filePath: string) => {
+    toast.success(t('export.exportedTo', { path: filePath }), {
+      action: {
+        label: t('export.showInFolder'),
+        onClick: async () => {
+          try {
+            const result = await window.electronAPI.revealInFolder(filePath);
+            if (!result.success) {
+              toast.error(result.error || result.message || t('export.revealFailed'));
+            }
+          } catch (err) {
+            toast.error(String(err));
+          }
+        },
+      },
+    });
   }, [t]);
 
   // Auto-clear export progress float after export is done and dialog is closed
@@ -2485,12 +2512,13 @@ export default function VideoEditor() {
       </div>
       <ExportDialog
         isOpen={showExportDialog}
-        onClose={() => setShowExportDialog(false)}
+        onClose={handleExportDialogClose}
         progress={exportProgress}
         isExporting={isExporting}
         error={exportError}
         onCancel={handleCancelExport}
         exportFormat={exportFormat}
+        exportedFilePath={exportedFilePath}
         batchProgress={activeBatchExport}
       />
       {(isExporting || exportProgress || exportError) && !showExportDialog && (

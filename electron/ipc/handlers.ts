@@ -1767,6 +1767,25 @@ export function registerIpcHandlers(
     }
   })
 
+  ipcMain.handle('reveal-in-folder', async (_, filePath: string) => {
+    try {
+      shell.showItemInFolder(filePath)
+      return { success: true }
+    } catch (error) {
+      console.error(`Error revealing item in folder: ${filePath}`, error)
+      try {
+        const openResult = await shell.openPath(path.dirname(filePath))
+        if (openResult) {
+          return { success: false, error: openResult }
+        }
+        return { success: true, message: 'Opened directory instead.' }
+      } catch (openError) {
+        console.error(`Error opening directory: ${path.dirname(filePath)}`, openError)
+        return { success: false, error: String(error) }
+      }
+    }
+  })
+
   ipcMain.handle('save-exported-video', async (_, videoData: ArrayBuffer, fileName: string, localeInput?: string, options?: SaveExportedVideoOptions) => {
     try {
       const locale = normalizeLocale(localeInput)

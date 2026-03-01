@@ -210,6 +210,7 @@ interface Window {
     setStopRecordingShortcut: (accelerator: string) => Promise<{ success: boolean; accelerator: string; message?: string }>
     getStopRecordingShortcut: () => Promise<{ success: boolean; accelerator: string; message?: string }>
     openExternalUrl: (url: string) => Promise<{ success: boolean; error?: string }>
+    revealInFolder: (filePath: string) => Promise<{ success: boolean; error?: string; message?: string }>
     pickExportDirectory: (locale?: string) => Promise<{ success: boolean; path?: string; message?: string; cancelled?: boolean }>
     saveExportedVideo: (
       videoData: ArrayBuffer,

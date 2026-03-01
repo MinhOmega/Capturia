@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { X, Download, Loader2 } from 'lucide-react';
+import { X, Download, Loader2, FolderOpen } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 import type { ExportProgress } from '@/lib/exporter';
 import { useI18n } from '@/i18n';
 
@@ -12,6 +13,7 @@ interface ExportDialogProps {
   error: string | null;
   onCancel?: () => void;
   exportFormat?: 'mp4' | 'gif';
+  exportedFilePath?: string;
   batchProgress?: {
     current: number;
     total: number;
@@ -27,6 +29,7 @@ export function ExportDialog({
   error,
   onCancel,
   exportFormat = 'mp4',
+  exportedFilePath,
   batchProgress = null,
 }: ExportDialogProps) {
   const { t } = useI18n();
@@ -53,7 +56,7 @@ export function ExportDialog({
       const timer = setTimeout(() => {
         setShowSuccess(false);
         onClose();
-      }, 2000);
+      }, 4000);
       return () => clearTimeout(timer);
     }
   }, [isExporting, progress, error, onClose]);
@@ -331,10 +334,34 @@ export function ExportDialog({
         )}
 
         {showSuccess && (
-          <div className="text-center py-4 animate-in zoom-in-95">
+          <div className="text-center py-4 animate-in zoom-in-95 flex flex-col items-center gap-2">
             <p className="text-lg text-slate-200 font-medium">
               {t('export.saved', { format: formatLabel })}
             </p>
+            {exportedFilePath && (
+              <Button
+                variant="secondary"
+                onClick={async () => {
+                  try {
+                    const result = await window.electronAPI.revealInFolder(exportedFilePath);
+                    if (!result.success) {
+                      toast.error(result.error || result.message || t('export.revealFailed'));
+                    }
+                  } catch (err) {
+                    toast.error(String(err));
+                  }
+                }}
+                className="mt-1 px-3 py-1.5 text-sm rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 border border-white/10 gap-2"
+              >
+                <FolderOpen className="w-3.5 h-3.5" />
+                {t('export.showInFolder')}
+              </Button>
+            )}
+            {exportedFilePath && (
+              <span className="text-[10px] text-slate-500 break-all max-w-xs">
+                {exportedFilePath.replace(/^.*[\\/]/, '')}
+              </span>
+            )}
           </div>
         )}
       </div>
