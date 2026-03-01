@@ -2176,13 +2176,13 @@ export default function VideoEditor() {
     if (exporterRef.current) {
       exportCancelledRef.current = true;
       exporterRef.current.cancel();
-      toast.info(t('editor.exportCancelled'));
+      // Toast is shown by handleExport when it detects cancellation — no duplicate here.
       setShowExportDialog(false);
       setExportProgress(null);
       setExportError(null);
       setExportedFilePath(undefined);
     }
-  }, [t]);
+  }, []);
 
   const handleExportDialogClose = useCallback(() => {
     // If export is running, animate minimize to float
