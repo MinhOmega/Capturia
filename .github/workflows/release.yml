@@ -44,15 +44,12 @@ jobs:
           - os: macos-latest
             build_script: npm run build:mac
             artifact_name: macos-installers
-            artifact_glob: release/**/*.dmg
           - os: windows-latest
             build_script: npm run build:win
             artifact_name: windows-installers
-            artifact_glob: release/**/*.exe
           - os: ubuntu-latest
             build_script: npm run build:linux
             artifact_name: linux-installers
-            artifact_glob: release/**/*.AppImage
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -76,25 +73,38 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Create -latest copies of artifacts
+      - name: Collect and create -latest copies
         shell: bash
         run: |
-          for f in $(find release -type f \( -name '*.dmg' -o -name '*.exe' -o -name '*.AppImage' -o -name '*.blockmap' \)); do
-            dir=$(dirname "$f")
+          mkdir -p dist-release
+
+          # Collect only the real installer files (skip junk like elevate.exe, CursorLens.exe, blockmaps, yml)
+          for f in $(find release -type f \( -name '*.dmg' -o -name '*.AppImage' \)); do
+            cp "$f" dist-release/
+          done
+          # For Windows, only pick the NSIS Setup installer (dash-separated name)
+          for f in $(find release -type f -name 'CursorLens-Setup-*.exe'); do
+            cp "$f" dist-release/
+          done
+
+          # Create -latest copies
+          for f in dist-release/*; do
             base=$(basename "$f")
-            # Replace version pattern (e.g. -1.5.4) with -latest
-            latest=$(echo "$base" | sed -E 's/-[0-9]+\.[0-9]+\.[0-9]+/-latest/g')
-            if [ "$base" != "$latest" ]; then
-              cp "$f" "$dir/$latest"
-              echo "Created: $dir/$latest"
+            latest=$(echo "$base" | sed -E 's/[.-][0-9]+\.[0-9]+\.[0-9]+/-latest/g')
+            if [ "$base" != "$latest" ] && [ ! -f "dist-release/$latest" ]; then
+              cp "$f" "dist-release/$latest"
+              echo "Created: $latest"
             fi
           done
+
+          echo "--- Final artifacts ---"
+          ls -lh dist-release/
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.artifact_glob }}
+          path: dist-release/*
           if-no-files-found: error
           retention-days: 30
 
@@ -117,4 +127,3 @@ jobs:
             artifacts/**/*.dmg
             artifacts/**/*.exe
             artifacts/**/*.AppImage
-            artifacts/**/*.blockmap
