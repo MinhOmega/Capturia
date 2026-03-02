@@ -78,17 +78,22 @@ jobs:
         run: |
           mkdir -p dist-release
 
-          # Collect only the real installer files (skip junk like elevate.exe, CursorLens.exe, blockmaps, yml)
-          for f in $(find release -type f \( -name '*.dmg' -o -name '*.AppImage' \)); do
-            cp "$f" dist-release/
-          done
-          # For Windows, only pick the NSIS Setup installer (dash-separated name)
-          for f in $(find release -type f -name 'CursorLens-Setup-*.exe'); do
-            cp "$f" dist-release/
+          # Collect installer files (.dmg, .AppImage, and Setup .exe only)
+          find release -type f \( -name '*.dmg' -o -name '*.AppImage' \) -exec cp {} dist-release/ \;
+          find release -type f -name '*Setup*' -name '*.exe' -exec cp {} dist-release/ \;
+
+          # Normalize any spaces in filenames to dashes
+          for f in dist-release/*; do
+            base=$(basename "$f")
+            normalized=$(echo "$base" | tr ' ' '-')
+            if [ "$base" != "$normalized" ]; then
+              mv "$f" "dist-release/$normalized"
+            fi
           done
 
           # Create -latest copies
           for f in dist-release/*; do
+            [ -f "$f" ] || continue
             base=$(basename "$f")
             latest=$(echo "$base" | sed -E 's/[.-][0-9]+\.[0-9]+\.[0-9]+/-latest/g')
             if [ "$base" != "$latest" ] && [ ! -f "dist-release/$latest" ]; then
