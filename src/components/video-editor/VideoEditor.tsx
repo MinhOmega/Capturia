@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
+import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelHandle } from "react-resizable-panels";
+import { PanelRightClose, PanelRightOpen, PanelBottomClose, PanelBottomOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 import VideoPlayback, { VideoPlaybackRef } from "./VideoPlayback";
@@ -320,6 +321,7 @@ export default function VideoEditor() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [fullscreenControlsVisible, setFullscreenControlsVisible] = useState(true);
   const previewContainerRef = useRef<HTMLDivElement>(null);
+  const timelinePanelRef = useRef<ImperativePanelHandle>(null);
   const fullscreenHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [borderRadius, setBorderRadius] = useState(0);
   const [padding, setPadding] = useState(50);
@@ -338,6 +340,20 @@ export default function VideoEditor() {
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [exportDialogAnim, setExportDialogAnim] = useState<'idle' | 'minimizing' | 'maximizing'>('idle');
   const [exportedFilePath, setExportedFilePath] = useState<string | undefined>(undefined);
+  const [settingsPanelVisible, setSettingsPanelVisible] = useState(true);
+  const [timelinePanelVisible, setTimelinePanelVisible] = useState(true);
+
+  // Sync timeline panel visibility with imperative panel collapse/expand
+  useEffect(() => {
+    const panel = timelinePanelRef.current;
+    if (!panel) return;
+    if (timelinePanelVisible) {
+      if (panel.isCollapsed()) panel.expand();
+    } else {
+      if (!panel.isCollapsed()) panel.collapse();
+    }
+  }, [timelinePanelVisible]);
+
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>('16:9');
   const [exportAspectRatios, setExportAspectRatios] = useState<AspectRatio[]>(['16:9']);
   const [activeBatchExport, setActiveBatchExport] = useState<{
@@ -2311,21 +2327,46 @@ export default function VideoEditor() {
       >
         <button
           onClick={handleCloseEditor}
-          className="flex items-center gap-1.5 px-2 py-1 text-xs text-slate-400 hover:text-slate-200 hover:bg-white/5 rounded transition-colors"
+          className="flex items-center p-1.5 text-xs text-slate-400 hover:text-slate-200 hover:bg-white/5 rounded transition-colors"
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
           title={t("editor.closeEditor")}
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M19 12H5" /><path d="m12 19-7-7 7-7" />
           </svg>
-          {t("editor.closeEditor")}
         </button>
         <div className="flex-1" />
+        <div className="flex items-center gap-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+          <button
+            onClick={() => setTimelinePanelVisible(v => !v)}
+            className={cn(
+              "p-1.5 rounded transition-colors",
+              timelinePanelVisible
+                ? "text-slate-400 hover:text-slate-200 hover:bg-white/5"
+                : "text-[#34B27B] bg-[#34B27B]/10 hover:bg-[#34B27B]/20"
+            )}
+            title={timelinePanelVisible ? t("editor.hideTimeline") : t("editor.showTimeline")}
+          >
+            {timelinePanelVisible ? <PanelBottomClose className="w-3.5 h-3.5" /> : <PanelBottomOpen className="w-3.5 h-3.5" />}
+          </button>
+          <button
+            onClick={() => setSettingsPanelVisible(v => !v)}
+            className={cn(
+              "p-1.5 rounded transition-colors",
+              settingsPanelVisible
+                ? "text-slate-400 hover:text-slate-200 hover:bg-white/5"
+                : "text-[#34B27B] bg-[#34B27B]/10 hover:bg-[#34B27B]/20"
+            )}
+            title={settingsPanelVisible ? t("editor.hideSettings") : t("editor.showSettings")}
+          >
+            {settingsPanelVisible ? <PanelRightClose className="w-3.5 h-3.5" /> : <PanelRightOpen className="w-3.5 h-3.5" />}
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 p-5 gap-4 flex min-h-0 relative">
         {/* Left Column - Video & Timeline */}
-        <div className="flex-[7] flex flex-col gap-3 min-w-0 h-full">
+        <div className={cn("flex flex-col gap-3 min-w-0 h-full transition-[flex] duration-300 ease-in-out", settingsPanelVisible ? "flex-[7]" : "flex-1")}>
           <PanelGroup direction="vertical" className="gap-3">
             {/* Top section: video preview and controls */}
             <Panel defaultSize={70} minSize={40}>
@@ -2426,131 +2467,155 @@ export default function VideoEditor() {
               </div>
             </Panel>
 
-            <PanelResizeHandle className="h-3 bg-[#09090b]/80 hover:bg-[#09090b] transition-colors rounded-full mx-4 flex items-center justify-center">
-              <div className="w-8 h-1 bg-white/20 rounded-full"></div>
+            <PanelResizeHandle
+              className={cn(
+                "h-3 bg-[#09090b]/80 hover:bg-[#09090b] transition-all rounded-full mx-4 flex items-center justify-center",
+                !timelinePanelVisible && "opacity-0 h-0 pointer-events-none"
+              )}
+            >
+              <div className="w-8 h-1 bg-white/20 rounded-full" />
             </PanelResizeHandle>
 
-            {/* Timeline section */}
-            <Panel defaultSize={30} minSize={20}>
-              <div className="h-full bg-[#09090b] rounded-2xl border border-white/5 shadow-lg overflow-hidden flex flex-col">
+            <Panel
+              ref={timelinePanelRef}
+              defaultSize={30}
+              minSize={10}
+              collapsible
+              collapsedSize={0}
+              onCollapse={() => setTimelinePanelVisible(false)}
+              onExpand={() => setTimelinePanelVisible(true)}
+            >
+              <div className={cn(
+                "h-full bg-[#09090b] rounded-2xl border border-white/5 shadow-lg overflow-hidden flex flex-col transition-opacity duration-200",
+                !timelinePanelVisible && "opacity-0"
+              )}>
                 <TimelineEditor
-              videoDuration={effectiveDuration}
-              currentTime={effectiveCurrentTime}
-              onSeek={handleSeek}
-              zoomRegions={effectiveZoomRegions}
-              onZoomAdded={handleZoomAdded}
-              onZoomSpanChange={handleZoomSpanChange}
-              onZoomDelete={handleZoomDelete}
-              selectedZoomId={selectedZoomId}
-              onSelectZoom={handleSelectZoom}
-              segments={segments}
-              onSplitAtTime={handleSplitAtTime}
-              onDeleteSegment={handleDeleteSegment}
-              selectedSegmentId={selectedSegmentId}
-              onSelectSegment={handleSelectSegment}
-              annotationRegions={effectiveAnnotationRegions}
-              onAnnotationAdded={handleAnnotationAdded}
-              onAnnotationSpanChange={handleAnnotationSpanChange}
-              onAnnotationDelete={handleAnnotationDelete}
-              selectedAnnotationId={selectedAnnotationId}
-              onSelectAnnotation={handleSelectAnnotation}
-              subtitleCues={effectiveSubtitleCues}
-              aspectRatio={aspectRatio}
-              onAspectRatioChange={setAspectRatio}
-              hasAudioTrack={sourceHasAudio}
-              audioEnabled={audioEnabled}
-              audioGain={audioGain}
-              audioEditRegions={effectiveAudioEditRegions}
-              onHoverPreview={handleHoverPreview}
-              onHoverCommit={commitHoverPreview}
-              isPlaying={isPlaying}
-              onVisibleRangeChange={setTimelineZoomInfo}
-              zoomStepRef={timelineZoomStepRef}
-              zoomSetRef={timelineZoomSetRef}
-            />
+                  videoDuration={effectiveDuration}
+                  currentTime={effectiveCurrentTime}
+                  onSeek={handleSeek}
+                  zoomRegions={effectiveZoomRegions}
+                  onZoomAdded={handleZoomAdded}
+                  onZoomSpanChange={handleZoomSpanChange}
+                  onZoomDelete={handleZoomDelete}
+                  selectedZoomId={selectedZoomId}
+                  onSelectZoom={handleSelectZoom}
+                  segments={segments}
+                  onSplitAtTime={handleSplitAtTime}
+                  onDeleteSegment={handleDeleteSegment}
+                  selectedSegmentId={selectedSegmentId}
+                  onSelectSegment={handleSelectSegment}
+                  annotationRegions={effectiveAnnotationRegions}
+                  onAnnotationAdded={handleAnnotationAdded}
+                  onAnnotationSpanChange={handleAnnotationSpanChange}
+                  onAnnotationDelete={handleAnnotationDelete}
+                  selectedAnnotationId={selectedAnnotationId}
+                  onSelectAnnotation={handleSelectAnnotation}
+                  subtitleCues={effectiveSubtitleCues}
+                  aspectRatio={aspectRatio}
+                  onAspectRatioChange={setAspectRatio}
+                  hasAudioTrack={sourceHasAudio}
+                  audioEnabled={audioEnabled}
+                  audioGain={audioGain}
+                  audioEditRegions={effectiveAudioEditRegions}
+                  onHoverPreview={handleHoverPreview}
+                  onHoverCommit={commitHoverPreview}
+                  isPlaying={isPlaying}
+                  onVisibleRangeChange={setTimelineZoomInfo}
+                  zoomStepRef={timelineZoomStepRef}
+                  zoomSetRef={timelineZoomSetRef}
+                />
               </div>
             </Panel>
           </PanelGroup>
         </div>
 
           {/* Right section: settings panel */}
-          <SettingsPanel
-          selected={wallpaper}
-          onWallpaperChange={setWallpaper}
-          selectedZoomDepth={selectedZoomId ? zoomRegions.find(z => z.id === selectedZoomId)?.depth : null}
-          onZoomDepthChange={(depth) => selectedZoomId && handleZoomDepthChange(depth)}
-          selectedZoomId={selectedZoomId}
-          onZoomDelete={handleZoomDelete}
-          selectedSegment={segments.find((s) => s.id === selectedSegmentId) ?? null}
-          onDeleteSegment={handleDeleteSegment}
-          onSegmentSpeedChange={handleSegmentSpeedChange}
-          shadowIntensity={shadowIntensity}
-          onShadowChange={setShadowIntensity}
-          showBlur={showBlur}
-          onBlurChange={setShowBlur}
-          motionBlurEnabled={motionBlurEnabled}
-          onMotionBlurChange={setMotionBlurEnabled}
-          borderRadius={borderRadius}
-          onBorderRadiusChange={setBorderRadius}
-          padding={padding}
-          onPaddingChange={setPadding}
-          cropRegion={activeCropRegion}
-          onCropChange={handleActiveCropRegionChange}
-          aspectRatio={aspectRatio}
-          videoElement={videoPlaybackRef.current?.video || null}
-          exportQuality={exportQuality}
-          onExportQualityChange={setExportQuality}
-          exportFormat={exportFormat}
-          onExportFormatChange={setExportFormat}
-          exportAspectRatios={exportAspectRatios}
-          onExportAspectRatiosChange={setExportAspectRatios}
-          onPreviewAspectRatioChange={setAspectRatio}
-          gifFrameRate={gifFrameRate}
-          onGifFrameRateChange={setGifFrameRate}
-          gifLoop={gifLoop}
-          onGifLoopChange={setGifLoop}
-          gifSizePreset={gifSizePreset}
-          onGifSizePresetChange={setGifSizePreset}
-          gifOutputDimensions={calculateOutputDimensions(
-            videoPlaybackRef.current?.video?.videoWidth || 1920,
-            videoPlaybackRef.current?.video?.videoHeight || 1080,
-            gifSizePreset,
-            GIF_SIZE_PRESETS
-          )}
-          onExport={handleOpenExportDialog}
-          selectedAnnotationId={selectedAnnotationId}
-          annotationRegions={annotationRegions}
-          onAnnotationContentChange={handleAnnotationContentChange}
-          onAnnotationTypeChange={handleAnnotationTypeChange}
-          onAnnotationStyleChange={handleAnnotationStyleChange}
-          onAnnotationFigureDataChange={handleAnnotationFigureDataChange}
-          onAnnotationDelete={handleAnnotationDelete}
-          hasAudioTrack={sourceHasAudio}
-          audioEnabled={audioEnabled}
-          onAudioEnabledChange={setAudioEnabled}
-          audioGain={audioGain}
-          onAudioGainChange={setAudioGain}
-          audioNormalizeLoudness={audioNormalizeLoudness}
-          onAudioNormalizeLoudnessChange={setAudioNormalizeLoudness}
-          audioTargetLufs={audioTargetLufs}
-          onAudioTargetLufsChange={setAudioTargetLufs}
-          audioLimiterDb={audioLimiterDb}
-          onAudioLimiterDbChange={setAudioLimiterDb}
-          cursorStyle={cursorStyle}
-          onCursorStyleChange={setCursorStyle}
-          hasCursorTrack={Boolean(cursorTrack?.samples?.length)}
-          onAutoEdit={handleAutoEdit}
-          autoEditDisabled={!cursorTrack?.samples?.length || !Number.isFinite(duration) || duration <= 0}
-          onAnalyzeCursor={handleAnalyzeCursor}
-          cursorAnalysisProgress={cursorAnalysisProgress}
-          onGenerateSubtitles={handleGenerateSubtitles}
-          onApplyRoughCut={handleApplyRoughCut}
-          analysisRunning={analysisInProgress}
-          subtitleCueCount={subtitleCues.length}
-          roughCutSuggestionCount={roughCutSuggestions.length}
-          seekStepSeconds={seekStepSeconds}
-          onSeekStepSecondsChange={setSeekStepSeconds}
-        />
+          <div
+            className={cn(
+              "transition-[flex,opacity] duration-300 ease-in-out overflow-hidden h-full",
+              settingsPanelVisible ? "flex-[2] opacity-100" : "flex-[0] opacity-0 pointer-events-none"
+            )}
+          >
+            <div className={cn("h-full", settingsPanelVisible ? "min-w-[260px]" : "min-w-0")}>
+              <SettingsPanel
+                selected={wallpaper}
+                onWallpaperChange={setWallpaper}
+                selectedZoomDepth={selectedZoomId ? zoomRegions.find(z => z.id === selectedZoomId)?.depth : null}
+                onZoomDepthChange={(depth) => selectedZoomId && handleZoomDepthChange(depth)}
+                selectedZoomId={selectedZoomId}
+                onZoomDelete={handleZoomDelete}
+                selectedSegment={segments.find((s) => s.id === selectedSegmentId) ?? null}
+                onDeleteSegment={handleDeleteSegment}
+                onSegmentSpeedChange={handleSegmentSpeedChange}
+                shadowIntensity={shadowIntensity}
+                onShadowChange={setShadowIntensity}
+                showBlur={showBlur}
+                onBlurChange={setShowBlur}
+                motionBlurEnabled={motionBlurEnabled}
+                onMotionBlurChange={setMotionBlurEnabled}
+                borderRadius={borderRadius}
+                onBorderRadiusChange={setBorderRadius}
+                padding={padding}
+                onPaddingChange={setPadding}
+                cropRegion={activeCropRegion}
+                onCropChange={handleActiveCropRegionChange}
+                aspectRatio={aspectRatio}
+                videoElement={videoPlaybackRef.current?.video || null}
+                exportQuality={exportQuality}
+                onExportQualityChange={setExportQuality}
+                exportFormat={exportFormat}
+                onExportFormatChange={setExportFormat}
+                exportAspectRatios={exportAspectRatios}
+                onExportAspectRatiosChange={setExportAspectRatios}
+                onPreviewAspectRatioChange={setAspectRatio}
+                gifFrameRate={gifFrameRate}
+                onGifFrameRateChange={setGifFrameRate}
+                gifLoop={gifLoop}
+                onGifLoopChange={setGifLoop}
+                gifSizePreset={gifSizePreset}
+                onGifSizePresetChange={setGifSizePreset}
+                gifOutputDimensions={calculateOutputDimensions(
+                  videoPlaybackRef.current?.video?.videoWidth || 1920,
+                  videoPlaybackRef.current?.video?.videoHeight || 1080,
+                  gifSizePreset,
+                  GIF_SIZE_PRESETS
+                )}
+                onExport={handleOpenExportDialog}
+                selectedAnnotationId={selectedAnnotationId}
+                annotationRegions={annotationRegions}
+                onAnnotationContentChange={handleAnnotationContentChange}
+                onAnnotationTypeChange={handleAnnotationTypeChange}
+                onAnnotationStyleChange={handleAnnotationStyleChange}
+                onAnnotationFigureDataChange={handleAnnotationFigureDataChange}
+                onAnnotationDelete={handleAnnotationDelete}
+                hasAudioTrack={sourceHasAudio}
+                audioEnabled={audioEnabled}
+                onAudioEnabledChange={setAudioEnabled}
+                audioGain={audioGain}
+                onAudioGainChange={setAudioGain}
+                audioNormalizeLoudness={audioNormalizeLoudness}
+                onAudioNormalizeLoudnessChange={setAudioNormalizeLoudness}
+                audioTargetLufs={audioTargetLufs}
+                onAudioTargetLufsChange={setAudioTargetLufs}
+                audioLimiterDb={audioLimiterDb}
+                onAudioLimiterDbChange={setAudioLimiterDb}
+                cursorStyle={cursorStyle}
+                onCursorStyleChange={setCursorStyle}
+                hasCursorTrack={Boolean(cursorTrack?.samples?.length)}
+                onAutoEdit={handleAutoEdit}
+                autoEditDisabled={!cursorTrack?.samples?.length || !Number.isFinite(duration) || duration <= 0}
+                onAnalyzeCursor={handleAnalyzeCursor}
+                cursorAnalysisProgress={cursorAnalysisProgress}
+                onGenerateSubtitles={handleGenerateSubtitles}
+                onApplyRoughCut={handleApplyRoughCut}
+                analysisRunning={analysisInProgress}
+                subtitleCueCount={subtitleCues.length}
+                roughCutSuggestionCount={roughCutSuggestions.length}
+                seekStepSeconds={seekStepSeconds}
+                onSeekStepSecondsChange={setSeekStepSeconds}
+              />
+            </div>
+          </div>
       </div>
       <ExportDialog
         isOpen={showExportDialog || exportDialogAnim === 'minimizing'}

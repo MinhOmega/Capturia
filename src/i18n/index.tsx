@@ -335,6 +335,10 @@ const messages: Record<Locale, Record<string, string>> = {
     "shortcut.swap": "Swap",
     "shortcut.instructions": "Click a shortcut then press a new key combo. Press Esc to cancel.",
     "editor.closeEditor": "Close Editor",
+    "editor.hideSettings": "Hide settings",
+    "editor.showSettings": "Show settings",
+    "editor.hideTimeline": "Hide timeline",
+    "editor.showTimeline": "Show timeline",
 
     "tutorial.trigger": "How trimming works",
     "tutorial.title": "How Trimming Works",
@@ -768,6 +772,10 @@ const messages: Record<Locale, Record<string, string>> = {
     "shortcut.swap": "交换",
     "shortcut.instructions": "点击快捷键然后按下新的按键组合。按 Esc 取消。",
     "editor.closeEditor": "关闭编辑器",
+    "editor.hideSettings": "隐藏设置",
+    "editor.showSettings": "显示设置",
+    "editor.hideTimeline": "隐藏时间线",
+    "editor.showTimeline": "显示时间线",
 
     "tutorial.trigger": "裁剪说明",
     "tutorial.title": "裁剪如何工作",

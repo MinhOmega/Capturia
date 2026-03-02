@@ -274,7 +274,7 @@ export function SettingsPanel({
     }
   };
 
-  const SEGMENT_SPEED_PRESETS = [1, 1.5, 1.75, 2, 2.5, 3, 5, 8, 10, 20, 40] as const;
+  const SEGMENT_SPEED_PRESETS = [0.25, 0.5, 0.75, 1, 1.5, 1.75, 2, 2.5, 3, 5, 8, 10, 20, 40] as const;
   const [customSegmentSpeed, setCustomSegmentSpeed] = useState("");
 
   const toggleExportAspectRatio = (ratio: AspectRatio) => {
@@ -384,7 +384,7 @@ export function SettingsPanel({
   }
 
   return (
-    <div className="flex-[2] min-w-0 bg-[#09090b] border border-white/5 rounded-2xl flex flex-col shadow-xl h-full overflow-hidden">
+    <div className="w-full min-w-0 bg-[#09090b] border border-white/5 rounded-2xl flex flex-col shadow-xl h-full overflow-hidden">
       <div className="flex-1 overflow-y-auto custom-scrollbar p-4 pb-0">
         <div className="mb-4">
           <div className="flex items-center justify-between mb-3">
@@ -477,9 +477,21 @@ export function SettingsPanel({
           <div className="mb-4 rounded-xl bg-white/[0.02] border border-white/5 p-3 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-medium text-slate-300">{t("timeline.segmentSpeed")}</span>
-              <span className="text-[10px] text-slate-500 tabular-nums">
-                {(selectedSegment.startMs / 1000).toFixed(1)}s – {(selectedSegment.endMs / 1000).toFixed(1)}s
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-slate-500 tabular-nums">
+                  {(selectedSegment.startMs / 1000).toFixed(1)}s – {(selectedSegment.endMs / 1000).toFixed(1)}s
+                </span>
+                <span className="text-[10px] tabular-nums">
+                  <span className="text-slate-400">
+                    {((selectedSegment.endMs - selectedSegment.startMs) / 1000).toFixed(1)}s
+                  </span>
+                  {selectedSegment.speed !== 1 && (
+                    <span className="text-[#34B27B]">
+                      {" → "}{((selectedSegment.endMs - selectedSegment.startMs) / 1000 / selectedSegment.speed).toFixed(1)}s
+                    </span>
+                  )}
+                </span>
+              </div>
             </div>
 
             {/* Speed preset grid */}
