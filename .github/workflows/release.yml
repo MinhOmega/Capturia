@@ -70,8 +70,6 @@ jobs:
 
       - name: Build app
         run: ${{ matrix.build_script }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Collect and create -latest copies
         shell: bash
