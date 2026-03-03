@@ -8,7 +8,7 @@ export interface DecodedVideoInfo {
 
 function isExportAudioDebugEnabled(): boolean {
   try {
-    return globalThis.localStorage?.getItem('cursorlens.exportDebugAudio') === '1';
+    return globalThis.localStorage?.getItem('capturia.exportDebugAudio') === '1';
   } catch {
     return false;
   }

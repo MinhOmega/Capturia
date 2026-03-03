@@ -5,7 +5,7 @@ export default {
     download: '下载',
     github: 'GitHub',
     lang: 'EN',
-    langHref: '/CursorLens/',
+    langHref: '/Capturia/',
   },
   hero: {
     title: '屏幕录制，',
@@ -34,22 +34,22 @@ export default {
     alts: ['录制界面', '时间线编辑器', '导出设置', '光标特效'],
   },
   download: {
-    title: '获取 CursorLens',
+    title: '获取 Capturia',
     subtitle: '免费开源，支持所有主流平台。',
     platforms: [
-      { name: 'macOS', icon: '🍎', note: 'Apple Silicon 与 Intel', href: 'https://github.com/blueberrycongee/CursorLens/releases/download/v1.2.5/CursorLens-Mac-arm64-1.2.5-Installer.dmg' },
-      { name: 'Windows', icon: '🪟', note: 'Windows 10+', href: 'https://github.com/blueberrycongee/CursorLens/releases/download/v1.2.5/CursorLens-Setup-1.2.5.exe' },
-      { name: 'Linux', icon: '🐧', note: 'AppImage', href: 'https://github.com/blueberrycongee/CursorLens/releases/download/v1.2.5/CursorLens-Linux-1.2.5.AppImage' },
+      { name: 'macOS', icon: '🍎', note: 'Apple Silicon 与 Intel', href: 'https://github.com/MinhOmega/Capturia/releases/latest' },
+      { name: 'Windows', icon: '🪟', note: 'Windows 10+', href: 'https://github.com/MinhOmega/Capturia/releases/latest' },
+      { name: 'Linux', icon: '🐧', note: 'AppImage', href: 'https://github.com/MinhOmega/Capturia/releases/latest' },
     ],
     button: '下载',
     allReleases: '在 GitHub 上查看所有版本 →',
   },
   footer: {
-    copyright: '© 2024 CursorLens. 基于 MIT 许可证开源。',
+    copyright: '© 2025 Capturia. 基于 MIT 许可证开源。',
     links: [
-      { label: 'GitHub', href: 'https://github.com/blueberrycongee/CursorLens' },
-      { label: '版本发布', href: 'https://github.com/blueberrycongee/CursorLens/releases' },
-      { label: '问题反馈', href: 'https://github.com/blueberrycongee/CursorLens/issues' },
+      { label: 'GitHub', href: 'https://github.com/MinhOmega/Capturia' },
+      { label: '版本发布', href: 'https://github.com/MinhOmega/Capturia/releases' },
+      { label: '问题反馈', href: 'https://github.com/MinhOmega/Capturia/issues' },
     ],
   },
 };

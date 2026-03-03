@@ -9,6 +9,6 @@ export function t(locale: Locale) {
 }
 
 export function getLocaleFromUrl(url: URL): Locale {
-  const seg = url.pathname.replace(/^\/CursorLens\/?/, '').split('/')[0];
+  const seg = url.pathname.replace(/^\/Capturia\/?/, '').split('/')[0];
   return seg === 'zh' ? 'zh' : 'en';
 }

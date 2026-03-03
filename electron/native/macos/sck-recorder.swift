@@ -258,8 +258,8 @@ final class CameraCaptureProvider: NSObject, AVCaptureVideoDataOutputSampleBuffe
     ]
 
     private let session = AVCaptureSession()
-    private let outputQueue = DispatchQueue(label: "com.cursorlens.sck-recorder.camera-output")
-    private let storageQueue = DispatchQueue(label: "com.cursorlens.sck-recorder.camera-storage")
+    private let outputQueue = DispatchQueue(label: "com.capturia.sck-recorder.camera-output")
+    private let storageQueue = DispatchQueue(label: "com.capturia.sck-recorder.camera-storage")
     private var latestPixelBuffer: CVPixelBuffer?
 
     func start() throws {
@@ -350,7 +350,7 @@ final class CameraCaptureProvider: NSObject, AVCaptureVideoDataOutputSampleBuffe
 
 final class MicrophoneCaptureProvider: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
     private let session = AVCaptureSession()
-    private let outputQueue = DispatchQueue(label: "com.cursorlens.sck-recorder.microphone-output")
+    private let outputQueue = DispatchQueue(label: "com.capturia.sck-recorder.microphone-output")
     private var onSampleBuffer: ((CMSampleBuffer) -> Void)?
 
     func start(onSampleBuffer: @escaping (CMSampleBuffer) -> Void) throws {
@@ -414,7 +414,7 @@ final class ScreenStreamWriter: NSObject, SCStreamOutput {
         CIContextOption.cacheIntermediates: false,
     ])
     private let colorSpace = CGColorSpaceCreateDeviceRGB()
-    private let audioQueue = DispatchQueue(label: "com.cursorlens.sck-recorder.audio-writer")
+    private let audioQueue = DispatchQueue(label: "com.capturia.sck-recorder.audio-writer")
     private let microphoneGain: Float
 
     private let videoWidth: Int
@@ -907,8 +907,8 @@ final class SCKRecorder {
     private var writer: ScreenStreamWriter?
     private var cameraProvider: CameraCaptureProvider?
     private var microphoneProvider: MicrophoneCaptureProvider?
-    private let permissionGuidance = "Allow CursorLens in System Settings > Privacy & Security > Screen Recording, then relaunch the app."
-    private let microphonePermissionGuidance = "Allow CursorLens in System Settings > Privacy & Security > Microphone, then relaunch the app."
+    private let permissionGuidance = "Allow Capturia in System Settings > Privacy & Security > Screen Recording, then relaunch the app."
+    private let microphonePermissionGuidance = "Allow Capturia in System Settings > Privacy & Security > Microphone, then relaunch the app."
 
     init(args: RecorderArguments) {
         self.args = args
@@ -984,7 +984,7 @@ final class SCKRecorder {
         let stream = SCStream(filter: resolved.filter, configuration: config, delegate: nil)
 
         do {
-            try stream.addStreamOutput(writer, type: .screen, sampleHandlerQueue: DispatchQueue(label: "com.cursorlens.sck-recorder.video"))
+            try stream.addStreamOutput(writer, type: .screen, sampleHandlerQueue: DispatchQueue(label: "com.capturia.sck-recorder.video"))
             try await stream.startCapture()
         } catch {
             cameraProvider?.stop()

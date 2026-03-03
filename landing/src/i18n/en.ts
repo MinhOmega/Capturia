@@ -5,7 +5,7 @@ export default {
     download: 'Download',
     github: 'GitHub',
     lang: '中文',
-    langHref: '/CursorLens/zh/',
+    langHref: '/Capturia/zh/',
   },
   hero: {
     title: 'Screen Recording,',
@@ -34,22 +34,22 @@ export default {
     alts: ['Recording interface', 'Timeline editor', 'Export settings', 'Cursor effects'],
   },
   download: {
-    title: 'Get CursorLens',
+    title: 'Get Capturia',
     subtitle: 'Free and open-source. Available for all major platforms.',
     platforms: [
-      { name: 'macOS', icon: '🍎', note: 'Apple Silicon & Intel', href: 'https://github.com/blueberrycongee/CursorLens/releases/download/v1.2.5/CursorLens-Mac-arm64-1.2.5-Installer.dmg' },
-      { name: 'Windows', icon: '🪟', note: 'Windows 10+', href: 'https://github.com/blueberrycongee/CursorLens/releases/download/v1.2.5/CursorLens-Setup-1.2.5.exe' },
-      { name: 'Linux', icon: '🐧', note: 'AppImage', href: 'https://github.com/blueberrycongee/CursorLens/releases/download/v1.2.5/CursorLens-Linux-1.2.5.AppImage' },
+      { name: 'macOS', icon: '🍎', note: 'Apple Silicon & Intel', href: 'https://github.com/MinhOmega/Capturia/releases/latest' },
+      { name: 'Windows', icon: '🪟', note: 'Windows 10+', href: 'https://github.com/MinhOmega/Capturia/releases/latest' },
+      { name: 'Linux', icon: '🐧', note: 'AppImage', href: 'https://github.com/MinhOmega/Capturia/releases/latest' },
     ],
     button: 'Download',
     allReleases: 'View all releases on GitHub →',
   },
   footer: {
-    copyright: '© 2024 CursorLens. Open-source under MIT License.',
+    copyright: '© 2025 Capturia. Open-source under MIT License.',
     links: [
-      { label: 'GitHub', href: 'https://github.com/blueberrycongee/CursorLens' },
-      { label: 'Releases', href: 'https://github.com/blueberrycongee/CursorLens/releases' },
-      { label: 'Issues', href: 'https://github.com/blueberrycongee/CursorLens/issues' },
+      { label: 'GitHub', href: 'https://github.com/MinhOmega/Capturia' },
+      { label: 'Releases', href: 'https://github.com/MinhOmega/Capturia/releases' },
+      { label: 'Issues', href: 'https://github.com/MinhOmega/Capturia/issues' },
     ],
   },
 };

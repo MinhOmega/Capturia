@@ -288,7 +288,7 @@ struct SpeechTranscriberCLI {
             }
 
             let tempAudioURL = URL(fileURLWithPath: NSTemporaryDirectory())
-                .appendingPathComponent("cursorlens-transcribe-\(UUID().uuidString).m4a")
+                .appendingPathComponent("capturia-transcribe-\(UUID().uuidString).m4a")
             defer {
                 try? FileManager.default.removeItem(at: tempAudioURL)
             }

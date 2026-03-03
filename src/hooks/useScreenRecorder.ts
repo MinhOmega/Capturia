@@ -820,7 +820,7 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
     } catch (error) {
       console.error("Failed to acquire microphone stream for recording.", error);
       throw new Error(
-        "Microphone access is required for recording voice. Allow CursorLens to use your microphone and try again.",
+        "Microphone access is required for recording voice. Allow Capturia to use your microphone and try again.",
       );
     }
   };

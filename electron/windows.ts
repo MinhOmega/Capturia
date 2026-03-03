@@ -153,7 +153,7 @@ export function createEditorWindow(): BrowserWindow {
     resizable: true,
     alwaysOnTop: false,
     skipTaskbar: false,
-    title: 'CursorLens',
+    title: 'Capturia',
     backgroundColor: '#000000',
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
@@ -242,7 +242,7 @@ export function createPermissionCheckerWindow(): BrowserWindow {
     minHeight: 620,
     x: Math.round((width - Math.min(980, Math.max(840, width - 80))) / 2),
     y: Math.round((height - Math.min(760, Math.max(620, height - 120))) / 2),
-    title: 'CursorLens Permission Check',
+    title: 'Capturia Permission Check',
     frame: true,
     resizable: true,
     alwaysOnTop: true,

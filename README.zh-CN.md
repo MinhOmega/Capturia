@@ -1,30 +1,30 @@
 > [!WARNING]
-> CursorLens 目前仍处于 Beta 阶段，部分机器上某些流程可能不稳定。
+> Capturia 目前仍处于 Beta 阶段，部分机器上某些流程可能不稳定。
 
 [English](./README.md)
 
 <p align="center">
-  <img src="icons/icons/png/CursorLens.png" alt="CursorLens Banner" width="720" />
+  <img src="public/app-icon.png" alt="Capturia Banner" width="256" />
   <br />
-  <a href="https://github.com/blueberrycongee/CursorLens">
-    <img src="https://img.shields.io/badge/GitHub-CursorLens-181717?logo=github" alt="CursorLens on GitHub" />
+  <a href="https://github.com/MinhOmega/Capturia">
+    <img src="https://img.shields.io/badge/GitHub-Capturia-181717?logo=github" alt="Capturia on GitHub" />
   </a>
-  <a href="http://www.lelekawaii.com/CursorLens/zh/">
-    <img src="https://img.shields.io/badge/官网-Landing%20Page-blue?logo=astro" alt="CursorLens 官网" />
+  <a href="https://MinhOmega.github.io/Capturia/zh/">
+    <img src="https://img.shields.io/badge/官网-Landing%20Page-blue?logo=astro" alt="Capturia 官网" />
   </a>
 </p>
 
-# <p align="center">CursorLens</p>
+# <p align="center">Capturia</p>
 
-<p align="center"><strong>CursorLens 是一款免费、开源的录屏与编辑工具，面向开发者、创作者和产品团队，用于快速制作产品演示与讲解视频。</strong></p>
+<p align="center"><strong>Capturia 是一款免费、开源的录屏与编辑工具，面向开发者、创作者和产品团队，用于快速制作产品演示与讲解视频。</strong></p>
 
-CursorLens 基于优秀的 [OpenScreen](https://github.com/siddharthvaddem/openscreen) 继续演进，并在 macOS 原生采集与编辑链路上做了大量重构和增强。
+Capturia 基于优秀的 [OpenScreen](https://github.com/siddharthvaddem/openscreen) 继续演进，并在 macOS 原生采集与编辑链路上做了大量重构和增强。
 
 <p align="center">
-  <img src="public/preview.png" alt="CursorLens 预览 1" style="height: 320px; margin-right: 12px;" />
-  <img src="public/preview2.png" alt="CursorLens 预览 2" style="height: 320px; margin-right: 12px;" />
-  <img src="public/preview3.png" alt="CursorLens 预览 3" style="height: 320px; margin-right: 12px;" />
-  <img src="public/preview4.png" alt="CursorLens 预览 4" style="height: 320px; margin-right: 12px;" />
+  <img src="public/preview.png" alt="Capturia 预览 1" style="height: 320px; margin-right: 12px;" />
+  <img src="public/preview2.png" alt="Capturia 预览 2" style="height: 320px; margin-right: 12px;" />
+  <img src="public/preview3.png" alt="Capturia 预览 3" style="height: 320px; margin-right: 12px;" />
+  <img src="public/preview4.png" alt="Capturia 预览 4" style="height: 320px; margin-right: 12px;" />
 </p>
 
 ## 核心功能
@@ -41,14 +41,14 @@ CursorLens 基于优秀的 [OpenScreen](https://github.com/siddharthvaddem/opens
 
 ## 安装
 
-请从 [GitHub Releases](https://github.com/blueberrycongee/CursorLens/releases) 下载对应平台的最新安装包。
+请从 [GitHub Releases](https://github.com/MinhOmega/Capturia/releases) 下载对应平台的最新安装包。
 
 ### macOS
 
-如果未签名构建被 Gatekeeper 拦截，或出现“CursorLens 已损坏，无法打开”的提示，可执行：
+如果未签名构建被 Gatekeeper 拦截，或出现“Capturia 已损坏，无法打开”的提示，可执行：
 
 ```bash
-xattr -rd com.apple.quarantine "/Applications/CursorLens.app"
+xattr -rd com.apple.quarantine "/Applications/Capturia.app"
 ```
 
 然后在 **系统设置 -> 隐私与安全性** 中授予必要权限：
@@ -63,8 +63,8 @@ xattr -rd com.apple.quarantine "/Applications/CursorLens.app"
 从 Releases 下载 `.AppImage` 后执行：
 
 ```bash
-chmod +x CursorLens-Linux-*.AppImage
-./CursorLens-Linux-*.AppImage
+chmod +x Capturia-Linux-*.AppImage
+./Capturia-Linux-*.AppImage
 ```
 
 ## 开发
@@ -101,8 +101,8 @@ npm run build
 
 欢迎通过 issue 和 PR 参与贡献。
 
-- Issues: [https://github.com/blueberrycongee/CursorLens/issues](https://github.com/blueberrycongee/CursorLens/issues)
-- Discussions: [https://github.com/blueberrycongee/CursorLens/discussions](https://github.com/blueberrycongee/CursorLens/discussions)
+- Issues: [https://github.com/MinhOmega/Capturia/issues](https://github.com/MinhOmega/Capturia/issues)
+- Discussions: [https://github.com/MinhOmega/Capturia/discussions](https://github.com/MinhOmega/Capturia/discussions)
 
 ## 致谢
 

@@ -1,7 +1,30 @@
 {
-  "name": "cursorlens",
+  "name": "capturia",
   "private": true,
   "version": "1.5.4",
+  "description": "Free, open-source screen recorder & editor with intelligent cursor tracking, zoom effects, and cinematic output",
+  "author": "MinhOmega",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MinhOmega/Capturia.git"
+  },
+  "homepage": "https://github.com/MinhOmega/Capturia",
+  "bugs": {
+    "url": "https://github.com/MinhOmega/Capturia/issues"
+  },
+  "keywords": [
+    "screen-recorder",
+    "screen-recording",
+    "video-editor",
+    "electron",
+    "cursor-tracking",
+    "zoom-effects",
+    "macos",
+    "open-source",
+    "screencast",
+    "demo-recording"
+  ],
   "type": "module",
   "scripts": {
     "dev": "vite",

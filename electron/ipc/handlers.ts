@@ -129,7 +129,7 @@ type StartVideoAnalysisOptions = {
 }
 
 const SOURCE_PERMISSION_GUIDANCE =
-  'Screen Recording permission is not granted. Open System Settings > Privacy & Security > Screen & System Audio, allow CursorLens, then relaunch the app.'
+  'Screen Recording permission is not granted. Open System Settings > Privacy & Security > Screen & System Audio, allow Capturia, then relaunch the app.'
 const SCREEN_CAPTURE_SETTINGS_URL = 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture'
 
 type CapturePermissionStatus = 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown' | 'manual-check'

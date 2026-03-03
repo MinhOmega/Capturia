@@ -1,4 +1,4 @@
-export const GITHUB_REPO_URL = 'https://github.com/blueberrycongee/CursorLens'
+export const GITHUB_REPO_URL = 'https://github.com/MinhOmega/Capturia'
 export const GITHUB_ISSUE_REPO_URL = GITHUB_REPO_URL
 export const GITHUB_ISSUES_URL = `${GITHUB_ISSUE_REPO_URL}/issues`
 export const GITHUB_ISSUE_URL_MAX_LENGTH = 7_500

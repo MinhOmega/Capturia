@@ -5,10 +5,10 @@ type NativeRecorderStartFailureInput = {
 };
 
 const SCREEN_RECORDING_PERMISSION_GUIDANCE =
-  "Screen Recording permission is not granted. Open System Settings > Privacy & Security > Screen Recording, allow CursorLens, then relaunch the app.";
+  "Screen Recording permission is not granted. Open System Settings > Privacy & Security > Screen Recording, allow Capturia, then relaunch the app.";
 
 const MICROPHONE_PERMISSION_GUIDANCE =
-  "Microphone permission is not granted. Open System Settings > Privacy & Security > Microphone, allow CursorLens, then relaunch the app.";
+  "Microphone permission is not granted. Open System Settings > Privacy & Security > Microphone, allow Capturia, then relaunch the app.";
 
 const PERMISSION_SIGNAL_TERMS = [
   "permission",

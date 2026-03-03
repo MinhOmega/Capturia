@@ -318,7 +318,7 @@ async function transcribeSingleRange(args: {
 }): Promise<VideoTranscriptionResult> {
   const outputPath = path.join(
     os.tmpdir(),
-    `cursorlens-transcription-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
+    `capturia-transcription-${Date.now()}-${Math.random().toString(36).slice(2)}.json`,
   );
 
   try {

@@ -10,12 +10,12 @@ type LocaleContextValue = {
   t: (key: MessageKey, params?: Record<string, string | number>) => string;
 };
 
-export const LOCALE_STORAGE_KEY = "cursorlens.locale";
+export const LOCALE_STORAGE_KEY = "capturia.locale";
 
 const messages: Record<Locale, Record<string, string>> = {
   en: {
-    "app.name": "CursorLens",
-    "app.fallbackTitle": "CursorLens",
+    "app.name": "Capturia",
+    "app.fallbackTitle": "Capturia",
     "common.cancel": "Cancel",
     "common.close": "Close",
     "common.done": "Done",
@@ -108,7 +108,7 @@ const messages: Record<Locale, Record<string, string>> = {
     "source.appIcon": "App icon",
     "source.loadFailed": "Failed to load shareable sources.",
     "source.shareFailed": "Failed to confirm selected source.",
-    "source.screenPermissionHint": "Screen Recording permission is not granted. Open System Settings > Privacy & Security > Screen & System Audio, allow CursorLens, then relaunch the app.",
+    "source.screenPermissionHint": "Screen Recording permission is not granted. Open System Settings > Privacy & Security > Screen & System Audio, allow Capturia, then relaunch the app.",
     "source.openSystemSettings": "Open System Settings",
     "source.openSystemSettingsFailed": "Failed to open System Settings.",
     "source.checkPermissions": "Check Permissions",
@@ -116,7 +116,7 @@ const messages: Record<Locale, Record<string, string>> = {
 
     "permission.loading": "Checking permission status...",
     "permission.title": "Check App Permissions",
-    "permission.intro": "CursorLens needs some permissions for recording features. Required permissions block recording when missing, while optional permissions only affect related capabilities.",
+    "permission.intro": "Capturia needs some permissions for recording features. Required permissions block recording when missing, while optional permissions only affect related capabilities.",
     "permission.refresh": "Refresh",
     "permission.refreshFailed": "Failed to refresh permission status.",
     "permission.openSettingsFailed": "Failed to open Privacy settings.",
@@ -145,7 +145,7 @@ const messages: Record<Locale, Record<string, string>> = {
     "permission.statusManualCheck": "Manual Check",
     "permission.readyHint": "All required permissions are granted. Recording can start normally.",
     "permission.missingRequiredHint": "Required permissions are missing. Recording is blocked until you grant the required items.",
-    "permission.relaunchHint": "After granting Screen Recording, macOS may require relaunching CursorLens before changes fully apply.",
+    "permission.relaunchHint": "After granting Screen Recording, macOS may require relaunching Capturia before changes fully apply.",
     "permission.continue": "Continue",
 
     "playback.play": "Play",
@@ -435,7 +435,7 @@ const messages: Record<Locale, Record<string, string>> = {
     "timeline.resizeLeft": "Resize left",
     "timeline.resizeRight": "Resize right",
 
-    "electron.tray.openScreen": "CursorLens",
+    "electron.tray.openScreen": "Capturia",
     "electron.tray.recording": "Recording: {{source}}",
     "electron.tray.stopRecording": "Stop Recording",
     "electron.tray.open": "Open",
@@ -451,8 +451,8 @@ const messages: Record<Locale, Record<string, string>> = {
     "electron.filePickerFailed": "Failed to open file picker"
   },
   "zh-CN": {
-    "app.name": "CursorLens",
-    "app.fallbackTitle": "CursorLens",
+    "app.name": "Capturia",
+    "app.fallbackTitle": "Capturia",
     "common.cancel": "取消",
     "common.close": "关闭",
     "common.done": "完成",
@@ -545,7 +545,7 @@ const messages: Record<Locale, Record<string, string>> = {
     "source.appIcon": "应用图标",
     "source.loadFailed": "加载可共享来源失败。",
     "source.shareFailed": "确认共享所选来源失败。",
-    "source.screenPermissionHint": "未授予屏幕录制权限。请打开“系统设置 > 隐私与安全性 > 屏幕与系统音频录制”，允许 CursorLens，然后重启应用。",
+    "source.screenPermissionHint": "未授予屏幕录制权限。请打开“系统设置 > 隐私与安全性 > 屏幕与系统音频录制”，允许 Capturia，然后重启应用。",
     "source.openSystemSettings": "打开系统设置",
     "source.openSystemSettingsFailed": "打开系统设置失败。",
     "source.checkPermissions": "检查权限",
@@ -553,7 +553,7 @@ const messages: Record<Locale, Record<string, string>> = {
 
     "permission.loading": "正在检查权限状态...",
     "permission.title": "检查应用权限",
-    "permission.intro": "CursorLens 的部分录制能力依赖系统权限。缺少必需权限会阻断录制，缺少可选权限只会影响对应功能。",
+    "permission.intro": "Capturia 的部分录制能力依赖系统权限。缺少必需权限会阻断录制，缺少可选权限只会影响对应功能。",
     "permission.refresh": "刷新",
     "permission.refreshFailed": "刷新权限状态失败。",
     "permission.openSettingsFailed": "打开隐私设置失败。",
@@ -582,7 +582,7 @@ const messages: Record<Locale, Record<string, string>> = {
     "permission.statusManualCheck": "需手动检查",
     "permission.readyHint": "所有必需权限已满足，可以正常开始录制。",
     "permission.missingRequiredHint": "存在缺失的必需权限，录制会被阻断。请先完成授权。",
-    "permission.relaunchHint": "开启“屏幕录制”后，macOS 可能要求重启 CursorLens 才能完全生效。",
+    "permission.relaunchHint": "开启“屏幕录制”后，macOS 可能要求重启 Capturia 才能完全生效。",
     "permission.continue": "继续",
 
     "playback.play": "播放",
@@ -872,7 +872,7 @@ const messages: Record<Locale, Record<string, string>> = {
     "timeline.resizeLeft": "向左调整",
     "timeline.resizeRight": "向右调整",
 
-    "electron.tray.openScreen": "CursorLens",
+    "electron.tray.openScreen": "Capturia",
     "electron.tray.recording": "录制中：{{source}}",
     "electron.tray.stopRecording": "停止录制",
     "electron.tray.open": "打开",

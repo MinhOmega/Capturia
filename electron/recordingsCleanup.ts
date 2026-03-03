@@ -33,11 +33,11 @@ function clampNumber(value: number | undefined, fallback: number, min: number, m
 }
 
 function resolvePolicyFromEnv(overrides?: Partial<RecordingCleanupPolicy>): RecordingCleanupPolicy {
-  const maxGb = clampNumber(parseNumber(process.env.CURSORLENS_RECORDINGS_MAX_GB), 8, 1, 512);
-  const trimRatio = clampNumber(parseNumber(process.env.CURSORLENS_RECORDINGS_TRIM_RATIO), 0.8, 0.25, 0.95);
-  const maxDays = clampNumber(parseNumber(process.env.CURSORLENS_RECORDINGS_MAX_DAYS), 30, 1, 3650);
-  const minKeep = Math.round(clampNumber(parseNumber(process.env.CURSORLENS_RECORDINGS_MIN_KEEP), 20, 1, 1_000));
-  const orphanDays = clampNumber(parseNumber(process.env.CURSORLENS_ORPHAN_CURSOR_DAYS), 3, 0, 365);
+  const maxGb = clampNumber(parseNumber(process.env.CAPTURIA_RECORDINGS_MAX_GB), 8, 1, 512);
+  const trimRatio = clampNumber(parseNumber(process.env.CAPTURIA_RECORDINGS_TRIM_RATIO), 0.8, 0.25, 0.95);
+  const maxDays = clampNumber(parseNumber(process.env.CAPTURIA_RECORDINGS_MAX_DAYS), 30, 1, 3650);
+  const minKeep = Math.round(clampNumber(parseNumber(process.env.CAPTURIA_RECORDINGS_MIN_KEEP), 20, 1, 1_000));
+  const orphanDays = clampNumber(parseNumber(process.env.CAPTURIA_ORPHAN_CURSOR_DAYS), 3, 0, 365);
 
   const maxTotalBytes = Math.floor(maxGb * BYTES_PER_GB);
   const targetTotalBytes = Math.floor(maxTotalBytes * trimRatio);

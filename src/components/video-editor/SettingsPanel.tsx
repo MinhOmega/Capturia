@@ -1316,7 +1316,7 @@ export function SettingsPanel({
           </button>
         </div>
         <div className="text-center text-[10px] text-slate-600 mt-2 pt-2 border-t border-white/5 select-text">
-          CursorLens v{__APP_VERSION__}
+          Capturia v{__APP_VERSION__}
         </div>
       </div>
     </div>

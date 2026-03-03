@@ -27,29 +27,29 @@ const CAPTURE_FRAME_RATE_OPTIONS: CaptureFrameRate[] = [24, 30, 60, 120];
 const CAPTURE_RESOLUTION_OPTIONS: CaptureResolutionPreset[] = ["auto", "1080p", "1440p", "2160p"];
 const RECORD_COUNTDOWN_CYCLE = [0, 3, 5, 8] as const;
 
-// Migrate old "openscreen.*" localStorage keys to "cursorlens.*" (one-time)
+// Migrate old localStorage keys to "capturia.*" (one-time)
 try {
-  if (!window.localStorage.getItem("cursorlens._migrated")) {
-    const OLD_PREFIX = "openscreen.";
-    const NEW_PREFIX = "cursorlens.";
-    const keys = Object.keys(window.localStorage).filter(k => k.startsWith(OLD_PREFIX));
-    for (const oldKey of keys) {
-      const newKey = NEW_PREFIX + oldKey.slice(OLD_PREFIX.length);
-      if (!window.localStorage.getItem(newKey)) {
-        const value = window.localStorage.getItem(oldKey);
-        if (value !== null) window.localStorage.setItem(newKey, value);
+  if (!window.localStorage.getItem("capturia._migrated")) {
+    for (const OLD_PREFIX of ["openscreen.", "cursorlens."]) {
+      const keys = Object.keys(window.localStorage).filter(k => k.startsWith(OLD_PREFIX));
+      for (const oldKey of keys) {
+        const newKey = "capturia." + oldKey.slice(OLD_PREFIX.length);
+        if (!window.localStorage.getItem(newKey)) {
+          const value = window.localStorage.getItem(oldKey);
+          if (value !== null) window.localStorage.setItem(newKey, value);
+        }
       }
     }
-    window.localStorage.setItem("cursorlens._migrated", "1");
+    window.localStorage.setItem("capturia._migrated", "1");
   }
 } catch { /* no-op */ }
 
-const STOP_SHORTCUT_STORAGE_KEY = "cursorlens.stopRecordingShortcut";
+const STOP_SHORTCUT_STORAGE_KEY = "capturia.stopRecordingShortcut";
 const DEFAULT_STOP_RECORDING_SHORTCUT = "CommandOrControl+Shift+2";
-const AUTO_HIDE_HUD_ON_RECORD_STORAGE_KEY = "cursorlens.autoHideHudOnRecord";
-const CAPTURE_MODE_STORAGE_KEY = "cursorlens.captureMode";
-const CAPTURE_FRAME_RATE_STORAGE_KEY = "cursorlens.captureFrameRate";
-const CAPTURE_RESOLUTION_STORAGE_KEY = "cursorlens.captureResolutionPreset";
+const AUTO_HIDE_HUD_ON_RECORD_STORAGE_KEY = "capturia.autoHideHudOnRecord";
+const CAPTURE_MODE_STORAGE_KEY = "capturia.captureMode";
+const CAPTURE_FRAME_RATE_STORAGE_KEY = "capturia.captureFrameRate";
+const CAPTURE_RESOLUTION_STORAGE_KEY = "capturia.captureResolutionPreset";
 type RecordCountdownSeconds = (typeof RECORD_COUNTDOWN_CYCLE)[number];
 type CaptureMode = "standard" | "pro";
 type SelectedSourceSnapshot = {
@@ -130,14 +130,14 @@ export function LaunchWindow() {
   const { t, locale, setLocale } = useI18n();
   const [includeCamera, setIncludeCamera] = useState(() => {
     try {
-      return window.localStorage.getItem("cursorlens.includeCamera") === "1";
+      return window.localStorage.getItem("capturia.includeCamera") === "1";
     } catch {
       return false;
     }
   });
   const [cameraShape, setCameraShape] = useState<CameraOverlayShape>(() => {
     try {
-      const value = window.localStorage.getItem("cursorlens.cameraShape");
+      const value = window.localStorage.getItem("capturia.cameraShape");
       if (value === "rounded" || value === "square" || value === "circle") {
         return value;
       }
@@ -148,7 +148,7 @@ export function LaunchWindow() {
   });
   const [cameraSizePercent, setCameraSizePercent] = useState<number>(() => {
     try {
-      const value = Number(window.localStorage.getItem("cursorlens.cameraSizePercent"));
+      const value = Number(window.localStorage.getItem("capturia.cameraSizePercent"));
       if (Number.isFinite(value)) {
         return clamp(Math.round(value), 14, 40);
       }
@@ -159,7 +159,7 @@ export function LaunchWindow() {
   });
   const [captureProfile, setCaptureProfile] = useState<CaptureProfile>(() => {
     try {
-      const value = window.localStorage.getItem("cursorlens.captureProfile");
+      const value = window.localStorage.getItem("capturia.captureProfile");
       if (value === "balanced" || value === "quality" || value === "ultra") {
         return value;
       }
@@ -203,7 +203,7 @@ export function LaunchWindow() {
   });
   const [recordSystemCursor, setRecordSystemCursor] = useState(() => {
     try {
-      const value = window.localStorage.getItem("cursorlens.recordSystemCursor");
+      const value = window.localStorage.getItem("capturia.recordSystemCursor");
       return value === null ? true : value === "1";
     } catch {
       return true;
@@ -213,7 +213,7 @@ export function LaunchWindow() {
     try {
       // Migration: the old default was true on Linux which persisted "1".
       // Clear that stale value so users get the new default (false).
-      const migrationKey = "cursorlens.autoHideHudOnRecord.v2";
+      const migrationKey = "capturia.autoHideHudOnRecord.v2";
       if (!window.localStorage.getItem(migrationKey)) {
         window.localStorage.removeItem(AUTO_HIDE_HUD_ON_RECORD_STORAGE_KEY);
         window.localStorage.setItem(migrationKey, "1");
@@ -240,7 +240,7 @@ export function LaunchWindow() {
   });
   const [recordCountdownSeconds, setRecordCountdownSeconds] = useState<RecordCountdownSeconds>(() => {
     try {
-      const value = Number(window.localStorage.getItem("cursorlens.recordCountdownSeconds"));
+      const value = Number(window.localStorage.getItem("capturia.recordCountdownSeconds"));
       if (value === 0 || value === 3 || value === 5 || value === 8) {
         return value;
       }
@@ -318,7 +318,7 @@ export function LaunchWindow() {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem("cursorlens.includeCamera", includeCamera ? "1" : "0");
+      window.localStorage.setItem("capturia.includeCamera", includeCamera ? "1" : "0");
     } catch {
       // no-op
     }
@@ -326,7 +326,7 @@ export function LaunchWindow() {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem("cursorlens.cameraShape", cameraShape);
+      window.localStorage.setItem("capturia.cameraShape", cameraShape);
     } catch {
       // no-op
     }
@@ -334,7 +334,7 @@ export function LaunchWindow() {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem("cursorlens.cameraSizePercent", String(cameraSizePercent));
+      window.localStorage.setItem("capturia.cameraSizePercent", String(cameraSizePercent));
     } catch {
       // no-op
     }
@@ -342,7 +342,7 @@ export function LaunchWindow() {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem("cursorlens.captureProfile", captureProfile);
+      window.localStorage.setItem("capturia.captureProfile", captureProfile);
     } catch {
       // no-op
     }
@@ -374,7 +374,7 @@ export function LaunchWindow() {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem("cursorlens.recordSystemCursor", recordSystemCursor ? "1" : "0");
+      window.localStorage.setItem("capturia.recordSystemCursor", recordSystemCursor ? "1" : "0");
     } catch {
       // no-op
     }
@@ -390,7 +390,7 @@ export function LaunchWindow() {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem("cursorlens.recordCountdownSeconds", String(recordCountdownSeconds));
+      window.localStorage.setItem("capturia.recordCountdownSeconds", String(recordCountdownSeconds));
     } catch {
       // no-op
     }

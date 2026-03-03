@@ -81,7 +81,7 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 // Tray Icons
-const defaultTrayIcon = getTrayIcon('cursorlens.png');
+const defaultTrayIcon = getTrayIcon('capturia.png');
 const recordingTrayIcon = getTrayIcon('rec-button.png');
 
 function createWindow() {
@@ -115,7 +115,7 @@ function runtimeErrorText(
     close: '关闭',
   }
   const en: Record<'message' | 'detailPrefix' | 'report' | 'close', string> = {
-    message: 'CursorLens hit an internal error. Please report this issue so we can fix it.',
+    message: 'Capturia hit an internal error. Please report this issue so we can fix it.',
     detailPrefix: 'Reference',
     report: 'Report Bug',
     close: 'Close',
@@ -188,7 +188,7 @@ async function showRuntimeErrorDialog(context: string, error: unknown): Promise<
   try {
     const messageBoxOptions: Electron.MessageBoxOptions = {
       type: 'error',
-      title: 'CursorLens',
+      title: 'Capturia',
       message: runtimeErrorText(locale, 'message'),
       detail: details.join('\n\n'),
       buttons: [runtimeErrorText(locale, 'report'), runtimeErrorText(locale, 'close')],
@@ -218,14 +218,14 @@ function reportRuntimeError(context: string, error: unknown): void {
 function trayText(locale: 'en' | 'zh-CN', key: 'app' | 'recording' | 'stop' | 'open' | 'quit', source?: string): string {
   const dict = locale === 'zh-CN'
     ? {
-        app: 'CursorLens',
+        app: 'Capturia',
         recording: `录制中：${source ?? ''}`,
         stop: '停止录制',
         open: '打开',
         quit: '退出',
       }
     : {
-        app: 'CursorLens',
+        app: 'Capturia',
         recording: `Recording: ${source ?? ''}`,
         stop: 'Stop Recording',
         open: 'Open',

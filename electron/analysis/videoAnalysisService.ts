@@ -70,7 +70,7 @@ function formatTranscriptionFailure(args: {
   const message = String(args.message || '').trim();
   switch (code) {
     case 'speech_permission_denied':
-      return 'Speech recognition permission denied. Open System Settings > Privacy & Security > Speech Recognition, allow CursorLens, then retry.';
+      return 'Speech recognition permission denied. Open System Settings > Privacy & Security > Speech Recognition, allow Capturia, then retry.';
     case 'recognizer_unavailable':
       return 'Speech recognizer is currently unavailable. Please retry later.';
     case 'transcription_timeout':
