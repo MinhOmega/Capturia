@@ -8,9 +8,26 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const APP_ROOT = path.join(__dirname, '..')
 const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL']
 const RENDERER_DIST = path.join(APP_ROOT, 'dist')
+const LINUX_SESSION_TYPE = (process.env['XDG_SESSION_TYPE'] || '').toLowerCase()
 
 let hudOverlayWindow: BrowserWindow | null = null;
 let permissionCheckerWindow: BrowserWindow | null = null;
+
+function attachDevWindowLogging(win: BrowserWindow, label: string): void {
+  if (!VITE_DEV_SERVER_URL) return
+
+  win.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    const levelNames = ['LOG', 'WARN', 'ERR']
+    const tag = levelNames[level] ?? 'LOG'
+    const shortSource = sourceId ? sourceId.replace(/.*\//, '') : ''
+    console.log(`[${label}:${tag}] ${message} (${shortSource}:${line})`)
+  })
+
+  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    if (!isMainFrame) return
+    console.error(`[${label}:LOAD_FAIL] code=${errorCode} description=${errorDescription} url=${validatedURL}`)
+  })
+}
 
 ipcMain.on('hud-overlay-hide', () => {
   if (hudOverlayWindow && !hudOverlayWindow.isDestroyed()) {
@@ -43,6 +60,7 @@ ipcMain.on('hud-overlay-restore', () => {
 
 export function createHudOverlayWindow(): BrowserWindow {
   const isLinux = process.platform === 'linux';
+  const isLinuxWayland = isLinux && LINUX_SESSION_TYPE === 'wayland';
   const primaryDisplay = screen.getPrimaryDisplay();
   const { workArea } = primaryDisplay;
 
@@ -68,12 +86,15 @@ export function createHudOverlayWindow(): BrowserWindow {
     transparent: true,
     resizable: false,
     alwaysOnTop: true,
-    skipTaskbar: true,
+    skipTaskbar: !isLinuxWayland,
     hasShadow: false,
-    // On Linux:
+    title: 'Capturia',
+    // On Linux/X11:
     //   focusable: false — stops WM from managing stacking, buttons still receive clicks
     //   type: 'dock' — maps to _NET_WM_WINDOW_TYPE_DOCK (highest X11 stacking level)
-    ...(isLinux && { focusable: false, type: 'dock' as const }),
+    // On Linux/Wayland these hints can make the launcher effectively invisible
+    // from normal desktop UX, so fall back to a normal focusable window.
+    ...(isLinux && !isLinuxWayland && { focusable: false, type: 'dock' as const }),
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
       nodeIntegration: false,
@@ -82,13 +103,15 @@ export function createHudOverlayWindow(): BrowserWindow {
     },
   })
 
+  attachDevWindowLogging(win, 'launch')
+
   // Re-apply always-on-top after creation and after show — some Linux X11 WMs
   // ignore the constructor option and need a post-show re-apply.
   win.setAlwaysOnTop(true, 'screen-saver');
-  win.setVisibleOnAllWorkspaces(true);
+  win.setVisibleOnAllWorkspaces(!isLinuxWayland);
   win.once('show', () => {
     win.setAlwaysOnTop(true, 'screen-saver');
-    win.setVisibleOnAllWorkspaces(true);
+    win.setVisibleOnAllWorkspaces(!isLinuxWayland);
   });
 
   // Safety net: if the WM drops always-on-top, re-apply immediately.
@@ -106,7 +129,7 @@ export function createHudOverlayWindow(): BrowserWindow {
         clearInterval(alwaysOnTopTimer);
         return;
       }
-      if (!win.isMinimized()) {
+      if (!win.isMinimized() && !isLinuxWayland) {
         win.setAlwaysOnTop(false);
         win.setAlwaysOnTop(true, 'screen-saver');
       }
@@ -164,22 +187,14 @@ export function createEditorWindow(): BrowserWindow {
     },
   })
 
+  attachDevWindowLogging(win, 'editor')
+
   // Maximize the window by default
   win.maximize();
 
   win.webContents.on('did-finish-load', () => {
     win?.webContents.send('main-process-message', (new Date).toLocaleString())
   })
-
-  // Forward renderer console messages to terminal for debugging
-  if (VITE_DEV_SERVER_URL) {
-    win.webContents.on('console-message', (_event, level, message, line, sourceId) => {
-      const levelNames = ['LOG', 'WARN', 'ERR']
-      const tag = levelNames[level] ?? 'LOG'
-      const shortSource = sourceId ? sourceId.replace(/.*\//, '') : ''
-      console.log(`[editor:${tag}] ${message} (${shortSource}:${line})`)
-    })
-  }
 
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL + '?windowType=editor')
@@ -193,6 +208,7 @@ export function createEditorWindow(): BrowserWindow {
 }
 
 export function createSourceSelectorWindow(): BrowserWindow {
+  const isLinuxWayland = process.platform === 'linux' && LINUX_SESSION_TYPE === 'wayland'
   const { width, height } = screen.getPrimaryDisplay().workAreaSize
   
   const win = new BrowserWindow({
@@ -206,6 +222,8 @@ export function createSourceSelectorWindow(): BrowserWindow {
     resizable: false,
     alwaysOnTop: true,
     transparent: true,
+    skipTaskbar: !isLinuxWayland,
+    title: 'Capturia Source Selector',
     backgroundColor: '#00000000',
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
@@ -213,6 +231,8 @@ export function createSourceSelectorWindow(): BrowserWindow {
       contextIsolation: true,
     },
   })
+
+  attachDevWindowLogging(win, 'source-selector')
 
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL + '?windowType=source-selector')
@@ -253,6 +273,8 @@ export function createPermissionCheckerWindow(): BrowserWindow {
       contextIsolation: true,
     },
   })
+
+  attachDevWindowLogging(win, 'permission-checker')
 
   permissionCheckerWindow = win
   win.on('closed', () => {

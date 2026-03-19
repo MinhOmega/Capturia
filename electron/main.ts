@@ -16,6 +16,16 @@ import { buildIssueReportUrl } from '../src/lib/supportLinks'
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const LINUX_SESSION_TYPE = (process.env['XDG_SESSION_TYPE'] || '').toLowerCase()
+const IS_LINUX_WAYLAND = process.platform === 'linux' && LINUX_SESSION_TYPE === 'wayland'
+
+if (IS_LINUX_WAYLAND) {
+  // Electron 39 can hard-crash on some Ubuntu Wayland GPU stacks during
+  // startup. Use software rendering so the app launches reliably.
+  app.disableHardwareAcceleration()
+  app.commandLine.appendSwitch('disable-gpu')
+  app.commandLine.appendSwitch('disable-gpu-compositing')
+}
 
 export const RECORDINGS_DIR = path.join(app.getPath('userData'), 'recordings')
 

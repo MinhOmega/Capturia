@@ -63,7 +63,13 @@ Then grant required permissions in **System Settings -> Privacy & Security**:
 
 ### Linux
 
-Download the `.AppImage` from releases and run:
+Download the `.deb` package from releases and install it on Ubuntu/Debian:
+
+```bash
+sudo apt install ./Capturia-Linux-*.deb
+```
+
+Or download the `.AppImage` and run:
 
 ```bash
 chmod +x Capturia-Linux-*.AppImage
@@ -89,6 +95,12 @@ npm run dev
 
 ```bash
 npm run build
+```
+
+On Ubuntu/Debian, to build only the installable `.deb` package:
+
+```bash
+npm run build:deb
 ```
 
 ## Built With
