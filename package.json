@@ -33,8 +33,11 @@
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
     "build:mac": "npm run build:native && tsc && vite build && electron-builder --mac",
+    "build:mac:x64": "npm run build:native && tsc && vite build && electron-builder --mac dmg --x64",
+    "build:mac:arm64": "npm run build:native && tsc && vite build && electron-builder --mac dmg --arm64",
     "build:win": "npm run build:native && tsc && vite build && electron-builder --win",
     "build:linux": "npm run build:native && tsc && vite build && electron-builder --linux",
+    "build:deb": "npm run build:native && tsc && vite build && electron-builder -c electron-builder.json5 --linux deb -c.linux.target=deb",
     "test": "vitest --run",
     "test:watch": "vitest"
   },
