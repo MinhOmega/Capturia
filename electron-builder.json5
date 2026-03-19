@@ -24,22 +24,6 @@
     {
       "from": "public/wallpapers",
       "to": "assets/wallpapers"
-    },
-    {
-      "from": "electron/native/bin/sck-recorder",
-      "to": "native/sck-recorder"
-    },
-    {
-      "from": "electron/native/bin/cursor-kind-monitor",
-      "to": "native/cursor-kind-monitor"
-    },
-    {
-      "from": "electron/native/bin/mouse-button-monitor",
-      "to": "native/mouse-button-monitor"
-    },
-    {
-      "from": "electron/native/bin/speech-transcriber",
-      "to": "native/speech-transcriber"
     }
   ],
 
@@ -60,16 +44,43 @@
         "arch": ["x64", "arm64"]
       }
     ],
+    "extraResources": [
+      {
+        "from": "electron/native/bin/sck-recorder",
+        "to": "native/sck-recorder"
+      },
+      {
+        "from": "electron/native/bin/cursor-kind-monitor",
+        "to": "native/cursor-kind-monitor"
+      },
+      {
+        "from": "electron/native/bin/mouse-button-monitor",
+        "to": "native/mouse-button-monitor"
+      },
+      {
+        "from": "electron/native/bin/speech-transcriber",
+        "to": "native/speech-transcriber"
+      }
+    ],
     "icon": "icons/icons/mac/icon.icns",
     "artifactName": "${productName}-Mac-${arch}-${version}-Installer.${ext}"
   },
   "linux": {
     "target": [
-      "AppImage"
+      "AppImage",
+      "deb"
     ],
     "icon": "icons/icons/png",
     "artifactName": "${productName}-Linux-${version}.${ext}",
-    "category": "AudioVideo"
+    "category": "AudioVideo",
+    "maintainer": "MinhOmega",
+    "executableArgs": [
+      "--disable-gpu",
+      "--disable-gpu-compositing"
+    ],
+    "desktop": {
+      "StartupWMClass": "Capturia"
+    }
   },
   "win": {
     "target": [

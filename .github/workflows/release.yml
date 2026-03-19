@@ -1,4 +1,4 @@
-name: Release
+name: Release Desktop Apps
 
 on:
   push:
@@ -37,21 +37,28 @@ jobs:
 
   build:
     needs: validate
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
-            build_script: npm run build:mac
-            artifact_name: macos-installers
           - os: windows-latest
             build_script: npm run build:win
             artifact_name: windows-installers
+            id: windows
           - os: ubuntu-latest
             build_script: npm run build:linux
             artifact_name: linux-installers
+            id: linux
+          - os: macos-15-intel
+            build_script: npm run build:mac:x64
+            artifact_name: macos-x64-installers
+            id: macos-x64
+          - os: macos-15
+            build_script: npm run build:mac:arm64
+            artifact_name: macos-arm64-installers
+            id: macos-arm64
 
-    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -71,43 +78,32 @@ jobs:
       - name: Build app
         run: ${{ matrix.build_script }}
 
-      - name: Collect and create -latest copies
-        shell: bash
-        run: |
-          mkdir -p dist-release
-
-          # Collect installer files (.dmg, .AppImage, and Setup .exe only)
-          find release -type f \( -name '*.dmg' -o -name '*.AppImage' \) -exec cp {} dist-release/ \;
-          find release -type f -name '*Setup*' -name '*.exe' -exec cp {} dist-release/ \;
-
-          # Normalize any spaces in filenames to dashes
-          for f in dist-release/*; do
-            base=$(basename "$f")
-            normalized=$(echo "$base" | tr ' ' '-')
-            if [ "$base" != "$normalized" ]; then
-              mv "$f" "dist-release/$normalized"
-            fi
-          done
-
-          # Create -latest copies
-          for f in dist-release/*; do
-            [ -f "$f" ] || continue
-            base=$(basename "$f")
-            latest=$(echo "$base" | sed -E 's/[.-][0-9]+\.[0-9]+\.[0-9]+/-latest/g')
-            if [ "$base" != "$latest" ] && [ ! -f "dist-release/$latest" ]; then
-              cp "$f" "dist-release/$latest"
-              echo "Created: $latest"
-            fi
-          done
-
-          echo "--- Final artifacts ---"
-          ls -lh dist-release/
-
-      - name: Upload build artifacts
+      - name: Upload Windows installers
+        if: matrix.id == 'windows'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: dist-release/*
+          path: release/**/*.exe
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload Linux installers
+        if: matrix.id == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
+            release/**/*.AppImage
+            release/**/*.deb
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload macOS installers
+        if: startsWith(matrix.id, 'macos-')
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: release/**/*.dmg
           if-no-files-found: error
           retention-days: 30
 
@@ -130,3 +126,4 @@ jobs:
             artifacts/**/*.dmg
             artifacts/**/*.exe
             artifacts/**/*.AppImage
+            artifacts/**/*.deb
