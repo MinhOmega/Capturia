@@ -52,11 +52,11 @@ jobs:
             build_script: npm run build:linux
             artifact_name: linux-installers
           - id: macos-x64
-            os: macos-13
+            os: macos-15-intel
             build_script: npm run build:mac:x64
             artifact_name: macos-x64-installer
           - id: macos-arm64
-            os: macos-14
+            os: macos-15
             build_script: npm run build:mac:arm64
             artifact_name: macos-arm64-installer
 
