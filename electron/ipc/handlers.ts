@@ -24,6 +24,7 @@ import {
   stopNativeMacRecorder,
 } from '../native/sckRecorder'
 import { getNativeCursorKind, startNativeCursorKindMonitor, stopNativeCursorKindMonitor } from '../native/cursorKindMonitor'
+import { mainT, resolveMainLocale } from '../i18n'
 import {
   drainNativeMouseButtonTransitions,
   startNativeMouseButtonMonitor,
@@ -51,7 +52,6 @@ type SelectedSource = {
 
 let selectedSource: SelectedSource | null = null
 
-type Locale = 'en' | 'zh-CN'
 type CurrentVideoMetadata = {
   frameRate?: number
   width?: number
@@ -1060,40 +1060,15 @@ function sanitizeCursorTrack(input?: CurrentVideoMetadata['cursorTrack'] | null)
   return normalized
 }
 
-function normalizeLocale(input?: string): Locale {
-  return (input ?? '').toLowerCase().startsWith('zh') ? 'zh-CN' : 'en'
+// Dialog strings live in src/i18n/locales/<locale>/common.json under `electron.*`.
+// `localeInput` is the renderer's locale when the call carries one; otherwise the
+// locale announced through the `set-locale` IPC is used.
+function normalizeLocale(input?: string): string {
+  return resolveMainLocale(input)
 }
 
-function tt(locale: Locale, key: string): string {
-  const zh: Record<string, string> = {
-    saveGif: '保存导出 GIF',
-    saveVideo: '保存导出视频',
-    chooseExportFolder: '选择导出文件夹',
-    exportCancelled: '导出已取消',
-    exportSaved: '视频导出成功',
-    exportSaveFailed: '保存导出视频失败',
-    selectVideoFile: '选择视频文件',
-    videoFiles: '视频文件',
-    allFiles: '所有文件',
-    filePickerFailed: '打开文件选择器失败',
-    exportPathRejected: '导出位置必须通过保存对话框选择',
-    unsupportedVideoFile: '所选文件不是受支持的视频文件',
-  }
-  const en: Record<string, string> = {
-    saveGif: 'Save Exported GIF',
-    saveVideo: 'Save Exported Video',
-    chooseExportFolder: 'Choose Export Folder',
-    exportCancelled: 'Export cancelled',
-    exportSaved: 'Video exported successfully',
-    exportSaveFailed: 'Failed to save exported video',
-    selectVideoFile: 'Select Video File',
-    videoFiles: 'Video Files',
-    allFiles: 'All Files',
-    filePickerFailed: 'Failed to open file picker',
-    exportPathRejected: 'Export destination must be chosen through the save dialog',
-    unsupportedVideoFile: 'Selected file is not a supported video file',
-  }
-  return (locale === 'zh-CN' ? zh : en)[key] ?? key
+function tt(locale: string, key: string): string {
+  return mainT(locale, `common.electron.${key}`)
 }
 
 // Attach the parent window only when valid, to avoid passing a destroyed BrowserWindow
