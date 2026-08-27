@@ -1,6 +1,5 @@
 import { cn } from "@/lib/utils";
 import { useEffect, useRef } from "react";
-import { getAssetPath } from "@/lib/assetPath";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -26,9 +25,8 @@ import { GITHUB_ISSUES_URL, GITHUB_REPO_URL } from "@/lib/supportLinks";
 import { reportUserActionError } from "@/lib/userErrorFeedback";
 import { BACKGROUND_IMAGE_ACCEPT, isSupportedBackgroundImageType } from "./backgroundImageUpload";
 import { BACKGROUND_GRADIENT_PRESETS } from "./backgroundPresets";
+import { DEFAULT_WALLPAPER, isSameBuiltInWallpaper, resolveImageWallpaperUrl, WALLPAPER_PATHS } from "@/lib/wallpaper";
 
-const WALLPAPER_COUNT = 18;
-const WALLPAPER_RELATIVE = Array.from({ length: WALLPAPER_COUNT }, (_, i) => `wallpapers/wallpaper${i + 1}.jpg`);
 const GRADIENTS = BACKGROUND_GRADIENT_PRESETS;
 
 interface SettingsPanelProps {
@@ -306,14 +304,16 @@ export function SettingsPanel({
     }
   };
 
+  // Thumbnails need a loadable URL; the value handed to onWallpaperChange stays
+  // the canonical "/wallpapers/wallpaperN.jpg" so projects persist portably.
   useEffect(() => {
     let mounted = true
     ;(async () => {
       try {
-        const resolved = await Promise.all(WALLPAPER_RELATIVE.map(p => getAssetPath(p)))
+        const resolved = await Promise.all(WALLPAPER_PATHS.map(p => resolveImageWallpaperUrl(p)))
         if (mounted) setWallpaperPaths(resolved)
       } catch {
-        if (mounted) setWallpaperPaths(WALLPAPER_RELATIVE.map(p => `/${p}`))
+        if (mounted) setWallpaperPaths([...WALLPAPER_PATHS])
       }
     })()
     return () => { mounted = false }
@@ -430,7 +430,7 @@ export function SettingsPanel({
     setCustomImages(prev => prev.filter(img => img !== imageUrl));
     // If the removed image was selected, clear selection
     if (selected === imageUrl) {
-      onWallpaperChange(wallpaperPaths[0] || WALLPAPER_RELATIVE[0]);
+      onWallpaperChange(DEFAULT_WALLPAPER);
     }
   };
 
@@ -1243,15 +1243,9 @@ export function SettingsPanel({
                         );
                       })}
 
-                      {(wallpaperPaths.length > 0 ? wallpaperPaths : WALLPAPER_RELATIVE.map(p => `/${p}`)).map((path) => {
-                        const isSelected = (() => {
-                          if (!selected) return false;
-                          if (selected === path) return true;
-                          const clean = (s: string) => s.replace(/^file:\/\//, '').replace(/^\//, '');
-                          if (clean(selected).endsWith(clean(path))) return true;
-                          if (clean(path).endsWith(clean(selected))) return true;
-                          return false;
-                        })();
+                      {WALLPAPER_PATHS.map((path, index) => {
+                        const thumbnailUrl = wallpaperPaths[index] ?? path;
+                        const isSelected = isSameBuiltInWallpaper(selected, path);
                         return (
                           <div
                             key={path}
@@ -1261,7 +1255,7 @@ export function SettingsPanel({
                                 ? "border-[#34B27B] ring-1 ring-[#34B27B]/30"
                                 : "border-white/10 hover:border-[#34B27B]/40 opacity-80 hover:opacity-100 bg-white/5"
                             )}
-                            style={{ backgroundImage: `url(${path})`, backgroundSize: "cover", backgroundPosition: "center" }}
+                            style={{ backgroundImage: `url(${thumbnailUrl})`, backgroundSize: "cover", backgroundPosition: "center" }}
                             onClick={() => onWallpaperChange(path)}
                             role="button"
                           />

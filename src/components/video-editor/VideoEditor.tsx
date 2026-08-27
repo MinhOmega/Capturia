@@ -37,6 +37,7 @@ import {
 import { DEFAULT_TIMELINE_SETTINGS } from "./editorDefaults";
 import { ANNOTATION_ID_PREFIX, maxIdNum } from "./idCounters";
 import { duplicateAnnotationRegion } from "@/lib/annotations/duplicate";
+import { DEFAULT_WALLPAPER, normalizeWallpaperValue } from "@/lib/wallpaper";
 import {
   VideoExporter,
   GifExporter,
@@ -56,7 +57,6 @@ import {
 } from "@/lib/exporter";
 import { getExportFolder, parentDirectoryOf, saveUserPreferences } from "@/lib/userPreferences";
 import { ASPECT_RATIOS, type AspectRatio, getAspectRatioValue } from "@/utils/aspectRatioUtils";
-import { getAssetPath } from "@/lib/assetPath";
 import { useShortcuts } from "@/contexts/ShortcutsContext";
 import { matchesShortcut } from "@/lib/shortcuts";
 import { useI18n } from "@/i18n";
@@ -88,9 +88,6 @@ import {
   findSegmentAtSourceTime,
 } from "@/lib/trim/timeMapping";
 import { VideoMouseAnalyzer } from "@/lib/analysis/videoMouseAnalyzer";
-
-const WALLPAPER_COUNT = 18;
-const WALLPAPER_PATHS = Array.from({ length: WALLPAPER_COUNT }, (_, i) => `/wallpapers/wallpaper${i + 1}.jpg`);
 
 function resolvePreviewFrameRate(sourceFrameRate?: number): number {
   if (!Number.isFinite(sourceFrameRate)) return 60;
@@ -331,7 +328,9 @@ export default function VideoEditor() {
   const [duration, setDuration] = useState(0);
   const [segments, setSegments] = useState<VideoSegment[]>([]);
   const [selectedSegmentId, setSelectedSegmentId] = useState<string | null>(null);
-  const [wallpaper, setWallpaper] = useState<string>(WALLPAPER_PATHS[0]);
+  // Canonical form ("/wallpapers/wallpaperN.jpg", "#hex", gradient or data:
+  // URI); resolved to a loadable URL only at render/export time.
+  const [wallpaper, setWallpaper] = useState<string>(DEFAULT_WALLPAPER);
   const [shadowIntensity, setShadowIntensity] = useState(0);
   const [showBlur, setShowBlur] = useState(false);
   const [motionBlurEnabled, setMotionBlurEnabled] = useState(false);
@@ -774,7 +773,8 @@ export default function VideoEditor() {
                 setCropRegionsByAspect(s.cropRegionsByAspect as Partial<Record<AspectRatio, CropRegion>>);
               }
               if (typeof s.aspectRatio === 'string') setAspectRatio(s.aspectRatio as AspectRatio);
-              if (typeof s.wallpaper === 'string') setWallpaper(s.wallpaper);
+              // Older saves stored the resolved file:// URL; normalise to canonical.
+              if (typeof s.wallpaper === 'string') setWallpaper(normalizeWallpaperValue(s.wallpaper));
               if (typeof s.shadowIntensity === 'number') setShadowIntensity(s.shadowIntensity);
               if (typeof s.showBlur === 'boolean') setShowBlur(s.showBlur);
               if (typeof s.motionBlurEnabled === 'boolean') setMotionBlurEnabled(s.motionBlurEnabled);
@@ -997,24 +997,6 @@ export default function VideoEditor() {
     setAnnotationRegions(snapshot.annotationRegions);
     setAudioEditRegions(snapshot.audioEditRegions);
   }, [segments, zoomRegionsByAspect, annotationRegions, audioEditRegions]);
-
-  // Initialize default wallpaper with resolved asset path
-  // Skip if project state was already restored (avoids overwriting saved wallpaper)
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      try {
-        const resolvedPath = await getAssetPath('wallpapers/wallpaper1.jpg');
-        if (mounted && !projectRestoredRef.current) {
-          setWallpaper(resolvedPath);
-        }
-      } catch (err) {
-        // If resolution fails, keep the fallback
-        console.warn('Failed to resolve default wallpaper path:', err);
-      }
-    })();
-    return () => { mounted = false };
-  }, []);
 
   // Reset projectRestoredRef after initial effects have processed.
   // This is a one-shot flag: true during first render cycle (so wallpaper init
@@ -2153,7 +2135,9 @@ export default function VideoEditor() {
             toast.error(reason, { action: saveAgainToastAction });
           }
         } else {
-          const reason = result.error || t('editor.gifExportFailed');
+          const reason = result.errorKind === 'background-load'
+            ? t('editor.exportBackgroundLoadFailed', { url: result.backgroundUrl ?? '' })
+            : result.error || t('editor.gifExportFailed');
           setExportError(buildExportDiagnosticMessage({
             formatLabel: 'GIF',
             reason,
@@ -2264,7 +2248,9 @@ export default function VideoEditor() {
           }
 
           if (!(result.success && result.blob)) {
-            const reason = result.error || t('editor.exportFailed');
+            const reason = result.errorKind === 'background-load'
+              ? t('editor.exportBackgroundLoadFailed', { url: result.backgroundUrl ?? '' })
+              : result.error || t('editor.exportFailed');
             setExportError(buildExportDiagnosticMessage({
               formatLabel: 'Video',
               reason,

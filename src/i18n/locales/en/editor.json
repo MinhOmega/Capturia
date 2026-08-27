@@ -15,6 +15,7 @@
 	"saveVideoFailed": "Failed to save video",
 	"gifExportFailed": "GIF export failed",
 	"exportFailed": "Export failed",
+	"exportBackgroundLoadFailed": "Export failed: could not load background image ({{url}})",
 	"exportError": "Export failed: {{message}}",
 	"exportResolutionLimited": "Source resolution limits this export to {{width}}x{{height}}.",
 	"exportAspectRatioRequired": "Select at least one export aspect ratio before exporting.",
