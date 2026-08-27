@@ -118,5 +118,6 @@
 		"missingRequiredHint": "Required permissions are missing. Recording is blocked until you grant the required items.",
 		"relaunchHint": "After granting Screen Recording, macOS may require relaunching Capturia before changes fully apply.",
 		"continue": "Continue"
-	}
+	},
+	"cameraFallback": "Camera unavailable. Recording screen only."
 }

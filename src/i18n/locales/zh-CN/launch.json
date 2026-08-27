@@ -118,5 +118,6 @@
 		"missingRequiredHint": "存在缺失的必需权限，录制会被阻断。请先完成授权。",
 		"relaunchHint": "开启“屏幕录制”后，macOS 可能要求重启 Capturia 才能完全生效。",
 		"continue": "继续"
-	}
+	},
+	"cameraFallback": "摄像头不可用，仅录制屏幕。"
 }

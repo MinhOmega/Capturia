@@ -118,5 +118,6 @@
 		"missingRequiredHint": "Thiếu quyền bắt buộc. Việc ghi hình bị chặn cho đến khi bạn cấp các quyền này.",
 		"relaunchHint": "Sau khi cấp quyền Ghi màn hình, macOS có thể yêu cầu khởi động lại Capturia để thay đổi có hiệu lực.",
 		"continue": "Tiếp tục"
-	}
+	},
+	"cameraFallback": "Không dùng được camera. Chỉ ghi màn hình."
 }
