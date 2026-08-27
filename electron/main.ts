@@ -10,6 +10,7 @@ import {
   createPermissionCheckerWindow,
   getPermissionCheckerWindow,
   createCountdownOverlayWindow,
+  createNotesWindow,
 } from './windows'
 import { registerIpcHandlers } from './ipc/handlers'
 import { isReadablePathAllowed, localMediaUrlToPath } from './ipc/paths'
@@ -67,6 +68,7 @@ let mainWindow: BrowserWindow | null = null
 let sourceSelectorWindow: BrowserWindow | null = null
 let permissionCheckerWindow: BrowserWindow | null = null
 let countdownOverlayWindow: BrowserWindow | null = null
+let notesWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let selectedSourceName = ''
 let selectedDesktopSourceId: string | null = null
@@ -396,6 +398,21 @@ function createCountdownOverlayWindowWrapper() {
   return countdownOverlayWindow
 }
 
+function createNotesWindowWrapper() {
+  if (notesWindow && !notesWindow.isDestroyed()) {
+    return notesWindow
+  }
+  notesWindow = createNotesWindow()
+  notesWindow.on('closed', () => {
+    notesWindow = null
+    // Lets the HUD drop its "notes open" indicator.
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('notes-window-closed')
+    }
+  })
+  return notesWindow
+}
+
 // On macOS, applications and their menu bar stay active until the user quits
 // explicitly with Cmd + Q.
 app.on('window-all-closed', () => {
@@ -673,6 +690,8 @@ appReady?.then(async () => {
     {
       createCountdownOverlayWindow: createCountdownOverlayWindowWrapper,
       getCountdownOverlayWindow: () => countdownOverlayWindow,
+      createNotesWindow: createNotesWindowWrapper,
+      getNotesWindow: () => notesWindow,
     },
   )
   createWindow()

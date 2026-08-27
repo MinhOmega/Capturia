@@ -175,6 +175,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('countdown-overlay-value', listener)
     return () => ipcRenderer.removeListener('countdown-overlay-value', listener)
   },
+  // Notes window (W3-e): opens once, focuses on repeat; `closed` is echoed to the HUD.
+  openNotes: () => {
+    return ipcRenderer.invoke('open-notes')
+  },
+  onNotesWindowClosed: (callback: () => void) => {
+    const listener = () => callback()
+    ipcRenderer.on('notes-window-closed', listener)
+    return () => ipcRenderer.removeListener('notes-window-closed', listener)
+  },
   setStopRecordingShortcut: (accelerator: string) => {
     return ipcRenderer.invoke('set-stop-recording-shortcut', accelerator)
   },

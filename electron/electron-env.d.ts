@@ -219,6 +219,8 @@ interface Window {
     setCountdownOverlayValue: (value: number, runId: number) => Promise<void>
     hideCountdownOverlay: (runId: number) => Promise<void>
     onCountdownOverlayValue: (callback: (value: number | null, runId: number) => void) => () => void
+    openNotes: () => Promise<{ success: boolean; focused?: boolean; message?: string }>
+    onNotesWindowClosed: (callback: () => void) => () => void
     setStopRecordingShortcut: (accelerator: string) => Promise<{ success: boolean; accelerator: string; message?: string }>
     getStopRecordingShortcut: () => Promise<{ success: boolean; accelerator: string; message?: string }>
     openExternalUrl: (url: string) => Promise<{ success: boolean; error?: string }>
