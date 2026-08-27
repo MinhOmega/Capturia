@@ -19,12 +19,14 @@ import {
   DEFAULT_ZOOM_DEPTH,
   ZOOM_DEPTH_SCALES,
   clampFocusToDepth,
+  getZoomFocusMode,
   DEFAULT_CROP_REGION,
   DEFAULT_FIGURE_DATA,
   createTextAnnotationRegion,
   resolveTextAnnotationContent,
   type ZoomDepth,
   type ZoomFocus,
+  type ZoomFocusMode,
   type ZoomRegion,
   type TrimRegion,
   type VideoSegment,
@@ -357,6 +359,10 @@ export default function VideoEditor() {
   const [isPreviewingZoom, setIsPreviewingZoom] = useState(false);
   // Auto-zoom wand: ON keeps/suggests `source: 'auto'` regions, OFF removes them.
   const [autoZoomEnabled, setAutoZoomEnabled] = useState(true);
+  // Auto-Focus all: every zoom follows the cursor (focusMode 'auto') and the
+  // per-zoom Focus Mode control is locked. Off by default (Capturia keeps the
+  // static focus of suggested regions unless asked otherwise).
+  const [autoFocusAll, setAutoFocusAll] = useState(false);
   const [audioEditRegions, setAudioEditRegions] = useState<AudioEditRegion[]>([]);
   const [annotationRegions, setAnnotationRegions] = useState<AnnotationRegion[]>([]);
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
@@ -734,20 +740,24 @@ export default function VideoEditor() {
                   // Remove exact content duplicates (same id + startMs + endMs + depth)
                   const contentKeys = new Set<string>();
                   const deduped = regions.filter(r => {
-                    const key = `${r.id}|${r.startMs}|${r.endMs}|${r.depth}|${r.customScale ?? ''}|${r.focus?.cx}|${r.focus?.cy}`;
+                    const key = `${r.id}|${r.startMs}|${r.endMs}|${r.depth}|${r.customScale ?? ''}|${r.focus?.cx}|${r.focus?.cy}|${r.focusMode ?? ''}`;
                     if (contentKeys.has(key)) return false;
                     contentKeys.add(key);
                     return true;
                   });
-                  // Re-ID any remaining ID collisions
+                  // Re-ID any remaining ID collisions; drop unknown focusMode
+                  // values (older / hand-edited saves) so they read as manual.
                   let maxZ = maxIdNum(deduped, 'zoom-');
                   const seenIds = new Set<string>();
                   const fixed = deduped.map(r => {
-                    if (seenIds.has(r.id)) {
-                      return { ...r, id: `zoom-${++maxZ}` };
+                    const focusMode: ZoomFocusMode | undefined =
+                      r.focusMode === 'auto' || r.focusMode === 'manual' ? r.focusMode : undefined;
+                    const normalized = focusMode === r.focusMode ? r : { ...r, focusMode };
+                    if (seenIds.has(normalized.id)) {
+                      return { ...normalized, id: `zoom-${++maxZ}` };
                     }
-                    seenIds.add(r.id);
-                    return r;
+                    seenIds.add(normalized.id);
+                    return normalized;
                   });
                   fixedByAspect[aspect] = fixed;
                   globalMaxZoom = Math.max(globalMaxZoom, maxZ);
@@ -757,6 +767,8 @@ export default function VideoEditor() {
               }
               // Auto-zoom wand (v1.2): older saves have no flag and keep the default (on).
               if (typeof s.autoZoomEnabled === 'boolean') setAutoZoomEnabled(s.autoZoomEnabled);
+              // Auto-Focus all (W3-f): older saves have no flag and keep the default (off).
+              if (typeof s.autoFocusAll === 'boolean') setAutoFocusAll(s.autoFocusAll);
 
               // Restore annotation regions and sync counters
               if (Array.isArray(s.annotationRegions)) {
@@ -886,6 +898,7 @@ export default function VideoEditor() {
         timelineZoomVisibleMs: timelineZoomInfo?.visibleMs,
         showTimelineWaveform,
         autoZoomEnabled,
+        autoFocusAll,
       };
       const hash = JSON.stringify(state);
       if (hash === lastSavedHashRef.current) return;
@@ -901,7 +914,7 @@ export default function VideoEditor() {
     audioLimiterDb, exportQuality, exportFormat, seekStepSeconds,
     previewPlaybackRate, cursorStyle, subtitleCues, gifFrameRate,
     gifLoop, gifSizePreset, exportAspectRatios, timelineZoomInfo,
-    showTimelineWaveform, autoZoomEnabled,
+    showTimelineWaveform, autoZoomEnabled, autoFocusAll,
   ]);
 
   // ── Undo / Redo history ──
@@ -1193,12 +1206,14 @@ export default function VideoEditor() {
       depth: DEFAULT_ZOOM_DEPTH,
       focus: { cx: 0.5, cy: 0.5 },
       source: 'manual',
+      // Auto-Focus all on means new zooms follow the cursor too.
+      ...(autoFocusAll ? { focusMode: 'auto' as const } : {}),
     };
     setZoomRegionsForActiveAspect((prev) => [...prev, newRegion]);
     setSelectedZoomIdForActiveAspect(id);
     setSelectedSegmentId(null);
     setSelectedAnnotationId(null);
-  }, [setSelectedZoomIdForActiveAspect, setZoomRegionsForActiveAspect]);
+  }, [autoFocusAll, setSelectedZoomIdForActiveAspect, setZoomRegionsForActiveAspect]);
 
   // Split at a specific effective time (in ms). Used by scissors-mode click.
   const handleSplitAtTime = useCallback((effectiveMs: number) => {
@@ -1321,6 +1336,40 @@ export default function VideoEditor() {
     );
   }, [beginHistoryBatch, selectedZoomId, setZoomRegionsForActiveAspect]);
 
+  // Per-zoom Focus Mode (manual / auto). One region update = one undo entry.
+  const handleZoomFocusModeChange = useCallback((focusMode: ZoomFocusMode) => {
+    if (!selectedZoomId) return;
+    setZoomRegionsForActiveAspect((prev) =>
+      prev.map((region) =>
+        region.id === selectedZoomId && getZoomFocusMode(region) !== focusMode
+          ? { ...region, focusMode, source: 'manual' }
+          : region,
+      ),
+    );
+  }, [selectedZoomId, setZoomRegionsForActiveAspect]);
+
+  // Flip every zoom (all aspects) between auto (cursor-follow) and manual at
+  // once. The flag is global, so the regions of every aspect follow it; one
+  // zoom-regions update = one undo entry.
+  const handleToggleAutoFocusAll = useCallback((enabled: boolean) => {
+    setAutoFocusAll(enabled);
+    const focusMode: ZoomFocusMode = enabled ? 'auto' : 'manual';
+    setZoomRegionsByAspect((previous) => {
+      let changed = false;
+      const next: ZoomRegionsByAspect = {};
+      const entries = Object.entries(previous) as Array<[keyof ZoomRegionsByAspect, ZoomRegion[] | undefined]>;
+      for (const [aspect, regions] of entries) {
+        if (!regions) continue;
+        next[aspect] = regions.map((region) => {
+          if (getZoomFocusMode(region) === focusMode) return region;
+          changed = true;
+          return { ...region, focusMode };
+        });
+      }
+      return changed ? next : previous;
+    });
+  }, []);
+
   const handleZoomDelete = useCallback((id: string) => {
     setZoomRegionsForActiveAspect((prev) => prev.filter((region) => region.id !== id));
     if (selectedZoomId === id) {
@@ -1343,6 +1392,10 @@ export default function VideoEditor() {
       avoidSpans: existingRegions.map((region) => ({ startMs: region.startMs, endMs: region.endMs })),
     });
 
+    // Drafts keep their static focus (click / selection centroid, dwell point)
+    // by default. With Auto-Focus all on, movement drafts follow the cursor;
+    // click / selection drafts stay on their centroid, which is the point of
+    // that generator (deliberate deviation from upstream 1b5de03f).
     return drafts.map((draft) => ({
       id: `zoom-${nextZoomIdRef.current++}`,
       startMs: draft.startMs,
@@ -1350,8 +1403,9 @@ export default function VideoEditor() {
       depth: draft.depth,
       focus: clampFocusToDepth(draft.focus, draft.depth),
       source: 'auto' as const,
+      ...(autoFocusAll && draft.reason === 'movement' ? { focusMode: 'auto' as const } : {}),
     }));
-  }, [cursorTrack, duration]);
+  }, [autoFocusAll, cursorTrack, duration]);
 
   // Appends auto suggestions around the active aspect's existing regions in a
   // single state update (one undo entry).
@@ -2519,6 +2573,7 @@ export default function VideoEditor() {
         timelineZoomVisibleMs: timelineZoomInfo?.visibleMs,
         showTimelineWaveform,
         autoZoomEnabled,
+        autoFocusAll,
       };
       window.electronAPI.saveProjectState(videoFilePath, state).catch(() => {});
     }
@@ -2531,7 +2586,7 @@ export default function VideoEditor() {
     audioLimiterDb, exportQuality, exportFormat, seekStepSeconds,
     previewPlaybackRate, cursorStyle, subtitleCues, gifFrameRate,
     gifLoop, gifSizePreset, exportAspectRatios, timelineZoomInfo,
-    showTimelineWaveform, autoZoomEnabled,
+    showTimelineWaveform, autoZoomEnabled, autoFocusAll,
   ]);
 
   if (loading) {
@@ -2784,6 +2839,10 @@ export default function VideoEditor() {
                 selectedZoomFocus={selectedZoomRegion?.focus ?? null}
                 onZoomFocusCoordinateChange={handleZoomFocusCoordinateChange}
                 onZoomFocusCoordinateCommit={endHistoryBatch}
+                selectedZoomFocusMode={selectedZoomRegion ? getZoomFocusMode(selectedZoomRegion) : null}
+                onZoomFocusModeChange={handleZoomFocusModeChange}
+                autoFocusAll={autoFocusAll}
+                onToggleAutoFocusAll={handleToggleAutoFocusAll}
                 onZoomPreviewStart={() => setIsPreviewingZoom(true)}
                 onZoomPreviewEnd={() => setIsPreviewingZoom(false)}
                 selectedZoomId={selectedZoomId}
