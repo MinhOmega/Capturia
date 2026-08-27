@@ -34,5 +34,12 @@
 	"conflictFixed": "This key is already used by \"{{label}}\" and cannot be changed",
 	"conflictWith": "Already used by \"{{label}}\"",
 	"swap": "Swap",
-	"instructions": "Click a shortcut then press a new key combo. Press Esc to cancel."
+	"instructions": "Click a shortcut then press a new key combo. Press Esc to cancel.",
+	"openApp": "Open Capturia",
+	"stopRecording": "Stop Recording",
+	"global": "Global (system-wide)",
+	"globalHint": "Work in any app. A global shortcut needs Ctrl/⌘ or Alt.",
+	"globalNeedsModifier": "Global shortcuts need Ctrl/⌘ or Alt",
+	"registrationFailed": "Could not register \"{{label}}\" ({{shortcut}}). Another app may already use it.",
+	"saveFailed": "Failed to save shortcuts"
 }

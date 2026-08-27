@@ -4,6 +4,8 @@
   "appId": "com.capturia.app",
   "asar": true,
   "productName": "Capturia",
+  // Must stay byte-identical to COPYRIGHT in electron/about.ts (about.test.ts pins it).
+  "copyright": "© 2025-2026 MinhOmega and contributors — MIT License",
   "npmRebuild": true,
   "buildDependenciesFromSource": true,
   "compression": "normal",
@@ -89,5 +91,10 @@
     ],
     "icon": "icons/icons/win/icon.ico",
     "artifactName": "${productName}-Setup-${version}.${ext}"
+  },
+  // Assisted installer so the user can pick the install directory (upstream 56988e86).
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true
   }
 }

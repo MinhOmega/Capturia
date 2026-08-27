@@ -34,5 +34,12 @@
 	"conflictFixed": "Phím tắt này được dành riêng cho \"{{label}}\" và không thể gán lại.",
 	"conflictWith": "Đã được sử dụng bởi {{label}}",
 	"swap": "Hoán đổi",
-	"instructions": "Nhấp vào một phím tắt rồi nhấn tổ hợp phím mới. Nhấn Esc để hủy."
+	"instructions": "Nhấp vào một phím tắt rồi nhấn tổ hợp phím mới. Nhấn Esc để hủy.",
+	"openApp": "Mở Capturia",
+	"stopRecording": "Dừng ghi hình",
+	"global": "Toàn hệ thống",
+	"globalHint": "Hoạt động trong mọi ứng dụng. Phím tắt toàn hệ thống cần Ctrl/⌘ hoặc Alt.",
+	"globalNeedsModifier": "Phím tắt toàn hệ thống cần Ctrl/⌘ hoặc Alt",
+	"registrationFailed": "Không thể đăng ký \"{{label}}\" ({{shortcut}}). Có thể ứng dụng khác đang dùng tổ hợp này.",
+	"saveFailed": "Không lưu được phím tắt"
 }
