@@ -69,7 +69,8 @@ import {
 import { getExportFolder, parentDirectoryOf, saveUserPreferences } from "@/lib/userPreferences";
 import { ASPECT_RATIOS, type AspectRatio, getAspectRatioValue } from "@/utils/aspectRatioUtils";
 import { useShortcuts } from "@/contexts/ShortcutsContext";
-import { isTextEditingTarget, matchesShortcut } from "@/lib/shortcuts";
+import { isArrowKeyOwningTarget, isTextEditingTarget, matchesShortcut } from "@/lib/shortcuts";
+import { computeFrameStepTime, FRAME_DURATION_SEC } from "@/lib/frameStep";
 import { useI18n } from "@/i18n";
 import { DEFAULT_CURSOR_STYLE, type CursorStyleConfig, type CursorTrack, type CursorTrackEvent } from "@/lib/cursor";
 import { cropRegionEquals, getCenteredAspectCropRegion, normalizeAspectCropRegion } from "@/lib/crop/aspectCrop";
@@ -1057,6 +1058,10 @@ export default function VideoEditor() {
   effectiveDurationRef.current = effectiveDuration;
   const seekStepSecondsRef = useRef(seekStepSeconds);
   seekStepSecondsRef.current = seekStepSeconds;
+  const sourceFrameRateRef = useRef(sourceFrameRate);
+  sourceFrameRateRef.current = sourceFrameRate;
+  const durationRef = useRef(duration);
+  durationRef.current = duration;
   const handleSeekRef = useRef(handleSeek);
   handleSeekRef.current = handleSeek;
   const previewPlaybackRateRef = useRef(previewPlaybackRate);
@@ -1761,7 +1766,8 @@ export default function VideoEditor() {
 
       // Arrow key navigation: seek forward/backward in effective time
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-        if (editingText) {
+        // Sliders, selects, tabs, menus... own the arrow keys; do not also seek.
+        if (isArrowKeyOwningTarget(e.target)) {
           return;
         }
         e.preventDefault();
@@ -1772,6 +1778,26 @@ export default function VideoEditor() {
         const maxTime = effectiveDurationRef.current;
         const newTime = Math.max(0, Math.min(maxTime, current + step * direction));
         handleSeekRef.current(newTime);
+      }
+
+      // Frame step: , / . move exactly one source frame at the source's real
+      // frame rate. Reads the live video time so rapid presses accumulate
+      // instead of racing the React state update.
+      if ((e.key === ',' || e.key === '.') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (isArrowKeyOwningTarget(e.target)) return;
+        e.preventDefault();
+        commitHoverPreview();
+        const video = videoPlaybackRef.current?.video;
+        if (!video) return;
+        const fps = sourceFrameRateRef.current;
+        const frameDurationSec = fps && Number.isFinite(fps) && fps > 0 ? 1 / fps : FRAME_DURATION_SEC;
+        const videoDuration = Number.isFinite(video.duration) ? video.duration : durationRef.current;
+        video.currentTime = computeFrameStepTime(
+          video.currentTime,
+          videoDuration,
+          e.key === '.' ? 'forward' : 'backward',
+          frameDurationSec,
+        );
       }
 
       // Speed up/down

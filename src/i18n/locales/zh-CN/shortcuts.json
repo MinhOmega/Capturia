@@ -11,6 +11,8 @@
 	"seekForward": "快进",
 	"seekBackward": "快退",
 	"seekFine": "微调 (±1s)",
+	"frameBack": "上一帧",
+	"frameForward": "下一帧",
 	"speedUp": "加速播放",
 	"speedDown": "减速播放",
 	"copySelected": "复制选中",
