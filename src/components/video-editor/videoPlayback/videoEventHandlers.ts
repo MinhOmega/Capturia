@@ -1,5 +1,10 @@
 import type React from 'react';
 import type { TrimRegion, VideoSegment } from '../types';
+import { createRafCoalescer } from './rafCoalescer';
+
+// Keep "scrub mode" on for a brief tail after `seeked`: rapid drag-scrubbing fires
+// `seeking`/`seeked` dozens of times a second and toggling effects each time would flicker.
+const SCRUB_END_DEBOUNCE_MS = 150;
 
 interface VideoEventHandlersParams {
   video: HTMLVideoElement;
@@ -13,6 +18,10 @@ interface VideoEventHandlersParams {
   trimRegionsRef: React.MutableRefObject<TrimRegion[]>;
   segmentsRef: React.MutableRefObject<VideoSegment[]>;
   previewPlaybackRateRef: React.MutableRefObject<number>;
+  /** Scrub state: true from the first `seeking` until SCRUB_END_DEBOUNCE_MS after the last `seeked`. */
+  isScrubbingRef?: React.MutableRefObject<boolean>;
+  scrubEndTimerRef?: React.MutableRefObject<number | null>;
+  onScrubChange?: (scrubbing: boolean) => void;
 }
 
 export function createVideoEventHandlers(params: VideoEventHandlersParams) {
@@ -28,20 +37,31 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
     trimRegionsRef,
     segmentsRef,
     previewPlaybackRateRef,
+    isScrubbingRef,
+    scrubEndTimerRef,
+    onScrubChange,
   } = params;
 
-  const UI_TIME_UPDATE_INTERVAL_MS = 1000 / 30;
   const MAX_SPURIOUS_PAUSE_RETRIES = 3;
-  let lastUiUpdateAt = 0;
   let spuriousPauseRetries = 0;
 
-  const emitTime = (timeValue: number, force = false) => {
-    currentTimeRef.current = timeValue * 1000;
-    const now = performance.now();
-    if (force || now - lastUiUpdateAt >= UI_TIME_UPDATE_INTERVAL_MS) {
-      lastUiUpdateAt = now;
-      onTimeUpdate(timeValue);
+  const clearScrubEndTimer = () => {
+    if (scrubEndTimerRef && scrubEndTimerRef.current !== null) {
+      window.clearTimeout(scrubEndTimerRef.current);
+      scrubEndTimerRef.current = null;
     }
+  };
+
+  // currentTimeRef is updated synchronously on every call (cheap; the Pixi ticker
+  // and other imperative consumers read it directly). The React state commit
+  // (`onTimeUpdate`) is coalesced to at most once per animation frame so a burst
+  // of `seeking` events (fast timeline drag) or the per-frame rAF playback loop
+  // can't force more than one parent re-render per frame.
+  const timeUpdateCoalescer = createRafCoalescer<number>(onTimeUpdate);
+
+  const emitTime = (timeValue: number) => {
+    currentTimeRef.current = timeValue * 1000;
+    timeUpdateCoalescer.schedule(timeValue);
   };
 
   // Find the segment containing the given source time (ms)
@@ -85,7 +105,7 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
         const nextStart = findNextKeptSegmentStart(seg.endMs);
         if (nextStart !== null) {
           video.currentTime = nextStart / 1000;
-          emitTime(nextStart / 1000, true);
+          emitTime(nextStart / 1000);
         } else {
           video.pause();
         }
@@ -109,7 +129,7 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
           video.pause();
         } else {
           video.currentTime = skipToTime;
-          emitTime(skipToTime, true);
+          emitTime(skipToTime);
         }
       } else {
         emitTime(video.currentTime);
@@ -144,7 +164,7 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
     timeUpdateAnimationRef.current = requestAnimationFrame(updateTime);
   };
 
-    const handlePause = () => {
+  const handlePause = () => {
     // On some platforms (notably Chromium on Linux/Wayland) the browser may
     // emit a native pause event right after play() succeeds — e.g. because
     // of a WebGL video texture interaction.  When allowPlayback is still
@@ -160,7 +180,7 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
           cancelAnimationFrame(timeUpdateAnimationRef.current);
           timeUpdateAnimationRef.current = null;
         }
-        emitTime(video.currentTime, true);
+        emitTime(video.currentTime);
       });
       return;
     }
@@ -171,11 +191,20 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
       cancelAnimationFrame(timeUpdateAnimationRef.current);
       timeUpdateAnimationRef.current = null;
     }
-    emitTime(video.currentTime, true);
+    emitTime(video.currentTime);
   };
 
   const handleSeeked = () => {
     isSeekingRef.current = false;
+
+    if (isScrubbingRef && scrubEndTimerRef) {
+      clearScrubEndTimer();
+      scrubEndTimerRef.current = window.setTimeout(() => {
+        isScrubbingRef.current = false;
+        scrubEndTimerRef.current = null;
+        onScrubChange?.(false);
+      }, SCRUB_END_DEBOUNCE_MS);
+    }
 
     const currentTimeMs = video.currentTime * 1000;
     const segs = segmentsRef.current;
@@ -186,7 +215,7 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
         const nextStart = findNextKeptSegmentStart(seg.endMs);
         if (nextStart !== null) {
           video.currentTime = nextStart / 1000;
-          emitTime(nextStart / 1000, true);
+          emitTime(nextStart / 1000);
         } else {
           video.pause();
         }
@@ -194,7 +223,7 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
         if (!isPlayingRef.current && !video.paused) {
           video.pause();
         }
-        emitTime(video.currentTime, true);
+        emitTime(video.currentTime);
       }
     } else {
       // Legacy trim path
@@ -205,13 +234,13 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
           video.pause();
         } else {
           video.currentTime = skipToTime;
-          emitTime(skipToTime, true);
+          emitTime(skipToTime);
         }
       } else {
         if (!isPlayingRef.current && !video.paused) {
           video.pause();
         }
-        emitTime(video.currentTime, true);
+        emitTime(video.currentTime);
       }
     }
   };
@@ -219,10 +248,18 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
   const handleSeeking = () => {
     isSeekingRef.current = true;
 
+    if (isScrubbingRef) {
+      clearScrubEndTimer();
+      if (!isScrubbingRef.current) {
+        isScrubbingRef.current = true;
+        onScrubChange?.(true);
+      }
+    }
+
     if (!isPlayingRef.current && !video.paused) {
       video.pause();
     }
-    emitTime(video.currentTime, true);
+    emitTime(video.currentTime);
   };
 
   return {
@@ -230,5 +267,10 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
     handlePause,
     handleSeeked,
     handleSeeking,
+    /** Drop any pending coalesced time commit and the scrub tail timer (call on unmount / rewire). */
+    dispose: () => {
+      timeUpdateCoalescer.cancel();
+      clearScrubEndTimer();
+    },
   };
 }
