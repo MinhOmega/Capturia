@@ -11,6 +11,12 @@ export {
   type MaterializeProgress,
 } from './localSourceFile';
 export { MAX_IN_MEMORY_SOURCE_BYTES } from './sourceFileLimits';
+export {
+  EXPORT_AUDIO_CODECS,
+  selectExportAudioCodec,
+  isAudioCodecEncodingSupported,
+  type ExportAudioCodec,
+} from './audioCodecSelection';
 export { calculateMp4ExportPlan, resolveExportFrameRate, normalizeExportSourceFrameRate } from './mp4ExportPlan';
 export type { 
   ExportConfig, 
