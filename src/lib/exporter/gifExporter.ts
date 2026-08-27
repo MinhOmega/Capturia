@@ -73,6 +73,17 @@ export function calculateOutputDimensions(
   };
 }
 
+/**
+ * gif.js worker pool size: leave one core for the render loop, never fewer than
+ * one worker and never more than eight (diminishing returns past that).
+ */
+export function resolveGifWorkerCount(hardwareConcurrency: number | undefined): number {
+  const cores = Number.isFinite(hardwareConcurrency) && (hardwareConcurrency as number) > 0
+    ? Math.floor(hardwareConcurrency as number)
+    : 4;
+  return Math.max(1, Math.min(8, cores - 1));
+}
+
 export class GifExporter {
   private config: GifExporterConfig;
   private decoder: VideoFileDecoder | null = null;
@@ -161,7 +172,7 @@ export class GifExporter {
       const repeat = this.config.loop ? 0 : 1;
       
       this.gif = new GIF({
-        workers: 4,
+        workers: resolveGifWorkerCount(navigator.hardwareConcurrency),
         quality: 10,
         width: this.config.width,
         height: this.config.height,
