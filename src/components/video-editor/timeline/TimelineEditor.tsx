@@ -3,6 +3,7 @@ import { useTimelineContext } from "dnd-timeline";
 import { Button } from "@/components/ui/button";
 import { Plus, Scissors, ZoomIn, MessageSquare, ChevronDown, Check } from "lucide-react";
 import { toast } from "sonner";
+import { findFreeGapAt } from "../regionPlacement";
 import { cn } from "@/lib/utils";
 import TimelineWrapper from "./TimelineWrapper";
 import Row from "./Row";
@@ -1082,23 +1083,18 @@ export default function TimelineEditor({
       return;
     }
 
-    // Always place zoom at playhead
+    // Always place zoom at playhead; reject if it lands inside an existing
+    // region or there is no room before the next one.
     const startPos = Math.max(0, Math.min(currentTimeMs, totalMs));
-    // Find the next zoom region after the playhead
-    const sorted = [...zoomRegions].sort((a, b) => a.startMs - b.startMs);
-    const nextRegion = sorted.find(region => region.startMs > startPos);
-    const gapToNext = nextRegion ? nextRegion.startMs - startPos : totalMs - startPos;
-
-    // Check if playhead is inside any zoom region
-    const isOverlapping = sorted.some(region => startPos >= region.startMs && startPos < region.endMs);
-    if (isOverlapping || gapToNext <= 0) {
+    const { ok, gapMs } = findFreeGapAt(zoomRegions, startPos, totalMs);
+    if (!ok) {
       toast.error(t("timeline.cannotPlaceZoom"), {
         description: t("timeline.cannotPlaceZoomDesc"),
       });
       return;
     }
 
-    const actualDuration = Math.min(1000, gapToNext);
+    const actualDuration = Math.min(1000, gapMs);
     onZoomAdded({ start: startPos, end: startPos + actualDuration });
   }, [videoDuration, totalMs, currentTimeMs, zoomRegions, onZoomAdded, t]);
 
