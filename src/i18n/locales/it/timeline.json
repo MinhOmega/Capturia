@@ -1,0 +1,19 @@
+{
+	"noVideoLoaded": "Nessun video caricato",
+	"dragDropToStart": "Trascina e rilascia un video per iniziare a modificare",
+	"cannotPlaceZoom": "Impossibile posizionare lo zoom qui",
+	"cannotPlaceZoomDesc": "Lo zoom esiste già in questa posizione o non c'è spazio sufficiente.",
+	"cannotPlaceTrim": "Impossibile posizionare il taglio qui",
+	"cannotPlaceTrimDesc": "Il taglio esiste già in questa posizione o non c'è spazio sufficiente.",
+	"zoom": "Zoom",
+	"trim": "Taglio",
+	"annotation": "Annotazione",
+	"audio": "Audio",
+	"image": "Immagine",
+	"emptyText": "Testo vuoto",
+	"pan": "Panoramica",
+	"zoomAction": "Zoom",
+	"addZoom": "Aggiungi zoom (Z)",
+	"addTrim": "Aggiungi taglio (T)",
+	"addAnnotation": "Aggiungi annotazione (A)"
+}

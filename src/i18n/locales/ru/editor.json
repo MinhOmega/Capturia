@@ -1,0 +1,11 @@
+{
+	"loadingVideo": "Загрузка видео...",
+	"videoNotReady": "Видео не готово",
+	"noVideoLoaded": "Видео не загружено",
+	"exportCancelled": "Экспорт отменён",
+	"saveGifFailed": "Не удалось сохранить GIF",
+	"saveVideoFailed": "Не удалось сохранить видео",
+	"gifExportFailed": "Экспорт GIF не удался",
+	"exportFailed": "Экспорт не удался",
+	"exportError": "Экспорт не удался: {{message}}"
+}

@@ -1,0 +1,45 @@
+{
+	"export": {
+		"title": "تصدير {{format}}",
+		"titleCompilingGif": "تجميع GIF",
+		"titleFinalizingVideo": "إنهاء الفيديو",
+		"titleFailed": "فشل التصدير",
+		"statusTryAgain": "يرجى المحاولة مرة أخرى",
+		"statusMoment": "قد يستغرق هذا لحظة...",
+		"statusCompiling": "جاري تجميع GIF... قد يستغرق هذا بعض الوقت",
+		"statusCompilingPct": "جاري تجميع GIF... {{progress}}%",
+		"phaseCompiling": "تجميع",
+		"phaseFinalizing": "جاري الإنهاء...",
+		"phaseRendering": "تصيير الإطارات",
+		"complete": "اكتمل التصدير",
+		"ready": "{{format}} الخاص بك جاهز",
+		"cancelExport": "إلغاء التصدير",
+		"saved": "تم حفظ {{format}} بنجاح!",
+		"showInFolder": "عرض في المجلد"
+	},
+	"format": {
+		"mp4": {
+			"label": "فيديو MP4",
+			"desc": "ملف فيديو عالي الجودة"
+		},
+		"gif": {
+			"label": "صورة GIF متحركة",
+			"desc": "صورة متحركة للمشاركة"
+		}
+	},
+	"gif": {
+		"frameRate": "معدل الإطارات"
+	},
+	"tutorial": {
+		"trigger": "كيف يعمل القص",
+		"title": "كيف يعمل القص",
+		"desc": "فهم كيفية قص الأجزاء غير المرغوب فيها من الفيديو الخاص بك.",
+		"visualExample": "مثال مرئي",
+		"removed": "مُزال",
+		"kept": "مُحتفظ به",
+		"finalVideo": "الفيديو النهائي",
+		"step1": "1. إضافة قص",
+		"step2": "2. تعديل",
+		"step2desc": "اسحب حواف المنطقة الحمراء لتغطي بالضبط ما تريد قصه."
+	}
+}

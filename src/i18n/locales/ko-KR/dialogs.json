@@ -1,0 +1,45 @@
+{
+	"export": {
+		"title": "{{format}} 내보내는 중",
+		"titleCompilingGif": "GIF 생성 중",
+		"titleFinalizingVideo": "비디오 마무리 중",
+		"titleFailed": "내보내기 실패",
+		"statusTryAgain": "다시 시도해 주세요",
+		"statusMoment": "잠시 기다려 주세요...",
+		"statusCompiling": "GIF 생성 중... 잠시 시간이 걸릴 수 있습니다",
+		"statusCompilingPct": "GIF 생성 중... {{progress}}%",
+		"phaseCompiling": "생성 중...",
+		"phaseFinalizing": "마무리 중...",
+		"phaseRendering": "프레임 렌더링 중",
+		"complete": "내보내기 완료",
+		"ready": "{{format}} 파일이 준비되었습니다",
+		"cancelExport": "내보내기 취소",
+		"saved": "{{format}} 저장이 완료되었습니다!",
+		"showInFolder": "폴더에서 보기"
+	},
+	"format": {
+		"mp4": {
+			"label": "MP4 비디오",
+			"desc": "고화질 비디오 파일"
+		},
+		"gif": {
+			"label": "GIF 애니메이션",
+			"desc": "공유용 애니메이션 이미지"
+		}
+	},
+	"gif": {
+		"frameRate": "프레임 속도"
+	},
+	"tutorial": {
+		"trigger": "트리밍 사용법",
+		"title": "트리밍 사용법",
+		"desc": "비디오에서 불필요한 부분을 잘라내는 방법을 알아보세요.",
+		"visualExample": "화면 예시",
+		"removed": "제거됨",
+		"kept": "유지됨",
+		"finalVideo": "최종 비디오",
+		"step1": "1. 트림 추가",
+		"step2": "2. 조정",
+		"step2desc": "빨간 구간의 가장자리를 드래그해 잘라낼 범위를 설정하세요."
+	}
+}

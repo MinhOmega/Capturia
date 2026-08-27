@@ -1,0 +1,45 @@
+{
+	"export": {
+		"title": "正在匯出 {{format}}",
+		"titleCompilingGif": "正在編譯 GIF",
+		"titleFinalizingVideo": "正在完成影片",
+		"titleFailed": "匯出失敗",
+		"statusTryAgain": "請重試",
+		"statusMoment": "這可能需要一點時間...",
+		"statusCompiling": "正在編譯 GIF... 這可能需要一些時間",
+		"statusCompilingPct": "正在編譯 GIF... {{progress}}%",
+		"phaseCompiling": "編譯中",
+		"phaseFinalizing": "正在完成...",
+		"phaseRendering": "渲染影格",
+		"complete": "匯出完成",
+		"ready": "您的 {{format}} 已準備就緒",
+		"cancelExport": "取消匯出",
+		"saved": "{{format}} 儲存成功！",
+		"showInFolder": "在資料夾中顯示"
+	},
+	"format": {
+		"mp4": {
+			"label": "MP4 影片",
+			"desc": "高品質影片檔案"
+		},
+		"gif": {
+			"label": "GIF 動畫",
+			"desc": "可分享的動態圖片"
+		}
+	},
+	"gif": {
+		"frameRate": "幀率"
+	},
+	"tutorial": {
+		"trigger": "剪輯功能說明",
+		"title": "剪輯功能說明",
+		"desc": "了解如何剪掉影片中不需要的部分。",
+		"visualExample": "示例演示",
+		"removed": "已移除",
+		"kept": "保留",
+		"finalVideo": "最終影片",
+		"step1": "1. 添加剪輯",
+		"step2": "2. 調整",
+		"step2desc": "拖動紅色區域的邊緣，精確覆蓋您要剪掉的部分。"
+	}
+}

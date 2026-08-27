@@ -1,0 +1,27 @@
+{
+	"sourceFallback": "화면",
+	"stopRecording": "녹화 중지",
+	"pauseRecording": "녹화 일시정지",
+	"resumeRecording": "녹화 재개",
+	"open": "열기",
+	"camera": "카메라",
+	"shape": {
+		"rounded": "둥근 모서리",
+		"square": "정사각형",
+		"circle": "원형"
+	},
+	"captureFrameRate": "프레임 속도",
+	"stopShortcutReset": "재설정",
+	"hideHud": "HUD 숨기기",
+	"closeApp": "앱 닫기",
+	"source": {
+		"loading": "소스 불러오는 중...",
+		"cancel": "취소",
+		"share": "공유"
+	},
+	"permission": {
+		"rowScreenCaptureTitle": "화면 녹화",
+		"rowCameraTitle": "카메라",
+		"rowMicrophoneTitle": "마이크"
+	}
+}

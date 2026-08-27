@@ -1,0 +1,45 @@
+{
+	"export": {
+		"title": "Export de {{format}}",
+		"titleCompilingGif": "Compilation du GIF",
+		"titleFinalizingVideo": "Finalisation de la vidéo",
+		"titleFailed": "Export échoué",
+		"statusTryAgain": "Veuillez réessayer",
+		"statusMoment": "Cela peut prendre un moment...",
+		"statusCompiling": "Compilation du GIF... Cela peut prendre un moment",
+		"statusCompilingPct": "Compilation du GIF... {{progress}}%",
+		"phaseCompiling": "Compilation en cours",
+		"phaseFinalizing": "Finalisation...",
+		"phaseRendering": "Rendu des images",
+		"complete": "Export terminé",
+		"ready": "Votre {{format}} est prêt",
+		"cancelExport": "Annuler l'export",
+		"saved": "{{format}} enregistré avec succès !",
+		"showInFolder": "Afficher dans le dossier"
+	},
+	"format": {
+		"mp4": {
+			"label": "Vidéo MP4",
+			"desc": "Fichier vidéo haute qualité"
+		},
+		"gif": {
+			"label": "Animation GIF",
+			"desc": "Image animée pour le partage"
+		}
+	},
+	"gif": {
+		"frameRate": "Fréquence d'images"
+	},
+	"tutorial": {
+		"trigger": "Comment fonctionne la coupe",
+		"title": "Comment fonctionne la coupe",
+		"desc": "Comprendre comment supprimer les parties indésirables de votre vidéo.",
+		"visualExample": "Exemple visuel",
+		"removed": "SUPPRIMÉ",
+		"kept": "Conservé",
+		"finalVideo": "Vidéo finale",
+		"step1": "1. Ajouter une coupe",
+		"step2": "2. Ajuster",
+		"step2desc": "Faites glisser les bords de la région rouge pour couvrir exactement ce que vous souhaitez couper."
+	}
+}

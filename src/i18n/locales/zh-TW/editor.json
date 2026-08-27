@@ -1,0 +1,11 @@
+{
+	"loadingVideo": "正在載入影片...",
+	"videoNotReady": "影片未就緒",
+	"noVideoLoaded": "未載入影片",
+	"exportCancelled": "匯出已取消",
+	"saveGifFailed": "儲存 GIF 失敗",
+	"saveVideoFailed": "儲存影片失敗",
+	"gifExportFailed": "GIF 匯出失敗",
+	"exportFailed": "匯出失敗",
+	"exportError": "匯出失敗：{{message}}"
+}

@@ -1,0 +1,69 @@
+{
+	"export": {
+		"title": "正在导出 {{format}}",
+		"titleCompilingGif": "正在合成 GIF",
+		"titleFinalizingVideo": "正在封装视频",
+		"titleFailed": "导出失败",
+		"statusTryAgain": "请重试",
+		"statusMoment": "这可能需要一点时间...",
+		"statusCompiling": "正在合成 GIF... 可能需要一些时间",
+		"statusCompilingPct": "正在合成 GIF... {{progress}}%",
+		"statusFinalizingVideo": "正在封装视频容器...",
+		"statusFinalizingVideoStep": "{{step}}...",
+		"phaseCompiling": "合成中",
+		"phaseFinalizing": "封装中",
+		"phaseRendering": "渲染帧",
+		"batchProgress": "正在导出第 {{current}} / {{total}} 个",
+		"elapsed": "已耗时",
+		"eta": "预计剩余",
+		"activity": "活动状态",
+		"activityActive": "正在处理",
+		"activityWaiting": "仍在运行",
+		"activityStalled": "近期无更新",
+		"activityStalledHint": "{{seconds}} 秒没有更新。可能仍在封装；若持续不变可取消后重试。",
+		"finalize": {
+			"flush": "刷新编码器",
+			"mux": "写入视频流",
+			"audio": "编码音轨",
+			"package": "封装 MP4"
+		},
+		"complete": "导出完成",
+		"ready": "你的 {{format}} 已就绪",
+		"cancelExport": "取消导出",
+		"saved": "{{format}} 已保存成功！",
+		"showInFolder": "在文件夹中显示",
+		"exportedTo": "已导出到 {{path}}",
+		"revealFailed": "无法在文件夹中显示文件"
+	},
+	"format": {
+		"mp4": {
+			"label": "MP4 视频",
+			"desc": "高质量视频文件"
+		},
+		"gif": {
+			"label": "GIF 动图",
+			"desc": "适合分享的动画图片"
+		}
+	},
+	"gif": {
+		"frameRate": "帧率",
+		"outputSize": "输出尺寸",
+		"loopAnimation": "循环播放",
+		"loopDesc": "GIF 将持续循环"
+	},
+	"tutorial": {
+		"trigger": "裁剪说明",
+		"title": "裁剪如何工作",
+		"desc": "了解如何剪掉视频中不需要的部分。",
+		"explain": "裁剪工具通过定义你想移除的时间段来工作。时间线上被红色裁剪段覆盖的部分，在导出时会被剪掉。",
+		"visualExample": "可视化示例",
+		"removed": "已删除",
+		"kept": "保留",
+		"part": "片段 {{index}}",
+		"finalVideo": "最终视频",
+		"step1": "1. 添加裁剪段",
+		"step1desc": "按 T 或点击剪刀图标，标记需要删除的区间。",
+		"step2": "2. 调整范围",
+		"step2desc": "拖动红色区域边缘，精确覆盖要剪掉的部分。"
+	}
+}

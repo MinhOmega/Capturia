@@ -1,0 +1,69 @@
+{
+	"export": {
+		"title": "Exporting {{format}}",
+		"titleCompilingGif": "Compiling GIF",
+		"titleFinalizingVideo": "Finalizing Video",
+		"titleFailed": "Export Failed",
+		"statusTryAgain": "Please try again",
+		"statusMoment": "This may take a moment...",
+		"statusCompiling": "Compiling GIF... This may take a while",
+		"statusCompilingPct": "Compiling GIF... {{progress}}%",
+		"statusFinalizingVideo": "Finalizing video container...",
+		"statusFinalizingVideoStep": "{{step}}...",
+		"phaseCompiling": "Compiling",
+		"phaseFinalizing": "Finalizing",
+		"phaseRendering": "Rendering Frames",
+		"batchProgress": "Export {{current}} of {{total}}",
+		"elapsed": "Elapsed",
+		"eta": "ETA",
+		"activity": "Activity",
+		"activityActive": "Working",
+		"activityWaiting": "Still running",
+		"activityStalled": "No recent updates",
+		"activityStalledHint": "No update for {{seconds}}s. Export may still be finalizing; cancel and retry if it stays like this.",
+		"finalize": {
+			"flush": "Flushing encoder",
+			"mux": "Writing video stream",
+			"audio": "Encoding audio track",
+			"package": "Packaging MP4"
+		},
+		"complete": "Export Complete",
+		"ready": "Your {{format}} is ready",
+		"cancelExport": "Cancel Export",
+		"saved": "{{format}} saved successfully!",
+		"showInFolder": "Show in Folder",
+		"exportedTo": "Exported to {{path}}",
+		"revealFailed": "Failed to reveal file in folder"
+	},
+	"format": {
+		"mp4": {
+			"label": "MP4 Video",
+			"desc": "High quality video file"
+		},
+		"gif": {
+			"label": "GIF Animation",
+			"desc": "Animated image for sharing"
+		}
+	},
+	"gif": {
+		"frameRate": "Frame Rate",
+		"outputSize": "Output Size",
+		"loopAnimation": "Loop Animation",
+		"loopDesc": "GIF will play continuously"
+	},
+	"tutorial": {
+		"trigger": "How trimming works",
+		"title": "How Trimming Works",
+		"desc": "Understanding how to cut out unwanted parts of your video.",
+		"explain": "The Trim tool works by defining the segments you want to remove. Any part covered by a red trim segment will be cut out when you export.",
+		"visualExample": "Visual Example",
+		"removed": "REMOVED",
+		"kept": "Kept",
+		"part": "Part {{index}}",
+		"finalVideo": "Final Video",
+		"step1": "1. Add Trim",
+		"step1desc": "Press T or click the scissors icon to mark a section for removal.",
+		"step2": "2. Adjust",
+		"step2desc": "Drag the edges of the red region to cover exactly what you want to cut out."
+	}
+}
