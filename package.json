@@ -26,11 +26,15 @@
     "demo-recording"
   ],
   "type": "module",
+  "engines": {
+    "node": ">=22.12",
+    "npm": ">=10"
+  },
   "scripts": {
     "dev": "vite",
     "build:native": "node scripts/build-native-macos-helper.mjs",
     "build": "npm run build:native && tsc && vite build && electron-builder --publish never",
-    "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "lint": "biome lint .",
     "preview": "vite preview",
     "build:mac": "npm run build:native && tsc && vite build && electron-builder --mac --publish never",
     "build:mac:x64": "npm run build:native && tsc && vite build && electron-builder --mac dmg --x64 --publish never",
@@ -39,7 +43,9 @@
     "build:linux": "npm run build:native && tsc && vite build && electron-builder --linux --publish never",
     "build:deb": "npm run build:native && tsc && vite build && electron-builder -c electron-builder.json5 --linux deb -c.linux.target=deb --publish never",
     "test": "vitest --run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "typecheck:test": "tsc -p tsconfig.test.json --noEmit",
+    "prepare": "husky"
   },
   "dependencies": {
     "@fix-webm-duration/fix": "^1.0.1",
@@ -81,22 +87,22 @@
     "uuid": "^13.0.0"
   },
   "devDependencies": {
-    "@types/node": "^25.0.3",
+    "@biomejs/biome": "^2.5.10",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.6",
+    "@types/node": "^22.20.1",
     "@types/react": "^18.2.64",
     "@types/react-dom": "^18.2.21",
     "@types/uuid": "^10.0.0",
-    "@typescript-eslint/eslint-plugin": "^7.1.1",
-    "@typescript-eslint/parser": "^7.1.1",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.21",
     "electron": "^39.2.7",
     "electron-builder": "^24.13.3",
-    "electron-icon-builder": "^2.0.1",
-    "electron-rebuild": "^3.2.9",
-    "eslint": "^8.57.0",
-    "eslint-plugin-react-hooks": "^4.6.0",
-    "eslint-plugin-react-refresh": "^0.4.5",
     "fast-check": "^4.5.2",
+    "husky": "^9.1.7",
+    "jsdom": "^29.1.1",
+    "lint-staged": "^16.4.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.18",
     "terser": "^5.44.1",
@@ -106,5 +112,8 @@
     "vite-plugin-electron-renderer": "^0.14.5",
     "vitest": "^4.0.16"
   },
-  "main": "dist-electron/main.js"
+  "main": "dist-electron/main.js",
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx,mjs,cjs,json}": "biome check --no-errors-on-unmatched --files-ignore-unknown=true"
+  }
 }
