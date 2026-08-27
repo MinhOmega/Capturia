@@ -1,0 +1,45 @@
+{
+	"export": {
+		"title": "Exportando {{format}}",
+		"titleCompilingGif": "Compilando GIF",
+		"titleFinalizingVideo": "Finalizando video",
+		"titleFailed": "La exportación falló",
+		"statusTryAgain": "Por favor intenta de nuevo",
+		"statusMoment": "Esto puede tardar un momento...",
+		"statusCompiling": "Compilando GIF... Esto puede tardar un rato",
+		"statusCompilingPct": "Compilando GIF... {{progress}}%",
+		"phaseCompiling": "Compilando",
+		"phaseFinalizing": "Finalizando...",
+		"phaseRendering": "Renderizando cuadros",
+		"complete": "Exportación completada",
+		"ready": "Tu {{format}} está listo",
+		"cancelExport": "Cancelar exportación",
+		"saved": "¡{{format}} guardado exitosamente!",
+		"showInFolder": "Mostrar en carpeta"
+	},
+	"format": {
+		"mp4": {
+			"label": "Video MP4",
+			"desc": "Archivo de video de alta calidad"
+		},
+		"gif": {
+			"label": "Animación GIF",
+			"desc": "Imagen animada para compartir"
+		}
+	},
+	"gif": {
+		"frameRate": "Fotogramas por segundo"
+	},
+	"tutorial": {
+		"trigger": "Cómo funciona el recorte",
+		"title": "Cómo funciona el recorte",
+		"desc": "Aprende a eliminar las partes no deseadas de tu video.",
+		"visualExample": "Ejemplo visual",
+		"removed": "ELIMINADO",
+		"kept": "Conservado",
+		"finalVideo": "Video final",
+		"step1": "1. Agregar recorte",
+		"step2": "2. Ajustar",
+		"step2desc": "Arrastra los bordes de la región roja para cubrir exactamente lo que deseas eliminar."
+	}
+}

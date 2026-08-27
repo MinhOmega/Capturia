@@ -1,0 +1,19 @@
+{
+	"noVideoLoaded": "Video Yüklenmedi",
+	"dragDropToStart": "Düzenlemeye başlamak için bir video sürükleyip bırakın",
+	"cannotPlaceZoom": "Buraya yakınlaştırma yerleştirilemiyor",
+	"cannotPlaceZoomDesc": "Bu konumda zaten bir yakınlaştırma var veya yeterli alan yok.",
+	"cannotPlaceTrim": "Buraya kırpma yerleştirilemiyor",
+	"cannotPlaceTrimDesc": "Bu konumda zaten bir kırpma var veya yeterli alan yok.",
+	"zoom": "Yakınlaştır",
+	"trim": "Kırp",
+	"annotation": "Açıklama",
+	"audio": "Ses",
+	"image": "Görüntü",
+	"emptyText": "Boş metin",
+	"pan": "Kaydır",
+	"zoomAction": "Yakınlaştır",
+	"addZoom": "Yakınlaştırma Ekle (Z)",
+	"addTrim": "Kırpma Ekle (T)",
+	"addAnnotation": "Açıklama Ekle (A)"
+}

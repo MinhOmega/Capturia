@@ -1,0 +1,45 @@
+{
+	"export": {
+		"title": "{{format}} Dışa Aktarılıyor",
+		"titleCompilingGif": "GIF Derleniyor",
+		"titleFinalizingVideo": "Video Sonlandırılıyor",
+		"titleFailed": "Dışa Aktarım Başarısız",
+		"statusTryAgain": "Lütfen tekrar deneyin",
+		"statusMoment": "Bu biraz zaman alabilir...",
+		"statusCompiling": "GIF derleniyor... Bu biraz zaman alabilir",
+		"statusCompilingPct": "GIF derleniyor... %{{progress}}",
+		"phaseCompiling": "Derleniyor",
+		"phaseFinalizing": "Sonlandırılıyor...",
+		"phaseRendering": "Kareler İşleniyor",
+		"complete": "Dışa Aktarım Tamamlandı",
+		"ready": "{{format}} dosyanız hazır",
+		"cancelExport": "Dışa Aktarımı İptal Et",
+		"saved": "{{format}} başarıyla kaydedildi!",
+		"showInFolder": "Klasörde Göster"
+	},
+	"format": {
+		"mp4": {
+			"label": "MP4 Video",
+			"desc": "Yüksek kaliteli video dosyası"
+		},
+		"gif": {
+			"label": "GIF Animasyon",
+			"desc": "Paylaşım için hareketli görüntü"
+		}
+	},
+	"gif": {
+		"frameRate": "Kare hızı"
+	},
+	"tutorial": {
+		"trigger": "Kırpma nasıl çalışır",
+		"title": "Kırpma Nasıl Çalışır",
+		"desc": "Videonuzun istenmeyen bölümlerini nasıl keseceğinizi anlayın.",
+		"visualExample": "Görsel Örnek",
+		"removed": "KALDIRILDI",
+		"kept": "Korundu",
+		"finalVideo": "Son Video",
+		"step1": "1. Kırpma Ekle",
+		"step2": "2. Ayarla",
+		"step2desc": "Kesmek istediğiniz kısmı tam olarak kaplamak için kırmızı bölgenin kenarlarını sürükleyin."
+	}
+}

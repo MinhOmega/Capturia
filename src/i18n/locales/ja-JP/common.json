@@ -1,0 +1,38 @@
+{
+	"cancel": "キャンセル",
+	"close": "閉じる",
+	"done": "完了",
+	"loading": "読み込み中…",
+	"processing": "処理中...",
+	"status": "ステータス",
+	"format": "フォーマット",
+	"frames": "フレーム",
+	"loop": "ループ",
+	"language": "言語",
+	"playback": {
+		"play": "再生",
+		"pause": "一時停止",
+		"fullscreen": "全画面表示",
+		"exitFullscreen": "全画面表示を終了"
+	},
+	"apply": "適用",
+	"electron": {
+		"tray": {
+			"recording": "録画中: {{source}}",
+			"stopRecording": "録画を停止",
+			"open": "開く",
+			"quit": "終了"
+		},
+		"saveGif": "エクスポートしたGIFを保存",
+		"saveVideo": "エクスポートした動画を保存",
+		"exportCancelled": "エクスポートがキャンセルされました",
+		"exportSaveFailed": "エクスポートした動画の保存に失敗しました",
+		"selectVideoFile": "動画ファイルを選択",
+		"videoFiles": "動画ファイル",
+		"allFiles": "すべてのファイル"
+	},
+	"locale": {
+		"name": "日本語",
+		"short": "JA"
+	}
+}

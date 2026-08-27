@@ -1,0 +1,38 @@
+{
+	"cancel": "Отмена",
+	"close": "Закрыть",
+	"done": "Готово",
+	"loading": "Загрузка…",
+	"processing": "Обработка...",
+	"status": "Статус",
+	"format": "Формат",
+	"frames": "Кадры",
+	"loop": "Повтор",
+	"language": "Язык",
+	"playback": {
+		"play": "Воспроизвести",
+		"pause": "Пауза",
+		"fullscreen": "Полный экран",
+		"exitFullscreen": "Выход из полного экрана"
+	},
+	"apply": "Применить",
+	"electron": {
+		"tray": {
+			"recording": "Запись: {{source}}",
+			"stopRecording": "Остановить запись",
+			"open": "Открыть",
+			"quit": "Выход"
+		},
+		"saveGif": "Сохранить экспортированный GIF",
+		"saveVideo": "Сохранить экспортированное видео",
+		"exportCancelled": "Экспорт отменён",
+		"exportSaveFailed": "Не удалось сохранить экспортированное видео",
+		"selectVideoFile": "Выбрать видеофайл",
+		"videoFiles": "Видеофайлы",
+		"allFiles": "Все файлы"
+	},
+	"locale": {
+		"name": "Русский",
+		"short": "RU"
+	}
+}

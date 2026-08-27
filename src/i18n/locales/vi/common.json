@@ -1,0 +1,65 @@
+{
+	"app": {
+		"name": "Capturia",
+		"fallbackTitle": "Capturia"
+	},
+	"cancel": "Hủy",
+	"close": "Đóng",
+	"done": "Hoàn tất",
+	"loading": "Đang tải…",
+	"processing": "Đang xử lý...",
+	"status": "Trạng thái",
+	"format": "Định dạng",
+	"frames": "Khung hình",
+	"loop": "Lặp lại",
+	"language": "Ngôn ngữ",
+	"english": "English",
+	"chinese": "简体中文",
+	"error": {
+		"unexpected": "Đã xảy ra lỗi. Vui lòng thử lại.",
+		"reference": "Mã tham chiếu: {{id}}",
+		"reportAction": "Báo lỗi",
+		"reportOpenFailed": "Không thể mở trang báo lỗi."
+	},
+	"playback": {
+		"play": "Phát",
+		"pause": "Tạm dừng",
+		"customSpeed": "Tốc độ tùy chỉnh...",
+		"previewSpeed": "Tốc độ xem trước",
+		"timelineZoom": "Thu phóng dòng thời gian",
+		"fullscreen": "Toàn màn hình",
+		"exitFullscreen": "Thoát toàn màn hình"
+	},
+	"apply": "Áp dụng",
+	"electron": {
+		"tray": {
+			"openScreen": "Capturia",
+			"recording": "Đang ghi: {{source}}",
+			"stopRecording": "Dừng ghi hình",
+			"open": "Mở",
+			"quit": "Thoát"
+		},
+		"saveGif": "Lưu GIF đã xuất",
+		"saveVideo": "Lưu Video đã xuất",
+		"exportCancelled": "Đã hủy xuất",
+		"exportSaved": "Đã xuất video thành công",
+		"exportSaveFailed": "Không thể lưu video đã xuất",
+		"selectVideoFile": "Chọn tệp video",
+		"videoFiles": "Tệp Video",
+		"allFiles": "Tất cả các tệp",
+		"filePickerFailed": "Không thể mở hộp thoại chọn tệp",
+		"chooseExportFolder": "Chọn thư mục xuất",
+		"exportPathRejected": "Vị trí xuất phải được chọn qua hộp thoại lưu",
+		"unsupportedVideoFile": "Tệp đã chọn không phải định dạng video được hỗ trợ",
+		"runtimeError": {
+			"message": "Capturia gặp lỗi nội bộ. Vui lòng báo lỗi để chúng tôi khắc phục.",
+			"detailPrefix": "Mã tham chiếu",
+			"report": "Báo lỗi",
+			"close": "Đóng"
+		}
+	},
+	"locale": {
+		"name": "Tiếng Việt",
+		"short": "VI"
+	}
+}

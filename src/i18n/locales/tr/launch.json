@@ -1,0 +1,27 @@
+{
+	"sourceFallback": "Ekran",
+	"stopRecording": "Kaydı Durdur",
+	"pauseRecording": "Kaydı duraklat",
+	"resumeRecording": "Kayda devam et",
+	"open": "Aç",
+	"camera": "Kamera",
+	"shape": {
+		"rounded": "Yuvarlatılmış",
+		"square": "Kare",
+		"circle": "Daire"
+	},
+	"captureFrameRate": "Kare hızı",
+	"stopShortcutReset": "Sıfırla",
+	"hideHud": "Kontrol panelini gizle",
+	"closeApp": "Uygulamayı kapat",
+	"source": {
+		"loading": "Kaynaklar yükleniyor...",
+		"cancel": "İptal",
+		"share": "Paylaş"
+	},
+	"permission": {
+		"rowScreenCaptureTitle": "Ekran kaydı",
+		"rowCameraTitle": "Kamera",
+		"rowMicrophoneTitle": "Mikrofon"
+	}
+}
