@@ -16,6 +16,14 @@ export type NativeRecorderStartOptions = {
   cameraEnabled?: boolean
   cameraShape?: 'rounded' | 'square' | 'circle'
   cameraSizePercent?: number
+  /**
+   * Preferred camera. `cameraDeviceId` is Chromium's per-origin hashed id (it only
+   * matches an AVCaptureDevice `uniqueID` by coincidence); `cameraDeviceName` is
+   * the label the browser reported, which the helper matches against
+   * `localizedName`. Both are best-effort: the helper keeps its own pick otherwise.
+   */
+  cameraDeviceId?: string
+  cameraDeviceName?: string
   frameRate: number
   bitrateScale?: number
   width?: number
@@ -323,6 +331,12 @@ export async function startNativeMacRecorder(options: NativeRecorderStartOptions
       args.push('--camera-shape', options.cameraShape ?? 'rounded')
       const sizePercent = Math.max(14, Math.min(40, Math.round(options.cameraSizePercent ?? 22)))
       args.push('--camera-size-percent', String(sizePercent))
+      if (options.cameraDeviceId) {
+        args.push('--camera-device-id', options.cameraDeviceId)
+      }
+      if (options.cameraDeviceName) {
+        args.push('--camera-device-name', options.cameraDeviceName)
+      }
     }
 
     const helperProcess = spawn(helperPath, args, {

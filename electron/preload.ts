@@ -119,6 +119,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       cameraEnabled?: boolean
       cameraShape?: 'rounded' | 'square' | 'circle'
       cameraSizePercent?: number
+      cameraDeviceId?: string
+      cameraDeviceName?: string
       frameRate?: number
     maxLongEdge?: number
     bitrateScale?: number

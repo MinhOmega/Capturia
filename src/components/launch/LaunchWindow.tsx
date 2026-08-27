@@ -7,6 +7,7 @@ import {
   type CaptureResolutionPreset,
 } from "../../hooks/useScreenRecorder";
 import type { CameraOverlayShape } from "../../hooks/cameraOverlay";
+import { useCameraDevices } from "../../hooks/useCameraDevices";
 import { Button } from "../ui/button";
 import { BsRecordCircle } from "react-icons/bs";
 import { FaRegStopCircle } from "react-icons/fa";
@@ -45,6 +46,7 @@ try {
 } catch { /* no-op */ }
 
 const STOP_SHORTCUT_STORAGE_KEY = "capturia.stopRecordingShortcut";
+const CAMERA_DEVICE_STORAGE_KEY = "capturia.cameraDeviceId";
 const DEFAULT_STOP_RECORDING_SHORTCUT = "CommandOrControl+Shift+2";
 const AUTO_HIDE_HUD_ON_RECORD_STORAGE_KEY = "capturia.autoHideHudOnRecord";
 const CAPTURE_MODE_STORAGE_KEY = "capturia.captureMode";
@@ -59,6 +61,26 @@ type SelectedSourceSnapshot = {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function readStoredString(key: string): string {
+  try {
+    return window.localStorage.getItem(key) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function writeStoredString(key: string, value: string): void {
+  try {
+    if (value) {
+      window.localStorage.setItem(key, value);
+    } else {
+      window.localStorage.removeItem(key);
+    }
+  } catch {
+    // no-op
+  }
 }
 
 function isModifierKey(key: string): boolean {
@@ -157,6 +179,14 @@ export function LaunchWindow() {
     }
     return 22;
   });
+  // Camera picker (A12): the list is only enumerated while the overlay is on; the
+  // persisted id seeds the selection and is replaced when that camera is unplugged.
+  const {
+    devices: cameraDevices,
+    selectedDeviceId: cameraDeviceId,
+    setSelectedDeviceId: setCameraDeviceId,
+  } = useCameraDevices(includeCamera, readStoredString(CAMERA_DEVICE_STORAGE_KEY));
+  const cameraDeviceName = cameraDevices.find((device) => device.deviceId === cameraDeviceId)?.label;
   const [captureProfile, setCaptureProfile] = useState<CaptureProfile>(() => {
     try {
       const value = window.localStorage.getItem("capturia.captureProfile");
@@ -265,6 +295,8 @@ export function LaunchWindow() {
     includeCamera,
     cameraShape,
     cameraSizePercent,
+    cameraDeviceId,
+    cameraDeviceName,
     captureProfile,
     captureFrameRate: captureMode === "pro" ? captureFrameRate : undefined,
     captureResolutionPreset: captureMode === "pro" ? captureResolutionPreset : undefined,
@@ -368,6 +400,11 @@ export function LaunchWindow() {
       // no-op
     }
   }, [cameraSizePercent]);
+
+  useEffect(() => {
+    // Only persist a real choice: the hook reports "" until the list has loaded.
+    if (cameraDeviceId) writeStoredString(CAMERA_DEVICE_STORAGE_KEY, cameraDeviceId);
+  }, [cameraDeviceId]);
 
   useEffect(() => {
     try {
@@ -1274,6 +1311,25 @@ export function LaunchWindow() {
                 <span>{t("launch.shape")}</span>
                 <span className={styles.cameraConfigBadge}>{cameraShapeLabelMap[cameraShape]}</span>
               </div>
+              <label className="flex items-center gap-2 text-[11px] mb-2">
+                <span className="shrink-0">{t("launch.cameraDevice")}</span>
+                <select
+                  value={cameraDeviceId}
+                  onChange={(event) => setCameraDeviceId(event.target.value)}
+                  disabled={controlsLocked || cameraDevices.length === 0}
+                  className={`h-6 min-w-0 flex-1 rounded bg-white/10 text-[10px] text-cyan-100 border border-cyan-300/20 px-1 ${styles.electronNoDrag}`}
+                  title={cameraDeviceName ?? t("launch.webcam.defaultCamera")}
+                  data-testid="launch-camera-device-select"
+                >
+                  {cameraDevices.length === 0 ? (
+                    <option value="">{t("launch.webcam.noneFound")}</option>
+                  ) : (
+                    cameraDevices.map((device) => (
+                      <option key={device.deviceId} value={device.deviceId}>{device.label}</option>
+                    ))
+                  )}
+                </select>
+              </label>
               <div className="flex items-center gap-2">
                 <Button
                   variant="link"

@@ -125,5 +125,35 @@
 		"relaunchHint": "Sau khi cấp quyền Ghi màn hình, macOS có thể yêu cầu khởi động lại Capturia để thay đổi có hiệu lực.",
 		"continue": "Tiếp tục"
 	},
-	"cameraFallback": "Không dùng được camera. Chỉ ghi màn hình."
+	"cameraFallback": "Không dùng được camera. Chỉ ghi màn hình.",
+	"cameraDevice": "Camera",
+	"webcam": {
+		"defaultCamera": "Camera mặc định",
+		"noneFound": "Không tìm thấy camera"
+	},
+	"microphone": "Micro",
+	"microphoneFallback": "Không dùng được micro. Ghi hình không có âm thanh.",
+	"audio": {
+		"enableMicrophone": "Bật micro",
+		"disableMicrophone": "Tắt micro",
+		"defaultMicrophone": "Micro mặc định",
+		"microphoneDevice": "Micro",
+		"noneFound": "Không tìm thấy micro",
+		"level": "Mức đầu vào",
+		"settings": "Cài đặt micro"
+	},
+	"notes": "Ghi chú",
+	"openNotesFailed": "Không mở được cửa sổ Ghi chú.",
+	"tooltips": {
+		"openNotes": "Mở Ghi chú (không xuất hiện trong bản ghi)",
+		"notesToolbar": {
+			"bold": "In đậm",
+			"italic": "In nghiêng",
+			"strikethrough": "Gạch ngang",
+			"bulletList": "Danh sách dấu đầu dòng",
+			"numberedList": "Danh sách đánh số",
+			"blockquote": "Trích dẫn",
+			"codeBlock": "Khối mã"
+		}
+	}
 }

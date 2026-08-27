@@ -41,6 +41,9 @@ struct RecorderArguments {
     let cameraEnabled: Bool
     let cameraShape: CameraOverlayShape
     let cameraSizePercent: Int
+    /// Preferred camera: AVCaptureDevice `uniqueID` and/or the browser-reported label.
+    let cameraDeviceId: String?
+    let cameraDeviceName: String?
 
     static func parse(from argv: [String]) throws -> RecorderArguments {
         var outputPath: String?
@@ -56,6 +59,8 @@ struct RecorderArguments {
         var cameraEnabled = false
         var cameraShape: CameraOverlayShape = .rounded
         var cameraSizePercent = 22
+        var cameraDeviceId: String?
+        var cameraDeviceName: String?
 
         var idx = 1
         while idx < argv.count {
@@ -120,6 +125,16 @@ struct RecorderArguments {
                     cameraSizePercent = parsed
                 }
                 idx += 2
+            case "--camera-device-id":
+                if let value = next, !value.isEmpty {
+                    cameraDeviceId = value
+                }
+                idx += 2
+            case "--camera-device-name":
+                if let value = next, !value.isEmpty {
+                    cameraDeviceName = value
+                }
+                idx += 2
             default:
                 idx += 1
             }
@@ -146,7 +161,9 @@ struct RecorderArguments {
             targetHeight: targetHeight,
             cameraEnabled: cameraEnabled,
             cameraShape: cameraShape,
-            cameraSizePercent: clampedSizePercent
+            cameraSizePercent: clampedSizePercent,
+            cameraDeviceId: cameraDeviceId,
+            cameraDeviceName: cameraDeviceName
         )
     }
 }
@@ -261,6 +278,14 @@ final class CameraCaptureProvider: NSObject, AVCaptureVideoDataOutputSampleBuffe
     private let outputQueue = DispatchQueue(label: "com.capturia.sck-recorder.camera-output")
     private let storageQueue = DispatchQueue(label: "com.capturia.sck-recorder.camera-storage")
     private var latestPixelBuffer: CVPixelBuffer?
+    private let preferredDeviceId: String?
+    private let preferredDeviceName: String?
+
+    init(preferredDeviceId: String? = nil, preferredDeviceName: String? = nil) {
+        self.preferredDeviceId = preferredDeviceId
+        self.preferredDeviceName = preferredDeviceName
+        super.init()
+    }
 
     func start() throws {
         guard let device = selectCaptureDevice() else {
@@ -337,6 +362,16 @@ final class CameraCaptureProvider: NSObject, AVCaptureVideoDataOutputSampleBuffe
         ).devices
         guard !devices.isEmpty else { return nil }
 
+        // Explicit choice from the HUD picker: exact uniqueID first, then the label
+        // Chromium reported (its deviceId is a per-origin hash, so the name is the
+        // reliable half). Fall through to the automatic pick when neither matches.
+        if let preferredDeviceId, let match = devices.first(where: { $0.uniqueID == preferredDeviceId }) {
+            return match
+        }
+        if let preferredDeviceName, let match = Self.matchDevice(byName: preferredDeviceName, in: devices) {
+            return match
+        }
+
         let nonVirtual = devices.filter { device in
             let label = device.localizedName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             return !Self.virtualKeywords.contains(where: { keyword in
@@ -345,6 +380,33 @@ final class CameraCaptureProvider: NSObject, AVCaptureVideoDataOutputSampleBuffe
         }
 
         return nonVirtual.first ?? devices.first
+    }
+
+    /// Chromium labels a camera with its localized name, sometimes suffixed by the
+    /// USB vendor:product pair, e.g. "Logitech StreamCam (046d:0893)".
+    private static func matchDevice(byName name: String, in devices: [AVCaptureDevice]) -> AVCaptureDevice? {
+        let normalize: (String) -> String = { value in
+            value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        }
+        let wanted = normalize(name)
+        guard !wanted.isEmpty else { return nil }
+
+        if let exact = devices.first(where: { normalize($0.localizedName) == wanted }) {
+            return exact
+        }
+
+        var stripped = wanted
+        if let range = stripped.range(of: #"\s*\([0-9a-f]{4}:[0-9a-f]{4}\)$"#, options: .regularExpression) {
+            stripped.removeSubrange(range)
+        }
+        if stripped != wanted, let exact = devices.first(where: { normalize($0.localizedName) == stripped }) {
+            return exact
+        }
+
+        return devices.first(where: { device in
+            let label = normalize(device.localizedName)
+            return label.contains(stripped) || stripped.contains(label)
+        })
     }
 }
 
@@ -929,7 +991,10 @@ final class SCKRecorder {
 
         var cameraProvider: CameraCaptureProvider?
         if args.cameraEnabled {
-            let provider = CameraCaptureProvider()
+            let provider = CameraCaptureProvider(
+                preferredDeviceId: args.cameraDeviceId,
+                preferredDeviceName: args.cameraDeviceName
+            )
             do {
                 try provider.start()
                 cameraProvider = provider
