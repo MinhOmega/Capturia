@@ -21,6 +21,7 @@ import { useI18n } from "@/i18n";
 import { DEFAULT_CURSOR_STYLE, type CursorMovementStyle, type CursorStyleConfig } from "@/lib/cursor";
 import { GITHUB_ISSUES_URL, GITHUB_REPO_URL } from "@/lib/supportLinks";
 import { reportUserActionError } from "@/lib/userErrorFeedback";
+import { BACKGROUND_IMAGE_ACCEPT, isSupportedBackgroundImageType } from "./backgroundImageUpload";
 import { BACKGROUND_GRADIENT_PRESETS } from "./backgroundPresets";
 
 const WALLPAPER_COUNT = 18;
@@ -299,9 +300,8 @@ export function SettingsPanel({
 
     const file = files[0];
     
-    // Validate file type - only allow JPG/JPEG
-    const validTypes = ['image/jpeg', 'image/jpg'];
-    if (!validTypes.includes(file.type)) {
+    // Validate file type - JPG/JPEG/PNG only
+    if (!isSupportedBackgroundImageType(file.type, file.name)) {
       toast.error(t("settings.fileTypeInvalid"), {
         description: t("settings.uploadJpgOnly"),
       });
@@ -969,7 +969,7 @@ export function SettingsPanel({
                       type="file"
                       ref={fileInputRef}
                       onChange={handleImageUpload}
-                      accept=".jpg,.jpeg,image/jpeg"
+                      accept={BACKGROUND_IMAGE_ACCEPT}
                       className="hidden"
                     />
                     <Button
