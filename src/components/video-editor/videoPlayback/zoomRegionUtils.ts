@@ -7,12 +7,19 @@ import {
   ZOOM_IN_OVERLAP_MS,
   ZOOM_IN_TRANSITION_WINDOW_MS,
 } from "./constants";
+import { type CursorTelemetryPoint, interpolateCursorAt } from "./cursorFollowUtils";
 import { clampFocusToScale } from "./focusUtils";
 import { clamp01, cubicBezier, easeOutScreenStudio } from "./mathUtils";
 
 export interface DominantRegionOptions {
   /** Pan between regions closer than CONNECTED_ZOOM_GAP_MS instead of zooming out and back in. */
   connectZooms?: boolean;
+  /**
+   * Sorted cursor positions (buildCursorTelemetry). Regions with
+   * focusMode 'auto' resolve their focus from the cursor at `timeMs` instead
+   * of their static focus; without telemetry they behave as manual.
+   */
+  cursorTelemetry?: CursorTelemetryPoint[];
 }
 
 interface ConnectedRegionPair {
@@ -95,8 +102,33 @@ function getLinearFocus(start: ZoomFocus, end: ZoomFocus, amount: number): ZoomF
   };
 }
 
-function getResolvedFocus(region: ZoomRegion, zoomScale: number): ZoomFocus {
-  return clampFocusToScale(region.focus, zoomScale);
+/**
+ * Focus the camera aims at for `region` at `timeMs`: the live cursor position
+ * for focusMode 'auto' (when telemetry is available), otherwise the static
+ * focus. Always clamped for the effective scale.
+ */
+function getResolvedFocus(
+  region: ZoomRegion,
+  zoomScale: number,
+  timeMs: number,
+  cursorTelemetry?: CursorTelemetryPoint[],
+  cursorFocus?: ZoomFocus | null,
+): ZoomFocus {
+  let focus = region.focus;
+
+  if (region.focusMode === "auto") {
+    const resolved =
+      cursorFocus !== undefined
+        ? cursorFocus
+        : cursorTelemetry && cursorTelemetry.length > 0
+          ? interpolateCursorAt(cursorTelemetry, timeMs)
+          : null;
+    if (resolved) {
+      focus = resolved;
+    }
+  }
+
+  return clampFocusToScale(focus, zoomScale);
 }
 
 export function getConnectedRegionPairs(regions: ZoomRegion[]): ConnectedRegionPair[] {
@@ -127,6 +159,7 @@ function getActiveRegion(
   regions: ZoomRegion[],
   timeMs: number,
   connectedPairs: ConnectedRegionPair[],
+  cursorTelemetry?: CursorTelemetryPoint[],
 ): DominantRegionResult | null {
   let bestRegion: ZoomRegion | null = null;
   let bestStrength = 0;
@@ -168,7 +201,7 @@ function getActiveRegion(
   const activeScale = getZoomScale(bestRegion);
 
   return {
-    region: { ...bestRegion, focus: getResolvedFocus(bestRegion, activeScale) },
+    region: { ...bestRegion, focus: getResolvedFocus(bestRegion, activeScale, timeMs, cursorTelemetry) },
     strength: bestStrength,
     blendedScale: null,
     transition: null,
@@ -178,12 +211,16 @@ function getActiveRegion(
 function getConnectedRegionHold(
   timeMs: number,
   connectedPairs: ConnectedRegionPair[],
+  cursorTelemetry?: CursorTelemetryPoint[],
 ): DominantRegionResult | null {
   for (const pair of connectedPairs) {
     if (timeMs > pair.transitionEnd && timeMs < pair.nextRegion.startMs) {
       const nextScale = getZoomScale(pair.nextRegion);
       return {
-        region: { ...pair.nextRegion, focus: getResolvedFocus(pair.nextRegion, nextScale) },
+        region: {
+          ...pair.nextRegion,
+          focus: getResolvedFocus(pair.nextRegion, nextScale, timeMs, cursorTelemetry),
+        },
         strength: 1,
         blendedScale: null,
         transition: null,
@@ -197,6 +234,7 @@ function getConnectedRegionHold(
 function getConnectedRegionTransition(
   connectedPairs: ConnectedRegionPair[],
   timeMs: number,
+  cursorTelemetry?: CursorTelemetryPoint[],
 ): DominantRegionResult | null {
   for (const pair of connectedPairs) {
     const { currentRegion, nextRegion, transitionStart, transitionEnd } = pair;
@@ -211,8 +249,13 @@ function getConnectedRegionTransition(
     const currentScale = getZoomScale(currentRegion);
     const nextScale = getZoomScale(nextRegion);
     const transitionScale = lerp(currentScale, nextScale, transitionProgress);
-    const currentFocus = getResolvedFocus(currentRegion, currentScale);
-    const nextFocus = getResolvedFocus(nextRegion, nextScale);
+    // Both regions share the same timeMs, so interpolate the cursor once and reuse.
+    const sharedCursorFocus =
+      cursorTelemetry && cursorTelemetry.length > 0
+        ? interpolateCursorAt(cursorTelemetry, timeMs)
+        : null;
+    const currentFocus = getResolvedFocus(currentRegion, currentScale, timeMs, cursorTelemetry, sharedCursorFocus);
+    const nextFocus = getResolvedFocus(nextRegion, nextScale, timeMs, cursorTelemetry, sharedCursorFocus);
     const transitionFocus = getLinearFocus(currentFocus, nextFocus, transitionProgress);
 
     return {
@@ -239,6 +282,7 @@ let dominantRegionCache: {
   regions: ZoomRegion[];
   timeMsKey: number;
   connectZooms: boolean;
+  telemetry: CursorTelemetryPoint[] | undefined;
   result: DominantRegionResult;
 } | null = null;
 
@@ -253,13 +297,15 @@ export function findDominantRegion(
   options: DominantRegionOptions = {},
 ): DominantRegionResult {
   const connectZooms = !!options.connectZooms;
+  const telemetry = options.cursorTelemetry;
   const timeMsKey = Math.round(timeMs);
 
   if (
     dominantRegionCache &&
     dominantRegionCache.regions === regions &&
     dominantRegionCache.timeMsKey === timeMsKey &&
-    dominantRegionCache.connectZooms === connectZooms
+    dominantRegionCache.connectZooms === connectZooms &&
+    dominantRegionCache.telemetry === telemetry
   ) {
     return dominantRegionCache.result;
   }
@@ -269,14 +315,14 @@ export function findDominantRegion(
   let result: DominantRegionResult | null = null;
   if (connectZooms) {
     result =
-      getConnectedRegionTransition(connectedPairs, timeMs) ??
-      getConnectedRegionHold(timeMs, connectedPairs);
+      getConnectedRegionTransition(connectedPairs, timeMs, telemetry) ??
+      getConnectedRegionHold(timeMs, connectedPairs, telemetry);
   }
   if (!result) {
-    result = getActiveRegion(regions, timeMs, connectedPairs) ?? EMPTY_RESULT;
+    result = getActiveRegion(regions, timeMs, connectedPairs, telemetry) ?? EMPTY_RESULT;
   }
 
-  dominantRegionCache = { regions, timeMsKey, connectZooms, result };
+  dominantRegionCache = { regions, timeMsKey, connectZooms, telemetry, result };
 
   return result;
 }

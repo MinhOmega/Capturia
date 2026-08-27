@@ -3,11 +3,14 @@ import type { ZoomRegion, CropRegion, AnnotationRegion } from '@/components/vide
 import { applyZoomTransform } from '@/components/video-editor/videoPlayback/zoomTransform';
 import { DEFAULT_FOCUS } from '@/components/video-editor/videoPlayback/constants';
 import {
-  advanceZoomCamera,
   createZoomCameraState,
   measureZoomMotionIntensity,
-  resolveZoomCameraTarget,
+  stepZoomCamera,
 } from '@/components/video-editor/videoPlayback/zoomCamera';
+import {
+  buildCursorTelemetry,
+  type CursorTelemetryPoint,
+} from '@/components/video-editor/videoPlayback/cursorFollowUtils';
 import { renderAnnotations, preloadAnnotationFonts, preloadAnnotationImages } from './annotationRenderer';
 import { getExportBackgroundFilter } from '@/lib/rendering/backgroundBlur';
 import { classifyWallpaper, resolveImageWallpaperUrl } from '@/lib/wallpaper';
@@ -123,8 +126,11 @@ export class FrameRenderer {
   private readonly isLinux: boolean;
   private config: FrameRenderConfig;
   private animationState: AnimationState;
-  // Same spring step as the preview ticker, driven by content time (effectTimeMs).
+  // Same camera step as the preview ticker (spring + auto-follow focus), driven
+  // by content time (effectTimeMs).
   private zoomCamera = createZoomCameraState();
+  // Auto-follow telemetry (focusMode 'auto'), built once from config.cursorTrack.
+  private cursorTelemetry: CursorTelemetryPoint[] = [];
   private layoutCache: any = null;
   private cursorMotionBlurState = createCursorMotionBlurState();
   private currentVideoTime = 0;
@@ -137,6 +143,7 @@ export class FrameRenderer {
     this.config = config;
     this.isLinux = config.platform === 'linux';
     this.subtitleCues = normalizeSubtitleCues(config.subtitleCues ?? []);
+    this.cursorTelemetry = buildCursorTelemetry(config.cursorTrack);
     this.animationState = {
       scale: 1,
       focusX: DEFAULT_FOCUS.cx,
@@ -704,17 +711,23 @@ export class FrameRenderer {
 
   /**
    * Same step as the preview ticker (zoomCamera.ts): resolve the eased target
-   * for content time `timeMs` and spring-chase it by the content-time delta.
-   * Always "animating" - the exporter never takes the paused/scrub snap branch;
-   * only the first frame or a jump larger than ZOOM_SPRING_MAX_STEP_MS snaps.
+   * for content time `timeMs` (auto-follow regions read the cursor telemetry),
+   * smooth the auto-follow focus and spring-chase the transform by the
+   * content-time delta. Always "animating" - the exporter never takes the
+   * paused/scrub snap branch; only the first frame or a jump larger than
+   * ZOOM_SPRING_MAX_STEP_MS snaps the spring.
    */
   private updateAnimationState(timeMs: number): number {
     if (!this.cameraContainer || !this.layoutCache) return 0;
 
-    const target = resolveZoomCameraTarget(this.config.zoomRegions, timeMs, {
-      stageSize: this.layoutCache.stageSize,
-      baseMask: this.layoutCache.maskRect,
-    });
+    const previous = this.zoomCamera.applied;
+    const { target, applied } = stepZoomCamera(
+      this.zoomCamera,
+      this.config.zoomRegions,
+      timeMs,
+      { stageSize: this.layoutCache.stageSize, baseMask: this.layoutCache.maskRect },
+      { animating: true, cursorTelemetry: this.cursorTelemetry },
+    );
 
     const state = this.animationState;
     state.scale = target.scale;
@@ -722,8 +735,6 @@ export class FrameRenderer {
     state.focusY = target.focus.cy;
     state.progress = target.progress;
 
-    const previous = this.zoomCamera.applied;
-    const applied = advanceZoomCamera(this.zoomCamera, target.transform, timeMs, true);
     return measureZoomMotionIntensity(previous, applied, this.layoutCache.stageSize);
   }
 

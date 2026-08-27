@@ -6,12 +6,12 @@ import { getZoomScale, type ZoomRegion, type ZoomFocus, type TrimRegion, type An
 import { DEFAULT_FOCUS } from "./videoPlayback/constants";
 import { clamp01 } from "./videoPlayback/mathUtils";
 import {
-  advanceZoomCamera,
   createZoomCameraState,
   measureZoomMotionIntensity,
   resetZoomCameraState,
-  resolveZoomCameraTarget,
+  stepZoomCamera,
 } from "./videoPlayback/zoomCamera";
+import { buildCursorTelemetry, type CursorTelemetryPoint } from "./videoPlayback/cursorFollowUtils";
 import { clampFocusToScale } from "./videoPlayback/focusUtils";
 import { updateOverlayIndicator } from "./videoPlayback/overlayUtils";
 import { layoutVideoContent as layoutVideoContentUtil } from "./videoPlayback/layoutUtils";
@@ -194,6 +194,9 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
   const cursorCanvasCtxRef = useRef<CanvasRenderingContext2D | null>(null);
   const cursorMotionBlurStateRef = useRef(createCursorMotionBlurState());
   const cursorTrackRef = useRef<CursorTrack | null>(cursorTrack);
+  // Auto-follow telemetry (focusMode 'auto'): built once per track, read by the
+  // zoom ticker independently of the cursor render smoothing.
+  const cursorTelemetryRef = useRef<CursorTelemetryPoint[]>(buildCursorTelemetry(cursorTrack));
   const cursorStyleRef = useRef<Partial<CursorStyleConfig>>(cursorStyle ?? DEFAULT_CURSOR_STYLE);
   const cropRegionRef = useRef(cropRegion);
   const previewAudioContextRef = useRef<AudioContext | null>(null);
@@ -451,6 +454,8 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
     if (!regionId) return;
     const region = zoomRegionsRef.current.find((r) => r.id === regionId);
     if (!region) return;
+    // Auto-follow regions take their focus from the cursor: nothing to drag.
+    if (region.focusMode === 'auto') return;
     onSelectZoom(region.id);
     event.preventDefault();
     isDraggingFocusRef.current = true;
@@ -508,6 +513,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
 
   useEffect(() => {
     cursorTrackRef.current = cursorTrack;
+    cursorTelemetryRef.current = buildCursorTelemetry(cursorTrack);
   }, [cursorTrack]);
 
   useEffect(() => {
@@ -1007,11 +1013,24 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
       const hasSelectedZoom = selectedZoomIdRef.current !== null;
       const shouldShowUnzoomedView = hasSelectedZoom && !isPlayingRef.current && !isPreviewingZoomRef.current;
 
-      const target = resolveZoomCameraTarget(
+      // Resolve the eased target (auto-follow regions read the cursor telemetry),
+      // smooth the auto-follow focus in content time, then chase the target with
+      // a spring so the camera glides (no jerk at the steep start of the ease,
+      // no snap at close-region seams). Step by content time while playing; snap
+      // to the exact target when paused / seeking / scrubbing so a paused frame
+      // is crisp and matches the authored target. Same step as the exporter.
+      const animating = isPlayingRef.current && !isSeekingRef.current && !isScrubbingRef.current;
+      const previous = zoomCameraRef.current.applied;
+      const { target, applied } = stepZoomCamera(
+        zoomCameraRef.current,
         zoomRegionsRef.current,
         timeMs,
         { stageSize: stageSizeRef.current, baseMask: baseMaskRef.current },
-        { forceUnzoomed: shouldShowUnzoomedView },
+        {
+          animating,
+          forceUnzoomed: shouldShowUnzoomedView,
+          cursorTelemetry: cursorTelemetryRef.current,
+        },
       );
 
       const state = animationStateRef.current;
@@ -1020,13 +1039,6 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
       state.focusY = target.focus.cy;
       state.progress = target.progress;
 
-      // Chase the eased target with a spring so the camera glides (no jerk at the
-      // steep start of the ease, no snap at close-region seams). Step by content
-      // time while playing; snap to the exact target when paused / seeking /
-      // scrubbing so a paused frame is crisp and matches the authored target.
-      const animating = isPlayingRef.current && !isSeekingRef.current && !isScrubbingRef.current;
-      const previous = zoomCameraRef.current.applied;
-      const applied = advanceZoomCamera(zoomCameraRef.current, target.transform, timeMs, animating);
       const motionIntensity = measureZoomMotionIntensity(previous, applied, stageSizeRef.current);
 
       applyZoomTransform({
