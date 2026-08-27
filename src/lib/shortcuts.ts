@@ -77,6 +77,8 @@ export const FIXED_SHORTCUTS: FixedShortcut[] = [
   { labelKey: 'shortcuts.seekForward', display: '→', bindings: [{ key: 'arrowright' }] },
   { labelKey: 'shortcuts.seekBackward', display: '←', bindings: [{ key: 'arrowleft' }] },
   { labelKey: 'shortcuts.seekFine', display: 'Shift + ←/→', bindings: [] },
+  { labelKey: 'shortcuts.frameBack', display: ',', bindings: [{ key: ',' }] },
+  { labelKey: 'shortcuts.frameForward', display: '.', bindings: [{ key: '.' }] },
   { labelKey: 'shortcuts.zoomIn', display: '=', bindings: [{ key: '=' }] },
   { labelKey: 'shortcuts.zoomOut', display: '-', bindings: [{ key: '-' }] },
   { labelKey: 'shortcuts.fullscreen', display: 'F11', bindings: [{ key: 'f11' }] },
@@ -158,6 +160,42 @@ export function isTextEditingTarget(target: EventTarget | null): boolean {
     target instanceof HTMLTextAreaElement ||
     (target instanceof HTMLElement && target.isContentEditable)
   );
+}
+
+/** Form controls and ARIA widgets that handle the arrow keys themselves. */
+const ARROW_KEY_WIDGET_SELECTOR = [
+  'select',
+  '[role="separator"]',
+  '[role="slider"]',
+  '[role="spinbutton"]',
+  '[role="listbox"]',
+  '[role="option"]',
+  '[role="combobox"]',
+  '[role="menu"]',
+  '[role="menubar"]',
+  '[role="menuitem"]',
+  '[role="menuitemcheckbox"]',
+  '[role="menuitemradio"]',
+  '[role="tablist"]',
+  '[role="tab"]',
+  '[role="radiogroup"]',
+  '[role="radio"]',
+  '[role="tree"]',
+  '[role="treeitem"]',
+  '[role="grid"]',
+  '[role="gridcell"]',
+].join(', ');
+
+/**
+ * True when the event target is a text-editing surface, a form control or an
+ * ARIA widget that owns the arrow keys (slider, listbox, tabs, menu, ...).
+ * Seek and frame-step keys must not fire there, otherwise arrows on the
+ * seek-step slider would both move the slider and seek the video.
+ */
+export function isArrowKeyOwningTarget(target: EventTarget | null): boolean {
+  if (isTextEditingTarget(target)) return true;
+  if (typeof HTMLElement === 'undefined' || !(target instanceof HTMLElement)) return false;
+  return target.closest(ARROW_KEY_WIDGET_SELECTOR) !== null;
 }
 
 // ---------------------------------------------------------------------------
