@@ -6,6 +6,18 @@ import crypto from 'node:crypto'
 import { RECORDINGS_DIR } from '../main'
 import { scheduleRecordingsCleanup } from '../recordingsCleanup'
 import {
+  approvedExportPaths,
+  approveFilePath,
+  hasAllowedImportVideoExtension,
+  isAllowedExportPath,
+  isAllowedRevealPath,
+  isReadablePathAllowed,
+  normalizeExternalUrl,
+  normalizeVideoSourcePath,
+  resolveOutputPathInDir,
+  resolveRecordingOutputPath,
+} from './paths'
+import {
   forceTerminateNativeMacRecorder,
   isNativeMacRecorderActive,
   startNativeMacRecorder,
@@ -1064,6 +1076,8 @@ function tt(locale: Locale, key: string): string {
     videoFiles: '视频文件',
     allFiles: '所有文件',
     filePickerFailed: '打开文件选择器失败',
+    exportPathRejected: '导出位置必须通过保存对话框选择',
+    unsupportedVideoFile: '所选文件不是受支持的视频文件',
   }
   const en: Record<string, string> = {
     saveGif: 'Save Exported GIF',
@@ -1076,8 +1090,29 @@ function tt(locale: Locale, key: string): string {
     videoFiles: 'Video Files',
     allFiles: 'All Files',
     filePickerFailed: 'Failed to open file picker',
+    exportPathRejected: 'Export destination must be chosen through the save dialog',
+    unsupportedVideoFile: 'Selected file is not a supported video file',
   }
   return (locale === 'zh-CN' ? zh : en)[key] ?? key
+}
+
+// Attach the parent window only when valid, to avoid passing a destroyed BrowserWindow
+// to dialogs. A parent is required on Wayland compositors (e.g. Hyprland) or the
+// dialog can open detached / behind the app.
+function buildDialogOptions<T extends Electron.OpenDialogOptions | Electron.SaveDialogOptions>(
+  baseOptions: T,
+  parentWindow: BrowserWindow | null,
+): T & { parent?: BrowserWindow } {
+  if (parentWindow && !parentWindow.isDestroyed()) {
+    return { ...baseOptions, parent: parentWindow }
+  }
+  return baseOptions
+}
+
+/** Save dialogs on GTK do not append the filter extension; make sure exports keep theirs. */
+function ensureExportExtension(filePath: string, isGif: boolean): string {
+  const expected = isGif ? '.gif' : '.mp4'
+  return path.extname(filePath).toLowerCase() === expected ? filePath : `${filePath}${expected}`
 }
 
 function sanitizeVideoMetadata(metadata?: CurrentVideoMetadata | null): CurrentVideoMetadata | null {
@@ -1587,7 +1622,9 @@ export function registerIpcHandlers(
 
   ipcMain.handle('store-recorded-video', async (_, videoData: ArrayBuffer, fileName: string, metadata?: CurrentVideoMetadata) => {
     try {
-      const videoPath = path.join(RECORDINGS_DIR, fileName)
+      // The renderer only ever sends `recording-<timestamp>.webm`; refuse anything
+      // that could escape the recordings dir.
+      const videoPath = resolveRecordingOutputPath(RECORDINGS_DIR, fileName)
       await fs.writeFile(videoPath, Buffer.from(videoData))
       currentVideoPath = videoPath
       currentVideoMetadata = sanitizeVideoMetadata(metadata)
@@ -1747,7 +1784,12 @@ export function registerIpcHandlers(
 
   ipcMain.handle('open-external-url', async (_, url: string) => {
     try {
-      await shell.openExternal(url)
+      const externalUrl = normalizeExternalUrl(url)
+      if (!externalUrl) {
+        console.warn('Refused to open external URL:', url)
+        return { success: false, error: 'Unsupported URL protocol' }
+      }
+      await shell.openExternal(externalUrl)
       return { success: true }
     } catch (error) {
       console.error('Failed to open URL:', error)
@@ -1768,7 +1810,12 @@ export function registerIpcHandlers(
     }
   })
 
-  ipcMain.handle('reveal-in-folder', async (_, filePath: string) => {
+  ipcMain.handle('reveal-in-folder', async (_, rawFilePath: string) => {
+    const filePath = typeof rawFilePath === 'string' ? path.normalize(rawFilePath.trim()) : ''
+    if (!isAllowedRevealPath(filePath, { recordingsDir: RECORDINGS_DIR })) {
+      console.warn('Refused to reveal path outside approved locations:', rawFilePath)
+      return { success: false, error: 'Path is not an app-managed file' }
+    }
     try {
       shell.showItemInFolder(filePath)
       return { success: true }
@@ -1796,27 +1843,41 @@ export function registerIpcHandlers(
         ? [{ name: 'GIF', extensions: ['gif'] }]
         : [{ name: 'MP4', extensions: ['mp4'] }];
       const targetFilePath = typeof options?.targetFilePath === 'string' && options.targetFilePath.trim().length > 0
-        ? options.targetFilePath.trim()
+        ? path.normalize(options.targetFilePath.trim())
         : null
       const directoryPath = typeof options?.directoryPath === 'string' && options.directoryPath.trim().length > 0
-        ? options.directoryPath.trim()
+        ? path.normalize(options.directoryPath.trim())
         : null
 
       let targetPath: string
       if (targetFilePath) {
-        // Path was pre-selected by the user before export started
+        // Path was pre-selected by the user via `pick-save-file-path`; the renderer
+        // only echoes it back, so anything else is refused.
+        if (!isAllowedExportPath(targetFilePath)) {
+          console.warn('Refused export to unapproved target path:', targetFilePath)
+          return { success: false, message: tt(locale, 'exportPathRejected') }
+        }
         await fs.mkdir(path.dirname(targetFilePath), { recursive: true })
         targetPath = targetFilePath
       } else if (directoryPath) {
+        // Directory came from `pick-export-directory`; fileName must be a bare name.
+        if (!approvedExportPaths.isApprovedDirectory(directoryPath)) {
+          console.warn('Refused export to unapproved directory:', directoryPath)
+          return { success: false, message: tt(locale, 'exportPathRejected') }
+        }
+        targetPath = resolveOutputPathInDir(directoryPath, fileName)
+        if (!isAllowedExportPath(targetPath)) {
+          console.warn('Refused export with unsupported file name:', fileName)
+          return { success: false, message: tt(locale, 'exportPathRejected') }
+        }
         await fs.mkdir(directoryPath, { recursive: true })
-        targetPath = path.join(directoryPath, fileName)
       } else {
-        const result = await dialog.showSaveDialog({
+        const result = await dialog.showSaveDialog(buildDialogOptions({
           title: isGif ? tt(locale, 'saveGif') : tt(locale, 'saveVideo'),
           defaultPath: path.join(app.getPath('downloads'), fileName),
           filters,
           properties: ['createDirectory', 'showOverwriteConfirmation']
-        });
+        }, getMainWindow()));
 
         if (result.canceled || !result.filePath) {
           return {
@@ -1825,7 +1886,8 @@ export function registerIpcHandlers(
             message: tt(locale, 'exportCancelled')
           };
         }
-        targetPath = result.filePath
+        targetPath = ensureExportExtension(path.normalize(result.filePath), isGif)
+        approvedExportPaths.approveFile(targetPath)
       }
 
       await fs.writeFile(targetPath, Buffer.from(videoData));
@@ -1853,18 +1915,20 @@ export function registerIpcHandlers(
         ? [{ name: 'GIF', extensions: ['gif'] }]
         : [{ name: 'MP4', extensions: ['mp4'] }]
 
-      const result = await dialog.showSaveDialog({
+      const result = await dialog.showSaveDialog(buildDialogOptions({
         title: isGif ? tt(locale, 'saveGif') : tt(locale, 'saveVideo'),
         defaultPath: path.join(app.getPath('downloads'), fileName),
         filters,
         properties: ['createDirectory', 'showOverwriteConfirmation'],
-      })
+      }, getMainWindow()))
 
       if (result.canceled || !result.filePath) {
         return { success: false, cancelled: true, message: tt(locale, 'exportCancelled') }
       }
 
-      return { success: true, path: result.filePath }
+      const chosenPath = ensureExportExtension(path.normalize(result.filePath), isGif)
+      approvedExportPaths.approveFile(chosenPath)
+      return { success: true, path: chosenPath }
     } catch (error) {
       console.error('Failed to pick save file path:', error)
       return { success: false, message: tt(normalizeLocale(), 'exportSaveFailed'), error: String(error) }
@@ -1874,11 +1938,11 @@ export function registerIpcHandlers(
   ipcMain.handle('pick-export-directory', async (_, localeInput?: string) => {
     try {
       const locale = normalizeLocale(localeInput)
-      const result = await dialog.showOpenDialog({
+      const result = await dialog.showOpenDialog(buildDialogOptions({
         title: tt(locale, 'chooseExportFolder'),
         defaultPath: app.getPath('downloads'),
         properties: ['openDirectory', 'createDirectory'],
-      })
+      }, getMainWindow()))
 
       if (result.canceled || result.filePaths.length === 0) {
         return {
@@ -1888,9 +1952,11 @@ export function registerIpcHandlers(
         }
       }
 
+      const chosenDirectory = path.normalize(result.filePaths[0])
+      approvedExportPaths.approveDirectory(chosenDirectory)
       return {
         success: true,
-        path: result.filePaths[0],
+        path: chosenDirectory,
       }
     } catch (error) {
       console.error('Failed to pick export directory:', error)
@@ -1905,23 +1971,30 @@ export function registerIpcHandlers(
   ipcMain.handle('open-video-file-picker', async (_, localeInput?: string) => {
     try {
       const locale = normalizeLocale(localeInput)
-      const result = await dialog.showOpenDialog({
+      const result = await dialog.showOpenDialog(buildDialogOptions({
         title: tt(locale, 'selectVideoFile'),
         defaultPath: RECORDINGS_DIR,
         filters: [
-          { name: tt(locale, 'videoFiles'), extensions: ['webm', 'mp4', 'mov', 'avi', 'mkv'] },
+          { name: tt(locale, 'videoFiles'), extensions: ['webm', 'mp4', 'mov', 'avi', 'mkv', 'm4v', 'wmv', 'flv', 'ts'] },
           { name: tt(locale, 'allFiles'), extensions: ['*'] }
         ],
         properties: ['openFile']
-      });
+      }, getMainWindow()));
 
       if (result.canceled || result.filePaths.length === 0) {
         return { success: false, cancelled: true };
       }
 
+      const chosenPath = path.normalize(result.filePaths[0])
+      if (!hasAllowedImportVideoExtension(chosenPath)) {
+        return { success: false, message: tt(locale, 'unsupportedVideoFile') }
+      }
+      // User explicitly picked this file: allow `local-media://` + sidecar reads for it.
+      approveFilePath(chosenPath)
+
       return {
         success: true,
-        path: result.filePaths[0]
+        path: chosenPath
       };
     } catch (error) {
       console.error('Failed to open file picker:', error);
@@ -1934,7 +2007,14 @@ export function registerIpcHandlers(
   });
 
   ipcMain.handle('set-current-video-path', async (_, nextPath: string, metadata?: CurrentVideoMetadata) => {
-    currentVideoPath = nextPath
+    const normalizedPath = normalizeVideoSourcePath(nextPath)
+    if (normalizedPath && !isReadablePathAllowed(normalizedPath, { recordingsDir: RECORDINGS_DIR })) {
+      // Only paths from the recordings dir or a file picker result are accepted;
+      // the sidecar reads below would otherwise probe arbitrary locations.
+      console.warn('Refused to set current video path outside approved locations:', nextPath)
+      return { success: false, message: 'Video path is not an approved readable file' }
+    }
+    currentVideoPath = normalizedPath
     currentVideoMetadata = sanitizeVideoMetadata(metadata)
     if (currentVideoPath && !currentVideoMetadata?.cursorTrack) {
       const sidecarTrack = await readCursorTrackSidecar(currentVideoPath)
@@ -2015,12 +2095,15 @@ export function registerIpcHandlers(
 
   ipcMain.handle('analysis-start', async (_, options?: StartVideoAnalysisOptions) => {
     try {
-      const targetVideoPath = (typeof options?.videoPath === 'string' && options.videoPath.trim().length > 0)
-        ? options.videoPath.trim()
-        : currentVideoPath
+      const targetVideoPath = normalizeVideoSourcePath(options?.videoPath) ?? currentVideoPath
 
       if (!targetVideoPath) {
         return { success: false, message: 'No video selected for analysis.' }
+      }
+      // The path is handed to the native transcriber helper: same read policy as playback.
+      if (!isReadablePathAllowed(targetVideoPath, { recordingsDir: RECORDINGS_DIR })) {
+        console.warn('Refused analysis for path outside approved locations:', targetVideoPath)
+        return { success: false, message: 'Video path is not an approved readable file.' }
       }
 
       const job = analysisService.start({
@@ -2100,11 +2183,13 @@ export function registerIpcHandlers(
   })
 
   ipcMain.handle('analysis-get-current', async (_, targetPath?: string) => {
-    const videoPath = typeof targetPath === 'string' && targetPath.trim().length > 0
-      ? targetPath.trim()
-      : currentVideoPath
+    const videoPath = normalizeVideoSourcePath(targetPath) ?? currentVideoPath
     if (!videoPath) {
       return { success: false, message: 'No video selected for analysis.' }
+    }
+    if (!isReadablePathAllowed(videoPath, { recordingsDir: RECORDINGS_DIR })) {
+      console.warn('Refused analysis sidecar read for path outside approved locations:', videoPath)
+      return { success: false, message: 'Video path is not an approved readable file.' }
     }
 
     try {
