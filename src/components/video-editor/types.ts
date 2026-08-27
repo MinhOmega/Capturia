@@ -140,6 +140,16 @@ export const DEFAULT_CROP_REGION: CropRegion = {
   height: 1,
 };
 
+export type PlaybackSpeed = number;
+
+/** Segment speed range shared by the presets, the custom input and handleSegmentSpeedChange. */
+export const MIN_PLAYBACK_SPEED = 0.25;
+export const MAX_PLAYBACK_SPEED = 40;
+
+export function clampPlaybackSpeed(speed: number): PlaybackSpeed {
+  return Math.round(Math.min(MAX_PLAYBACK_SPEED, Math.max(MIN_PLAYBACK_SPEED, speed)) * 100) / 100;
+}
+
 export const ZOOM_DEPTH_SCALES: Record<ZoomDepth, number> = {
   1: 1.25,
   2: 1.5,
