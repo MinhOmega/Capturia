@@ -117,3 +117,16 @@ Gate: lint 0 errors / 116 warnings; tsc + test types clean; i18n 588 en keys; vi
 **92 files / 927 tests**.
 
 Wave 4 in flight: D-4 streaming decoder (`w4-decoder`), C-1 Whisper fallback (`w4-captions`).
+
+## 2026-08-27 — wave 4: D-4 merged (`234a3dd`)
+
+WebCodecs streaming decoder (`streamingDecoder.ts`, `timelineSegments.ts`, `segmentAdapter.ts`)
+behind `decodePath` (default `'seek'`, override `localStorage['capturia.exportDecodePath']`),
+seek fallback before the first frame, encoder preference retry / queue stall timeout / fatal
+encoder error / flush timeout on both paths. New dep `web-demuxer@^4` + 3.0 MiB wasm asset.
+Review: `reviews/W4-D4-streaming-decoder.md`.
+
+Gate: lint 0 errors / 116 warnings; tsc + test types clean; i18n 590 en keys; vitest
+**95 files / 1006 tests**.
+
+In flight: C-1 Whisper fallback (`w4-captions`), B1-e 3D iso/tilt (`w4-threed`).
