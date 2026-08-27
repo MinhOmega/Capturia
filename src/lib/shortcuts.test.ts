@@ -295,6 +295,8 @@ describe('mergeWithDefaults', () => {
       speedDown: { key: '8' },
       copySelected: { key: '9', ctrl: true },
       paste: { key: '0', ctrl: true },
+      openApp: { key: 'o', ctrl: true, alt: true },
+      stopRecording: { key: 'r', ctrl: true, alt: true },
     };
     expect(mergeWithDefaults(full)).toEqual(full);
   });

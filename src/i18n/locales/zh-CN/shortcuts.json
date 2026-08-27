@@ -34,5 +34,12 @@
 	"conflictFixed": "该快捷键已被「{{label}}」占用，无法更改",
 	"conflictWith": "已被「{{label}}」使用",
 	"swap": "交换",
-	"instructions": "点击快捷键然后按下新的按键组合。按 Esc 取消。"
+	"instructions": "点击快捷键然后按下新的按键组合。按 Esc 取消。",
+	"openApp": "打开 Capturia",
+	"stopRecording": "停止录制",
+	"global": "全局（系统级）",
+	"globalHint": "在任何应用中生效。全局快捷键需要 Ctrl/⌘ 或 Alt。",
+	"globalNeedsModifier": "全局快捷键需要 Ctrl/⌘ 或 Alt",
+	"registrationFailed": "无法注册“{{label}}”（{{shortcut}}），可能已被其他应用占用。",
+	"saveFailed": "保存快捷键失败"
 }

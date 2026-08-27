@@ -11,9 +11,34 @@ export const SHORTCUT_ACTIONS = [
   'speedDown',
   'copySelected',
   'paste',
+  // Global (OS-level) shortcuts, registered by the main process
+  // (electron/globalShortcut.ts). Stored in the same shortcuts.json.
+  'openApp',
+  'stopRecording',
 ] as const;
 
 export type ShortcutAction = (typeof SHORTCUT_ACTIONS)[number];
+
+/** Actions bound system-wide through Electron's globalShortcut rather than the editor keydown path. */
+export const GLOBAL_SHORTCUT_ACTIONS = ['openApp', 'stopRecording'] as const satisfies readonly ShortcutAction[];
+
+export type GlobalShortcutAction = (typeof GLOBAL_SHORTCUT_ACTIONS)[number];
+
+export function isGlobalShortcutAction(action: ShortcutAction): action is GlobalShortcutAction {
+  return (GLOBAL_SHORTCUT_ACTIONS as readonly ShortcutAction[]).includes(action);
+}
+
+/** Editor-only actions (everything the in-window keydown handlers match). */
+export const EDITOR_SHORTCUT_ACTIONS: readonly ShortcutAction[] = SHORTCUT_ACTIONS.filter(
+  (action) => !isGlobalShortcutAction(action),
+);
+
+/**
+ * localStorage mirror of the stop-recording accelerator that the HUD
+ * (LaunchWindow) reads on mount and re-applies. The shortcuts dialog writes
+ * the same key after a successful registration so both surfaces agree.
+ */
+export const STOP_RECORDING_ACCELERATOR_STORAGE_KEY = 'capturia.stopRecordingShortcut';
 
 export interface ShortcutBinding {
   key: string;
@@ -50,6 +75,8 @@ export const SHORTCUT_LABEL_KEYS: Record<ShortcutAction, string> = {
   speedDown: 'shortcuts.speedDown',
   copySelected: 'shortcuts.copySelected',
   paste: 'shortcuts.paste',
+  openApp: 'shortcuts.openApp',
+  stopRecording: 'shortcuts.stopRecording',
 };
 
 // ---------------------------------------------------------------------------
@@ -67,6 +94,8 @@ export const DEFAULT_SHORTCUTS: ShortcutsConfig = {
   speedDown: { key: '[' },
   copySelected: { key: 'c', ctrl: true },
   paste: { key: 'v', ctrl: true },
+  openApp: { key: 'o', ctrl: true, shift: true },
+  stopRecording: { key: '2', ctrl: true, shift: true },
 };
 
 // ---------------------------------------------------------------------------
