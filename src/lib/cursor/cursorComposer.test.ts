@@ -1,11 +1,133 @@
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_CURSOR_STYLE, type CursorTrack } from './types';
 import {
+  CURSOR_REFERENCE_WIDTH,
   drawCompositedCursor,
   normalizePointerSample,
   projectCursorToViewport,
+  resolveCursorContentScale,
+  resolveCursorSizeNorm,
   resolveCursorState,
 } from './cursorComposer';
+
+interface RecordedContext {
+  ctx: CanvasRenderingContext2D;
+  scaleCalls: Array<{ x: number; y: number }>;
+  arcCalls: Array<{ x: number; y: number; radius: number }>;
+  translateCalls: Array<{ x: number; y: number }>;
+  gradientRadii: number[];
+}
+
+function createRecordingContext(): RecordedContext {
+  const scaleCalls: Array<{ x: number; y: number }> = [];
+  const arcCalls: Array<{ x: number; y: number; radius: number }> = [];
+  const translateCalls: Array<{ x: number; y: number }> = [];
+  const gradientRadii: number[] = [];
+  const ctx = {
+    save: () => {},
+    restore: () => {},
+    translate: (x: number, y: number) => {
+      translateCalls.push({ x, y });
+    },
+    scale: (x: number, y: number) => {
+      scaleCalls.push({ x, y });
+    },
+    beginPath: () => {},
+    moveTo: () => {},
+    lineTo: () => {},
+    arcTo: () => {},
+    closePath: () => {},
+    fill: () => {},
+    stroke: () => {},
+    clip: () => {},
+    arc: (x: number, y: number, radius: number) => {
+      arcCalls.push({ x, y, radius });
+    },
+    createRadialGradient: (_x0: number, _y0: number, _r0: number, _x1: number, _y1: number, r1: number) => {
+      gradientRadii.push(r1);
+      return { addColorStop: () => {} };
+    },
+    set globalAlpha(_: number) {},
+    set fillStyle(_: string | CanvasGradient | CanvasPattern) {},
+    set strokeStyle(_: string | CanvasGradient | CanvasPattern) {},
+    set lineWidth(_: number) {},
+    set lineCap(_: CanvasLineCap) {},
+    set lineJoin(_: CanvasLineJoin) {},
+    set shadowColor(_: string) {},
+    set shadowBlur(_: number) {},
+    set shadowOffsetX(_: number) {},
+    set shadowOffsetY(_: number) {},
+    set filter(_: string) {},
+  } as unknown as CanvasRenderingContext2D;
+
+  return { ctx, scaleCalls, arcCalls, translateCalls, gradientRadii };
+}
+
+describe('cursor size normalisation', () => {
+  it('normalises the cursor by the displayed full-video width', () => {
+    expect(resolveCursorSizeNorm({ maskRect: { width: CURSOR_REFERENCE_WIDTH } })).toBeCloseTo(1, 6);
+    expect(resolveCursorSizeNorm({ maskRect: { width: 3840 } })).toBeCloseTo(2, 6);
+    expect(resolveCursorSizeNorm({ maskRect: { width: 960 } })).toBeCloseTo(0.5, 6);
+  });
+
+  it('is crop invariant: cropping enlarges the cursor together with the content', () => {
+    const full = resolveCursorSizeNorm({ maskRect: { width: 1920 }, cropRegion: { width: 1 } });
+    const halfCrop = resolveCursorSizeNorm({ maskRect: { width: 960 }, cropRegion: { width: 0.5 } });
+    expect(halfCrop).toBeCloseTo(full, 6);
+  });
+
+  it('multiplies camera zoom into the content scale', () => {
+    const scale = resolveCursorContentScale({
+      cameraScale: { x: 2, y: 2 },
+      maskRect: { width: 3840 },
+      cropRegion: { x: 0, y: 0, width: 1, height: 1 },
+    });
+    expect(scale).toBeCloseTo(4, 6);
+  });
+
+  it('draws glyph, highlight and ripple proportionally to the canvas width', () => {
+    const state = {
+      visible: true,
+      x: 0.5,
+      y: 0.5,
+      scale: 2.2,
+      highlightAlpha: 0.5,
+      rippleScale: 1.6,
+      rippleAlpha: 0.4,
+      cursorKind: 'arrow' as const,
+    };
+    const style = { ...DEFAULT_CURSOR_STYLE, shadow: 0 };
+    const cameraScale = { x: 1.3, y: 1.3 };
+    const cropRegion = { x: 0.1, y: 0.1, width: 0.8, height: 0.8 };
+
+    const render = (canvasWidth: number) => {
+      const recorded = createRecordingContext();
+      drawCompositedCursor(
+        recorded.ctx,
+        { x: canvasWidth / 2, y: canvasWidth / 4 },
+        state,
+        style,
+        resolveCursorContentScale({ cameraScale, maskRect: { width: canvasWidth * 0.8 }, cropRegion }),
+      );
+      return recorded;
+    };
+
+    const hd = render(1920);
+    const uhd = render(3840);
+
+    // Glyph scale (the ctx.scale call that precedes drawing the glyph).
+    expect(uhd.scaleCalls[0].x / hd.scaleCalls[0].x).toBeCloseTo(2, 6);
+    expect(uhd.scaleCalls[0].y / hd.scaleCalls[0].y).toBeCloseTo(2, 6);
+    // Ripple radius, then highlight radius (both drawn with ctx.arc).
+    expect(hd.arcCalls).toHaveLength(2);
+    expect(uhd.arcCalls).toHaveLength(2);
+    expect(uhd.arcCalls[0].radius / hd.arcCalls[0].radius).toBeCloseTo(2, 6);
+    expect(uhd.arcCalls[1].radius / hd.arcCalls[1].radius).toBeCloseTo(2, 6);
+    expect(uhd.gradientRadii[0] / hd.gradientRadii[0]).toBeCloseTo(2, 6);
+    // At the reference width the glyph is `28 * size * camera` px.
+    expect(hd.scaleCalls[0].x).toBeCloseTo(2.2 * 1.3, 6);
+  });
+});
 
 describe('cursorComposer', () => {
   it('interpolates and smooths recorded cursor track', () => {

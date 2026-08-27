@@ -22,6 +22,7 @@ import {
   DEFAULT_CURSOR_STYLE,
   drawCompositedCursor,
   projectCursorToViewport,
+  resolveCursorContentScale,
   resolveCursorState,
   type CursorStyleConfig,
   type CursorTrack,
@@ -730,7 +731,11 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
       { x: drawProjected.x, y: drawProjected.y },
       drawCursorState,
       cursorStyleRef.current,
-      Math.max(0.1, (Math.abs(cameraContainer.scale.x) + Math.abs(cameraContainer.scale.y)) / 2),
+      resolveCursorContentScale({
+        cameraScale: { x: cameraContainer.scale.x, y: cameraContainer.scale.y },
+        maskRect: layout.maskRect,
+        cropRegion: cropRegionRef.current,
+      }),
     );
   }, [ensureCursorCanvas]);
 
