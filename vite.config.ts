@@ -1,8 +1,45 @@
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
+import fs from 'node:fs'
 import path from 'node:path'
 import electron from 'vite-plugin-electron/simple'
 import react from '@vitejs/plugin-react'
 import pkg from './package.json'
+
+// C-1: ONNX Runtime wasm for the in-browser Whisper caption fallback. Only the two
+// non-threaded builds are shipped (the worker runs numThreads=1: no SharedArrayBuffer
+// under file://). Served from /ort/ in dev and emitted to dist/ort/ at build so the
+// renderer resolves them relative to its own page URL (see captionModel.ts).
+const ORT_WASM_FILES = ['ort-wasm.wasm', 'ort-wasm-simd.wasm']
+const ORT_WASM_SRC_DIR = path.resolve(__dirname, 'node_modules/onnxruntime-web/dist')
+
+function ortWasmPlugin(): Plugin {
+  return {
+    name: 'capturia-ort-wasm',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const match = /^\/ort\/([A-Za-z0-9._-]+\.wasm)(?:\?.*)?$/.exec(req.url ?? '')
+        if (!match || !ORT_WASM_FILES.includes(match[1])) return next()
+        const file = path.join(ORT_WASM_SRC_DIR, match[1])
+        if (!fs.existsSync(file)) return next()
+        res.setHeader('Content-Type', 'application/wasm')
+        res.setHeader('Cache-Control', 'no-cache')
+        fs.createReadStream(file).pipe(res)
+      })
+    },
+    generateBundle() {
+      for (const name of ORT_WASM_FILES) {
+        const file = path.join(ORT_WASM_SRC_DIR, name)
+        if (!fs.existsSync(file)) {
+          this.warn(`[capturia-ort-wasm] missing ${file}; in-browser captions will not work in this build`)
+          continue
+        }
+        this.emitFile({ type: 'asset', fileName: `ort/${name}`, source: fs.readFileSync(file) })
+      }
+    },
+  }
+}
+
+const EMPTY_NODE_MODULE = path.resolve(__dirname, 'src/lib/vite-stubs/empty-node-module.ts')
 
 const isLinuxWayland = process.platform === 'linux' && (process.env.XDG_SESSION_TYPE || '').toLowerCase() === 'wayland'
 const devElectronArgs = [
@@ -18,6 +55,7 @@ export default defineConfig({
   },
   plugins: [
     react(),
+    ortWasmPlugin(),
     electron({
       main: {
         // Shortcut of `build.lib.entry`.
@@ -48,7 +86,23 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, 'src'),
+      // @xenova/transformers: env.js statically imports fs/path/url; onnx.js imports
+      // onnxruntime-node (must not be bundled in the renderer: it requires fs).
+      // These aliases only apply to the renderer build; the electron main/preload
+      // builds have their own config and keep the real Node modules.
+      fs: EMPTY_NODE_MODULE,
+      path: EMPTY_NODE_MODULE,
+      url: EMPTY_NODE_MODULE,
+      'onnxruntime-node': path.resolve(__dirname, 'src/lib/vite-stubs/onnxruntime-node-stub.ts'),
     },
+  },
+  optimizeDeps: {
+    exclude: ['@xenova/transformers'],
+  },
+  // The captioning worker dynamically imports @xenova/transformers, which makes the
+  // worker bundle code-split, unsupported by the default "iife" worker format.
+  worker: {
+    format: 'es',
   },
   build: {
     target: 'esnext',
