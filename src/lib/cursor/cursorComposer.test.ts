@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_CURSOR_STYLE, type CursorTrack } from './types';
 import {
   CURSOR_REFERENCE_WIDTH,
+  createCursorMotionBlurState,
   drawCompositedCursor,
+  getCursorMotionBlurPx,
   normalizePointerSample,
   projectCursorToViewport,
+  resetCursorMotionBlurState,
   resolveCursorClipRect,
   resolveCursorContentScale,
   resolveCursorSizeNorm,
@@ -209,6 +212,99 @@ describe('cursor clip to bounds', () => {
     });
     expect(clipCalls).toHaveLength(1);
     expect(arcToCalls).toHaveLength(4);
+  });
+});
+
+describe('cursor motion blur', () => {
+  it('snaps (no blur) on the first sample, when blur is off, and when time does not advance', () => {
+    const state = createCursorMotionBlurState();
+    expect(getCursorMotionBlurPx({ motionBlur: 1, point: { x: 0, y: 0 }, state, timeMs: 0 })).toBe(0);
+    // Same time again (paused re-render) snaps.
+    expect(getCursorMotionBlurPx({ motionBlur: 1, point: { x: 500, y: 0 }, state, timeMs: 0 })).toBe(0);
+    // Backwards time (scrub/seek) snaps.
+    expect(getCursorMotionBlurPx({ motionBlur: 1, point: { x: 900, y: 0 }, state, timeMs: -16 })).toBe(0);
+    // Blur disabled never blurs, even on fast moves.
+    const off = createCursorMotionBlurState();
+    getCursorMotionBlurPx({ motionBlur: 0, point: { x: 0, y: 0 }, state: off, timeMs: 0 });
+    expect(getCursorMotionBlurPx({ motionBlur: 0, point: { x: 900, y: 0 }, state: off, timeMs: 16 })).toBe(0);
+  });
+
+  it('scales with speed, is frame-rate independent and clamps at 6 px', () => {
+    // 100 px in 16 ms = 6250 px/s -> 6250 * 0.5 * 0.004 = 12.5 -> clamped to 6.
+    const fast = createCursorMotionBlurState();
+    getCursorMotionBlurPx({ motionBlur: 0.5, point: { x: 0, y: 0 }, state: fast, timeMs: 0 });
+    expect(getCursorMotionBlurPx({ motionBlur: 0.5, point: { x: 100, y: 0 }, state: fast, timeMs: 16 })).toBe(6);
+
+    // 8 px in 16 ms = 500 px/s -> 500 * 1 * 0.004 = 2 px.
+    const slow60 = createCursorMotionBlurState();
+    getCursorMotionBlurPx({ motionBlur: 1, point: { x: 0, y: 0 }, state: slow60, timeMs: 0 });
+    expect(getCursorMotionBlurPx({ motionBlur: 1, point: { x: 8, y: 0 }, state: slow60, timeMs: 16 })).toBeCloseTo(2, 6);
+
+    // Same speed sampled at 30 fps (16 px in 32 ms) gives the same blur.
+    const slow30 = createCursorMotionBlurState();
+    getCursorMotionBlurPx({ motionBlur: 1, point: { x: 0, y: 0 }, state: slow30, timeMs: 0 });
+    expect(getCursorMotionBlurPx({ motionBlur: 1, point: { x: 16, y: 0 }, state: slow30, timeMs: 32 })).toBeCloseTo(2, 6);
+
+    // Static cursor: no blur.
+    expect(getCursorMotionBlurPx({ motionBlur: 1, point: { x: 16, y: 0 }, state: slow30, timeMs: 48 })).toBe(0);
+  });
+
+  it('produces the same blur relative to the frame for preview and export sizes', () => {
+    // The same content-space move rendered on a 960 px preview (sizeNorm 0.5)
+    // and a 3840 px export (sizeNorm 2): blur px scales with the canvas.
+    const preview = createCursorMotionBlurState();
+    getCursorMotionBlurPx({ motionBlur: 1, point: { x: 0, y: 0 }, state: preview, timeMs: 0, sizeNorm: 0.5 });
+    const previewPx = getCursorMotionBlurPx({ motionBlur: 1, point: { x: 4, y: 0 }, state: preview, timeMs: 16, sizeNorm: 0.5 });
+
+    const exportState = createCursorMotionBlurState();
+    getCursorMotionBlurPx({ motionBlur: 1, point: { x: 0, y: 0 }, state: exportState, timeMs: 0, sizeNorm: 2 });
+    const exportPx = getCursorMotionBlurPx({ motionBlur: 1, point: { x: 16, y: 0 }, state: exportState, timeMs: 16, sizeNorm: 2 });
+
+    expect(previewPx).toBeGreaterThan(0);
+    expect(exportPx / previewPx).toBeCloseTo(4, 6);
+    expect(previewPx / 0.5).toBeCloseTo(exportPx / 2, 6);
+  });
+
+  it('resets to an uninitialised state', () => {
+    const state = createCursorMotionBlurState();
+    getCursorMotionBlurPx({ motionBlur: 1, point: { x: 0, y: 0 }, state, timeMs: 0 });
+    getCursorMotionBlurPx({ motionBlur: 1, point: { x: 8, y: 0 }, state, timeMs: 16 });
+    resetCursorMotionBlurState(state);
+    expect(state).toEqual({ x: 0, y: 0, lastTimeMs: null, initialized: false });
+    expect(getCursorMotionBlurPx({ motionBlur: 1, point: { x: 100, y: 0 }, state, timeMs: 32 })).toBe(0);
+  });
+
+  it('applies ctx.filter only when a blur radius is requested', () => {
+    const filters: string[] = [];
+    const recorded = createRecordingContext();
+    Object.defineProperty(recorded.ctx, 'filter', {
+      set(value: string) {
+        filters.push(value);
+      },
+      configurable: true,
+    });
+    const state = {
+      visible: true,
+      x: 0.5,
+      y: 0.5,
+      scale: 1,
+      highlightAlpha: 0,
+      rippleScale: 1,
+      rippleAlpha: 0,
+      cursorKind: 'arrow' as const,
+    };
+
+    drawCompositedCursor(recorded.ctx, { x: 10, y: 10 }, state, { ...DEFAULT_CURSOR_STYLE, shadow: 0 }, 1, { motionBlurPx: 0 });
+    expect(filters).toHaveLength(0);
+
+    drawCompositedCursor(recorded.ctx, { x: 10, y: 10 }, state, { ...DEFAULT_CURSOR_STYLE, shadow: 0 }, 1, { motionBlurPx: 3.5 });
+    expect(filters).toEqual(['blur(3.50px)']);
+  });
+
+  it('normalises motionBlur into the resolved style range', () => {
+    expect(resolveCursorState({ timeMs: 0, style: { ...DEFAULT_CURSOR_STYLE, enabled: false, motionBlur: 4 } }).visible).toBe(false);
+    expect(DEFAULT_CURSOR_STYLE.motionBlur).toBe(0);
+    expect(DEFAULT_CURSOR_STYLE.clipToBounds).toBe(false);
   });
 });
 

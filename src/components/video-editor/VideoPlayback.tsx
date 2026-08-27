@@ -20,10 +20,13 @@ import { findSubtitleCueAtTime, normalizeSubtitleCues } from "@/lib/analysis/sub
 import { resolvePreviewAudioState } from "@/lib/audio/audioEditRegions";
 import {
   DEFAULT_CURSOR_STYLE,
+  createCursorMotionBlurState,
   drawCompositedCursor,
+  getCursorMotionBlurPx,
   projectCursorToViewport,
   resolveCursorClipRect,
   resolveCursorContentScale,
+  resolveCursorSizeNorm,
   resolveCursorState,
   type CursorStyleConfig,
   type CursorTrack,
@@ -169,6 +172,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
   const preferredFpsRef = useRef(preferredFps);
   const cursorCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const cursorCanvasCtxRef = useRef<CanvasRenderingContext2D | null>(null);
+  const cursorMotionBlurStateRef = useRef(createCursorMotionBlurState());
   const cursorTrackRef = useRef<CursorTrack | null>(cursorTrack);
   const cursorStyleRef = useRef<Partial<CursorStyleConfig>>(cursorStyle ?? DEFAULT_CURSOR_STYLE);
   const cropRegionRef = useRef(cropRegion);
@@ -734,6 +738,15 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
 
     if (!drawProjected.inViewport) return;
 
+    const cursorSizeNorm = resolveCursorSizeNorm({ maskRect: layout.maskRect, cropRegion: cropRegionRef.current });
+    const motionBlurPx = getCursorMotionBlurPx({
+      motionBlur: cursorStyleRef.current.motionBlur ?? 0,
+      point: { x: drawProjected.x, y: drawProjected.y },
+      state: cursorMotionBlurStateRef.current,
+      timeMs,
+      sizeNorm: cursorSizeNorm,
+    });
+
     drawCompositedCursor(
       ctx,
       { x: drawProjected.x, y: drawProjected.y },
@@ -745,6 +758,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
         cropRegion: cropRegionRef.current,
       }),
       {
+        motionBlurPx,
         clipRect: resolveCursorClipRect({
           style: cursorStyleRef.current,
           maskRect: layout.maskRect,

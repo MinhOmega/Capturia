@@ -6,6 +6,7 @@ import {
   type CursorClipRect,
   type CursorDrawOptions,
   type CursorKind,
+  type CursorMotionBlurState,
   type CursorMovementStyle,
   type CursorResolvedState,
   type CursorResolveParams,
@@ -96,6 +97,7 @@ function normalizeCursorStyle(input?: Partial<CursorStyleConfig>): CursorStyleCo
     offsetY: Math.max(-240, Math.min(240, Number.isFinite(merged.offsetY) ? merged.offsetY : 0)),
     timeOffsetMs: Math.max(-300, Math.min(300, Number.isFinite(merged.timeOffsetMs) ? merged.timeOffsetMs : 0)),
     clipToBounds: Boolean(merged.clipToBounds),
+    motionBlur: clamp01(toFiniteNumber(merged.motionBlur, 0)),
   };
 }
 
@@ -626,7 +628,7 @@ export function projectCursorToViewport(args: {
  */
 export function resolveCursorSizeNorm(args: {
   maskRect: { width: number };
-  cropRegion?: Pick<CropRegion, 'width'> | null;
+  cropRegion?: CropRegion | { width: number } | null;
 }): number {
   const maskWidth = Number.isFinite(args.maskRect.width) ? Math.max(0, args.maskRect.width) : 0;
   const cropWidth = Number.isFinite(args.cropRegion?.width)
@@ -644,7 +646,7 @@ export function resolveCursorSizeNorm(args: {
 export function resolveCursorContentScale(args: {
   cameraScale: { x: number; y: number };
   maskRect: { width: number };
-  cropRegion?: Pick<CropRegion, 'width'> | null;
+  cropRegion?: CropRegion | { width: number } | null;
 }): number {
   const cameraX = Number.isFinite(args.cameraScale.x) ? Math.abs(args.cameraScale.x) : 1;
   const cameraY = Number.isFinite(args.cameraScale.y) ? Math.abs(args.cameraScale.y) : 1;
@@ -686,6 +688,70 @@ export function resolveCursorClipRect(args: {
     height,
     radius: Math.min(baseRadius * radiusScale, Math.min(width, height) / 2),
   };
+}
+
+const CURSOR_MOTION_BLUR_MAX_PX = 6;
+const CURSOR_MOTION_BLUR_SPEED_FACTOR = 0.004;
+
+export function createCursorMotionBlurState(): CursorMotionBlurState {
+  return { x: 0, y: 0, lastTimeMs: null, initialized: false };
+}
+
+export function resetCursorMotionBlurState(state: CursorMotionBlurState): void {
+  state.x = 0;
+  state.y = 0;
+  state.lastTimeMs = null;
+  state.initialized = false;
+}
+
+/**
+ * Speed-based cursor motion blur radius in canvas px.
+ * `blur = clamp(speed * motionBlur * 0.004, 0, 6)` with the speed measured in
+ * reference (1080p) px/s, i.e. canvas speed divided by `sizeNorm`
+ * (`resolveCursorSizeNorm`), and the result scaled back by `sizeNorm`, so the
+ * preview stage and a 4K export blur the same fraction of the frame. The
+ * state snaps (returns 0) on the first call, when blur is off, and when
+ * content time does not advance (pause, scrub back, seek).
+ */
+export function getCursorMotionBlurPx(args: {
+  motionBlur: number;
+  point: { x: number; y: number };
+  state: CursorMotionBlurState;
+  timeMs: number;
+  sizeNorm?: number;
+}): number {
+  const { point, state, timeMs } = args;
+  const motionBlur = clamp01(toFiniteNumber(args.motionBlur, 0));
+  const sizeNorm = Number.isFinite(args.sizeNorm) && Number(args.sizeNorm) > 0 ? Number(args.sizeNorm) : 1;
+  const previousTimeMs = state.lastTimeMs;
+  const shouldSnap =
+    motionBlur <= 0
+    || !state.initialized
+    || previousTimeMs === null
+    || !Number.isFinite(timeMs)
+    || timeMs <= previousTimeMs;
+
+  if (shouldSnap) {
+    state.x = point.x;
+    state.y = point.y;
+    state.lastTimeMs = Number.isFinite(timeMs) ? timeMs : null;
+    state.initialized = true;
+    return 0;
+  }
+
+  const deltaMs = Math.max(1, timeMs - previousTimeMs);
+  const distance = Math.hypot(point.x - state.x, point.y - state.y);
+  const speedPxPerSecond = (distance / deltaMs) * 1000;
+  state.x = point.x;
+  state.y = point.y;
+  state.lastTimeMs = timeMs;
+
+  const referenceSpeed = speedPxPerSecond / sizeNorm;
+  const referenceBlur = Math.min(
+    CURSOR_MOTION_BLUR_MAX_PX,
+    Math.max(0, referenceSpeed * motionBlur * CURSOR_MOTION_BLUR_SPEED_FACTOR),
+  );
+  return referenceBlur * sizeNorm;
 }
 
 function traceRoundedRect(ctx: CanvasRenderingContext2D, rect: CursorClipRect): void {
@@ -833,6 +899,11 @@ export function drawCompositedCursor(
   if (options.clipRect) {
     traceRoundedRect(ctx, options.clipRect);
     ctx.clip();
+  }
+  const motionBlurPx = Number.isFinite(options.motionBlurPx) ? Math.max(0, Number(options.motionBlurPx)) : 0;
+  if (motionBlurPx > 0.05 && 'filter' in ctx) {
+    // Canvas2D filter (supported by Chromium/Electron); blurs ripple, highlight and glyph alike.
+    ctx.filter = `blur(${motionBlurPx.toFixed(2)}px)`;
   }
   ctx.translate(translatedX, translatedY);
 

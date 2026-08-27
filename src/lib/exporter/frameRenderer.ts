@@ -19,10 +19,13 @@ import type { SubtitleCue } from '@/lib/analysis/types';
 import { findSubtitleCueAtTime, normalizeSubtitleCues } from '@/lib/analysis/subtitleTrack';
 import { buildSubtitleLines } from '@/lib/rendering/subtitleLayout';
 import {
+  createCursorMotionBlurState,
   drawCompositedCursor,
+  getCursorMotionBlurPx,
   projectCursorToViewport,
   resolveCursorClipRect,
   resolveCursorContentScale,
+  resolveCursorSizeNorm,
   resolveCursorState,
   type CursorStyleConfig,
   type CursorTrack,
@@ -117,6 +120,7 @@ export class FrameRenderer {
   private config: FrameRenderConfig;
   private animationState: AnimationState;
   private layoutCache: any = null;
+  private cursorMotionBlurState = createCursorMotionBlurState();
   private currentVideoTime = 0;
   private currentVideoSource: HTMLVideoElement | VideoFrame | null = null;
   private subtitleCues: SubtitleCue[];
@@ -596,6 +600,15 @@ export class FrameRenderer {
 
     if (!drawProjected.inViewport) return;
 
+    const cursorSizeNorm = resolveCursorSizeNorm({ maskRect: this.layoutCache.maskRect, cropRegion: this.config.cropRegion });
+    const motionBlurPx = getCursorMotionBlurPx({
+      motionBlur: this.config.cursorStyle?.motionBlur ?? 0,
+      point: { x: drawProjected.x, y: drawProjected.y },
+      state: this.cursorMotionBlurState,
+      timeMs,
+      sizeNorm: cursorSizeNorm,
+    });
+
     drawCompositedCursor(
       this.compositeCtx,
       { x: drawProjected.x, y: drawProjected.y },
@@ -607,6 +620,7 @@ export class FrameRenderer {
         cropRegion: this.config.cropRegion,
       }),
       {
+        motionBlurPx,
         // The export mask is drawn at 0,0 inside the video container placed at
         // baseOffset, so offset the mask rect into camera-local coordinates
         // (same frame the preview overlay uses).

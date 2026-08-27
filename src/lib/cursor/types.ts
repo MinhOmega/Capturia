@@ -71,6 +71,16 @@ export interface CursorStyleConfig {
   timeOffsetMs: number;
   /** Clip the cursor (glyph, highlight, ripple) to the rounded video mask instead of letting it overflow. */
   clipToBounds: boolean;
+  /** Speed-based cursor motion blur strength, 0 (off) .. 1. */
+  motionBlur: number;
+}
+
+/** Per-renderer state for the speed-based cursor motion blur (previous drawn point). */
+export interface CursorMotionBlurState {
+  x: number;
+  y: number;
+  lastTimeMs: number | null;
+  initialized: boolean;
 }
 
 export interface CursorClipRect {
@@ -84,6 +94,8 @@ export interface CursorClipRect {
 export interface CursorDrawOptions {
   /** Camera-aware rounded mask rect (canvas px) to clip the cursor to; `null` = no clipping. */
   clipRect?: CursorClipRect | null;
+  /** Blur radius (canvas px) applied via `ctx.filter` while drawing the cursor; 0 = none. */
+  motionBlurPx?: number;
 }
 
 export interface CursorResolveParams {
@@ -131,4 +143,5 @@ export const DEFAULT_CURSOR_STYLE: CursorStyleConfig = {
   offsetY: 0,
   timeOffsetMs: 0,
   clipToBounds: false,
+  motionBlur: 0,
 };
