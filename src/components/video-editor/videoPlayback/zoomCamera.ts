@@ -1,6 +1,7 @@
-import type { ZoomFocus, ZoomRegion } from "../types";
-import { getZoomScale } from "../types";
-import { DEFAULT_FOCUS, ZOOM_SPRING_MAX_STEP_MS } from "./constants";
+import type { ZoomFocus, ZoomFocusMode, ZoomRegion } from "../types";
+import { getZoomFocusMode, getZoomScale } from "../types";
+import { AUTO_FOLLOW_PARAMS, DEFAULT_FOCUS, ZOOM_SPRING_MAX_STEP_MS } from "./constants";
+import { advanceFollowFocus, type CursorTelemetryPoint } from "./cursorFollowUtils";
 import { findDominantRegion } from "./zoomRegionUtils";
 import {
   computeFocusFromTransform,
@@ -16,11 +17,17 @@ import {
 
 /**
  * The zoom camera step shared by the preview ticker (VideoPlayback) and the
- * exporter (frameRenderer.updateAnimationState). Both call
- * resolveZoomCameraTarget + advanceZoomCamera with content time, so preview
- * and export produce the same transform for the same time series by
- * construction; the only divergence is the `animating` flag (preview snaps
- * while paused / seeking / scrubbing, export always steps).
+ * exporter (frameRenderer.updateAnimationState). Both call stepZoomCamera
+ * with content time, so preview and export produce the same transform for
+ * the same time series by construction; the only divergence is the
+ * `animating` flag (preview snaps while paused / seeking / scrubbing, export
+ * always steps).
+ *
+ * Pipeline per frame:
+ *   resolveZoomCameraTarget  - eased target from the regions (+ raw cursor
+ *                              focus for focusMode 'auto')
+ *   advanceAutoFollowFocus   - content-time smoothing of that cursor focus
+ *   advanceZoomCamera        - spring-chase the resulting transform
  */
 
 export interface ZoomCameraGeometry {
@@ -37,11 +44,17 @@ export interface ZoomCameraTarget {
   progress: number;
   /** computeZoomTransform of the above: the target the spring chases. */
   transform: ZoomTransform;
+  /** Focus mode of the region the camera is heading to; null when unzoomed. */
+  focusMode: ZoomFocusMode | null;
+  /** True while panning between two connected regions (the pan owns the focus). */
+  transition: boolean;
 }
 
 export interface ResolveZoomCameraTargetOptions {
   /** Editor-only: a zoom is selected and paused, show the unzoomed stage instead. */
   forceUnzoomed?: boolean;
+  /** Cursor telemetry (buildCursorTelemetry) read by focusMode 'auto' regions. */
+  cursorTelemetry?: CursorTelemetryPoint[];
 }
 
 function unzoomedTarget(): ZoomCameraTarget {
@@ -50,6 +63,8 @@ function unzoomedTarget(): ZoomCameraTarget {
     focus: { ...DEFAULT_FOCUS },
     progress: 0,
     transform: { scale: 1, x: 0, y: 0 },
+    focusMode: null,
+    transition: false,
   };
 }
 
@@ -65,6 +80,7 @@ export function resolveZoomCameraTarget(
 
   const { region, strength, blendedScale, transition } = findDominantRegion(regions, timeMs, {
     connectZooms: true,
+    cursorTelemetry: options.cursorTelemetry,
   });
 
   if (!region || strength <= 0) {
@@ -112,7 +128,14 @@ export function resolveZoomCameraTarget(
     focusY: focus.cy,
   });
 
-  return { scale, focus, progress, transform };
+  return {
+    scale,
+    focus,
+    progress,
+    transform,
+    focusMode: getZoomFocusMode(region),
+    transition: transition !== null,
+  };
 }
 
 export interface ZoomCameraState {
@@ -121,6 +144,10 @@ export interface ZoomCameraState {
   prevTimeMs: number | null;
   /** Transform actually applied on the previous step. */
   applied: ZoomTransform;
+  /** Smoothed cursor focus of the current auto-follow region; null while a manual region is active. */
+  smoothedAutoFocus: ZoomFocus | null;
+  /** Eased progress of the previous step (tells zoom-in from zoom-out). */
+  prevTargetProgress: number;
 }
 
 export function createZoomCameraState(): ZoomCameraState {
@@ -128,6 +155,8 @@ export function createZoomCameraState(): ZoomCameraState {
     spring: createZoomSpringState(),
     prevTimeMs: null,
     applied: { scale: 1, x: 0, y: 0 },
+    smoothedAutoFocus: null,
+    prevTargetProgress: 0,
   };
 }
 
@@ -135,6 +164,57 @@ export function resetZoomCameraState(state: ZoomCameraState) {
   state.spring = createZoomSpringState();
   state.prevTimeMs = null;
   state.applied = { scale: 1, x: 0, y: 0 };
+  state.smoothedAutoFocus = null;
+  state.prevTargetProgress = 0;
+}
+
+/**
+ * Auto-follow focus for one step. `raw` is the (clamped) cursor focus the
+ * dominant region resolved at `timeMs`; the camera eases toward it by the
+ * content-time delta since the previous step (frame-rate independent):
+ *   - full zoom: distance-adaptive smoothing (faster when far, decelerating
+ *     when close);
+ *   - zooming in: track the raw cursor so the zoom always aims at the current
+ *     position, keeping the smoothed value in sync to avoid a snap when full
+ *     zoom begins;
+ *   - zooming out: keep smoothing for continuity.
+ * When not `animating` (paused / seek / scrub) the focus snaps to `raw`,
+ * matching the zoom spring's snap; the exporter always animates.
+ * Manual regions reset the smoothed value so the next auto region starts
+ * from the live cursor.
+ */
+export function advanceAutoFollowFocus(
+  state: ZoomCameraState,
+  target: ZoomCameraTarget,
+  timeMs: number,
+  animating: boolean,
+): ZoomFocus {
+  const raw = target.focus;
+  const progress = target.progress;
+
+  if (target.focusMode !== "auto" || target.transition) {
+    if (target.focusMode === "manual") {
+      state.smoothedAutoFocus = null;
+    }
+    state.prevTargetProgress = progress;
+    return raw;
+  }
+
+  const isZoomingIn = progress < 0.999 && progress >= state.prevTargetProgress;
+  const dtMs = state.prevTimeMs === null ? 0 : timeMs - state.prevTimeMs;
+  let focus = raw;
+
+  if (progress >= 0.999 || !isZoomingIn) {
+    const prev = state.smoothedAutoFocus ?? raw;
+    const smoothed = animating ? advanceFollowFocus(prev, raw, dtMs, AUTO_FOLLOW_PARAMS) : raw;
+    state.smoothedAutoFocus = smoothed;
+    focus = smoothed;
+  } else {
+    state.smoothedAutoFocus = raw;
+  }
+
+  state.prevTargetProgress = progress;
+  return focus;
 }
 
 /**
@@ -163,6 +243,52 @@ export function advanceZoomCamera(
   state.prevTimeMs = timeMs;
   state.applied = applied;
   return applied;
+}
+
+export interface StepZoomCameraOptions extends ResolveZoomCameraTargetOptions {
+  /** False snaps focus and spring to the target (preview paused / seek / scrub). */
+  animating: boolean;
+}
+
+export interface ZoomCameraStep {
+  /** Target after auto-follow smoothing (what the spring chases). */
+  target: ZoomCameraTarget;
+  /** Transform actually applied this frame. */
+  applied: ZoomTransform;
+}
+
+/**
+ * One full camera step: resolve the target for `timeMs`, smooth the
+ * auto-follow focus, spring-chase the transform. The single entry point of
+ * the preview ticker and the exporter.
+ */
+export function stepZoomCamera(
+  state: ZoomCameraState,
+  regions: ZoomRegion[],
+  timeMs: number,
+  geometry: ZoomCameraGeometry,
+  options: StepZoomCameraOptions,
+): ZoomCameraStep {
+  const resolved = resolveZoomCameraTarget(regions, timeMs, geometry, options);
+  const focus = advanceAutoFollowFocus(state, resolved, timeMs, options.animating);
+
+  let target = resolved;
+  if (focus !== resolved.focus) {
+    target = {
+      ...resolved,
+      focus,
+      transform: computeZoomTransform({
+        ...geometry,
+        zoomScale: resolved.scale,
+        zoomProgress: resolved.progress,
+        focusX: focus.cx,
+        focusY: focus.cy,
+      }),
+    };
+  }
+
+  const applied = advanceZoomCamera(state, target.transform, timeMs, options.animating);
+  return { target, applied };
 }
 
 /** Largest normalised per-step change of the applied transform (drives the legacy motion blur). */

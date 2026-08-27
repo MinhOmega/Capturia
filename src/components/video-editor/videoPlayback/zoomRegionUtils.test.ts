@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import type { CursorTrack } from '@/lib/cursor/types';
 import type { ZoomRegion } from '../types';
 import { ZOOM_DEPTH_SCALES } from '../types';
+import { buildCursorTelemetry } from './cursorFollowUtils';
 import {
   CONNECTED_ZOOM_PAN_DURATION_MS,
   TRANSITION_WINDOW_MS,
@@ -156,5 +158,104 @@ describe('connected zoom transitions', () => {
     expect(out.region?.id).toBe('c');
     expect(out.strength).toBeGreaterThan(0);
     expect(out.strength).toBeLessThan(1);
+  });
+});
+
+/**
+ * Ported from upstream (issue #72): an auto-focus zoom region must pan to
+ * follow the cursor for its whole span, not freeze at the focus captured when
+ * the region was created / suggested. Telemetry comes from Capturia's
+ * CursorTrack through buildCursorTelemetry.
+ */
+describe('findDominantRegion - auto-follow (focusMode "auto")', () => {
+  const baseRegion: ZoomRegion = {
+    id: 'zoom-1',
+    startMs: 0,
+    endMs: 4000,
+    depth: 3,
+    customScale: ZOOM_DEPTH_SCALES[3],
+    // Static focus captured at suggestion time (e.g. the dwell centroid); ignored
+    // in favour of the live cursor once focusMode is 'auto'. Kept within the
+    // depth-3 focus bounds so clamping does not distort the assertions.
+    focus: { cx: 0.35, cy: 0.5 },
+    focusMode: 'auto',
+    source: 'auto',
+  };
+
+  // Cursor sweeps steadily from the left edge to the right edge across the region.
+  const movingTrack: CursorTrack = {
+    samples: [
+      { timeMs: 0, x: 0.1, y: 0.5 },
+      { timeMs: 1000, x: 0.3, y: 0.5, visible: false },
+      { timeMs: 2000, x: 0.5, y: 0.5 },
+      { timeMs: 4000, x: 0.9, y: 0.5 },
+    ],
+  };
+  const movingTelemetry = buildCursorTelemetry(movingTrack);
+
+  it('tracks the cursor across the region instead of freezing at the initial focus', () => {
+    const early = findDominantRegion([baseRegion], 200, { cursorTelemetry: movingTelemetry });
+    const mid = findDominantRegion([baseRegion], 2000, { cursorTelemetry: movingTelemetry });
+    const late = findDominantRegion([baseRegion], 3800, { cursorTelemetry: movingTelemetry });
+
+    expect(early.region).not.toBeNull();
+    expect(mid.region).not.toBeNull();
+    expect(late.region).not.toBeNull();
+
+    // The focus must move meaningfully between samples (cursor-following), not stay pinned.
+    expect(mid.region?.focus.cx).toBeGreaterThan(early.region?.focus.cx ?? 0);
+    expect(late.region?.focus.cx).toBeGreaterThan(mid.region?.focus.cx ?? 0);
+
+    // And it must not equal the static creation-time focus baked into the region.
+    expect(mid.region?.focus.cx).not.toBeCloseTo(baseRegion.focus.cx, 2);
+    expect(mid.region?.focus.cx).toBeCloseTo(0.5, 6);
+  });
+
+  it('clamps the cursor focus to the bounds of the effective scale', () => {
+    const bounds = getFocusBoundsForScale(ZOOM_DEPTH_SCALES[3]);
+    const late = findDominantRegion([baseRegion], 4000, { cursorTelemetry: movingTelemetry });
+    expect(late.region?.focus.cx).toBeCloseTo(bounds.maxX, 6);
+  });
+
+  it('stays frozen at the static focus when focusMode is not auto (manual regions unaffected)', () => {
+    const manualRegion: ZoomRegion = { ...baseRegion, focusMode: 'manual', source: 'manual' };
+
+    const early = findDominantRegion([manualRegion], 200, { cursorTelemetry: movingTelemetry });
+    const late = findDominantRegion([manualRegion], 3800, { cursorTelemetry: movingTelemetry });
+
+    expect(early.region?.focus.cx).toBeCloseTo(manualRegion.focus.cx, 5);
+    expect(late.region?.focus.cx).toBeCloseTo(manualRegion.focus.cx, 5);
+  });
+
+  it('falls back to the static focus without telemetry (old projects, no cursor track)', () => {
+    const noTelemetry = findDominantRegion([baseRegion], 2000);
+    expect(noTelemetry.region?.focus.cx).toBeCloseTo(baseRegion.focus.cx, 5);
+    const emptyTelemetry = findDominantRegion([baseRegion], 2000, { cursorTelemetry: [] });
+    expect(emptyTelemetry.region?.focus.cx).toBeCloseTo(baseRegion.focus.cx, 5);
+  });
+
+  it('keys the memoised result on the telemetry identity', () => {
+    const withTelemetry = findDominantRegion([baseRegion], 2000, { cursorTelemetry: movingTelemetry });
+    const without = findDominantRegion([baseRegion], 2000);
+    expect(withTelemetry.region?.focus.cx).not.toBeCloseTo(without.region?.focus.cx ?? 0, 2);
+  });
+
+  it('pans between an auto region and a manual region using the shared cursor focus', () => {
+    const autoRegion: ZoomRegion = { ...baseRegion, endMs: 2000 };
+    const manualNext: ZoomRegion = {
+      id: 'zoom-2',
+      startMs: 3200,
+      endMs: 6000,
+      depth: 3,
+      focus: { cx: 0.6, cy: 0.5 },
+    };
+    const midPan = findDominantRegion([autoRegion, manualNext], 2500, {
+      connectZooms: true,
+      cursorTelemetry: movingTelemetry,
+    });
+    expect(midPan.transition).not.toBeNull();
+    // The outgoing auto region's end focus is the cursor at 2500 ms, not its static focus.
+    expect(midPan.transition?.startFocus.cx).toBeCloseTo(0.6, 6);
+    expect(midPan.transition?.endFocus.cx).toBeCloseTo(0.6, 6);
   });
 });

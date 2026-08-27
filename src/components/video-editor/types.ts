@@ -19,9 +19,21 @@ export interface ZoomRegion {
    * Missing (older saves / hand-placed regions) means 'manual'.
    */
   source?: ZoomRegionSource;
+  /**
+   * 'auto' = the camera follows the recorded cursor for the whole span instead
+   * of the static `focus` (see videoPlayback/cursorFollowUtils.ts). Missing
+   * (older saves / hand-placed regions) means 'manual'.
+   */
+  focusMode?: ZoomFocusMode;
 }
 
 export type ZoomRegionSource = 'auto' | 'manual';
+export type ZoomFocusMode = 'manual' | 'auto';
+
+/** Effective focus mode of a region (missing -> manual). */
+export function getZoomFocusMode(region: Pick<ZoomRegion, 'focusMode'>): ZoomFocusMode {
+  return region.focusMode === 'auto' ? 'auto' : 'manual';
+}
 
 export interface TrimRegion {
   id: string;
@@ -266,6 +278,8 @@ export interface ProjectState {
   showTimelineWaveform?: boolean;
   /** Auto-zoom wand state (v1.2). Missing in older saves -> treated as enabled. */
   autoZoomEnabled?: boolean;
+  /** Global "Auto-Focus all" toggle (W3-f). Missing in older saves -> off. */
+  autoFocusAll?: boolean;
 }
 
 export const DEFAULT_ZOOM_DEPTH: ZoomDepth = 3;

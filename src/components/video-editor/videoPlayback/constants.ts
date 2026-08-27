@@ -17,6 +17,23 @@ export const CONNECTED_ZOOM_PAN_DURATION_MS = 1000;
  * dropped frames, sub-13 fps export) snaps to the target instead.
  */
 export const ZOOM_SPRING_MAX_STEP_MS = 80;
+/**
+ * Auto-follow focus (focusMode 'auto'): distance-adaptive exponential
+ * smoothing of the cursor position, reframed in content time (see
+ * cursorFollowUtils.advanceFollowFocus). Shared by preview and export so the
+ * camera follows the cursor identically in both.
+ */
+export const AUTO_FOLLOW_SMOOTHING_FACTOR = 0.1;
+export const AUTO_FOLLOW_SMOOTHING_FACTOR_MAX = 0.25;
+export const AUTO_FOLLOW_RAMP_DISTANCE = 0.15;
+/** Reference frame interval the per-frame factors are tuned at (40 fps live-preview feel). */
+export const AUTO_FOLLOW_REFERENCE_MS = 1000 / 40;
+export const AUTO_FOLLOW_PARAMS = {
+  minFactor: AUTO_FOLLOW_SMOOTHING_FACTOR,
+  maxFactor: AUTO_FOLLOW_SMOOTHING_FACTOR_MAX,
+  rampDistance: AUTO_FOLLOW_RAMP_DISTANCE,
+  referenceMs: AUTO_FOLLOW_REFERENCE_MS,
+} as const;
 export const SMOOTHING_FACTOR = 0.12;
 export const MIN_DELTA = 0.0001;
 export const VIEWPORT_SCALE = 0.8;

@@ -1,12 +1,15 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import type { CursorTrack } from '@/lib/cursor/types';
 import type { ZoomRegion } from '../types';
 import { ZOOM_DEPTH_SCALES } from '../types';
 import { ZOOM_IN_OVERLAP_MS, ZOOM_SPRING_MAX_STEP_MS } from './constants';
+import { buildCursorTelemetry, type CursorTelemetryPoint } from './cursorFollowUtils';
 import {
   advanceZoomCamera,
   createZoomCameraState,
   measureZoomMotionIntensity,
   resolveZoomCameraTarget,
+  stepZoomCamera,
   type ZoomCameraGeometry,
 } from './zoomCamera';
 import { resetDominantRegionCache } from './zoomRegionUtils';
@@ -144,6 +147,88 @@ describe('preview / export parity', () => {
     const last = times.length - 1;
     expect(preview[last]).toEqual(resolveZoomCameraTarget(regions, times[last], geometry).transform);
     expect(exported[last].scale).toBeCloseTo(preview[last].scale, 2);
+  });
+});
+
+describe('auto-follow focus (focusMode "auto") preview / export parity', () => {
+  // Synthetic cursor: parks left, then sweeps right across the auto region,
+  // with a hidden span in the middle of the sweep.
+  const track: CursorTrack = {
+    samples: [
+      { timeMs: 0, x: 0.3, y: 0.45 },
+      { timeMs: 2500, x: 0.3, y: 0.45 },
+      { timeMs: 3000, x: 0.35, y: 0.5, visible: false },
+      { timeMs: 3500, x: 0.7, y: 0.6 },
+      { timeMs: 6000, x: 0.7, y: 0.6 },
+    ],
+  };
+  const telemetry = buildCursorTelemetry(track);
+  const autoRegions: ZoomRegion[] = [
+    { id: 'auto', startMs: 1500, endMs: 5000, depth: 3, focus: { cx: 0.5, cy: 0.5 }, focusMode: 'auto' },
+    { id: 'manual', startMs: 8000, endMs: 9000, depth: 3, focus: { cx: 0.6, cy: 0.4 } },
+  ];
+
+  function runLoop(times: number[], isPlaying: (t: number) => boolean, cursorTelemetry?: CursorTelemetryPoint[]) {
+    const state = createZoomCameraState();
+    return times.map((t) =>
+      stepZoomCamera(state, autoRegions, t, geometry, { animating: isPlaying(t), cursorTelemetry }),
+    );
+  }
+
+  it('produces identical transforms and focus in the preview and export loops while playing', () => {
+    const times = timeSeries(1000 / 60, 10_000);
+    const preview = runLoop(times, () => true, telemetry);
+    const exported = runLoop(times, () => true, telemetry);
+    expect(preview.map((s) => s.applied)).toEqual(exported.map((s) => s.applied));
+    expect(preview.map((s) => s.target.focus)).toEqual(exported.map((s) => s.target.focus));
+  });
+
+  it('follows the cursor at full zoom: lags behind the raw cursor during the sweep, settles on it after', () => {
+    const times = timeSeries(1000 / 60, 6000);
+    const steps = runLoop(times, () => true, telemetry);
+    const at = (ms: number) => steps[times.findIndex((t) => t >= ms)];
+    const rawAt = (ms: number) => resolveZoomCameraTarget(autoRegions, ms, geometry, { cursorTelemetry: telemetry }).focus;
+    // Mid-sweep the smoothed focus trails the raw cursor.
+    const mid = at(3300);
+    expect(mid.target.focusMode).toBe('auto');
+    expect(mid.target.focus.cx).toBeGreaterThan(rawAt(2500).cx);
+    expect(mid.target.focus.cx).toBeLessThan(rawAt(3300).cx);
+    // Well after the sweep it has converged on the parked cursor.
+    const settled = at(4800);
+    expect(settled.target.focus.cx).toBeCloseTo(rawAt(4800).cx, 3);
+    expect(settled.target.focus.cy).toBeCloseTo(rawAt(4800).cy, 3);
+  });
+
+  it('converges at the same content time at 30 and 60 fps (frame-rate independent)', () => {
+    const at30 = runLoop(timeSeries(1000 / 30, 4000), () => true, telemetry);
+    const at60 = runLoop(timeSeries(1000 / 60, 4000), () => true, telemetry);
+    // 4000 ms is a sample of both series (index 120 and 240).
+    const f30 = at30[at30.length - 1].target.focus;
+    const f60 = at60[at60.length - 1].target.focus;
+    expect(Math.hypot(f30.cx - f60.cx, f30.cy - f60.cy)).toBeLessThan(0.005);
+  });
+
+  it('snaps to the raw cursor focus when the preview is not playing, and export never snaps', () => {
+    const times = timeSeries(1000 / 60, 3400);
+    const paused = runLoop(times, (t) => t < 3300, telemetry);
+    const last = times.length - 1;
+    const raw = resolveZoomCameraTarget(autoRegions, times[last], geometry, { cursorTelemetry: telemetry });
+    expect(paused[last].target.focus).toEqual(raw.focus);
+    expect(paused[last].applied).toEqual(raw.transform);
+    const exported = runLoop(times, () => true, telemetry);
+    expect(exported[last].target.focus.cx).toBeLessThan(raw.focus.cx);
+  });
+
+  it('behaves as a manual region without telemetry, and resets the smoothed focus on a manual region', () => {
+    const times = timeSeries(1000 / 60, 9000);
+    const state = createZoomCameraState();
+    for (const t of times) {
+      const step = stepZoomCamera(state, autoRegions, t, geometry, { animating: true });
+      if (t > 2500 && t < 5000) {
+        expect(step.target.focus).toEqual(resolveZoomCameraTarget(autoRegions, t, geometry).focus);
+      }
+    }
+    expect(state.smoothedAutoFocus).toBeNull();
   });
 });
 
