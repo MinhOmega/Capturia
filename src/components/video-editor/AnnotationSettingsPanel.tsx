@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Trash2, Type, Image as ImageIcon, Upload, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, ChevronDown, Info } from "lucide-react";
+import { Copy, Trash2, Type, Image as ImageIcon, Upload, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, ChevronDown, Info } from "lucide-react";
 import { toast } from "sonner";
 import Block from "@uiw/react-color-block";
 import type { AnnotationRegion, AnnotationType, ArrowDirection, FigureData } from "./types";
@@ -22,6 +22,7 @@ interface AnnotationSettingsPanelProps {
   onTypeChange: (type: AnnotationType) => void;
   onStyleChange: (style: Partial<AnnotationRegion["style"]>) => void;
   onFigureDataChange?: (figureData: FigureData) => void;
+  onDuplicate?: () => void;
   onDelete: () => void;
 }
 
@@ -44,6 +45,7 @@ export function AnnotationSettingsPanel({
   onTypeChange,
   onStyleChange,
   onFigureDataChange,
+  onDuplicate,
   onDelete,
 }: AnnotationSettingsPanelProps) {
   const { t } = useI18n();
@@ -396,10 +398,22 @@ export function AnnotationSettingsPanel({
           </TabsContent>
         </Tabs>
 
-        <Button onClick={onDelete} variant="destructive" size="sm" className="w-full gap-2 bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 transition-all mt-4">
-          <Trash2 className="w-4 h-4" />
-          {t("settings.annotation.delete")}
-        </Button>
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          <Button
+            onClick={() => onDuplicate?.()}
+            variant="outline"
+            size="sm"
+            disabled={!onDuplicate}
+            className="w-full gap-2 bg-white/5 text-slate-200 border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all"
+          >
+            <Copy className="w-4 h-4" />
+            {t("settings.annotation.duplicate")}
+          </Button>
+          <Button onClick={onDelete} variant="destructive" size="sm" className="w-full gap-2 bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 transition-all">
+            <Trash2 className="w-4 h-4" />
+            {t("settings.annotation.delete")}
+          </Button>
+        </div>
 
         <div className="mt-6 p-3 bg-white/5 rounded-lg border border-white/5">
           <div className="flex items-center gap-2 mb-2 text-slate-300">
