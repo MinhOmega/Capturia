@@ -1,4 +1,5 @@
 {
+	"zoomAutoFocus": "跟随光标",
 	"noVideoLoaded": "未加载视频",
 	"dragDropToStart": "拖入一个视频开始编辑",
 	"cannotPlaceZoom": "此处无法添加缩放",
