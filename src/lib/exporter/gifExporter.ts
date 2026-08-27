@@ -7,6 +7,7 @@ import type { ZoomRegion, CropRegion, TrimRegion, AnnotationRegion, VideoSegment
 import { effectiveToSourceMsWithSegments, getEffectiveDurationMsWithSegments } from '@/lib/trim/timeMapping';
 import type { SubtitleCue } from '@/lib/analysis/types';
 import type { CursorStyleConfig, CursorTrack } from '@/lib/cursor';
+import { getPlatform } from '@/utils/platformUtils';
 
 const GIF_WORKER_URL = new URL('gif.js/dist/gif.worker.js', import.meta.url).toString();
 
@@ -138,6 +139,8 @@ export class GifExporter {
       this.cleanup();
       this.cancelled = false;
 
+      const platform = await getPlatform();
+
       // Initialize decoder and load video
       this.decoder = new VideoFileDecoder();
       const videoInfo = await this.decoder.loadVideo(this.config.videoUrl);
@@ -164,6 +167,7 @@ export class GifExporter {
         previewHeight: this.config.previewHeight,
         cursorTrack: this.config.cursorTrack,
         cursorStyle: this.config.cursorStyle,
+        platform,
       });
       await this.renderer.initialize();
 
