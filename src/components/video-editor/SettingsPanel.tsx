@@ -6,10 +6,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import ColorPicker from '@/components/ui/color-picker';
-import { Trash2, Download, Crop, X, Bug, Upload, Star, Film, Image, Sparkles, Palette, Captions, Scissors, ScanSearch, AudioWaveform, WandSparkles } from "lucide-react";
+import { Trash2, Download, Crop, X, Bug, Upload, Star, Film, Image, Sparkles, Palette, Captions, Scissors, ScanSearch, AudioWaveform, WandSparkles, Info, MousePointer2 } from "lucide-react";
 import { toast } from "sonner";
 import * as SliderPrimitive from "@radix-ui/react-slider";
-import type { ZoomDepth, ZoomFocus, CropRegion, AnnotationRegion, AnnotationType, FigureData } from "./types";
+import type { ZoomDepth, ZoomFocus, ZoomFocusMode, CropRegion, AnnotationRegion, AnnotationType, FigureData } from "./types";
 import { MAX_ZOOM_SCALE, MIN_ZOOM_SCALE, ZOOM_DEPTH_SCALES } from "./types";
 import { getFocusBoundsForScale } from "./videoPlayback/focusUtils";
 import { CropControl } from "./CropControl";
@@ -28,6 +28,7 @@ import { BACKGROUND_GRADIENT_PRESETS } from "./backgroundPresets";
 import { DEFAULT_WALLPAPER, isSameBuiltInWallpaper, resolveImageWallpaperUrl, WALLPAPER_PATHS } from "@/lib/wallpaper";
 
 const GRADIENTS = BACKGROUND_GRADIENT_PRESETS;
+const ZOOM_FOCUS_MODES: readonly ZoomFocusMode[] = ['manual', 'auto'];
 
 interface SettingsPanelProps {
   selected: string;
@@ -45,6 +46,12 @@ interface SettingsPanelProps {
   onZoomFocusCoordinateChange?: (focus: ZoomFocus) => void;
   /** Blur / Enter on an X/Y input: the typed value commits as one history entry. */
   onZoomFocusCoordinateCommit?: () => void;
+  /** Focus mode of the selected zoom ('auto' = camera follows the recorded cursor). */
+  selectedZoomFocusMode?: ZoomFocusMode | null;
+  onZoomFocusModeChange?: (mode: ZoomFocusMode) => void;
+  /** Global "Auto-Focus all" toggle: every zoom follows the cursor; the per-zoom control is locked. */
+  autoFocusAll?: boolean;
+  onToggleAutoFocusAll?: (enabled: boolean) => void;
   /** Hold-to-preview: pointer/key down shows the zoomed camera at the playhead, up restores the unzoomed view. */
   onZoomPreviewStart?: () => void;
   onZoomPreviewEnd?: () => void;
@@ -208,6 +215,10 @@ export function SettingsPanel({
   selectedZoomFocus = null,
   onZoomFocusCoordinateChange,
   onZoomFocusCoordinateCommit,
+  selectedZoomFocusMode = null,
+  onZoomFocusModeChange,
+  autoFocusAll = false,
+  onToggleAutoFocusAll,
   onZoomPreviewStart,
   onZoomPreviewEnd,
   selectedZoomId,
@@ -540,6 +551,49 @@ export function SettingsPanel({
               </div>
             </div>
           )}
+          {zoomEnabled && hasCursorTrack && onZoomFocusModeChange && (
+            <div className="mt-3 space-y-1.5">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[11px] font-medium text-slate-400">{t("settings.zoomFocusMode")}</span>
+                <div
+                  role="radiogroup"
+                  aria-label={t("settings.zoomFocusMode")}
+                  className="grid w-32 grid-cols-2 gap-0.5 rounded-lg border border-white/[0.06] bg-white/[0.035] p-0.5"
+                >
+                  {ZOOM_FOCUS_MODES.map((mode) => {
+                    const isActive = (selectedZoomFocusMode ?? 'manual') === mode;
+                    const label = mode === 'auto' ? t("settings.zoomFocusModeAuto") : t("settings.zoomFocusModeManual");
+                    return (
+                      <Button
+                        key={mode}
+                        type="button"
+                        role="radio"
+                        aria-checked={isActive}
+                        disabled={autoFocusAll}
+                        title={mode === 'auto' ? t("settings.zoomFocusModeAutoDescription") : undefined}
+                        onClick={() => !autoFocusAll && onZoomFocusModeChange(mode)}
+                        className={cn(
+                          "h-6 w-full rounded-md border px-1 text-center transition-all duration-150 ease-out",
+                          isActive
+                            ? "border-[#34B27B]/50 bg-[#34B27B] text-white hover:bg-[#34B27B]"
+                            : "border-transparent bg-transparent text-slate-400 hover:bg-white/[0.06] hover:text-slate-200",
+                          autoFocusAll ? "cursor-not-allowed opacity-50" : "cursor-pointer",
+                        )}
+                      >
+                        <span className="text-[10px] font-semibold">{label}</span>
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
+              {autoFocusAll && (
+                <div className="flex items-start gap-1 text-[10px] leading-snug text-slate-500">
+                  <Info size={11} className="mt-px shrink-0" />
+                  <span>{t("settings.zoomFocusModeLockedDisclaimer")}</span>
+                </div>
+              )}
+            </div>
+          )}
           {zoomEnabled && onZoomPreviewStart && onZoomPreviewEnd && (
             <Button
               type="button"
@@ -568,7 +622,7 @@ export function SettingsPanel({
               {t("settings.zoomPreviewHold")}
             </Button>
           )}
-          {zoomEnabled && selectedZoomFocus && onZoomFocusCoordinateChange && (() => {
+          {zoomEnabled && selectedZoomFocus && onZoomFocusCoordinateChange && selectedZoomFocusMode !== 'auto' && (() => {
             // 0-100 % spans the focus range allowed at the effective scale, so the
             // typed value always lands on a reachable position.
             const bounds = getFocusBoundsForScale(effectiveZoomScale);
@@ -633,6 +687,25 @@ export function SettingsPanel({
             <WandSparkles className="w-3 h-3" />
             {t("settings.autoEdit")}
           </Button>
+          {hasCursorTrack && onToggleAutoFocusAll && (
+            <Button
+              type="button"
+              onClick={() => onToggleAutoFocusAll(!autoFocusAll)}
+              variant="outline"
+              size="sm"
+              aria-pressed={autoFocusAll}
+              title={autoFocusAll ? t("settings.autoFocusAllOn") : t("settings.autoFocusAllOff")}
+              className={cn(
+                "mt-2 w-full gap-2 border transition-all h-8 text-xs disabled:opacity-50",
+                autoFocusAll
+                  ? "bg-[#34B27B]/15 text-[#34B27B] border-[#34B27B]/30 hover:bg-[#34B27B]/25 hover:border-[#34B27B]/40 hover:text-[#34B27B]"
+                  : "bg-white/5 text-slate-200 border-white/10 hover:bg-white/10 hover:border-white/20 hover:text-white",
+              )}
+            >
+              <MousePointer2 className="w-3 h-3" />
+              {t("settings.autoFocusAll")}
+            </Button>
+          )}
           <div className="mt-2 grid grid-cols-2 gap-2">
             <Button
               onClick={() => onGenerateSubtitles?.()}
