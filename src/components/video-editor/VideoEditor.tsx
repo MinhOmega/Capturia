@@ -36,7 +36,18 @@ import {
 } from "./types";
 import { DEFAULT_TIMELINE_SETTINGS } from "./editorDefaults";
 import { ANNOTATION_ID_PREFIX, maxIdNum } from "./idCounters";
-import { duplicateAnnotationRegion } from "@/lib/annotations/duplicate";
+import { findFreeGapAt } from "./regionPlacement";
+import {
+  buildPastedAnnotation,
+  buildZoomRegion,
+  extractAnnotationAttributes,
+  extractSegmentSpeedAttributes,
+  extractZoomAttributes,
+  getCopiedRegion,
+  replaceAnnotationAttributes,
+  setCopiedRegion,
+} from "./regionClipboard";
+import { DUPLICATE_ANNOTATION_OFFSET_PERCENT, duplicateAnnotationRegion } from "@/lib/annotations/duplicate";
 import { DEFAULT_WALLPAPER, normalizeWallpaperValue } from "@/lib/wallpaper";
 import {
   VideoExporter,
@@ -58,7 +69,7 @@ import {
 import { getExportFolder, parentDirectoryOf, saveUserPreferences } from "@/lib/userPreferences";
 import { ASPECT_RATIOS, type AspectRatio, getAspectRatioValue } from "@/utils/aspectRatioUtils";
 import { useShortcuts } from "@/contexts/ShortcutsContext";
-import { matchesShortcut } from "@/lib/shortcuts";
+import { isTextEditingTarget, matchesShortcut } from "@/lib/shortcuts";
 import { useI18n } from "@/i18n";
 import { DEFAULT_CURSOR_STYLE, type CursorStyleConfig, type CursorTrack, type CursorTrackEvent } from "@/lib/cursor";
 import { cropRegionEquals, getCenteredAspectCropRegion, normalizeAspectCropRegion } from "@/lib/crop/aspectCrop";
@@ -1548,20 +1559,190 @@ export default function VideoEditor() {
     );
   }, []);
   
+  // Copy the selected region's attributes (zoom, segment speed or annotation)
+  // into the session clipboard. Not undoable, not persisted.
+  const handleCopySelected = useCallback(() => {
+    const zoom = selectedZoomId ? zoomRegions.find((r) => r.id === selectedZoomId) : undefined;
+    const segment = selectedSegmentId ? segments.find((s) => s.id === selectedSegmentId) : undefined;
+    const annotation = selectedAnnotationId
+      ? annotationRegions.find((r) => r.id === selectedAnnotationId)
+      : undefined;
+    const copied = zoom
+      ? extractZoomAttributes(zoom)
+      : segment
+        ? extractSegmentSpeedAttributes(segment)
+        : annotation
+          ? extractAnnotationAttributes(annotation)
+          : null;
+    if (!copied) {
+      toast.info(t('editor.regionClipboard.nothingToCopy'));
+      return;
+    }
+    setCopiedRegion(copied);
+    toast.success(
+      t('editor.regionClipboard.copied', { region: t(`editor.regionClipboard.kinds.${copied.kind}`) }),
+      { id: 'regionClipboard.copied' },
+    );
+  }, [selectedZoomId, zoomRegions, selectedSegmentId, segments, selectedAnnotationId, annotationRegions, t]);
+
+  // Paste onto the selected region of the same kind (attributes only, timing kept),
+  // otherwise create a new region at the playhead. Each paste is one setState call,
+  // so the history effect records exactly one undo entry.
+  const handlePaste = useCallback(() => {
+    const copied = getCopiedRegion();
+    if (!copied) {
+      toast.info(t('editor.regionClipboard.nothingToPaste'));
+      return;
+    }
+    const notifyPasted = () =>
+      toast.success(
+        t('editor.regionClipboard.pasted', { region: t(`editor.regionClipboard.kinds.${copied.kind}`) }),
+        { id: 'regionClipboard.pasted' },
+      );
+
+    if (copied.kind === 'zoom' && selectedZoomId) {
+      setZoomRegionsForActiveAspect((prev) =>
+        prev.map((r) => (r.id === selectedZoomId ? buildZoomRegion(r, copied) : r)),
+      );
+      notifyPasted();
+      return;
+    }
+    if (copied.kind === 'segmentSpeed') {
+      // Segments always tile the timeline, so there is no "new segment" paste:
+      // the speed goes onto the selected segment, else the one under the playhead.
+      const sourceMs = currentTime * 1000;
+      const targetId =
+        selectedSegmentId ??
+        segments.find((s) => !s.deleted && sourceMs >= s.startMs && sourceMs < s.endMs)?.id;
+      if (!targetId) {
+        toast.info(t('editor.regionClipboard.noSegmentTarget'));
+        return;
+      }
+      handleSegmentSpeedChange(targetId, copied.speed);
+      notifyPasted();
+      return;
+    }
+    if (copied.kind === 'annotation' && selectedAnnotationId) {
+      setAnnotationRegions((prev) =>
+        prev.map((r) => (r.id === selectedAnnotationId ? replaceAnnotationAttributes(r, copied) : r)),
+      );
+      notifyPasted();
+      return;
+    }
+
+    // Nothing matching selected: create a new region at the playhead. Placement is
+    // computed in effective (timeline) time like the timeline's own add handlers,
+    // then converted to source time for storage.
+    const totalMs = Math.round(effectiveDuration * 1000);
+    if (totalMs <= 0) return;
+    const startPos = Math.max(0, Math.min(Math.round(effectiveCurrentTime * 1000), totalMs));
+    const defaultDuration = Math.min(1000, totalMs);
+    const segs = segmentsRef.current;
+    const trims = normalizedTrimsRef.current;
+    const toSourceMs = (effectiveMs: number) =>
+      Math.round(
+        segs.length > 0
+          ? effectiveToSourceMsWithSegments(effectiveMs, segs)
+          : trims.length > 0
+            ? effectiveToSourceMs(effectiveMs, trims)
+            : effectiveMs,
+      );
+
+    if (copied.kind === 'zoom') {
+      const { ok, gapMs } = findFreeGapAt(effectiveZoomRegions, startPos, totalMs);
+      if (!ok) {
+        toast.error(t('timeline.cannotPlaceZoom'), { description: t('timeline.cannotPlaceZoomDesc') });
+        return;
+      }
+      const id = `zoom-${nextZoomIdRef.current++}`;
+      const region = buildZoomRegion(
+        {
+          id,
+          startMs: toSourceMs(startPos),
+          endMs: toSourceMs(startPos + Math.min(defaultDuration, gapMs)),
+        },
+        copied,
+      );
+      setZoomRegionsForActiveAspect((prev) => [...prev, region]);
+      handleSelectZoom(id);
+      notifyPasted();
+      return;
+    }
+
+    // Annotation: overlaps are allowed. The clone is nudged like Duplicate so it
+    // does not sit exactly on the original when both are on screen.
+    const id = `${ANNOTATION_ID_PREFIX}${nextAnnotationIdRef.current++}`;
+    const region = buildPastedAnnotation(
+      {
+        id,
+        startMs: toSourceMs(startPos),
+        endMs: toSourceMs(Math.min(startPos + defaultDuration, totalMs)),
+        zIndex: nextAnnotationZIndexRef.current++,
+      },
+      copied,
+      DUPLICATE_ANNOTATION_OFFSET_PERCENT,
+    );
+    setAnnotationRegions((prev) => [...prev, region]);
+    handleSelectAnnotation(id);
+    notifyPasted();
+  }, [
+    selectedZoomId,
+    selectedSegmentId,
+    selectedAnnotationId,
+    segments,
+    currentTime,
+    effectiveDuration,
+    effectiveCurrentTime,
+    effectiveZoomRegions,
+    setZoomRegionsForActiveAspect,
+    handleSegmentSpeedChange,
+    handleSelectZoom,
+    handleSelectAnnotation,
+    t,
+  ]);
+
+  // Refs for the keydown handler below (it has [] deps).
+  const handleCopySelectedRef = useRef(handleCopySelected);
+  handleCopySelectedRef.current = handleCopySelected;
+  const handlePasteRef = useRef(handlePaste);
+  handlePasteRef.current = handlePaste;
+  const hasRegionSelectedRef = useRef(false);
+  hasRegionSelectedRef.current = Boolean(selectedZoomId || selectedSegmentId || selectedAnnotationId);
+
   // Global Tab prevention
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Text fields keep their native key handling (typing, arrows, copy/paste).
+      const editingText = isTextEditingTarget(e.target);
+
       if (e.key === 'Tab') {
-        // Allow tab only in inputs/textareas
-        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        if (editingText) {
           return;
         }
         e.preventDefault();
       }
 
+      // Copy/paste region attributes. Only intercepted when there is a region to
+      // copy or something on the region clipboard; otherwise the browser handles
+      // native copy/paste of any page selection.
+      if (!editingText) {
+        if (matchesShortcut(e, keyShortcutsRef.current.copySelected, isMacRef.current)) {
+          if (hasRegionSelectedRef.current) {
+            e.preventDefault();
+            handleCopySelectedRef.current();
+            return;
+          }
+        } else if (matchesShortcut(e, keyShortcutsRef.current.paste, isMacRef.current)) {
+          if (getCopiedRegion()) {
+            e.preventDefault();
+            handlePasteRef.current();
+            return;
+          }
+        }
+      }
+
       if (matchesShortcut(e, keyShortcutsRef.current.playPause, isMacRef.current)) {
-        // Allow space only in inputs/textareas
-        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        if (editingText) {
           return;
         }
         e.preventDefault();
@@ -1580,7 +1761,7 @@ export default function VideoEditor() {
 
       // Arrow key navigation: seek forward/backward in effective time
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        if (editingText) {
           return;
         }
         e.preventDefault();
@@ -1597,7 +1778,7 @@ export default function VideoEditor() {
       const isSpeedUp = matchesShortcut(e, keyShortcutsRef.current.speedUp, isMacRef.current);
       const isSpeedDown = matchesShortcut(e, keyShortcutsRef.current.speedDown, isMacRef.current);
       if (isSpeedUp || isSpeedDown) {
-        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+        if (editingText) return;
         e.preventDefault();
         const speeds = [0.25, 0.5, 1, 1.5, 2, 3, 4, 8, 16, 32];
         const currentRate = previewPlaybackRateRef.current;
@@ -1617,7 +1798,7 @@ export default function VideoEditor() {
 
       // Timeline zoom in/out: = / -
       if (e.key === '=' || e.key === '-') {
-        if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+        if (editingText) return;
         if (e.ctrlKey || e.metaKey) return; // don't hijack browser zoom
         e.preventDefault();
         timelineZoomStepRef.current?.(e.key === '=' ? 1 : -1);

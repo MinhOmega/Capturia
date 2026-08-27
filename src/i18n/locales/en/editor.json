@@ -36,5 +36,17 @@
 	"hideSettings": "Hide settings",
 	"showSettings": "Show settings",
 	"hideTimeline": "Hide timeline",
-	"showTimeline": "Show timeline"
+	"showTimeline": "Show timeline",
+	"regionClipboard": {
+		"copied": "{{region}} attributes copied",
+		"pasted": "{{region}} attributes pasted",
+		"nothingToCopy": "Select a zoom, segment or annotation to copy its attributes",
+		"nothingToPaste": "No attributes copied yet",
+		"noSegmentTarget": "Select a segment to paste the speed onto",
+		"kinds": {
+			"zoom": "Zoom",
+			"segmentSpeed": "Segment speed",
+			"annotation": "Annotation"
+		}
+	}
 }
