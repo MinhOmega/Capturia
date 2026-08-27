@@ -1,9 +1,11 @@
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { WebmBase, WebmContainer, WebmFile, WebmString, WebmUint } from '@fix-webm-duration/parser'
+import { WebmContainer, WebmFile, WebmString, WebmUint } from '@fix-webm-duration/parser'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { patchWebmDurationOnDisk } from './webm-duration'
+
+type WebmContainerItem = NonNullable<WebmContainer['data']>[number]
 
 interface WebmElementMock {
   getSectionById: (id: number) => WebmElementMock
@@ -50,12 +52,15 @@ describe('webm-duration patching', () => {
     segment.data.push({ id: 0x549a966, idHex: '549a966', data: info })
 
     if (includeCluster) {
-      const cluster = new WebmBase('Cluster')
+      // Any WebmBase subclass works as an opaque byte holder; the container only
+      // reads `.source` when serialising (WebmBase's own constructor is protected).
+      const cluster = new WebmString('Cluster')
       // Cluster element: id 0x1f43b675 (stripped as 0xf43b675) + unknown-size VINT.
       const header = Buffer.from([0x1f, 0x43, 0xb6, 0x75, 0x01, 0x00])
       const body = Buffer.alloc(clusterSize, 0x42)
       cluster.setSource(new Uint8Array(Buffer.concat([header, body])))
-      segment.data.push({ id: 0xf43b675, idHex: 'f43b675', data: cluster })
+      // Cluster is not in the parser's known-section id union.
+      segment.data.push({ id: 0xf43b675, idHex: 'f43b675', data: cluster } as unknown as WebmContainerItem)
     }
 
     segment.updateByData()
@@ -65,7 +70,9 @@ describe('webm-duration patching', () => {
     file.data.push({ id: 0xa45dfa3, idHex: 'a45dfa3', data: ebml })
     file.data.push({ id: 0x8538067, idHex: '8538067', data: segment })
     file.updateByData()
-    return file.source
+    const source = file.source
+    if (!source) throw new Error('dummy WebM was not serialised')
+    return source
   }
 
   it('patches small WebM files under 2MB in memory', async () => {
