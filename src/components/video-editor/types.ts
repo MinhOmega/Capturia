@@ -25,10 +25,150 @@ export interface ZoomRegion {
    * (older saves / hand-placed regions) means 'manual'.
    */
   focusMode?: ZoomFocusMode;
+  /**
+   * 3D tilt preset applied while the region is active (see ROTATION_3D_PRESETS).
+   * Missing = flat. Ramps in/out with the region's zoom progress.
+   */
+  rotationPreset?: Rotation3DPreset;
 }
 
 export type ZoomRegionSource = 'auto' | 'manual';
 export type ZoomFocusMode = 'manual' | 'auto';
+
+// --- 3D iso / tilt presets -------------------------------------------------
+
+export interface Rotation3D {
+  rotationX: number;
+  rotationY: number;
+  rotationZ: number;
+}
+
+export const DEFAULT_ROTATION_3D: Rotation3D = {
+  rotationX: 0,
+  rotationY: 0,
+  rotationZ: 0,
+};
+
+export type Rotation3DPreset = 'iso' | 'left' | 'right';
+
+export const ROTATION_3D_PRESETS: Record<Rotation3DPreset, Rotation3D> = {
+  iso: { rotationX: -10, rotationY: -16, rotationZ: 0 },
+  left: { rotationX: 0, rotationY: -22, rotationZ: 0 },
+  right: { rotationX: 0, rotationY: 22, rotationZ: 0 },
+};
+
+export const ROTATION_3D_PRESET_ORDER: readonly Rotation3DPreset[] = ['iso', 'left', 'right'];
+
+/**
+ * Perspective distance in CSS px is this factor times min(viewport w, h). The
+ * same factor drives the preview (CSS `perspective`) and the export (WebGL
+ * fov), so the look matches at any canvas resolution.
+ */
+export const ROTATION_3D_PERSPECTIVE_FACTOR = 2.6;
+
+export function rotation3DPerspective(width: number, height: number): number {
+  return Math.min(width, height) * ROTATION_3D_PERSPECTIVE_FACTOR;
+}
+
+/** Saved-project normaliser: only the three known presets survive; anything else reads as flat. */
+export function normalizeRotationPreset(value: unknown): Rotation3DPreset | undefined {
+  return value === 'iso' || value === 'left' || value === 'right' ? value : undefined;
+}
+
+export function getRotation3D(region: Pick<ZoomRegion, 'rotationPreset'>): Rotation3D {
+  if (!region.rotationPreset) return DEFAULT_ROTATION_3D;
+  return ROTATION_3D_PRESETS[region.rotationPreset] ?? DEFAULT_ROTATION_3D;
+}
+
+export function isRotation3DIdentity(r: Rotation3D, eps = 0.01): boolean {
+  return Math.abs(r.rotationX) < eps && Math.abs(r.rotationY) < eps && Math.abs(r.rotationZ) < eps;
+}
+
+export function lerpRotation3D(a: Rotation3D, b: Rotation3D, t: number): Rotation3D {
+  return {
+    rotationX: a.rotationX + (b.rotationX - a.rotationX) * t,
+    rotationY: a.rotationY + (b.rotationY - a.rotationY) * t,
+    rotationZ: a.rotationZ + (b.rotationZ - a.rotationZ) * t,
+  };
+}
+
+/**
+ * Max uniform scale that, with `rot` and a perspective of `perspective` CSS px,
+ * keeps the projected bounding box of a width x height element inside its
+ * original rectangle. Returns 1 when no scaling is needed. Projects each
+ * rotated corner (x' = x * P / (P - z)) and returns the limiting half-extent
+ * ratio so the tilted recording stays inside the zoom window.
+ */
+export function computeRotation3DContainScale(
+  rot: Rotation3D,
+  width: number,
+  height: number,
+  perspective: number,
+): number {
+  const a = (rot.rotationX * Math.PI) / 180;
+  const b = (rot.rotationY * Math.PI) / 180;
+  const g = (rot.rotationZ * Math.PI) / 180;
+  const ca = Math.cos(a);
+  const sa = Math.sin(a);
+  const cb = Math.cos(b);
+  const sb = Math.sin(b);
+  const cg = Math.cos(g);
+  const sg = Math.sin(g);
+  const halfW = width / 2;
+  const halfH = height / 2;
+  const corners: Array<[number, number]> = [
+    [-halfW, -halfH],
+    [halfW, -halfH],
+    [halfW, halfH],
+    [-halfW, halfH],
+  ];
+
+  let maxAbsX = 0;
+  let maxAbsY = 0;
+
+  for (const [x0, y0] of corners) {
+    // CSS "rotateX rotateY rotateZ" applies right-to-left: Z first, then Y, then X.
+    let px = x0;
+    let py = y0;
+    let pz = 0;
+
+    // rotateZ
+    const zx = px * cg - py * sg;
+    const zy = px * sg + py * cg;
+    px = zx;
+    py = zy;
+
+    // rotateY
+    const yx = px * cb + pz * sb;
+    const yz = -px * sb + pz * cb;
+    px = yx;
+    pz = yz;
+
+    // rotateX
+    const xy = py * ca - pz * sa;
+    const xz = py * sa + pz * ca;
+    py = xy;
+    pz = xz;
+
+    // Viewer at (0, 0, P) looking toward -z; a point at z = pz scales by P / (P - pz).
+    // perspective <= 0 means orthographic.
+    if (perspective > 0) {
+      const denom = perspective - pz;
+      if (denom <= 0) return 1; // pathological, skip scaling rather than crash
+      const f = perspective / denom;
+      px *= f;
+      py *= f;
+    }
+
+    if (Math.abs(px) > maxAbsX) maxAbsX = Math.abs(px);
+    if (Math.abs(py) > maxAbsY) maxAbsY = Math.abs(py);
+  }
+
+  if (maxAbsX === 0 || maxAbsY === 0) return 1;
+  const sx = halfW / maxAbsX;
+  const sy = halfH / maxAbsY;
+  return Math.min(sx, sy, 1);
+}
 
 /** Effective focus mode of a region (missing -> manual). */
 export function getZoomFocusMode(region: Pick<ZoomRegion, 'focusMode'>): ZoomFocusMode {

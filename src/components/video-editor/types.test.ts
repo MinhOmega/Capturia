@@ -10,6 +10,16 @@ import {
   type ZoomRegion,
   DEFAULT_ZOOM_MOTION_BLUR,
   resolveProjectMotionBlurAmount,
+  computeRotation3DContainScale,
+  DEFAULT_ROTATION_3D,
+  getRotation3D,
+  isRotation3DIdentity,
+  lerpRotation3D,
+  normalizeRotationPreset,
+  ROTATION_3D_PRESET_ORDER,
+  ROTATION_3D_PRESETS,
+  rotation3DPerspective,
+  type Rotation3DPreset,
 } from './types';
 
 function zoomRegion(overrides: Partial<ZoomRegion> = {}): ZoomRegion {
@@ -110,5 +120,94 @@ describe('resolveProjectMotionBlurAmount (schema migration)', () => {
       DEFAULT_ZOOM_MOTION_BLUR,
     );
     expect(resolveProjectMotionBlurAmount({})).toBe(0);
+  });
+});
+
+describe('3D rotation presets', () => {
+  it('resolves a region preset to its angles and missing / unknown presets to identity', () => {
+    expect(getRotation3D(zoomRegion({ rotationPreset: 'iso' }))).toEqual(ROTATION_3D_PRESETS.iso);
+    expect(getRotation3D(zoomRegion({ rotationPreset: 'left' }))).toEqual({ rotationX: 0, rotationY: -22, rotationZ: 0 });
+    expect(getRotation3D(zoomRegion({ rotationPreset: 'right' }))).toEqual({ rotationX: 0, rotationY: 22, rotationZ: 0 });
+    expect(getRotation3D(zoomRegion())).toBe(DEFAULT_ROTATION_3D);
+    expect(getRotation3D({ rotationPreset: 'tilt' as unknown as Rotation3DPreset })).toBe(DEFAULT_ROTATION_3D);
+    expect(ROTATION_3D_PRESET_ORDER).toEqual(['iso', 'left', 'right']);
+  });
+
+  it('normalizeRotationPreset keeps only the three known strings', () => {
+    expect(normalizeRotationPreset('iso')).toBe('iso');
+    expect(normalizeRotationPreset('left')).toBe('left');
+    expect(normalizeRotationPreset('right')).toBe('right');
+    expect(normalizeRotationPreset('Iso')).toBeUndefined();
+    expect(normalizeRotationPreset('none')).toBeUndefined();
+    expect(normalizeRotationPreset(1)).toBeUndefined();
+    expect(normalizeRotationPreset(null)).toBeUndefined();
+    expect(normalizeRotationPreset(undefined)).toBeUndefined();
+  });
+
+  it('isRotation3DIdentity tolerates sub-epsilon noise only', () => {
+    expect(isRotation3DIdentity(DEFAULT_ROTATION_3D)).toBe(true);
+    expect(isRotation3DIdentity({ rotationX: 0.005, rotationY: -0.005, rotationZ: 0 })).toBe(true);
+    expect(isRotation3DIdentity({ rotationX: 0, rotationY: 0.02, rotationZ: 0 })).toBe(false);
+    expect(isRotation3DIdentity(ROTATION_3D_PRESETS.iso)).toBe(false);
+  });
+
+  it('lerpRotation3D interpolates every axis linearly', () => {
+    const mid = lerpRotation3D(DEFAULT_ROTATION_3D, ROTATION_3D_PRESETS.iso, 0.5);
+    expect(mid).toEqual({ rotationX: -5, rotationY: -8, rotationZ: 0 });
+    expect(lerpRotation3D(DEFAULT_ROTATION_3D, ROTATION_3D_PRESETS.iso, 0)).toEqual(DEFAULT_ROTATION_3D);
+    expect(lerpRotation3D(DEFAULT_ROTATION_3D, ROTATION_3D_PRESETS.iso, 1)).toEqual(ROTATION_3D_PRESETS.iso);
+    const between = lerpRotation3D(ROTATION_3D_PRESETS.left, ROTATION_3D_PRESETS.right, 0.25);
+    expect(between.rotationY).toBeCloseTo(-11, 6);
+  });
+
+  it('rotation3DPerspective is 2.6x the shorter viewport side', () => {
+    expect(rotation3DPerspective(1920, 1080)).toBeCloseTo(1080 * 2.6, 6);
+    expect(rotation3DPerspective(600, 800)).toBeCloseTo(600 * 2.6, 6);
+  });
+
+  describe('computeRotation3DContainScale', () => {
+    const W = 1920;
+    const H = 1080;
+    const P = rotation3DPerspective(W, H);
+
+    it('returns 1 for the identity rotation', () => {
+      expect(computeRotation3DContainScale(DEFAULT_ROTATION_3D, W, H, P)).toBe(1);
+    });
+
+    it('never scales up and shrinks the tilted presets so the projected box fits its rect', () => {
+      for (const preset of ROTATION_3D_PRESET_ORDER) {
+        const s = computeRotation3DContainScale(ROTATION_3D_PRESETS[preset], W, H, P);
+        expect(s).toBeGreaterThan(0.8);
+        expect(s).toBeLessThan(1);
+      }
+    });
+
+    it('matches the projected-corner math for a pure Y rotation', () => {
+      // rotateY(theta): x' = x cos(theta), z' = -x sin(theta); a corner with z' > 0 is
+      // closer to the viewer and scales by P / (P - z'). That corner is the limiting one.
+      const theta = (22 * Math.PI) / 180;
+      const halfW = W / 2;
+      const halfH = H / 2;
+      const nearZ = halfW * Math.sin(theta);
+      const f = P / (P - nearZ);
+      const maxX = halfW * Math.cos(theta) * f;
+      const maxY = halfH * f;
+      const expected = Math.min(halfW / maxX, halfH / maxY, 1);
+      expect(computeRotation3DContainScale(ROTATION_3D_PRESETS.right, W, H, P)).toBeCloseTo(expected, 10);
+      // The mirrored preset projects the same extents.
+      expect(computeRotation3DContainScale(ROTATION_3D_PRESETS.left, W, H, P)).toBeCloseTo(expected, 10);
+    });
+
+    it('is orthographic when perspective is 0: rotateY always fits, rotateZ needs shrinking', () => {
+      const theta = (22 * Math.PI) / 180;
+      expect(computeRotation3DContainScale(ROTATION_3D_PRESETS.right, W, H, 0)).toBeCloseTo(1, 10);
+      const z = computeRotation3DContainScale({ rotationX: 0, rotationY: 0, rotationZ: 22 }, W, H, 0);
+      const maxY = (W / 2) * Math.sin(theta) + (H / 2) * Math.cos(theta);
+      expect(z).toBeCloseTo(Math.min(1, H / 2 / maxY), 10);
+    });
+
+    it('returns 1 instead of exploding when a corner reaches the eye plane', () => {
+      expect(computeRotation3DContainScale({ rotationX: 0, rotationY: 89, rotationZ: 0 }, W, H, 10)).toBe(1);
+    });
   });
 });

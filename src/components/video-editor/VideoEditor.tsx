@@ -20,6 +20,7 @@ import {
   ZOOM_DEPTH_SCALES,
   clampFocusToDepth,
   getZoomFocusMode,
+  normalizeRotationPreset,
   DEFAULT_CROP_REGION,
   DEFAULT_FIGURE_DATA,
   createTextAnnotationRegion,
@@ -796,19 +797,29 @@ export default function VideoEditor() {
                   // Remove exact content duplicates (same id + startMs + endMs + depth)
                   const contentKeys = new Set<string>();
                   const deduped = regions.filter(r => {
-                    const key = `${r.id}|${r.startMs}|${r.endMs}|${r.depth}|${r.customScale ?? ''}|${r.focus?.cx}|${r.focus?.cy}|${r.focusMode ?? ''}`;
+                    const key = `${r.id}|${r.startMs}|${r.endMs}|${r.depth}|${r.customScale ?? ''}|${r.focus?.cx}|${r.focus?.cy}|${r.focusMode ?? ''}|${r.rotationPreset ?? ''}`;
                     if (contentKeys.has(key)) return false;
                     contentKeys.add(key);
                     return true;
                   });
-                  // Re-ID any remaining ID collisions; drop unknown focusMode
-                  // values (older / hand-edited saves) so they read as manual.
+                  // Re-ID any remaining ID collisions; drop unknown focusMode /
+                  // rotationPreset values (older / hand-edited saves) so they
+                  // read as manual / flat.
                   let maxZ = maxIdNum(deduped, 'zoom-');
                   const seenIds = new Set<string>();
                   const fixed = deduped.map(r => {
                     const focusMode: ZoomFocusMode | undefined =
                       r.focusMode === 'auto' || r.focusMode === 'manual' ? r.focusMode : undefined;
-                    const normalized = focusMode === r.focusMode ? r : { ...r, focusMode };
+                    const rotationPreset = normalizeRotationPreset(r.rotationPreset);
+                    let normalized = r;
+                    if (focusMode !== r.focusMode || rotationPreset !== r.rotationPreset) {
+                      const { focusMode: _fm, rotationPreset: _rp, ...rest } = r;
+                      normalized = {
+                        ...rest,
+                        ...(focusMode ? { focusMode } : {}),
+                        ...(rotationPreset ? { rotationPreset } : {}),
+                      };
+                    }
                     if (seenIds.has(normalized.id)) {
                       return { ...normalized, id: `zoom-${++maxZ}` };
                     }
