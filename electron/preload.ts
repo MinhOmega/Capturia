@@ -144,6 +144,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('stop-recording-from-tray', listener)
     return () => ipcRenderer.removeListener('stop-recording-from-tray', listener)
   },
+  // Source selection events (W3-a): `select-source` pushes the new source to the
+  // HUD; the selector window's `closed` event fires whether or not one was picked.
+  onSelectedSourceChanged: (callback: (source: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, source: unknown) => callback(source)
+    ipcRenderer.on('selected-source-changed', listener)
+    return () => ipcRenderer.removeListener('selected-source-changed', listener)
+  },
+  onSourceSelectorClosed: (callback: () => void) => {
+    const listener = () => callback()
+    ipcRenderer.on('source-selector-closed', listener)
+    return () => ipcRenderer.removeListener('source-selector-closed', listener)
+  },
   setStopRecordingShortcut: (accelerator: string) => {
     return ipcRenderer.invoke('set-stop-recording-shortcut', accelerator)
   },

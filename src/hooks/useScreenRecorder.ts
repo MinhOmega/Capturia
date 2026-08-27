@@ -7,8 +7,10 @@ import {
   beginStopTransition,
   canPauseRecording,
   canRequestDiscard,
+  canRequestRestart,
   planNativeStopSideEffects,
   resolveStopRoute,
+  shouldStartAfterRestart,
   type RecordingPhase,
   type RecordingTransitionState,
 } from "./recordingPhase";
@@ -25,6 +27,8 @@ type UseScreenRecorderReturn = {
   pauseRecording: () => void;
   resumeRecording: () => void;
   discardRecording: () => void;
+  /** Discard the active session and start a fresh one with the same source, skipping the HUD countdown. */
+  restartRecording: () => void;
   startTimeRef: React.RefObject<number>;
   cumulativePauseMsRef: React.RefObject<number>;
   pauseStartTimeRef: React.RefObject<number>;
@@ -178,6 +182,9 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
   const cumulativePauseMs = useRef(0);
   const pauseStartTime = useRef(0);
   const discardFlag = useRef(false);
+  // A restart is a discard followed by a start once the hook is idle again; the ref
+  // survives the stop/idle re-renders and blocks a second restart until then.
+  const restartPending = useRef(false);
   const nativeRecordingMetadata = useRef<{
     frameRate: number;
     width: number;
@@ -1426,6 +1433,41 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
     transitionInFlight.current = false;
   };
 
+  /**
+   * Restart = discard + start. Both recorder paths (MediaRecorder drain, native
+   * `stopNativeRecording({ discard: true })`) end in the `idle` phase with the
+   * transition flag cleared; the effect below picks the start up from there so it
+   * never runs against the stale `recordingState` closure of this call. The start
+   * re-reads `getSelectedSource`, so the same source is reused, and it bypasses the
+   * HUD countdown on purpose (the user already recorded once with it).
+   */
+  const restartRecording = () => {
+    const current: RecordingTransitionState = {
+      phase: recordingState,
+      recording,
+      transitionInFlight: transitionInFlight.current,
+      discardRequested: discardFlag.current,
+    };
+    if (!canRequestRestart(current, { restartPending: restartPending.current })) return;
+    restartPending.current = true;
+    discardRecording();
+  };
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: startRecording is recreated every render; the effect must only fire on the phase transition back to idle.
+  useEffect(() => {
+    if (
+      !shouldStartAfterRestart({
+        phase: recordingState,
+        transitionInFlight: transitionInFlight.current,
+        restartPending: restartPending.current,
+      })
+    ) {
+      return;
+    }
+    restartPending.current = false;
+    void startRecording();
+  }, [recordingState]);
+
   const toggleRecording = () => {
     if (transitionInFlight.current) {
       return;
@@ -1453,6 +1495,7 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
     pauseRecording,
     resumeRecording,
     discardRecording,
+    restartRecording,
     startTimeRef: startTime,
     cumulativePauseMsRef: cumulativePauseMs,
     pauseStartTimeRef: pauseStartTime,

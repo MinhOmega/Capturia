@@ -40,6 +40,29 @@ export function canRequestDiscard(state: RecordingTransitionState): boolean {
   return canRequestStop(state);
 }
 
+/**
+ * Restart = discard the active session, then start again once the hook is idle.
+ * Only one restart may be pending at a time; otherwise it shares the discard guard.
+ */
+export function canRequestRestart(
+  state: RecordingTransitionState,
+  options: { restartPending: boolean },
+): boolean {
+  return !options.restartPending && canRequestDiscard(state);
+}
+
+/**
+ * A pending restart fires exactly once the discard has fully settled: the phase is
+ * back to `idle` and no transition is in flight. Both recorder paths end there.
+ */
+export function shouldStartAfterRestart(input: {
+  phase: RecordingPhase;
+  transitionInFlight: boolean;
+  restartPending: boolean;
+}): boolean {
+  return input.restartPending && input.phase === "idle" && !input.transitionInFlight;
+}
+
 /** Enter the `stopping` phase. Must only be applied when `canRequestStop` holds. */
 export function beginStopTransition(
   state: RecordingTransitionState,

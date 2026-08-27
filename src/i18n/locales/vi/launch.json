@@ -5,6 +5,7 @@
 	"pauseRecording": "Tạm dừng ghi hình",
 	"resumeRecording": "Tiếp tục ghi hình",
 	"discardRecording": "Hủy bản ghi",
+	"restartRecording": "Ghi lại từ đầu",
 	"open": "Mở",
 	"camera": "Máy ảnh",
 	"cameraEnabled": "Đã bật lớp phủ camera",
@@ -82,7 +83,12 @@
 		"openSystemSettings": "Mở Cài đặt hệ thống",
 		"openSystemSettingsFailed": "Không thể mở Cài đặt hệ thống.",
 		"checkPermissions": "Kiểm tra quyền",
-		"retry": "Thử lại"
+		"retry": "Thử lại",
+		"emptyTitle": "Không tìm thấy màn hình hoặc cửa sổ nào",
+		"emptyDescription": "Nếu bạn vừa cấp quyền Ghi màn hình, hãy tải lại bộ chọn này. Trên macOS có thể cần mở lại Capturia.",
+		"reload": "Tải lại",
+		"screensCount": "Màn hình ({{count}})",
+		"windowsCount": "Cửa sổ ({{count}})"
 	},
 	"permission": {
 		"loading": "Đang kiểm tra trạng thái quyền...",
