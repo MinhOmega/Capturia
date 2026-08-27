@@ -321,6 +321,7 @@ interface Window {
     ) => Promise<GlobalShortcutUpdateResult>
     getGlobalShortcuts: () => Promise<Partial<Record<GlobalShortcutActionName, string>>>
     appQuit: () => void
+    showAbout: () => Promise<void>
     onEditorMenuAction: (callback: (action: EditorMenuActionName) => void) => () => void
     onRequestSaveBeforeClose: (callback: () => void) => () => void
     saveBeforeCloseDone: () => void

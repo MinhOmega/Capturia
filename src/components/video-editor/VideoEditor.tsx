@@ -34,7 +34,16 @@ import {
   type FigureData,
   type ProjectState,
 } from "./types";
-import { DEFAULT_TIMELINE_SETTINGS } from "./editorDefaults";
+import {
+  DEFAULT_AUDIO_SETTINGS,
+  DEFAULT_EDITOR_APPEARANCE_SETTINGS,
+  DEFAULT_EDITOR_LAYOUT_SETTINGS,
+  DEFAULT_EXPORT_SETTINGS,
+  DEFAULT_GIF_SETTINGS,
+  DEFAULT_PLAYBACK_SETTINGS,
+  DEFAULT_TIMELINE_SETTINGS,
+} from "./editorDefaults";
+import { EditorMenuBar } from "./EditorMenuBar";
 import { ANNOTATION_ID_PREFIX, maxIdNum } from "./idCounters";
 import { findFreeGapAt } from "./regionPlacement";
 import {
@@ -66,11 +75,13 @@ import {
   buildSaveDiagnosticMessage,
   type ExportDiagnosticLabels,
 } from "@/lib/exporter";
-import { getExportFolder, parentDirectoryOf, saveUserPreferences } from "@/lib/userPreferences";
+import { getExportFolder, loadUserPreferences, parentDirectoryOf, saveUserPreferences } from "@/lib/userPreferences";
 import { ASPECT_RATIOS, type AspectRatio, getAspectRatioValue } from "@/utils/aspectRatioUtils";
 import { useShortcuts } from "@/contexts/ShortcutsContext";
 import { isArrowKeyOwningTarget, isTextEditingTarget, matchesShortcut } from "@/lib/shortcuts";
 import { computeFrameStepTime, FRAME_DURATION_SEC } from "@/lib/frameStep";
+import { GITHUB_ISSUES_URL } from "@/lib/supportLinks";
+import { reportUserActionError } from "@/lib/userErrorFeedback";
 import { useI18n } from "@/i18n";
 import { DEFAULT_CURSOR_STYLE, type CursorStyleConfig, type CursorTrack, type CursorTrackEvent } from "@/lib/cursor";
 import { cropRegionEquals, getCenteredAspectCropRegion, normalizeAspectCropRegion } from "@/lib/crop/aspectCrop";
@@ -343,11 +354,11 @@ export default function VideoEditor() {
   // Canonical form ("/wallpapers/wallpaperN.jpg", "#hex", gradient or data:
   // URI); resolved to a loadable URL only at render/export time.
   const [wallpaper, setWallpaper] = useState<string>(DEFAULT_WALLPAPER);
-  const [shadowIntensity, setShadowIntensity] = useState(0);
-  const [showBlur, setShowBlur] = useState(false);
-  const [motionBlurEnabled, setMotionBlurEnabled] = useState(false);
-  const [seekStepSeconds, setSeekStepSeconds] = useState(5);
-  const [previewPlaybackRate, setPreviewPlaybackRate] = useState(1);
+  const [shadowIntensity, setShadowIntensity] = useState(DEFAULT_EDITOR_APPEARANCE_SETTINGS.shadowIntensity);
+  const [showBlur, setShowBlur] = useState(DEFAULT_EDITOR_APPEARANCE_SETTINGS.showBlur);
+  const [motionBlurEnabled, setMotionBlurEnabled] = useState(DEFAULT_EDITOR_APPEARANCE_SETTINGS.motionBlurEnabled);
+  const [seekStepSeconds, setSeekStepSeconds] = useState(DEFAULT_PLAYBACK_SETTINGS.seekStepSeconds);
+  const [previewPlaybackRate, setPreviewPlaybackRate] = useState(DEFAULT_PLAYBACK_SETTINGS.previewPlaybackRate);
   // View setting (not edit state): persisted with the project, never undone
   const [showTimelineWaveform, setShowTimelineWaveform] = useState(DEFAULT_TIMELINE_SETTINGS.showWaveform);
   const [timelineZoomInfo, setTimelineZoomInfo] = useState<{ visibleMs: number; totalMs: number; minVisibleMs: number } | null>(null);
@@ -358,8 +369,8 @@ export default function VideoEditor() {
   const previewContainerRef = useRef<HTMLDivElement>(null);
   const timelinePanelRef = useRef<ImperativePanelHandle>(null);
   const fullscreenHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [borderRadius, setBorderRadius] = useState(0);
-  const [padding, setPadding] = useState(50);
+  const [borderRadius, setBorderRadius] = useState(DEFAULT_EDITOR_APPEARANCE_SETTINGS.borderRadius);
+  const [padding, setPadding] = useState(DEFAULT_EDITOR_LAYOUT_SETTINGS.padding);
   const [sourceVideoDimensions, setSourceVideoDimensions] = useState<{ width: number; height: number } | null>(null);
   const [cropRegionsByAspect, setCropRegionsByAspect] = useState<Partial<Record<AspectRatio, CropRegion>>>({
     '16:9': DEFAULT_CROP_REGION,
@@ -412,25 +423,29 @@ export default function VideoEditor() {
     }
   }, [timelinePanelVisible]);
 
-  const [aspectRatio, setAspectRatio] = useState<AspectRatio>('16:9');
-  const [exportAspectRatios, setExportAspectRatios] = useState<AspectRatio[]>(['16:9']);
+  const [aspectRatio, setAspectRatio] = useState<AspectRatio>(DEFAULT_EDITOR_LAYOUT_SETTINGS.aspectRatio);
+  const [exportAspectRatios, setExportAspectRatios] = useState<AspectRatio[]>([DEFAULT_EDITOR_LAYOUT_SETTINGS.aspectRatio]);
   const [activeBatchExport, setActiveBatchExport] = useState<{
     current: number;
     total: number;
     aspectRatio: AspectRatio;
   } | null>(null);
-  const [exportQuality, setExportQuality] = useState<ExportQuality>('source');
-  const [exportFormat, setExportFormat] = useState<ExportFormat>('mp4');
-  const [gifFrameRate, setGifFrameRate] = useState<GifFrameRate>(15);
-  const [gifLoop, setGifLoop] = useState(true);
-  const [gifSizePreset, setGifSizePreset] = useState<GifSizePreset>('medium');
+  const [exportQuality, setExportQuality] = useState<ExportQuality>(DEFAULT_EXPORT_SETTINGS.quality);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>(DEFAULT_EXPORT_SETTINGS.format);
+  const [gifFrameRate, setGifFrameRate] = useState<GifFrameRate>(DEFAULT_GIF_SETTINGS.frameRate);
+  const [gifLoop, setGifLoop] = useState(DEFAULT_GIF_SETTINGS.loop);
+  const [gifSizePreset, setGifSizePreset] = useState<GifSizePreset>(DEFAULT_GIF_SETTINGS.sizePreset);
   const [sourceFrameRate, setSourceFrameRate] = useState<number | undefined>(undefined);
   const [sourceHasAudio, setSourceHasAudio] = useState(true);
-  const [audioEnabled, setAudioEnabled] = useState(true);
-  const [audioGain, setAudioGain] = useState(1);
-  const [audioNormalizeLoudness, setAudioNormalizeLoudness] = useState(true);
-  const [audioTargetLufs, setAudioTargetLufs] = useState(-16);
-  const [audioLimiterDb, setAudioLimiterDb] = useState(-1);
+  const [audioEnabled, setAudioEnabled] = useState(DEFAULT_AUDIO_SETTINGS.enabled);
+  const [audioGain, setAudioGain] = useState(DEFAULT_AUDIO_SETTINGS.gain);
+  const [audioNormalizeLoudness, setAudioNormalizeLoudness] = useState(DEFAULT_AUDIO_SETTINGS.normalizeLoudness);
+  const [audioTargetLufs, setAudioTargetLufs] = useState(DEFAULT_AUDIO_SETTINGS.targetLufs);
+  const [audioLimiterDb, setAudioLimiterDb] = useState(DEFAULT_AUDIO_SETTINGS.limiterDb);
+  // Cross-session preferences (P5): applied to NEW projects only, saved back on change.
+  const [prefsHydrated, setPrefsHydrated] = useState(false);
+  // Mirrors the undo/redo stacks so the menu can enable/disable its items (P9a).
+  const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false });
   const [cursorTrack, setCursorTrack] = useState<CursorTrack | null>(null);
   const [cursorStyle, setCursorStyle] = useState<CursorStyleConfig>(DEFAULT_CURSOR_STYLE);
   const [subtitleCues, setSubtitleCues] = useState<SubtitleCue[]>([]);
@@ -441,7 +456,7 @@ export default function VideoEditor() {
   const [cursorAnalysisProgress, setCursorAnalysisProgress] = useState<number | null>(null);
   const cursorAnalyzerRef = useRef<VideoMouseAnalyzer | null>(null);
 
-  const { shortcuts: keyShortcuts, isMac: isMacPlatform } = useShortcuts();
+  const { shortcuts: keyShortcuts, isMac: isMacPlatform, openConfig: openShortcutsConfig } = useShortcuts();
   const keyShortcutsRef = useRef(keyShortcuts);
   keyShortcutsRef.current = keyShortcuts;
   const isMacRef = useRef(isMacPlatform);
@@ -838,6 +853,17 @@ export default function VideoEditor() {
                   }
                 });
               }
+            } else {
+              // New project (no sidecar yet): seed the editor from the
+              // cross-session preferences. A restored project always wins.
+              const prefs = loadUserPreferences();
+              setPadding(prefs.padding);
+              setAspectRatio(prefs.aspectRatio);
+              setExportAspectRatios([prefs.aspectRatio]);
+              setExportQuality(prefs.exportQuality);
+              setExportFormat(prefs.exportFormat);
+              setSeekStepSeconds(prefs.seekStepSeconds);
+              setPreviewPlaybackRate(prefs.previewPlaybackRate);
             }
           } catch {
             // Corrupt or missing project state — ignore
@@ -850,10 +876,17 @@ export default function VideoEditor() {
         setError(t("editor.loadVideoError", { message: String(err) }));
       } finally {
         setLoading(false);
+        setPrefsHydrated(true);
       }
     }
     loadVideo();
   }, [t]);
+
+  // Remember the user's last choices so the next new project starts from them.
+  useEffect(() => {
+    if (!prefsHydrated) return;
+    saveUserPreferences({ padding, aspectRatio, exportQuality, exportFormat, seekStepSeconds, previewPlaybackRate });
+  }, [prefsHydrated, padding, aspectRatio, exportQuality, exportFormat, seekStepSeconds, previewPlaybackRate]);
 
   // Debounced auto-save project state (2s delay)
   // Use ref for currentTime to avoid re-triggering on every playback frame
@@ -954,6 +987,10 @@ export default function VideoEditor() {
       historyBatchRef.current = { active: false, pushed: false };
     }, 0);
   }, []);
+  const syncHistoryState = useCallback(() => {
+    const next = { canUndo: undoStackRef.current.length > 0, canRedo: redoStackRef.current.length > 0 };
+    setHistoryState((prev) => (prev.canUndo === next.canUndo && prev.canRedo === next.canRedo ? prev : next));
+  }, []);
 
   // Track state changes and push to undo stack
   useEffect(() => {
@@ -980,9 +1017,10 @@ export default function VideoEditor() {
       if (undoStackRef.current.length > MAX_UNDO_HISTORY) undoStackRef.current.shift();
       redoStackRef.current = []; // New user action clears redo
       if (batch.active) batch.pushed = true;
+      syncHistoryState();
     }
     prevEditableRef.current = current;
-  }, [segments, zoomRegionsByAspect, annotationRegions, audioEditRegions]);
+  }, [segments, zoomRegionsByAspect, annotationRegions, audioEditRegions, syncHistoryState]);
 
   const handleUndo = useCallback(() => {
     if (undoStackRef.current.length === 0) return;
@@ -995,7 +1033,8 @@ export default function VideoEditor() {
     setZoomRegionsByAspect(snapshot.zoomRegionsByAspect);
     setAnnotationRegions(snapshot.annotationRegions);
     setAudioEditRegions(snapshot.audioEditRegions);
-  }, [segments, zoomRegionsByAspect, annotationRegions, audioEditRegions]);
+    syncHistoryState();
+  }, [segments, zoomRegionsByAspect, annotationRegions, audioEditRegions, syncHistoryState]);
 
   const handleRedo = useCallback(() => {
     if (redoStackRef.current.length === 0) return;
@@ -1008,7 +1047,8 @@ export default function VideoEditor() {
     setZoomRegionsByAspect(snapshot.zoomRegionsByAspect);
     setAnnotationRegions(snapshot.annotationRegions);
     setAudioEditRegions(snapshot.audioEditRegions);
-  }, [segments, zoomRegionsByAspect, annotationRegions, audioEditRegions]);
+    syncHistoryState();
+  }, [segments, zoomRegionsByAspect, annotationRegions, audioEditRegions, syncHistoryState]);
 
   // Reset projectRestoredRef after initial effects have processed.
   // This is a one-shot flag: true during first render cycle (so wallpaper init
@@ -1829,6 +1869,11 @@ export default function VideoEditor() {
         e.preventDefault();
         timelineZoomStepRef.current?.(e.key === '=' ? 1 : -1);
       }
+
+      // Inside a text field Ctrl/Cmd+Z is the browser's text undo, not the
+      // timeline's (P9c). On macOS the Edit menu owns Cmd+Z and forwards it as
+      // `menu-undo`, which applies the same rule (see electron/edit-menu.ts).
+      if (editingText) return;
 
       // Undo: Ctrl+Z / Cmd+Z
       if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey) && !e.shiftKey) {
@@ -2688,8 +2733,8 @@ export default function VideoEditor() {
     return () => clearTimeout(timer);
   }, [isExporting, showExportDialog, exportProgress, exportError]);
 
-  const handleCloseEditor = useCallback(() => {
-    // Immediate save before switching (bypass debounce)
+  /** Immediate save (bypasses the 2 s debounce). Used before switching windows and on close/quit. */
+  const saveProjectNow = useCallback(async (): Promise<void> => {
     if (videoFilePath) {
       const state: ProjectState = {
         version: 1,
@@ -2727,9 +2772,9 @@ export default function VideoEditor() {
         showTimelineWaveform,
         autoZoomEnabled,
       };
-      window.electronAPI.saveProjectState(videoFilePath, state).catch(() => {});
+      lastSavedHashRef.current = JSON.stringify(state);
+      await window.electronAPI.saveProjectState(videoFilePath, state).catch(() => {});
     }
-    window.electronAPI.switchToLaunch();
   }, [
     videoFilePath, segments, zoomRegionsByAspect, annotationRegions,
     audioEditRegions, cropRegionsByAspect, aspectRatio, wallpaper,
@@ -2740,6 +2785,142 @@ export default function VideoEditor() {
     gifLoop, gifSizePreset, exportAspectRatios, timelineZoomInfo,
     showTimelineWaveform, autoZoomEnabled,
   ]);
+  const saveProjectNowRef = useRef(saveProjectNow);
+  saveProjectNowRef.current = saveProjectNow;
+
+  const handleCloseEditor = useCallback(() => {
+    void saveProjectNow();
+    window.electronAPI.switchToLaunch();
+  }, [saveProjectNow]);
+
+  // Main intercepts the window close / app quit and waits (<= 2 s) for this
+  // flush so an edit inside the auto-save debounce is not lost (P3).
+  useEffect(() => {
+    const unsubscribe = window.electronAPI.onRequestSaveBeforeClose?.(() => {
+      void saveProjectNowRef.current().finally(() => {
+        window.electronAPI.saveBeforeCloseDone?.();
+      });
+    });
+    return () => unsubscribe?.();
+  }, []);
+
+  // ── Menu actions (custom titlebar menu bar + native application menu) ──
+  const handleImportVideo = useCallback(async () => {
+    try {
+      const result = await window.electronAPI.openVideoFilePicker(locale);
+      if (result.cancelled) return;
+      if (!result.success || !result.path) {
+        reportUserActionError({
+          t,
+          userMessage: t('editor.importVideoFailed'),
+          error: result,
+          context: 'video-editor.import-video',
+          dedupeKey: 'video-editor.import-video',
+        });
+        return;
+      }
+      // Persist the current project before the window reloads onto the new video.
+      await saveProjectNowRef.current();
+      const applied = await window.electronAPI.setCurrentVideoPath(result.path);
+      if (!applied.success) {
+        reportUserActionError({
+          t,
+          userMessage: t('editor.importVideoFailed'),
+          error: applied,
+          context: 'video-editor.import-video',
+          dedupeKey: 'video-editor.import-video',
+        });
+        return;
+      }
+      window.location.reload();
+    } catch (error) {
+      reportUserActionError({
+        t,
+        userMessage: t('editor.importVideoFailed'),
+        error,
+        context: 'video-editor.import-video',
+        dedupeKey: 'video-editor.import-video',
+      });
+    }
+  }, [locale, t]);
+
+  const handleSaveDiagnostics = useCallback(async () => {
+    try {
+      const result = await window.electronAPI.saveDiagnostic?.({ locale });
+      if (!result || result.cancelled) return;
+      if (result.success && result.path) {
+        toast.success(t('editor.diagnosticSaved', { path: result.path }));
+      } else {
+        toast.error(t('editor.diagnosticSaveFailed'));
+      }
+    } catch {
+      toast.error(t('editor.diagnosticSaveFailed'));
+    }
+  }, [locale, t]);
+
+  const handleReportIssue = useCallback(() => {
+    void window.electronAPI.openExternalUrl(`${GITHUB_ISSUES_URL}/new`);
+  }, []);
+
+  const handleShowAbout = useCallback(() => {
+    void window.electronAPI.showAbout?.();
+  }, []);
+
+  const handleReload = useCallback(() => {
+    void saveProjectNowRef.current().finally(() => window.location.reload());
+  }, []);
+
+  const handleQuit = useCallback(() => {
+    window.electronAPI.appQuit?.();
+  }, []);
+
+  const toggleTimelinePanel = useCallback(() => setTimelinePanelVisible((v) => !v), []);
+  const toggleSettingsPanel = useCallback(() => setSettingsPanelVisible((v) => !v), []);
+
+  const handleOpenExportDialogRef = useRef(handleOpenExportDialog);
+  handleOpenExportDialogRef.current = handleOpenExportDialog;
+  const handleImportVideoRef = useRef(handleImportVideo);
+  handleImportVideoRef.current = handleImportVideo;
+  const handleCloseEditorRef = useRef(handleCloseEditor);
+  handleCloseEditorRef.current = handleCloseEditor;
+
+  // Native application menu (electron/main.ts) forwards its clicks here.
+  useEffect(() => {
+    const unsubscribe = window.electronAPI.onEditorMenuAction?.((action) => {
+      switch (action) {
+        case 'menu-undo':
+          // Same rule as the keydown path: a focused text field keeps the browser's undo.
+          if (isTextEditingTarget(document.activeElement)) document.execCommand('undo');
+          else handleUndoRef.current();
+          break;
+        case 'menu-redo':
+          if (isTextEditingTarget(document.activeElement)) document.execCommand('redo');
+          else handleRedoRef.current();
+          break;
+        case 'menu-import-video':
+          void handleImportVideoRef.current();
+          break;
+        case 'menu-export':
+          void handleOpenExportDialogRef.current();
+          break;
+        case 'menu-return-to-recorder':
+          handleCloseEditorRef.current();
+          break;
+        case 'menu-toggle-timeline':
+          setTimelinePanelVisible((v) => !v);
+          break;
+        case 'menu-toggle-settings':
+          setSettingsPanelVisible((v) => !v);
+          break;
+        case 'menu-open-shortcuts':
+          openShortcutsConfig();
+          break;
+        default:
+          break;
+      }
+    });
+    return () => unsubscribe?.();
+  }, [openShortcutsConfig]);
 
   if (loading) {
     return (
@@ -2773,6 +2954,29 @@ export default function VideoEditor() {
             <path d="M19 12H5" /><path d="m12 19-7-7 7-7" />
           </svg>
         </button>
+        <div style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+          <EditorMenuBar
+            isMac={isMacPlatform}
+            t={t}
+            onImportVideo={() => { void handleImportVideo(); }}
+            onExport={() => { void handleOpenExportDialog(); }}
+            onReturnToRecorder={handleCloseEditor}
+            onQuit={handleQuit}
+            onUndo={handleUndo}
+            onRedo={handleRedo}
+            onKeyboardShortcuts={openShortcutsConfig}
+            onToggleTimeline={toggleTimelinePanel}
+            onToggleSettings={toggleSettingsPanel}
+            onReload={handleReload}
+            onSaveDiagnostics={() => { void handleSaveDiagnostics(); }}
+            onReportIssue={handleReportIssue}
+            onAbout={handleShowAbout}
+            canUndo={historyState.canUndo}
+            canRedo={historyState.canRedo}
+            timelineVisible={timelinePanelVisible}
+            settingsVisible={settingsPanelVisible}
+          />
+        </div>
         <div className="flex-1" />
         <div className="flex items-center gap-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
           <button

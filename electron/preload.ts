@@ -276,6 +276,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   appQuit: () => {
     ipcRenderer.send('app-quit')
   },
+  showAbout: () => {
+    return ipcRenderer.invoke('show-about')
+  },
   /** Native menu actions forwarded to the editor renderer (see main.ts `sendEditorMenuAction`). */
   onEditorMenuAction: (callback: (action: EditorMenuAction) => void) => {
     const listeners = EDITOR_MENU_ACTIONS.map((action) => {
