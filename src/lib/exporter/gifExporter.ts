@@ -25,7 +25,8 @@ interface GifExporterConfig {
   showShadow: boolean;
   shadowIntensity: number;
   showBlur: boolean;
-  motionBlurEnabled?: boolean;
+  /** Zoom motion blur amount 0..1 (0 = off). */
+  motionBlurAmount?: number;
   borderRadius?: number;
   padding?: number;
   videoPadding?: number;
@@ -158,7 +159,7 @@ export class GifExporter {
         showShadow: this.config.showShadow,
         shadowIntensity: this.config.shadowIntensity,
         showBlur: this.config.showBlur,
-        motionBlurEnabled: this.config.motionBlurEnabled,
+        motionBlurAmount: this.config.motionBlurAmount,
         borderRadius: this.config.borderRadius,
         padding: this.config.padding,
         cropRegion: this.config.cropRegion,

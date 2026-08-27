@@ -45,7 +45,7 @@ describe('editor defaults SSOT', () => {
     expect(DEFAULT_EDITOR_APPEARANCE_SETTINGS).toEqual({
       shadowIntensity: 0,
       showBlur: false,
-      motionBlurEnabled: false,
+      motionBlurAmount: 0,
       borderRadius: 0,
     });
   });

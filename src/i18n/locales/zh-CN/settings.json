@@ -25,6 +25,7 @@
 	"maxSpeedError": "速度不能超过 {{max}}×",
 	"videoEffects": "视频效果",
 	"motionBlur": "运动模糊",
+	"motionBlurOff": "关闭",
 	"blurBg": "背景模糊",
 	"cursorComposer": "合成光标",
 	"cursorTrackUnavailable": "此录制没有光标跟踪数据。将使用视频中嵌入的光标。",
