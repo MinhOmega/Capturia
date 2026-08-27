@@ -1,5 +1,5 @@
-import type { ZoomFocus, ZoomFocusMode, ZoomRegion } from "../types";
-import { getZoomFocusMode, getZoomScale } from "../types";
+import type { Rotation3D, ZoomFocus, ZoomFocusMode, ZoomRegion } from "../types";
+import { DEFAULT_ROTATION_3D, getZoomFocusMode, getZoomScale, lerpRotation3D } from "../types";
 import { AUTO_FOLLOW_PARAMS, DEFAULT_FOCUS, ZOOM_SPRING_MAX_STEP_MS } from "./constants";
 import { advanceFollowFocus, type CursorTelemetryPoint } from "./cursorFollowUtils";
 import { findDominantRegion } from "./zoomRegionUtils";
@@ -48,6 +48,12 @@ export interface ZoomCameraTarget {
   focusMode: ZoomFocusMode | null;
   /** True while panning between two connected regions (the pan owns the focus). */
   transition: boolean;
+  /**
+   * Effective 3D tilt for this frame: the region preset ramped in/out by
+   * `progress` (identity when flat / unzoomed). Preview (CSS transform) and
+   * export (WebGL pass) both read this, so they tilt identically.
+   */
+  rotation3D: Rotation3D;
 }
 
 export interface ResolveZoomCameraTargetOptions {
@@ -65,6 +71,7 @@ function unzoomedTarget(): ZoomCameraTarget {
     transform: { scale: 1, x: 0, y: 0 },
     focusMode: null,
     transition: false,
+    rotation3D: DEFAULT_ROTATION_3D,
   };
 }
 
@@ -78,7 +85,7 @@ export function resolveZoomCameraTarget(
     return unzoomedTarget();
   }
 
-  const { region, strength, blendedScale, transition } = findDominantRegion(regions, timeMs, {
+  const { region, strength, blendedScale, rotation3D, transition } = findDominantRegion(regions, timeMs, {
     connectZooms: true,
     cursorTelemetry: options.cursorTelemetry,
   });
@@ -135,6 +142,9 @@ export function resolveZoomCameraTarget(
     transform,
     focusMode: getZoomFocusMode(region),
     transition: transition !== null,
+    // Tilt ramps with the same eased progress as the scale; mid-pan
+    // (progress 1) rotation3D is already the lerp between the two regions.
+    rotation3D: lerpRotation3D(DEFAULT_ROTATION_3D, rotation3D, progress),
   };
 }
 
