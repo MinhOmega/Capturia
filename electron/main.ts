@@ -11,6 +11,8 @@ import {
   getPermissionCheckerWindow,
 } from './windows'
 import { registerIpcHandlers } from './ipc/handlers'
+import { isReadablePathAllowed, localMediaUrlToPath } from './ipc/paths'
+import { shouldSwallowMainProcessError } from './main-process-errors'
 import { scheduleRecordingsCleanup } from './recordingsCleanup'
 import { buildIssueReportUrl } from '../src/lib/supportLinks'
 
@@ -90,22 +92,62 @@ protocol.registerSchemesAsPrivileged([
   },
 ])
 
+const isMac = process.platform === 'darwin'
+// macOS menu bar icons are 16pt; other trays expect 24px.
+const trayIconSize = isMac ? 16 : 24
+
 // Tray Icons
-const defaultTrayIcon = getTrayIcon('capturia.png');
-const recordingTrayIcon = getTrayIcon('rec-button.png');
+const defaultTrayIcon = getTrayIcon('capturia.png', trayIconSize);
+const recordingTrayIcon = getTrayIcon('rec-button.png', trayIconSize);
 
 function createWindow() {
+  // Guard against duplicate HUDs (activate + tray + second-instance can race).
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    return
+  }
   mainWindow = createHudOverlayWindow()
+}
+
+// Restore + show + focus the current main window (HUD or editor), or create the HUD.
+function showMainWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMinimized()) {
+      mainWindow.restore()
+    }
+    mainWindow.show()
+    mainWindow.focus()
+    return
+  }
+  createWindow()
+}
+
+// Only `app.requestSingleInstanceLock()`: upstream's PID-file lock was removed
+// because a recycled PID made the app exit silently. Dev and packaged builds use
+// different userData dirs, so they still run side by side.
+const hasSingleInstanceLock = app.requestSingleInstanceLock()
+if (hasSingleInstanceLock) {
+  app.on('second-instance', () => {
+    showMainWindow()
+  })
+} else {
+  app.quit()
 }
 
 function createTray() {
   tray = new Tray(defaultTrayIcon);
+  // Left click (Windows) / click without context menu: bring the HUD back.
+  tray.on('click', () => {
+    showMainWindow()
+  })
+  tray.on('double-click', () => {
+    showMainWindow()
+  })
 }
 
-function getTrayIcon(filename: string) {
+function getTrayIcon(filename: string, size: number) {
   return nativeImage.createFromPath(path.join(process.env.VITE_PUBLIC || RENDERER_DIST, filename)).resize({
-    width: 24,
-    height: 24,
+    width: size,
+    height: size,
     quality: 'best'
   });
 }
@@ -221,6 +263,13 @@ async function showRuntimeErrorDialog(context: string, error: unknown): Promise<
 }
 
 function reportRuntimeError(context: string, error: unknown): void {
+  if (shouldSwallowMainProcessError(error)) {
+    // EPIPE / ECONNRESET / ERR_STREAM_DESTROYED from renderer reloads and DevTools
+    // detaches are churn, not bugs: log and skip the dialog.
+    const code = (error as NodeJS.ErrnoException).code
+    console.warn(`[runtime-error] swallowed ${context}: ${code} ${(error as Error).message}`)
+    return
+  }
   console.error(`[runtime-error] ${context}`, error)
   void showRuntimeErrorDialog(context, error)
 }
@@ -261,11 +310,7 @@ function updateTrayMenu(recording: boolean = false) {
         {
           label: trayText(locale, 'open'),
           click: () => {
-            if (mainWindow && !mainWindow.isDestroyed()) {
-              mainWindow.isMinimized() && mainWindow.restore();
-            } else {
-              createWindow();
-            }
+            showMainWindow()
           },
         },
         {
@@ -357,10 +402,15 @@ app.on('window-all-closed', () => {
 })
 
 app.on('activate', () => {
-  // On OS X it's common to re-create a window in the app when the
-  // dock icon is clicked and there are no other windows open.
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow()
+  // On macOS, re-open/raise the main window when the dock icon is clicked and no
+  // window is visible. While recording the HUD is minimized on purpose
+  // (`hud-overlay-hide`), so leave it alone until the recording ends.
+  if (recordingActive) return
+  const hasVisibleWindow = BrowserWindow.getAllWindows().some(
+    (window) => !window.isDestroyed() && window.isVisible(),
+  )
+  if (!hasVisibleWindow) {
+    showMainWindow()
   }
 })
 
@@ -409,8 +459,39 @@ app.on('before-quit', (event) => {
 
 
 
+// Web permissions the renderer may hold/request. Everything else (notifications,
+// geolocation, clipboard, ...) is denied. `fullscreen` is a Capturia addition for the
+// editor's fullscreen preview (`requestFullscreen()`); the rest mirrors upstream.
+const ALLOWED_WEB_PERMISSIONS: ReadonlySet<string> = new Set([
+  'media',
+  'audioCapture',
+  'microphone',
+  'videoCapture',
+  'camera',
+  'screen',
+  'display-capture',
+  'fullscreen',
+])
+
 // Register all IPC handlers when app is ready
-app.whenReady().then(async () => {
+const appReady = hasSingleInstanceLock ? app.whenReady() : null
+
+appReady?.then(async () => {
+  // Force "regular" activation policy so the Dock icon appears. The HUD overlay
+  // (transparent, frameless, skipTaskbar) is the first window, and AppKit would
+  // otherwise classify us as an accessory app.
+  if (isMac) {
+    app.dock?.show()
+  }
+
+  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
+    return ALLOWED_WEB_PERMISSIONS.has(permission)
+  })
+
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    callback(ALLOWED_WEB_PERMISSIONS.has(permission))
+  })
+
   app.on('web-contents-created', (_event, contents) => {
     contents.on('render-process-gone', (_goneEvent, details) => {
       reportRuntimeError(
@@ -423,19 +504,25 @@ app.whenReady().then(async () => {
   // Handle local-media:// requests by reading local files into Buffer.
   // Uses Buffer (not Node.js streams) because Electron's Response constructor
   // reliably accepts Buffer. Supports Range requests for video seeking.
+  // Only files inside the recordings dir or explicitly approved by the user
+  // (file picker) are served; the editor runs with webSecurity off, so this
+  // gate is what keeps the scheme from being an arbitrary file reader.
   protocol.handle('local-media', async (request) => {
+    const filePath = localMediaUrlToPath(request.url)
+    if (!filePath || !isReadablePathAllowed(filePath, { recordingsDir: RECORDINGS_DIR })) {
+      console.warn('[local-media] refused (not an approved readable path):', request.url)
+      return new Response('Forbidden', { status: 403 })
+    }
     try {
-      const url = new URL(request.url)
-      const filePath = decodeURIComponent(url.pathname)
       const stat = statSync(filePath)
       const ext = path.extname(filePath).toLowerCase()
       const mimeMap: Record<string, string> = {
         '.webm': 'video/webm',
         '.mp4': 'video/mp4',
+        '.mov': 'video/quicktime',
+        '.m4v': 'video/x-m4v',
+        '.mkv': 'video/x-matroska',
         '.json': 'application/json',
-        '.png': 'image/png',
-        '.jpg': 'image/jpeg',
-        '.jpeg': 'image/jpeg',
       }
       const contentType = mimeMap[ext] || 'application/octet-stream'
 
@@ -537,7 +624,7 @@ app.whenReady().then(async () => {
       mainWindow.close()
       mainWindow = null
     }
-    createWindow()
+    showMainWindow()
   })
 
   ipcMain.handle('set-stop-recording-shortcut', (_, accelerator: string) => {
