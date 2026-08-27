@@ -8,6 +8,9 @@ import {
 } from "../../hooks/useScreenRecorder";
 import type { CameraOverlayShape } from "../../hooks/cameraOverlay";
 import { useCameraDevices } from "../../hooks/useCameraDevices";
+import { useMicrophoneDevices } from "../../hooks/useMicrophoneDevices";
+import { useAudioLevelMeter } from "../../hooks/useAudioLevelMeter";
+import { AudioLevelMeter } from "../ui/audio-level-meter";
 import { Button } from "../ui/button";
 import { BsRecordCircle } from "react-icons/bs";
 import { FaRegStopCircle } from "react-icons/fa";
@@ -15,7 +18,7 @@ import { MdMonitor } from "react-icons/md";
 import { RxDragHandleDots2 } from "react-icons/rx";
 import { FaFolderMinus } from "react-icons/fa6";
 import { FiCamera, FiMinus, FiMousePointer, FiX } from "react-icons/fi";
-import { EyeOff, Keyboard, Pause, Play, RotateCcw, Shield, SlidersHorizontal, Timer, Trash2 } from "lucide-react";
+import { EyeOff, Keyboard, Mic, MicOff, Pause, Play, RotateCcw, Settings2, Shield, SlidersHorizontal, Timer, Trash2 } from "lucide-react";
 import { getAvailableLocales, getLocaleName, useI18n } from "@/i18n";
 import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -47,6 +50,8 @@ try {
 
 const STOP_SHORTCUT_STORAGE_KEY = "capturia.stopRecordingShortcut";
 const CAMERA_DEVICE_STORAGE_KEY = "capturia.cameraDeviceId";
+const MICROPHONE_ENABLED_STORAGE_KEY = "capturia.microphoneEnabled";
+const MICROPHONE_DEVICE_STORAGE_KEY = "capturia.microphoneDeviceId";
 const DEFAULT_STOP_RECORDING_SHORTCUT = "CommandOrControl+Shift+2";
 const AUTO_HIDE_HUD_ON_RECORD_STORAGE_KEY = "capturia.autoHideHudOnRecord";
 const CAPTURE_MODE_STORAGE_KEY = "capturia.captureMode";
@@ -187,6 +192,17 @@ export function LaunchWindow() {
     setSelectedDeviceId: setCameraDeviceId,
   } = useCameraDevices(includeCamera, readStoredString(CAMERA_DEVICE_STORAGE_KEY));
   const cameraDeviceName = cameraDevices.find((device) => device.deviceId === cameraDeviceId)?.label;
+  // Microphone (A13): off records without an audio track; "" = system default device.
+  const [microphoneEnabled, setMicrophoneEnabled] = useState(
+    () => readStoredString(MICROPHONE_ENABLED_STORAGE_KEY) !== "0",
+  );
+  const {
+    devices: microphoneDevices,
+    selectedDeviceId: microphoneDeviceId,
+    setSelectedDeviceId: setMicrophoneDeviceId,
+  } = useMicrophoneDevices(microphoneEnabled, readStoredString(MICROPHONE_DEVICE_STORAGE_KEY));
+  const microphoneDeviceName = microphoneDevices.find((device) => device.deviceId === microphoneDeviceId)?.label;
+  const [microphonePopoverOpen, setMicrophonePopoverOpen] = useState(false);
   const [captureProfile, setCaptureProfile] = useState<CaptureProfile>(() => {
     try {
       const value = window.localStorage.getItem("capturia.captureProfile");
@@ -297,6 +313,8 @@ export function LaunchWindow() {
     cameraSizePercent,
     cameraDeviceId,
     cameraDeviceName,
+    microphoneEnabled,
+    microphoneDeviceId,
     captureProfile,
     captureFrameRate: captureMode === "pro" ? captureFrameRate : undefined,
     captureResolutionPreset: captureMode === "pro" ? captureResolutionPreset : undefined,
@@ -306,6 +324,12 @@ export function LaunchWindow() {
   const [countdownRemaining, setCountdownRemaining] = useState<number | null>(null);
   const isCountingDown = countdownRemaining !== null;
   const controlsLocked = recording || isTransitioning || isCountingDown;
+  // The meter opens the mic only while its popover is visible and no recording
+  // owns the device, so the OS mic indicator does not stay on from the HUD.
+  const { level: microphoneLevel } = useAudioLevelMeter({
+    enabled: microphoneEnabled && microphonePopoverOpen && !controlsLocked,
+    deviceId: microphoneDeviceId || undefined,
+  });
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
   // Token of the countdown run currently shown in the overlay window. Every run
   // gets a fresh id so the overlay ignores ticks/hides from a cancelled run.
@@ -405,6 +429,14 @@ export function LaunchWindow() {
     // Only persist a real choice: the hook reports "" until the list has loaded.
     if (cameraDeviceId) writeStoredString(CAMERA_DEVICE_STORAGE_KEY, cameraDeviceId);
   }, [cameraDeviceId]);
+
+  useEffect(() => {
+    writeStoredString(MICROPHONE_ENABLED_STORAGE_KEY, microphoneEnabled ? "1" : "0");
+  }, [microphoneEnabled]);
+
+  useEffect(() => {
+    writeStoredString(MICROPHONE_DEVICE_STORAGE_KEY, microphoneDeviceId);
+  }, [microphoneDeviceId]);
 
   useEffect(() => {
     try {
@@ -1041,6 +1073,70 @@ export function LaunchWindow() {
           <FiCamera size={14} className={includeCamera ? "text-cyan-300" : "text-white/50"} />
           <span className={includeCamera ? "text-cyan-300" : "text-white/50"}>{t("launch.camera")}</span>
         </Button>
+
+        <div className={`flex items-center shrink-0 ${styles.electronNoDrag}`}>
+          <Button
+            variant="link"
+            size="sm"
+            className={`gap-1 shrink-0 min-w-[64px] text-white bg-transparent hover:bg-transparent px-1 text-center text-xs ${styles.electronNoDrag}`}
+            onClick={() => setMicrophoneEnabled((value) => !value)}
+            disabled={controlsLocked}
+            title={microphoneEnabled ? t("launch.audio.disableMicrophone") : t("launch.audio.enableMicrophone")}
+            aria-pressed={microphoneEnabled}
+            data-testid="launch-microphone-toggle"
+          >
+            {microphoneEnabled ? (
+              <Mic size={14} className="text-cyan-300" />
+            ) : (
+              <MicOff size={14} className="text-white/50" />
+            )}
+            <span className={microphoneEnabled ? "text-cyan-300" : "text-white/50"}>{t("launch.microphone")}</span>
+          </Button>
+          {microphoneEnabled ? (
+            <Popover open={microphonePopoverOpen} onOpenChange={setMicrophonePopoverOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="link"
+                  size="icon"
+                  className={`h-7 w-6 shrink-0 text-cyan-200 bg-transparent hover:bg-cyan-400/10 ${styles.electronNoDrag}`}
+                  disabled={controlsLocked}
+                  title={microphoneDeviceName ?? t("launch.audio.defaultMicrophone")}
+                  data-testid="launch-microphone-settings"
+                >
+                  <Settings2 size={12} />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent
+                side="top"
+                sideOffset={8}
+                align="center"
+                collisionPadding={12}
+                className={`w-[230px] bg-[#11131a] border border-cyan-300/20 text-cyan-100 p-2 ${styles.electronNoDrag}`}
+              >
+                <div className="text-[11px] mb-2">{t("launch.audio.settings")}</div>
+                <label className="flex items-center gap-2 text-[11px] mb-2">
+                  <span className="shrink-0">{t("launch.audio.microphoneDevice")}</span>
+                  <select
+                    value={microphoneDeviceId}
+                    onChange={(event) => setMicrophoneDeviceId(event.target.value)}
+                    disabled={controlsLocked}
+                    className={`h-6 min-w-0 flex-1 rounded bg-white/10 text-[10px] text-cyan-100 border border-cyan-300/20 px-1 ${styles.electronNoDrag}`}
+                    data-testid="launch-microphone-device-select"
+                  >
+                    <option value="">{t("launch.audio.defaultMicrophone")}</option>
+                    {microphoneDevices.map((device) => (
+                      <option key={device.deviceId} value={device.deviceId}>{device.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <div className="flex items-center gap-2 text-[11px]">
+                  <span className="shrink-0">{t("launch.audio.level")}</span>
+                  <AudioLevelMeter level={microphoneLevel} className="flex-1" />
+                </div>
+              </PopoverContent>
+            </Popover>
+          ) : null}
+        </div>
 
         <Button
           variant="link"
