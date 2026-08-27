@@ -314,5 +314,46 @@ interface Window {
       message?: string
       error?: string
     }>
+    // W3-c: global shortcuts, application menu, lifecycle flush, diagnostics
+    updateGlobalShortcut: (
+      action: GlobalShortcutActionName,
+      binding: { key: string; ctrl?: boolean; shift?: boolean; alt?: boolean },
+    ) => Promise<GlobalShortcutUpdateResult>
+    getGlobalShortcuts: () => Promise<Partial<Record<GlobalShortcutActionName, string>>>
+    appQuit: () => void
+    onEditorMenuAction: (callback: (action: EditorMenuActionName) => void) => () => void
+    onRequestSaveBeforeClose: (callback: () => void) => () => void
+    saveBeforeCloseDone: () => void
+    saveDiagnostic: (payload?: DiagnosticPayloadInput) => Promise<SaveDiagnosticResult>
+    getMainLogTail: (lines?: number) => Promise<string[]>
   }
 }
+
+type GlobalShortcutActionName = 'openApp' | 'stopRecording';
+
+type GlobalShortcutUpdateResult = {
+  ok: boolean;
+  /** Accelerator now bound to the action (the previous one when `ok` is false). */
+  accelerator: string;
+  error?: 'empty' | 'conflict' | 'unavailable' | 'invalid' | 'needsModifier';
+};
+
+type EditorMenuActionName =
+  | 'menu-undo'
+  | 'menu-redo'
+  | 'menu-import-video'
+  | 'menu-export'
+  | 'menu-return-to-recorder'
+  | 'menu-toggle-timeline'
+  | 'menu-toggle-settings'
+  | 'menu-open-shortcuts';
+
+type DiagnosticPayloadInput = {
+  error?: string;
+  stack?: string;
+  projectState?: unknown;
+  logs?: string[];
+  locale?: string;
+};
+
+type SaveDiagnosticResult = { success: boolean; path?: string; cancelled?: boolean; error?: string };

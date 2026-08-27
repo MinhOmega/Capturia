@@ -1,6 +1,7 @@
-import { app, BrowserWindow, Tray, Menu, nativeImage, session, desktopCapturer, globalShortcut, ipcMain, dialog, shell, protocol } from 'electron'
+import { app, BrowserWindow, Tray, Menu, nativeImage, session, desktopCapturer, globalShortcut, ipcMain, dialog, shell, protocol, clipboard } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import os from 'node:os'
 import fs from 'node:fs/promises'
 import { readFileSync, statSync, openSync, readSync, closeSync } from 'node:fs'
 import {
@@ -14,9 +15,27 @@ import { registerIpcHandlers } from './ipc/handlers'
 import { isReadablePathAllowed, localMediaUrlToPath } from './ipc/paths'
 import { shouldSwallowMainProcessError } from './main-process-errors'
 import { scheduleRecordingsCleanup } from './recordingsCleanup'
-import { buildIssueReportUrl } from '../src/lib/supportLinks'
+import { buildIssueReportUrl, GITHUB_ISSUES_URL } from '../src/lib/supportLinks'
 import { getMainLocale, mainT, setMainLocale } from './i18n'
+import { mainLogBuffer } from './diagnostics/main-log-buffer'
+import { getInstallChannel } from './install-channel'
+import { type AboutFacts, COPYRIGHT, formatAboutDetail, PRODUCT_NAME, usesNativeAboutPanel } from './about'
+import { buildEditMenuSubmenu, type EditorUndoRedoChannel, routeEditorUndoRedo } from './edit-menu'
+import {
+  acceleratorToBinding,
+  GLOBAL_SHORTCUT_ACTIONS,
+  type GlobalShortcutAction,
+  GlobalShortcutManager,
+  isGlobalBindingAllowed,
+  persistStoredGlobalBinding,
+  readStoredGlobalBindings,
+  SHORTCUTS_FILE_NAME,
+} from './globalShortcut'
+import type { ShortcutBinding } from '../src/lib/shortcuts'
 
+// Capture main-process console output from the very first line so a runtime
+// error dialog / "Save diagnostics" report can include what led up to it.
+mainLogBuffer.install()
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const LINUX_SESSION_TYPE = (process.env['XDG_SESSION_TYPE'] || '').toLowerCase()
@@ -69,8 +88,6 @@ let tray: Tray | null = null
 let selectedSourceName = ''
 let selectedDesktopSourceId: string | null = null
 let recordingActive = false
-const DEFAULT_STOP_RECORDING_SHORTCUT = 'CommandOrControl+Shift+2'
-let stopRecordingShortcut = DEFAULT_STOP_RECORDING_SHORTCUT
 let shutdownInProgress = false
 let shutdownFinished = false
 let ipcRuntime: { shutdown: () => Promise<void> } | null = null
@@ -219,12 +236,15 @@ async function showRuntimeErrorDialog(context: string, error: unknown): Promise<
       `- Error ID: ${errorId}`,
       `- Context: ${context}`,
       `- Time: ${new Date(now).toISOString()}`,
-      `- Platform: ${process.platform}`,
-      `- Version: ${app.getVersion()}`,
+      `- Platform: ${process.platform} ${process.arch}`,
+      `- Version: ${app.getVersion()} (${installChannel()})`,
       '',
       '## Error Message',
       message,
       ...(stack ? ['', '## Stack', '```', stack, '```'] : []),
+      // buildIssueReportUrl truncates the body to keep the URL openable, so the
+      // tail goes last and the parts above always survive.
+      ...mainLogTailSection(),
     ],
   })
 
@@ -314,44 +334,112 @@ function emitStopRecordingRequest(): void {
   mainWindow.webContents.send('stop-recording-from-tray')
 }
 
-function registerStopRecordingShortcut(accelerator: string): { success: boolean; accelerator: string; message?: string } {
-  const nextAccelerator = String(accelerator || '').trim()
-  if (!nextAccelerator) {
-    return {
-      success: false,
-      accelerator: stopRecordingShortcut,
-      message: 'Shortcut cannot be empty.',
-    }
-  }
+// ── Global (OS-level) shortcuts ─────────────────────────────────────────────
+// `openApp` and `stopRecording` share one manager and are persisted in the same
+// shortcuts.json the editor's ShortcutsConfigDialog writes (see globalShortcut.ts).
+const SHORTCUTS_FILE = path.join(app.getPath('userData'), SHORTCUTS_FILE_NAME)
+const globalShortcuts = new GlobalShortcutManager(globalShortcut, {
+  openApp: () => showMainWindow(),
+  stopRecording: () => emitStopRecordingRequest(),
+})
 
-  const previousShortcut = stopRecordingShortcut
+async function loadAndRegisterGlobalShortcuts(): Promise<void> {
+  const stored = await readStoredGlobalBindings(SHORTCUTS_FILE)
+  globalShortcuts.registerAll(stored)
+}
+
+function isGlobalShortcutAction(value: unknown): value is GlobalShortcutAction {
+  return typeof value === 'string' && (GLOBAL_SHORTCUT_ACTIONS as readonly string[]).includes(value)
+}
+
+function shortcutErrorMessage(error: 'empty' | 'conflict' | 'unavailable' | undefined): string | undefined {
+  if (!error) return undefined
+  return mainT(currentLocale(), `common.electron.shortcut.${error}`)
+}
+
+// ── Editor window helpers ──────────────────────────────────────────────────
+function isEditorWindow(win: BrowserWindow | null | undefined): boolean {
+  if (!win || win.isDestroyed()) return false
   try {
-    if (previousShortcut) {
-      globalShortcut.unregister(previousShortcut)
-    }
+    return win.webContents.getURL().includes('windowType=editor')
   } catch {
-    // ignore unregister errors
+    return false
   }
+}
 
-  const didRegister = globalShortcut.register(nextAccelerator, () => {
-    emitStopRecordingRequest()
+/** The editor renderer, when it is the focused window or the current main window. */
+function editorTarget(): BrowserWindow | null {
+  const focused = BrowserWindow.getFocusedWindow()
+  if (isEditorWindow(focused)) return focused
+  if (isEditorWindow(mainWindow)) return mainWindow
+  return null
+}
+
+type EditorMenuChannel =
+  | 'menu-import-video'
+  | 'menu-export'
+  | 'menu-return-to-recorder'
+  | 'menu-toggle-timeline'
+  | 'menu-toggle-settings'
+  | 'menu-open-shortcuts'
+
+/** Forward a menu action to the editor renderer; a no-op when no editor is open. */
+function sendEditorMenuAction(channel: EditorMenuChannel): void {
+  const target = editorTarget()
+  if (!target) return
+  target.webContents.send(channel)
+}
+
+function dispatchUndoRedo(channel: EditorUndoRedoChannel): void {
+  const target = BrowserWindow.getFocusedWindow() ?? mainWindow
+  routeEditorUndoRedo(channel, target, () => isEditorWindow(target))
+}
+
+// ── Flush-on-close (P3) ────────────────────────────────────────────────────
+// The editor auto-saves on a 2 s debounce, so closing the window inside that
+// window would drop the last edit. Main asks the renderer to flush first
+// (`request-save-before-close` -> `save-before-close-done`) and waits at most
+// EDITOR_FLUSH_TIMEOUT_MS before letting the close proceed.
+const EDITOR_FLUSH_TIMEOUT_MS = 2000
+type FlushState = { state: 'idle' | 'pending' | 'done' }
+const editorFlushStates = new WeakMap<BrowserWindow, FlushState>()
+
+function requestEditorFlush(win: BrowserWindow): Promise<void> {
+  if (!isEditorWindow(win) || win.webContents.isLoading()) return Promise.resolve()
+  return new Promise<void>((resolve) => {
+    let settled = false
+    const finish = () => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      ipcMain.removeListener('save-before-close-done', onDone)
+      resolve()
+    }
+    const onDone = (event: Electron.IpcMainEvent) => {
+      if (event.sender === win.webContents) finish()
+    }
+    const timer = setTimeout(finish, EDITOR_FLUSH_TIMEOUT_MS)
+    ipcMain.on('save-before-close-done', onDone)
+    try {
+      win.webContents.send('request-save-before-close')
+    } catch {
+      finish()
+    }
   })
+}
 
-  if (!didRegister) {
-    if (previousShortcut) {
-      globalShortcut.register(previousShortcut, () => {
-        emitStopRecordingRequest()
-      })
-    }
-    return {
-      success: false,
-      accelerator: previousShortcut,
-      message: 'Shortcut is unavailable. Try a different key combination.',
-    }
+/** Flush the current editor (if any) and mark it so its close no longer waits. */
+async function flushEditorBeforeQuit(): Promise<void> {
+  const win = mainWindow
+  if (!win || !isEditorWindow(win)) return
+  const flush = editorFlushStates.get(win)
+  if (flush?.state === 'done') return
+  if (flush) flush.state = 'pending'
+  try {
+    await requestEditorFlush(win)
+  } finally {
+    if (flush) flush.state = 'done'
   }
-
-  stopRecordingShortcut = nextAccelerator
-  return { success: true, accelerator: stopRecordingShortcut }
 }
 
 function createEditorWindowWrapper() {
@@ -359,7 +447,347 @@ function createEditorWindowWrapper() {
     mainWindow.close()
     mainWindow = null
   }
-  mainWindow = createEditorWindow()
+  const win = createEditorWindow()
+  mainWindow = win
+
+  const flush: FlushState = { state: 'idle' }
+  editorFlushStates.set(win, flush)
+  win.on('close', (event) => {
+    if (flush.state === 'done') return
+    event.preventDefault()
+    if (flush.state === 'pending') return
+    flush.state = 'pending'
+    void requestEditorFlush(win).finally(() => {
+      flush.state = 'done'
+      if (!win.isDestroyed()) win.close()
+    })
+  })
+}
+
+// ── Application menu (P6 / M10) ────────────────────────────────────────────
+function menuLabel(key: string, fallback: string): string {
+  const value = mainT(currentLocale(), `common.${key}`)
+  return value === `common.${key}` ? fallback : value
+}
+
+function setupApplicationMenu(): void {
+  const template: Electron.MenuItemConstructorOptions[] = []
+
+  if (isMac) {
+    template.push({
+      label: app.name,
+      submenu: [
+        { role: 'about', label: menuLabel('actions.about', 'About Capturia') },
+        { type: 'separator' },
+        { role: 'services', label: menuLabel('actions.services', 'Services') },
+        { type: 'separator' },
+        { role: 'hide', label: menuLabel('actions.hide', 'Hide Capturia') },
+        { role: 'hideOthers', label: menuLabel('actions.hideOthers', 'Hide Others') },
+        { role: 'unhide', label: menuLabel('actions.unhide', 'Show All') },
+        { type: 'separator' },
+        { role: 'quit', label: menuLabel('actions.quit', 'Quit') },
+      ],
+    })
+  }
+
+  template.push(
+    {
+      label: menuLabel('actions.file', 'File'),
+      submenu: [
+        {
+          label: menuLabel('actions.importVideo', 'Import Video…'),
+          accelerator: 'CmdOrCtrl+O',
+          click: () => sendEditorMenuAction('menu-import-video'),
+        },
+        {
+          label: menuLabel('actions.export', 'Export…'),
+          accelerator: 'CmdOrCtrl+E',
+          click: () => sendEditorMenuAction('menu-export'),
+        },
+        { type: 'separator' },
+        {
+          label: menuLabel('actions.returnToRecorder', 'Return to Recorder'),
+          click: () => sendEditorMenuAction('menu-return-to-recorder'),
+        },
+        ...(isMac
+          ? []
+          : [
+              { type: 'separator' as const },
+              { role: 'quit' as const, label: menuLabel('actions.quit', 'Quit') },
+            ]),
+      ],
+    },
+    {
+      label: menuLabel('actions.edit', 'Edit'),
+      submenu: [
+        ...buildEditMenuSubmenu({ label: menuLabel, dispatch: dispatchUndoRedo }),
+        { type: 'separator' },
+        {
+          label: menuLabel('actions.keyboardShortcuts', 'Keyboard Shortcuts…'),
+          click: () => sendEditorMenuAction('menu-open-shortcuts'),
+        },
+      ],
+    },
+    {
+      label: menuLabel('actions.view', 'View'),
+      submenu: [
+        {
+          label: menuLabel('actions.toggleTimeline', 'Toggle Timeline'),
+          accelerator: 'CmdOrCtrl+Shift+T',
+          click: () => sendEditorMenuAction('menu-toggle-timeline'),
+        },
+        {
+          label: menuLabel('actions.toggleSettings', 'Toggle Settings Panel'),
+          accelerator: 'CmdOrCtrl+Shift+P',
+          click: () => sendEditorMenuAction('menu-toggle-settings'),
+        },
+        { type: 'separator' },
+        { role: 'reload', label: menuLabel('actions.reload', 'Reload') },
+        { role: 'forceReload', label: menuLabel('actions.forceReload', 'Force Reload') },
+        { role: 'toggleDevTools', label: menuLabel('actions.toggleDevTools', 'Toggle Developer Tools') },
+        { type: 'separator' },
+        { role: 'resetZoom', label: menuLabel('actions.actualSize', 'Actual Size') },
+        { role: 'zoomIn', label: menuLabel('actions.zoomIn', 'Zoom In') },
+        { role: 'zoomOut', label: menuLabel('actions.zoomOut', 'Zoom Out') },
+        { type: 'separator' },
+        { role: 'togglefullscreen', label: menuLabel('actions.toggleFullScreen', 'Toggle Full Screen') },
+      ],
+    },
+    {
+      label: menuLabel('actions.window', 'Window'),
+      submenu: isMac
+        ? [
+            { role: 'minimize', label: menuLabel('actions.minimize', 'Minimize') },
+            { role: 'zoom' },
+            { type: 'separator' },
+            { role: 'front' },
+          ]
+        : [
+            { role: 'minimize', label: menuLabel('actions.minimize', 'Minimize') },
+            { role: 'close', label: menuLabel('actions.close', 'Close') },
+          ],
+    },
+    {
+      label: menuLabel('actions.help', 'Help'),
+      submenu: [
+        {
+          label: menuLabel('actions.reportIssue', 'Report an Issue…'),
+          click: () => {
+            void shell.openExternal(`${GITHUB_ISSUES_URL}/new`)
+          },
+        },
+        {
+          label: menuLabel('actions.saveDiagnostics', 'Save Diagnostics…'),
+          click: () => {
+            void runSaveDiagnostics()
+          },
+        },
+        // macOS keeps About in the app menu; Windows/Linux look for it under Help.
+        ...(isMac
+          ? []
+          : [
+              { type: 'separator' as const },
+              {
+                label: menuLabel('actions.about', 'About Capturia'),
+                click: () => {
+                  void showAboutDialog()
+                },
+              },
+            ]),
+      ],
+    },
+  )
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}
+
+// ── About (M11) ────────────────────────────────────────────────────────────
+function installChannel() {
+  return getInstallChannel({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath })
+}
+
+function aboutFacts(): AboutFacts {
+  return {
+    version: app.getVersion(),
+    channel: installChannel(),
+    platform: process.platform,
+    arch: process.arch,
+    electron: process.versions.electron,
+    chrome: process.versions.chrome,
+    node: process.versions.node,
+  }
+}
+
+/** macOS gets its native About panel (the app menu's `role: "about"` opens it). */
+function configureAboutPanel(): void {
+  if (!usesNativeAboutPanel(process.platform)) return
+  const facts = aboutFacts()
+  app.setAboutPanelOptions({
+    applicationName: PRODUCT_NAME,
+    applicationVersion: facts.version,
+    version: facts.channel,
+    copyright: COPYRIGHT,
+    credits: formatAboutDetail(facts),
+  })
+}
+
+/** Message boxes must be owned by a visible window or they open behind the always-on-top HUD. */
+function showMessageBox(options: Electron.MessageBoxOptions) {
+  const visible = (win: BrowserWindow | null) => (win && !win.isDestroyed() && win.isVisible() ? win : null)
+  const parent = visible(BrowserWindow.getFocusedWindow()) ?? visible(mainWindow)
+  return parent ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options)
+}
+
+let aboutDialogOpen = false
+
+/** The About box for the platforms with no native panel; "Copy" puts the facts on the clipboard. */
+async function showAboutDialog(): Promise<void> {
+  if (aboutDialogOpen) return
+  aboutDialogOpen = true
+  try {
+    const facts = aboutFacts()
+    const detail = `${formatAboutDetail(facts)}\n${COPYRIGHT}`
+    const heading = `${PRODUCT_NAME} ${facts.version}`
+    const choice = await showMessageBox({
+      type: 'info',
+      title: menuLabel('actions.about', 'About Capturia'),
+      message: heading,
+      detail,
+      buttons: [menuLabel('actions.close', 'Close'), menuLabel('actions.copy', 'Copy')],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    })
+    if (choice.response === 1) clipboard.writeText(`${heading}\n${detail}`)
+  } finally {
+    aboutDialogOpen = false
+  }
+}
+
+// ── Diagnostics (M2) ───────────────────────────────────────────────────────
+const ISSUE_LOG_TAIL_LINES = 40
+
+function mainLogTailSection(): string[] {
+  const tail = mainLogBuffer.tail(ISSUE_LOG_TAIL_LINES)
+  if (tail.length === 0) return []
+  return ['', '## Main process log (tail)', '```', ...tail, '```']
+}
+
+type DiagnosticPayload = {
+  error?: string
+  stack?: string
+  projectState?: unknown
+  logs?: string[]
+  locale?: string
+}
+
+function buildDiagnosticReport(payload: DiagnosticPayload): string {
+  const now = new Date()
+  const lines: string[] = [
+    `${PRODUCT_NAME} diagnostic report`,
+    `Generated: ${now.toISOString()}`,
+    '',
+    '## App',
+    `Version: ${app.getVersion()}`,
+    `Install channel: ${installChannel()}`,
+    `Locale: ${payload.locale ?? currentLocale()}`,
+    `Packaged: ${app.isPackaged}`,
+    '',
+    '## Platform',
+    `OS: ${process.platform} ${process.arch} (${os.release()})`,
+    `Session: ${process.platform === 'linux' ? LINUX_SESSION_TYPE || 'unknown' : 'n/a'}`,
+    `Electron: ${process.versions.electron}`,
+    `Chromium: ${process.versions.chrome}`,
+    `Node: ${process.versions.node}`,
+    `Memory: ${Math.round(os.totalmem() / 1024 / 1024)} MB total, ${Math.round(os.freemem() / 1024 / 1024)} MB free`,
+    `Recording active: ${recordingActive}`,
+  ]
+  if (payload.error) {
+    lines.push('', '## Error', payload.error)
+    if (payload.stack) lines.push('', payload.stack)
+  }
+  if (payload.projectState !== undefined) {
+    let serialized: string
+    try {
+      serialized = JSON.stringify(payload.projectState, null, 2)
+    } catch {
+      serialized = String(payload.projectState)
+    }
+    lines.push('', '## Project state', serialized)
+  }
+  if (payload.logs && payload.logs.length > 0) {
+    lines.push('', '## Renderer log (tail)', ...payload.logs.slice(-200))
+  }
+  const mainLog = mainLogBuffer.snapshot()
+  lines.push('', `## Main process log (${mainLog.length} lines)`)
+  for (const entry of mainLog) {
+    lines.push(`${new Date(entry.timestampMs).toISOString()} ${entry.level.toUpperCase().padEnd(5)} ${entry.text}`)
+  }
+  return `${lines.join('\n')}\n`
+}
+
+async function exportDiagnosticFile(
+  payload: DiagnosticPayload,
+): Promise<{ success: boolean; path?: string; cancelled?: boolean; error?: string }> {
+  const locale = payload.locale ?? currentLocale()
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+  const defaultName = `capturia-diagnostic-${stamp}.txt`
+  let defaultDir = app.getPath('downloads')
+  try {
+    await fs.access(defaultDir)
+  } catch {
+    defaultDir = app.getPath('home')
+  }
+  const parent = BrowserWindow.getFocusedWindow() ?? mainWindow
+  const options: Electron.SaveDialogOptions = {
+    title: mainT(locale, 'common.electron.diagnostics.saveTitle'),
+    defaultPath: path.join(defaultDir, defaultName),
+    filters: [
+      { name: mainT(locale, 'common.electron.diagnostics.fileType'), extensions: ['txt'] },
+      { name: mainT(locale, 'common.electron.allFiles'), extensions: ['*'] },
+    ],
+  }
+  const result =
+    parent && !parent.isDestroyed() ? await dialog.showSaveDialog(parent, options) : await dialog.showSaveDialog(options)
+  if (result.canceled || !result.filePath) {
+    return { success: false, cancelled: true }
+  }
+  try {
+    await fs.writeFile(result.filePath, buildDiagnosticReport(payload), 'utf-8')
+    return { success: true, path: result.filePath }
+  } catch (error) {
+    console.error('Failed to write diagnostic file:', error)
+    return { success: false, error: String(error) }
+  }
+}
+
+/** Help menu entry: save the report, then offer to reveal it. */
+async function runSaveDiagnostics(): Promise<void> {
+  const result = await exportDiagnosticFile({})
+  if (result.cancelled) return
+  const locale = currentLocale()
+  if (!result.success || !result.path) {
+    await showMessageBox({
+      type: 'error',
+      title: mainT(locale, 'common.electron.diagnostics.failedTitle'),
+      message: mainT(locale, 'common.electron.diagnostics.failedTitle'),
+      detail: result.error ?? '',
+      buttons: [menuLabel('actions.close', 'Close')],
+      noLink: true,
+    })
+    return
+  }
+  const choice = await showMessageBox({
+    type: 'info',
+    title: mainT(locale, 'common.electron.diagnostics.savedTitle'),
+    message: mainT(locale, 'common.electron.diagnostics.savedTitle'),
+    detail: mainT(locale, 'common.electron.diagnostics.savedMessage', { path: result.path }),
+    buttons: [mainT(locale, 'common.electron.diagnostics.reveal'), menuLabel('actions.close', 'Close')],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  })
+  if (choice.response === 0) shell.showItemInFolder(result.path)
 }
 
 function createSourceSelectorWindowWrapper() {
@@ -403,7 +831,7 @@ app.on('activate', () => {
 })
 
 app.on('will-quit', () => {
-  globalShortcut.unregisterAll()
+  globalShortcuts.unregisterAll()
 })
 
 process.on('uncaughtException', (error) => {
@@ -427,6 +855,12 @@ app.on('before-quit', (event) => {
   shutdownInProgress = true
 
   void (async () => {
+    try {
+      // Let the editor write its pending auto-save before the windows go away.
+      await flushEditorBeforeQuit()
+    } catch (error) {
+      console.warn('Failed to flush the editor before quit:', error)
+    }
     try {
       if (ipcRuntime) {
         await Promise.race([
@@ -615,21 +1049,71 @@ appReady?.then(async () => {
     showMainWindow()
   })
 
-  ipcMain.handle('set-stop-recording-shortcut', (_, accelerator: string) => {
-    return registerStopRecordingShortcut(accelerator)
+  ipcMain.on('app-quit', () => {
+    app.quit()
+  })
+
+  // Legacy HUD path: a raw accelerator string. Registered through the shared
+  // manager and written through to shortcuts.json so the editor's dialog and
+  // the HUD agree on the binding.
+  ipcMain.handle('set-stop-recording-shortcut', async (_, accelerator: string) => {
+    const result = globalShortcuts.register('stopRecording', String(accelerator || ''))
+    if (result.ok) {
+      const binding = acceleratorToBinding(result.accelerator)
+      if (binding) {
+        try {
+          await persistStoredGlobalBinding(SHORTCUTS_FILE, 'stopRecording', binding)
+        } catch (error) {
+          console.warn('Failed to persist stop-recording shortcut:', error)
+        }
+      }
+    }
+    return { success: result.ok, accelerator: result.accelerator, message: shortcutErrorMessage(result.error) }
   })
   ipcMain.handle('get-stop-recording-shortcut', () => {
-    return { success: true, accelerator: stopRecordingShortcut }
+    return { success: true, accelerator: globalShortcuts.getAccelerator('stopRecording') ?? '' }
   })
-  // Renderer announces the user's language; rebuild the tray so its labels follow.
+  // Shortcuts dialog path: a ShortcutBinding for one of the global actions.
+  // Persistence is the renderer's job (save-shortcuts) once every action registered.
+  ipcMain.handle('update-global-shortcut', (_, action: unknown, binding: ShortcutBinding) => {
+    if (!isGlobalShortcutAction(action)) {
+      return { ok: false, accelerator: '', error: 'invalid' as const }
+    }
+    if (!binding || typeof binding.key !== 'string' || !isGlobalBindingAllowed(binding)) {
+      return { ok: false, accelerator: globalShortcuts.getAccelerator(action) ?? '', error: 'needsModifier' as const }
+    }
+    const result = globalShortcuts.register(action, binding)
+    return { ok: result.ok, accelerator: result.accelerator, error: result.error }
+  })
+  ipcMain.handle('get-global-shortcuts', () => {
+    const accelerators: Partial<Record<GlobalShortcutAction, string>> = {}
+    for (const action of GLOBAL_SHORTCUT_ACTIONS) {
+      const accelerator = globalShortcuts.getAccelerator(action)
+      if (accelerator) accelerators[action] = accelerator
+    }
+    return accelerators
+  })
+
+  ipcMain.handle('save-diagnostic', (_, payload?: DiagnosticPayload) => {
+    return exportDiagnosticFile(payload && typeof payload === 'object' ? payload : {})
+  })
+  ipcMain.handle('get-main-log-tail', (_, lines?: number) => {
+    const count = Number.isFinite(lines) && (lines as number) > 0 ? Math.min(500, Math.floor(lines as number)) : ISSUE_LOG_TAIL_LINES
+    return mainLogBuffer.tail(count)
+  })
+
+  // Renderer announces the user's language; rebuild the tray and menu so their labels follow.
   ipcMain.handle('set-locale', (_, locale: string) => {
     setMainLocale(locale)
     updateTrayMenu(recordingActive)
+    setupApplicationMenu()
   })
   setMainLocale(app.getLocale())
+  configureAboutPanel()
+  setupApplicationMenu()
   createTray()
   updateTrayMenu()
-  registerStopRecordingShortcut(stopRecordingShortcut)
+  await loadAndRegisterGlobalShortcuts()
   // Ensure recordings directory exists
   await ensureRecordingsDir()
   scheduleRecordingsCleanup({
