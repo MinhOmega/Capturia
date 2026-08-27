@@ -213,6 +213,10 @@ interface Window {
     onStopRecordingFromTray: (callback: () => void) => () => void
     onSelectedSourceChanged: (callback: (source: unknown) => void) => () => void
     onSourceSelectorClosed: (callback: () => void) => () => void
+    showCountdownOverlay: (value: number, runId: number) => Promise<void>
+    setCountdownOverlayValue: (value: number, runId: number) => Promise<void>
+    hideCountdownOverlay: (runId: number) => Promise<void>
+    onCountdownOverlayValue: (callback: (value: number | null, runId: number) => void) => () => void
     setStopRecordingShortcut: (accelerator: string) => Promise<{ success: boolean; accelerator: string; message?: string }>
     getStopRecordingShortcut: () => Promise<{ success: boolean; accelerator: string; message?: string }>
     openExternalUrl: (url: string) => Promise<{ success: boolean; error?: string }>

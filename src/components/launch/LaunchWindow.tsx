@@ -275,6 +275,9 @@ export function LaunchWindow() {
   const isCountingDown = countdownRemaining !== null;
   const controlsLocked = recording || isTransitioning || isCountingDown;
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Token of the countdown run currently shown in the overlay window. Every run
+  // gets a fresh id so the overlay ignores ticks/hides from a cancelled run.
+  const countdownRunIdRef = useRef(0);
   const previousRecordingRef = useRef(false);
   const selectedSourceSyncErrorAtRef = useRef(0);
   const [elapsed, setElapsed] = useState(0);
@@ -306,6 +309,11 @@ export function LaunchWindow() {
     if (countdownTimerRef.current) {
       clearInterval(countdownTimerRef.current);
       countdownTimerRef.current = null;
+    }
+    const runId = countdownRunIdRef.current;
+    if (runId > 0) {
+      countdownRunIdRef.current = 0;
+      void window.electronAPI?.hideCountdownOverlay?.(runId)?.catch?.(() => undefined);
     }
     setCountdownRemaining(null);
   }, []);
@@ -667,6 +675,14 @@ export function LaunchWindow() {
     let remaining = recordCountdownSeconds;
     setCountdownRemaining(remaining);
 
+    // The overlay window mirrors the HUD countdown; the token lets a late IPC
+    // round-trip from this run be ignored once it is cancelled or finished.
+    const runId = Date.now();
+    countdownRunIdRef.current = runId;
+    void window.electronAPI?.showCountdownOverlay?.(remaining, runId)?.catch?.((error: unknown) => {
+      console.warn("Failed to show the countdown overlay.", error);
+    });
+
     countdownTimerRef.current = setInterval(() => {
       remaining -= 1;
       if (remaining <= 0) {
@@ -675,6 +691,9 @@ export function LaunchWindow() {
         return;
       }
       setCountdownRemaining(remaining);
+      if (countdownRunIdRef.current === runId) {
+        void window.electronAPI?.setCountdownOverlayValue?.(remaining, runId)?.catch?.(() => undefined);
+      }
     }, 1000);
   }, [
     countdownRemaining,

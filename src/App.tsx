@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { CountdownOverlay } from "./components/launch/CountdownOverlay";
 import { LaunchWindow } from "./components/launch/LaunchWindow";
 import { PermissionCheckerWindow } from "./components/launch/PermissionCheckerWindow";
 import { SourceSelector } from "./components/launch/SourceSelector";
@@ -18,7 +19,7 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     const type = params.get('windowType') || '';
     setWindowType(type);
-    if (type === 'hud-overlay' || type === 'source-selector') {
+    if (type === 'hud-overlay' || type === 'source-selector' || type === 'countdown-overlay') {
       document.body.style.background = 'transparent';
       document.documentElement.style.background = 'transparent';
       document.body.style.overflow = 'hidden';
@@ -40,6 +41,9 @@ export default function App() {
       break;
     case 'source-selector':
       content = <SourceSelector />;
+      break;
+    case 'countdown-overlay':
+      content = <CountdownOverlay />;
       break;
     case 'permission-checker':
       content = <PermissionCheckerWindow />;
