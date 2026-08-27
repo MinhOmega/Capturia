@@ -12,6 +12,14 @@ export {
 } from './localSourceFile';
 export { MAX_IN_MEMORY_SOURCE_BYTES } from './sourceFileLimits';
 export {
+  buildExportDiagnosticMessage,
+  buildSaveDiagnosticMessage,
+  getFileNameForDiagnostics,
+  type ExportDiagnostics,
+  type ExportDiagnosticLabels,
+  type ExportFormatLabel,
+} from './exportDiagnostics';
+export {
   EXPORT_AUDIO_CODECS,
   selectExportAudioCodec,
   isAudioCodecEncodingSupported,

@@ -26,7 +26,7 @@ describe('selectExportAudioCodec', () => {
   });
 
   it('returns null when neither codec is supported', async () => {
-    const probe = vi.fn(async () => false);
+    const probe = vi.fn(async (_codec: string) => false);
     await expect(selectExportAudioCodec(probe)).resolves.toBeNull();
     expect(probe.mock.calls.map(([codec]) => codec)).toEqual([...EXPORT_AUDIO_CODECS]);
   });

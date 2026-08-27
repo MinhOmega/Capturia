@@ -208,7 +208,13 @@ interface Window {
     setStopRecordingShortcut: (accelerator: string) => Promise<{ success: boolean; accelerator: string; message?: string }>
     getStopRecordingShortcut: () => Promise<{ success: boolean; accelerator: string; message?: string }>
     openExternalUrl: (url: string) => Promise<{ success: boolean; error?: string }>
-    pickExportDirectory: (locale?: string) => Promise<{
+    pickSaveFilePath: (fileName: string, locale?: string, exportFolder?: string) => Promise<{
+      success: boolean
+      path?: string
+      message?: string
+      cancelled?: boolean
+    }>
+    pickExportDirectory: (locale?: string, exportFolder?: string) => Promise<{
       success: boolean
       path?: string
       message?: string

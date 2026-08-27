@@ -453,7 +453,19 @@ const messages: Record<Locale, Record<string, string>> = {
     "electron.filePickerFailed": "Failed to open file picker",
     // W1-c keys
     "export.phasePreparing": "Preparing",
-    "export.statusPreparing": "Preparing source video..."
+    "export.statusPreparing": "Preparing source video...",
+    "export.saveAgain": "Save again",
+    "export.unsavedExportHint": "The export finished but could not be saved. Choose another location to keep it.",
+    "export.diag.exportFailed": "{{format}} export failed",
+    "export.diag.saveFailed": "{{format}} export save failed",
+    "export.diag.reason": "Reason",
+    "export.diag.source": "Source",
+    "export.diag.output": "Output",
+    "export.diag.codec": "Codec",
+    "export.diag.bitrate": "Bitrate",
+    "export.diag.videoEncoder": "VideoEncoder",
+    "export.diag.available": "available",
+    "export.diag.unavailable": "unavailable"
   },
   "zh-CN": {
     "app.name": "Capturia",
@@ -895,7 +907,19 @@ const messages: Record<Locale, Record<string, string>> = {
     "electron.filePickerFailed": "打开文件选择器失败",
     // W1-c keys
     "export.phasePreparing": "准备中",
-    "export.statusPreparing": "正在准备源视频..."
+    "export.statusPreparing": "正在准备源视频...",
+    "export.saveAgain": "重新保存",
+    "export.unsavedExportHint": "导出已完成但无法保存。请选择其他位置保存。",
+    "export.diag.exportFailed": "{{format}} 导出失败",
+    "export.diag.saveFailed": "{{format}} 导出保存失败",
+    "export.diag.reason": "原因",
+    "export.diag.source": "来源",
+    "export.diag.output": "输出",
+    "export.diag.codec": "编码",
+    "export.diag.bitrate": "码率",
+    "export.diag.videoEncoder": "VideoEncoder",
+    "export.diag.available": "可用",
+    "export.diag.unavailable": "不可用"
   }
 };
 

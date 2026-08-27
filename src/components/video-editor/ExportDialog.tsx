@@ -21,6 +21,9 @@ interface ExportDialogProps {
   } | null;
   isMinimizing?: boolean;
   onMinimizeEnd?: () => void;
+  /** Finished export whose write failed; offers "Save again". */
+  unsavedExport?: { fileName: string; format: 'mp4' | 'gif' } | null;
+  onSaveUnsavedExport?: () => void;
 }
 
 export function ExportDialog({
@@ -35,6 +38,8 @@ export function ExportDialog({
   batchProgress = null,
   isMinimizing = false,
   onMinimizeEnd,
+  unsavedExport = null,
+  onSaveUnsavedExport,
 }: ExportDialogProps) {
   const { t } = useI18n();
   const [showSuccess, setShowSuccess] = useState(false);
@@ -214,8 +219,21 @@ export function ExportDialog({
               <div className="p-1 bg-red-500/20 rounded-full">
                 <X className="w-3 h-3 text-red-400" />
               </div>
-              <p className="text-sm text-red-400 leading-relaxed">{error}</p>
+              <p className="whitespace-pre-line break-words text-sm text-red-400 leading-relaxed">{error}</p>
             </div>
+            {unsavedExport && !isExporting && onSaveUnsavedExport && (
+              <div className="mt-3 space-y-2">
+                <p className="text-xs text-slate-400">{t('export.unsavedExportHint')}</p>
+                <Button
+                  onClick={onSaveUnsavedExport}
+                  className="w-full py-5 text-sm font-semibold flex items-center justify-center gap-2 bg-[#34B27B] text-white rounded-xl hover:bg-[#3fc98d] transition-all"
+                >
+                  <Download className="w-4 h-4" />
+                  {t('export.saveAgain')}
+                </Button>
+                <span className="block text-[10px] text-slate-500 break-all">{unsavedExport.fileName}</span>
+              </div>
+            )}
           </div>
         )}
 
