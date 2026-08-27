@@ -237,6 +237,8 @@ export interface ProjectState {
     offsetX: number;
     offsetY: number;
     timeOffsetMs: number;
+    // W2-d additions (optional; older projects fall back to DEFAULT_CURSOR_STYLE)
+    clipToBounds?: boolean;
   };
   subtitleCues?: Array<{
     id: string;

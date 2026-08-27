@@ -32,6 +32,7 @@
 	"cursorOffsetX": "Độ lệch con trỏ X",
 	"cursorOffsetY": "Độ lệch con trỏ Y",
 	"cursorOffsetReset": "Đặt lại độ lệch con trỏ",
+	"cursorClipToBounds": "Cắt con trỏ theo khung video",
 	"audioTrack": "Luồng âm thanh",
 	"audioVolume": "Âm lượng",
 	"audioNormalizeLoudness": "Chuẩn hóa âm lượng",

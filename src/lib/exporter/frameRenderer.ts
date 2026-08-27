@@ -21,6 +21,7 @@ import { buildSubtitleLines } from '@/lib/rendering/subtitleLayout';
 import {
   drawCompositedCursor,
   projectCursorToViewport,
+  resolveCursorClipRect,
   resolveCursorContentScale,
   resolveCursorState,
   type CursorStyleConfig,
@@ -605,6 +606,23 @@ export class FrameRenderer {
         maskRect: this.layoutCache.maskRect,
         cropRegion: this.config.cropRegion,
       }),
+      {
+        // The export mask is drawn at 0,0 inside the video container placed at
+        // baseOffset, so offset the mask rect into camera-local coordinates
+        // (same frame the preview overlay uses).
+        clipRect: resolveCursorClipRect({
+          style: this.config.cursorStyle,
+          maskRect: {
+            x: this.layoutCache.baseOffset.x + this.layoutCache.maskRect.x,
+            y: this.layoutCache.baseOffset.y + this.layoutCache.maskRect.y,
+            width: this.layoutCache.maskRect.width,
+            height: this.layoutCache.maskRect.height,
+          },
+          maskBorderRadius: this.layoutCache.maskBorderRadius,
+          cameraScale: { x: this.cameraContainer.scale.x, y: this.cameraContainer.scale.y },
+          cameraPosition: { x: this.cameraContainer.position.x, y: this.cameraContainer.position.y },
+        }),
+      },
     );
   }
 
@@ -666,6 +684,7 @@ export class FrameRenderer {
       baseScale: scale,
       baseOffset: { x: centerOffsetX, y: centerOffsetY },
       maskRect: { x: 0, y: 0, width: croppedDisplayWidth, height: croppedDisplayHeight },
+      maskBorderRadius: scaledBorderRadius,
     };
   }
 

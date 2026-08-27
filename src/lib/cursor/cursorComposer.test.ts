@@ -5,6 +5,7 @@ import {
   drawCompositedCursor,
   normalizePointerSample,
   projectCursorToViewport,
+  resolveCursorClipRect,
   resolveCursorContentScale,
   resolveCursorSizeNorm,
   resolveCursorState,
@@ -126,6 +127,88 @@ describe('cursor size normalisation', () => {
     expect(uhd.gradientRadii[0] / hd.gradientRadii[0]).toBeCloseTo(2, 6);
     // At the reference width the glyph is `28 * size * camera` px.
     expect(hd.scaleCalls[0].x).toBeCloseTo(2.2 * 1.3, 6);
+  });
+});
+
+describe('cursor clip to bounds', () => {
+  const VISIBLE_STATE = {
+    visible: true,
+    x: 0.5,
+    y: 0.5,
+    scale: 1,
+    highlightAlpha: 0,
+    rippleScale: 1,
+    rippleAlpha: 0,
+    cursorKind: 'arrow' as const,
+  };
+
+  it('returns null when clipping is disabled (default) or the mask is empty', () => {
+    const base = {
+      maskRect: { x: 100, y: 50, width: 800, height: 400 },
+      maskBorderRadius: 24,
+      cameraScale: { x: 1, y: 1 },
+      cameraPosition: { x: 0, y: 0 },
+    };
+    expect(resolveCursorClipRect({ ...base, style: DEFAULT_CURSOR_STYLE })).toBeNull();
+    expect(resolveCursorClipRect({ ...base, style: { clipToBounds: false } })).toBeNull();
+    expect(
+      resolveCursorClipRect({
+        ...base,
+        style: { clipToBounds: true },
+        maskRect: { x: 0, y: 0, width: 0, height: 0 },
+      }),
+    ).toBeNull();
+  });
+
+  it('applies the camera transform to the mask rect and scales the radius', () => {
+    const rect = resolveCursorClipRect({
+      style: { clipToBounds: true },
+      maskRect: { x: 100, y: 50, width: 800, height: 400 },
+      maskBorderRadius: 24,
+      cameraScale: { x: 1.5, y: 1.5 },
+      cameraPosition: { x: -200, y: -100 },
+    });
+
+    expect(rect).toEqual({
+      x: -200 + 1.5 * 100,
+      y: -100 + 1.5 * 50,
+      width: 1200,
+      height: 600,
+      radius: 36,
+    });
+  });
+
+  it('is a pure function of the mask so preview and export produce the same clip rect', () => {
+    const args = {
+      style: { clipToBounds: true },
+      maskRect: { x: 120, y: 60, width: 1680, height: 960 },
+      maskBorderRadius: 16,
+      cameraScale: { x: 2, y: 2 },
+      cameraPosition: { x: -900, y: -500 },
+    };
+    expect(resolveCursorClipRect(args)).toEqual(resolveCursorClipRect({ ...args }));
+  });
+
+  it('clips the drawing context only when a clip rect is provided', () => {
+    const clipCalls: number[] = [];
+    const arcToCalls: number[] = [];
+    const recorded = createRecordingContext();
+    const ctx = recorded.ctx as unknown as { clip: () => void; arcTo: () => void };
+    ctx.clip = () => {
+      clipCalls.push(1);
+    };
+    ctx.arcTo = () => {
+      arcToCalls.push(1);
+    };
+
+    drawCompositedCursor(recorded.ctx, { x: 10, y: 10 }, VISIBLE_STATE, { ...DEFAULT_CURSOR_STYLE, shadow: 0 }, 1);
+    expect(clipCalls).toHaveLength(0);
+
+    drawCompositedCursor(recorded.ctx, { x: 10, y: 10 }, VISIBLE_STATE, { ...DEFAULT_CURSOR_STYLE, shadow: 0 }, 1, {
+      clipRect: { x: 0, y: 0, width: 200, height: 100, radius: 12 },
+    });
+    expect(clipCalls).toHaveLength(1);
+    expect(arcToCalls).toHaveLength(4);
   });
 });
 

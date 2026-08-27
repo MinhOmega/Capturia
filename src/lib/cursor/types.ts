@@ -69,6 +69,21 @@ export interface CursorStyleConfig {
   offsetX: number;
   offsetY: number;
   timeOffsetMs: number;
+  /** Clip the cursor (glyph, highlight, ripple) to the rounded video mask instead of letting it overflow. */
+  clipToBounds: boolean;
+}
+
+export interface CursorClipRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  radius: number;
+}
+
+export interface CursorDrawOptions {
+  /** Camera-aware rounded mask rect (canvas px) to clip the cursor to; `null` = no clipping. */
+  clipRect?: CursorClipRect | null;
 }
 
 export interface CursorResolveParams {
@@ -112,4 +127,5 @@ export const DEFAULT_CURSOR_STYLE: CursorStyleConfig = {
   offsetX: 0,
   offsetY: 0,
   timeOffsetMs: 0,
+  clipToBounds: false,
 };
