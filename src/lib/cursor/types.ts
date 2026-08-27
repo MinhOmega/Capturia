@@ -108,7 +108,10 @@ export interface CursorResolvedState {
 export interface ProjectedCursorPoint {
   x: number;
   y: number;
+  /** Inside the visible crop and within the stage (+ tolerance); false = hide the cursor. */
   inViewport: boolean;
+  /** Crop re-normalised coordinate is within [0,1] on both axes. */
+  inCrop: boolean;
 }
 
 export const DEFAULT_CURSOR_STYLE: CursorStyleConfig = {
