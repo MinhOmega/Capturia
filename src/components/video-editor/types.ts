@@ -227,7 +227,14 @@ export interface ProjectState {
   wallpaper: string;
   shadowIntensity: number;
   showBlur: boolean;
+  /**
+   * Legacy toggle (pre motion-blur slider). Still written as `motionBlurAmount > 0`
+   * for one release so a downgrade reads something sensible; on load it only
+   * matters when `motionBlurAmount` is absent (see resolveProjectMotionBlurAmount).
+   */
   motionBlurEnabled: boolean;
+  /** Zoom motion blur amount 0..1 (0 = off). Missing in older saves. */
+  motionBlurAmount?: number;
   borderRadius: number;
   padding: number;
   audioEnabled: boolean;
@@ -283,6 +290,27 @@ export interface ProjectState {
 }
 
 export const DEFAULT_ZOOM_DEPTH: ZoomDepth = 3;
+
+/** Motion blur amount a legacy `motionBlurEnabled: true` project maps to. */
+export const DEFAULT_ZOOM_MOTION_BLUR = 0.35;
+
+/**
+ * Motion blur amount for a saved project: `motionBlurAmount` when it is a
+ * finite number (clamped to 0..1), otherwise the legacy boolean mapped to
+ * DEFAULT_ZOOM_MOTION_BLUR / 0, otherwise 0.
+ */
+export function resolveProjectMotionBlurAmount(
+  state: Pick<Partial<ProjectState>, 'motionBlurAmount' | 'motionBlurEnabled'>,
+): number {
+  const amount = state.motionBlurAmount;
+  if (typeof amount === 'number' && Number.isFinite(amount)) {
+    return Math.min(1, Math.max(0, amount));
+  }
+  if (typeof state.motionBlurEnabled === 'boolean') {
+    return state.motionBlurEnabled ? DEFAULT_ZOOM_MOTION_BLUR : 0;
+  }
+  return 0;
+}
 
 export const MIN_ZOOM_SCALE = 1.0;
 export const MAX_ZOOM_SCALE = 5.0;

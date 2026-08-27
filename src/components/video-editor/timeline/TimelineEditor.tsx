@@ -1598,7 +1598,7 @@ export default function TimelineEditor({
                 size="sm"
                 className="h-7 px-2 text-xs text-slate-400 hover:text-slate-200 hover:bg-white/10 transition-all gap-1"
               >
-                <span className="font-medium">{getAspectRatioLabel(aspectRatio)}</span>
+                <span className="font-medium">{aspectRatio === "native" ? t("settings.aspectRatioNative") : getAspectRatioLabel(aspectRatio)}</span>
                 <ChevronDown className="w-3 h-3" />
               </Button>
             </DropdownMenuTrigger>
@@ -1609,7 +1609,7 @@ export default function TimelineEditor({
                   onClick={() => onAspectRatioChange(ratio)}
                   className="text-slate-300 hover:text-white hover:bg-white/10 cursor-pointer flex items-center justify-between gap-3"
                 >
-                  <span>{getAspectRatioLabel(ratio)}</span>
+                  <span>{ratio === "native" ? t("settings.aspectRatioNative") : getAspectRatioLabel(ratio)}</span>
                   {aspectRatio === ratio && <Check className="w-3 h-3 text-[#34B27B]" />}
                 </DropdownMenuItem>
               ))}

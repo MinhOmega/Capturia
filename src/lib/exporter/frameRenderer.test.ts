@@ -49,6 +49,15 @@ vi.mock("pixi.js", () => {
   };
 });
 
+vi.mock("pixi-filters/motion-blur", () => ({
+  MotionBlurFilter: class MockMotionBlurFilter {
+    velocity = { x: 0, y: 0 };
+    kernelSize = 5;
+    offset = 0;
+    resolution = 1;
+  },
+}));
+
 import { FrameRenderer, compositeContextAttributes, flipPixelRowsInPlace } from "./frameRenderer";
 
 describe("frameRenderer video texture setup", () => {

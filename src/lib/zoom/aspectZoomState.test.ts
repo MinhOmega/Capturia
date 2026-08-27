@@ -62,3 +62,17 @@ describe("aspectZoomState", () => {
     expect(next["9:16"]).toBe("zoom-v");
   });
 });
+
+describe("native aspect key", () => {
+  it("stores and reads zoom regions and selection under 'native' like any fixed ratio", () => {
+    const region = { id: "zoom-1", startMs: 0, endMs: 1000 } as unknown as ZoomRegion;
+    const regions: ZoomRegionsByAspect = setZoomRegionsForAspect({ "16:9": [] }, "native", [region]);
+    expect(getZoomRegionsForAspect(regions, "native")).toEqual([region]);
+    expect(getZoomRegionsForAspect(regions, "16:9")).toEqual([]);
+
+    const selected: SelectedZoomIdByAspect = setSelectedZoomIdForAspect({}, "native", "zoom-1");
+    expect(getSelectedZoomIdForAspect(selected, "native")).toBe("zoom-1");
+    expect(clearStaleSelectedZoomIdForAspect(selected, regions, "native")).toBe(selected);
+    expect(getSelectedZoomIdForAspect(clearStaleSelectedZoomIdForAspect(selected, { native: [] }, "native"), "native")).toBeNull();
+  });
+});

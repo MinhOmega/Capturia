@@ -495,3 +495,32 @@ describe('resolveGifWorkerCount', () => {
     expect(resolveGifWorkerCount(Number.NaN)).toBe(3);
   });
 });
+
+describe('calculateOutputDimensions with a selected aspect ratio', () => {
+  it('uses the selected aspect ratio for scaled GIF exports', () => {
+    expect(calculateOutputDimensions(1080, 1920, 'medium', GIF_SIZE_PRESETS, 16 / 9)).toEqual({
+      width: 1280,
+      height: 720,
+    });
+  });
+
+  it('fits original-size GIF exports within the source bounds at the selected aspect ratio', () => {
+    expect(calculateOutputDimensions(1080, 1920, 'original', GIF_SIZE_PRESETS, 16 / 9)).toEqual({
+      width: 1080,
+      height: 606,
+    });
+  });
+
+  it('exports the native aspect at the cropped source size without upscaling', () => {
+    // 'native' passes the cropped source and its own ratio.
+    expect(calculateOutputDimensions(960, 1080, 'original', GIF_SIZE_PRESETS, 960 / 1080)).toEqual({
+      width: 960,
+      height: 1080,
+    });
+    // Source shorter than the preset height: keep the source size instead of scaling up.
+    expect(calculateOutputDimensions(640, 360, 'large', GIF_SIZE_PRESETS, 16 / 9)).toEqual({
+      width: 640,
+      height: 360,
+    });
+  });
+});
