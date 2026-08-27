@@ -17,6 +17,7 @@ import {
   type NormalizedExportAudioProcessingConfig,
 } from '@/lib/audio/exportAudioProcessing';
 import { ALL_FORMATS, AudioBufferSink, BlobSource, Input, UrlSource, type InputAudioTrack } from 'mediabunny';
+import { getPlatform } from '@/utils/platformUtils';
 
 interface VideoExporterConfig extends ExportConfig {
   videoUrl: string;
@@ -281,6 +282,7 @@ export class VideoExporter {
   private samplingMode = 'seek-only' as const;
   private maxObservedTimingDriftMs = 0;
   private sourceDurationMs = 0;
+  private platform: string | undefined;
   private sourceTrimRanges: TimeRangeMs[] = [];
   private sourceAudioEditRegions: AudioEditRegion[] = [];
   private sourceAudioInput: Input | null = null;
@@ -642,6 +644,7 @@ export class VideoExporter {
       this.sourceAudioEditRegions = [];
       this.warnings.clear();
 
+      this.platform = await getPlatform();
       this.decoder = new VideoFileDecoder();
       const videoInfo = await this.decoder.loadVideo(this.config.videoUrl);
       this.sourceDurationMs = Math.max(0, videoInfo.duration * 1000);
@@ -694,6 +697,7 @@ export class VideoExporter {
         previewHeight: this.config.previewHeight,
         cursorTrack: this.config.cursorTrack,
         cursorStyle: this.config.cursorStyle,
+        platform: this.platform,
       });
       await this.renderer.initialize();
 
@@ -888,17 +892,41 @@ export class VideoExporter {
 
     const canvas = this.renderer!.getCanvas();
 
-    // @ts-expect-error - colorSpace is not in TypeScript's VideoFrameInit yet but works at runtime.
-    const exportFrame = new VideoFrame(canvas, {
-      timestamp,
-      duration,
-      colorSpace: {
-        primaries: 'bt709',
-        transfer: 'iec61966-2-1',
-        matrix: 'rgb',
-        fullRange: true,
-      },
-    });
+    let exportFrame: VideoFrame;
+    if (this.platform === 'linux') {
+      // On some Linux systems the GPU shared-image path (EGL/Ozone) fails
+      // silently, producing empty frames, so build the frame from a CPU readback.
+      const canvasCtx = canvas.getContext('2d');
+      if (!canvasCtx) {
+        throw new Error('Composite canvas 2D context unavailable');
+      }
+      const imageData = canvasCtx.getImageData(0, 0, canvas.width, canvas.height);
+      exportFrame = new VideoFrame(imageData.data.buffer, {
+        format: 'RGBA',
+        codedWidth: canvas.width,
+        codedHeight: canvas.height,
+        timestamp,
+        duration,
+        colorSpace: {
+          primaries: 'bt709',
+          transfer: 'iec61966-2-1',
+          matrix: 'rgb',
+          fullRange: true,
+        },
+      });
+    } else {
+      // @ts-expect-error - colorSpace is not in TypeScript's VideoFrameInit yet but works at runtime.
+      exportFrame = new VideoFrame(canvas, {
+        timestamp,
+        duration,
+        colorSpace: {
+          primaries: 'bt709',
+          transfer: 'iec61966-2-1',
+          matrix: 'rgb',
+          fullRange: true,
+        },
+      });
+    }
 
     while (this.encodeQueue >= this.MAX_ENCODE_QUEUE && !this.cancelled) {
       await new Promise<void>((resolve) => queueMicrotask(resolve));
