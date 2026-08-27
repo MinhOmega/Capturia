@@ -691,7 +691,7 @@ export default function VideoEditor() {
                   // Remove exact content duplicates (same id + startMs + endMs + depth)
                   const contentKeys = new Set<string>();
                   const deduped = regions.filter(r => {
-                    const key = `${r.id}|${r.startMs}|${r.endMs}|${r.depth}|${r.focus?.cx}|${r.focus?.cy}`;
+                    const key = `${r.id}|${r.startMs}|${r.endMs}|${r.depth}|${r.customScale ?? ''}|${r.focus?.cx}|${r.focus?.cy}`;
                     if (contentKeys.has(key)) return false;
                     contentKeys.add(key);
                     return true;

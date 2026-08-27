@@ -1,10 +1,10 @@
 import { Application, Container, Sprite, Graphics, BlurFilter, Texture, VideoSource } from 'pixi.js';
 import type { ZoomRegion, CropRegion, AnnotationRegion } from '@/components/video-editor/types';
-import { ZOOM_DEPTH_SCALES } from '@/components/video-editor/types';
+import { getZoomScale } from '@/components/video-editor/types';
 import { findDominantRegion } from '@/components/video-editor/videoPlayback/zoomRegionUtils';
 import { applyZoomTransform } from '@/components/video-editor/videoPlayback/zoomTransform';
 import { DEFAULT_FOCUS, MIN_DELTA, resolveAdaptiveSmoothingAlpha } from '@/components/video-editor/videoPlayback/constants';
-import { clampFocusToStage as clampFocusToStageUtil } from '@/components/video-editor/videoPlayback/focusUtils';
+import { clampFocusToScale } from '@/components/video-editor/videoPlayback/focusUtils';
 import { renderAnnotations, preloadAnnotationImages } from './annotationRenderer';
 import { getExportBackgroundFilter } from '@/lib/rendering/backgroundBlur';
 import { getAssetPath } from '@/lib/assetPath';
@@ -620,9 +620,9 @@ export class FrameRenderer {
     };
   }
 
-  private clampFocusToStage(focus: { cx: number; cy: number }, depth: number): { cx: number; cy: number } {
+  private clampFocusToStage(focus: { cx: number; cy: number }, zoomScale: number): { cx: number; cy: number } {
     if (!this.layoutCache) return focus;
-    return clampFocusToStageUtil(focus, depth as any, this.layoutCache);
+    return clampFocusToScale(focus, zoomScale, this.layoutCache.stageSize);
   }
 
   private updateAnimationState(timeMs: number): number {
@@ -635,8 +635,8 @@ export class FrameRenderer {
     let targetFocus = { ...defaultFocus };
 
     if (region && strength > 0) {
-      const zoomScale = ZOOM_DEPTH_SCALES[region.depth];
-      const regionFocus = this.clampFocusToStage(region.focus, region.depth);
+      const zoomScale = getZoomScale(region);
+      const regionFocus = this.clampFocusToStage(region.focus, zoomScale);
       
       targetScaleFactor = 1 + (zoomScale - 1) * strength;
       targetFocus = {
