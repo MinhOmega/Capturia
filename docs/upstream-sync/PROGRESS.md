@@ -77,3 +77,5 @@ Newest entries first. Each entry: date, cycle stage, what happened, verification
 
 - Spawned W2-a zoom (B2-1 model/UI + B2-2 engine; auto-follow B2-3 deferred to wave 3), W2-b timeline
   (B3-2 + B3-3), W2-c annotations + background (B3-4 + B1-b), W2-d cursor polish (B2-4).
+- Wave 2 agents were terminated by an API usage limit before committing anything (worktrees clean at
+  `0dd7d04`). Resumed all four after the limit reset; agents instructed to commit per item.
