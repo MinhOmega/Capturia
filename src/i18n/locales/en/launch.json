@@ -5,6 +5,7 @@
 	"pauseRecording": "Pause recording",
 	"resumeRecording": "Resume recording",
 	"discardRecording": "Discard recording",
+	"restartRecording": "Restart recording",
 	"open": "Open",
 	"camera": "Camera",
 	"cameraEnabled": "Camera overlay enabled",

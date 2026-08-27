@@ -4,10 +4,12 @@ import {
   beginStopTransition,
   canPauseRecording,
   canRequestDiscard,
+  canRequestRestart,
   canRequestStop,
   completeStopTransition,
   planNativeStopSideEffects,
   resolveStopRoute,
+  shouldStartAfterRestart,
   type RecordingTransitionState,
 } from "./recordingPhase";
 
@@ -104,5 +106,43 @@ describe("recordingPhase", () => {
     expect(canPauseRecording({ phase: "paused", nativeRecordingActive: false })).toBe(true);
     expect(canPauseRecording({ phase: "recording", nativeRecordingActive: true })).toBe(false);
     expect(canPauseRecording({ phase: "idle", nativeRecordingActive: false })).toBe(false);
+  });
+});
+
+describe("recordingPhase restart", () => {
+  it("restart shares the discard guard and refuses while a restart is already pending", () => {
+    expect(canRequestRestart(recordingState, { restartPending: false })).toBe(true);
+    expect(canRequestRestart({ ...recordingState, phase: "paused" }, { restartPending: false })).toBe(true);
+    expect(canRequestRestart(recordingState, { restartPending: true })).toBe(false);
+    expect(canRequestRestart(IDLE_RECORDING_STATE, { restartPending: false })).toBe(false);
+    expect(
+      canRequestRestart({ ...recordingState, phase: "starting", recording: false }, { restartPending: false }),
+    ).toBe(false);
+    expect(canRequestRestart(beginStopTransition(recordingState), { restartPending: false })).toBe(false);
+  });
+
+  it("the pending restart starts only once the discard has settled to idle", () => {
+    // Discard requested: still stopping, nothing starts yet.
+    const stopping = beginStopTransition(recordingState, { discard: true });
+    expect(
+      shouldStartAfterRestart({
+        phase: stopping.phase,
+        transitionInFlight: stopping.transitionInFlight,
+        restartPending: true,
+      }),
+    ).toBe(false);
+    // Phase flipped to idle but the transition flag has not been cleared yet.
+    expect(shouldStartAfterRestart({ phase: "idle", transitionInFlight: true, restartPending: true })).toBe(false);
+    // Fully idle: fire.
+    const idle = completeStopTransition(stopping);
+    expect(
+      shouldStartAfterRestart({
+        phase: idle.phase,
+        transitionInFlight: idle.transitionInFlight,
+        restartPending: true,
+      }),
+    ).toBe(true);
+    // A plain stop/discard without a restart intent never starts anything.
+    expect(shouldStartAfterRestart({ phase: "idle", transitionInFlight: false, restartPending: false })).toBe(false);
   });
 });

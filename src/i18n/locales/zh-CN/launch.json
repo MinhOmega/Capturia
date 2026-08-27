@@ -5,6 +5,7 @@
 	"pauseRecording": "暂停录制",
 	"resumeRecording": "继续录制",
 	"discardRecording": "丢弃录制",
+	"restartRecording": "重新开始录制",
 	"open": "打开",
 	"camera": "摄像头",
 	"cameraEnabled": "已启用摄像头画中画",

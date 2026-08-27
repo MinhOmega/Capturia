@@ -257,6 +257,7 @@ export function LaunchWindow() {
     pauseRecording,
     resumeRecording,
     discardRecording,
+    restartRecording,
     startTimeRef,
     cumulativePauseMsRef,
     pauseStartTimeRef,
@@ -882,6 +883,15 @@ export function LaunchWindow() {
                 )}
               </button>
             )}
+            <button
+              onClick={restartRecording}
+              disabled={isTransitioning}
+              className="p-1 rounded hover:bg-white/10 transition-colors disabled:opacity-40"
+              title={t("launch.restartRecording")}
+              data-testid="launch-restart-button"
+            >
+              <RotateCcw size={13} className="text-white/50 hover:text-amber-300" />
+            </button>
             <button
               onClick={discardRecording}
               className="p-1 rounded hover:bg-white/10 transition-colors"
