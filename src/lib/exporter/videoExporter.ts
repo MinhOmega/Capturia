@@ -17,6 +17,9 @@ import {
   type NormalizedExportAudioProcessingConfig,
 } from '@/lib/audio/exportAudioProcessing';
 import { ALL_FORMATS, AudioBufferSink, BlobSource, Input, UrlSource, type InputAudioTrack } from 'mediabunny';
+import { getPlatform } from '@/utils/platformUtils';
+import { selectExportAudioCodec, type ExportAudioCodec } from './audioCodecSelection';
+import { resolveSourceDurationMs } from './sourceDuration';
 
 interface VideoExporterConfig extends ExportConfig {
   videoUrl: string;
@@ -41,6 +44,11 @@ interface VideoExporterConfig extends ExportConfig {
   onProgress?: (progress: ExportProgress) => void;
   playbackSpeed?: number;
   segments?: VideoSegment[];
+  /**
+   * Probed real duration of the source (ms). Preferred over `video.duration`
+   * when present; see `resolveSourceDurationMs`.
+   */
+  sourceDurationMs?: number;
 }
 
 type TimeRangeMs = {
@@ -69,21 +77,6 @@ const MAX_AUDIO_GAIN = 2;
 const EXPORT_WARNING_AUDIO_TRACK_UNAVAILABLE = 'editor.exportWarningAudioTrackUnavailable';
 const EXPORT_WARNING_AUDIO_CODEC_UNSUPPORTED = 'editor.exportWarningAudioCodecUnsupported';
 const EXPORT_WARNING_SPEED_AUDIO_UNAVAILABLE = 'editor.exportWarningSpeedAudioUnavailable';
-
-async function isAacEncodingSupported(): Promise<boolean> {
-  if (typeof AudioEncoder === 'undefined') return false;
-  try {
-    const result = await AudioEncoder.isConfigSupported({
-      codec: 'mp4a.40.2',
-      sampleRate: 48000,
-      numberOfChannels: 1,
-      bitrate: 128_000,
-    });
-    return result.supported === true;
-  } catch {
-    return false;
-  }
-}
 
 function isExportAudioDebugEnabled(): boolean {
   try {
@@ -281,6 +274,8 @@ export class VideoExporter {
   private samplingMode = 'seek-only' as const;
   private maxObservedTimingDriftMs = 0;
   private sourceDurationMs = 0;
+  private platform: string | undefined;
+  private audioCodec: ExportAudioCodec = 'aac';
   private sourceTrimRanges: TimeRangeMs[] = [];
   private sourceAudioEditRegions: AudioEditRegion[] = [];
   private sourceAudioInput: Input | null = null;
@@ -642,9 +637,13 @@ export class VideoExporter {
       this.sourceAudioEditRegions = [];
       this.warnings.clear();
 
+      this.platform = await getPlatform();
       this.decoder = new VideoFileDecoder();
       const videoInfo = await this.decoder.loadVideo(this.config.videoUrl);
-      this.sourceDurationMs = Math.max(0, videoInfo.duration * 1000);
+      this.sourceDurationMs = resolveSourceDurationMs(videoInfo.duration, this.config.sourceDurationMs);
+      if (this.sourceDurationMs !== Math.max(0, videoInfo.duration * 1000)) {
+        console.warn('[VideoExporter] Using probed source duration', this.sourceDurationMs, 'ms instead of', videoInfo.duration, 's');
+      }
       this.sourceTrimRanges = normalizeTrimRanges(this.config.trimRegions, this.sourceDurationMs);
       this.sourceAudioEditRegions = normalizeAudioEditRegions(this.config.audioEditRegions, this.sourceDurationMs);
       let hasSourceAudio = await this.resolveSourceAudioTrack();
@@ -662,15 +661,22 @@ export class VideoExporter {
         this.addWarning(EXPORT_WARNING_SPEED_AUDIO_UNAVAILABLE);
       }
 
-      // AAC encoding is required for MP4 audio but may not be available
-      // on some platforms (e.g. Chromium on Linux without proprietary codecs).
+      // MP4 audio needs AAC or, when that encoder is missing (e.g. Chromium on
+      // Linux without proprietary codecs), Opus. Only when neither is available
+      // is the audio dropped with a warning.
+      this.audioCodec = 'aac';
       if (hasSourceAudio) {
-        const aacSupported = await isAacEncodingSupported();
-        if (!aacSupported) {
-          console.warn('[VideoExporter] AAC audio encoding not supported on this system, exporting without audio');
+        const selectedCodec = await selectExportAudioCodec();
+        if (!selectedCodec) {
+          console.warn('[VideoExporter] Neither AAC nor Opus audio encoding is supported on this system, exporting without audio');
           hasSourceAudio = false;
           this.sourceAudioTrack = null;
           this.addWarning(EXPORT_WARNING_AUDIO_CODEC_UNSUPPORTED);
+        } else {
+          this.audioCodec = selectedCodec;
+          if (selectedCodec !== 'aac') {
+            console.info(`[VideoExporter] AAC encoder unavailable, using ${selectedCodec} audio in MP4`);
+          }
         }
       }
 
@@ -694,12 +700,13 @@ export class VideoExporter {
         previewHeight: this.config.previewHeight,
         cursorTrack: this.config.cursorTrack,
         cursorStyle: this.config.cursorStyle,
+        platform: this.platform,
       });
       await this.renderer.initialize();
 
       await this.initializeEncoder();
 
-      this.muxer = new VideoMuxer(this.config, hasSourceAudio);
+      this.muxer = new VideoMuxer(this.config, hasSourceAudio, this.audioCodec);
       await this.muxer.initialize();
 
       const videoElement = this.decoder.getVideoElement();
@@ -707,10 +714,10 @@ export class VideoExporter {
         throw new Error('Video element not available');
       }
 
-      const effectiveDuration = this.getEffectiveDuration(videoInfo.duration);
+      const effectiveDuration = this.getEffectiveDuration(this.sourceDurationMs / 1000);
       const totalFrames = Math.ceil(effectiveDuration * this.config.frameRate);
 
-      console.log('[VideoExporter] Original duration:', videoInfo.duration, 's');
+      console.log('[VideoExporter] Original duration:', videoInfo.duration, 's (using', this.sourceDurationMs / 1000, 's)');
       console.log('[VideoExporter] Effective duration:', effectiveDuration, 's');
       console.log('[VideoExporter] Total frames to export:', totalFrames);
 
@@ -888,17 +895,41 @@ export class VideoExporter {
 
     const canvas = this.renderer!.getCanvas();
 
-    // @ts-expect-error - colorSpace is not in TypeScript's VideoFrameInit yet but works at runtime.
-    const exportFrame = new VideoFrame(canvas, {
-      timestamp,
-      duration,
-      colorSpace: {
-        primaries: 'bt709',
-        transfer: 'iec61966-2-1',
-        matrix: 'rgb',
-        fullRange: true,
-      },
-    });
+    let exportFrame: VideoFrame;
+    if (this.platform === 'linux') {
+      // On some Linux systems the GPU shared-image path (EGL/Ozone) fails
+      // silently, producing empty frames, so build the frame from a CPU readback.
+      const canvasCtx = canvas.getContext('2d');
+      if (!canvasCtx) {
+        throw new Error('Composite canvas 2D context unavailable');
+      }
+      const imageData = canvasCtx.getImageData(0, 0, canvas.width, canvas.height);
+      exportFrame = new VideoFrame(imageData.data.buffer, {
+        format: 'RGBA',
+        codedWidth: canvas.width,
+        codedHeight: canvas.height,
+        timestamp,
+        duration,
+        colorSpace: {
+          primaries: 'bt709',
+          transfer: 'iec61966-2-1',
+          matrix: 'rgb',
+          fullRange: true,
+        },
+      });
+    } else {
+      // @ts-expect-error - colorSpace is not in TypeScript's VideoFrameInit yet but works at runtime.
+      exportFrame = new VideoFrame(canvas, {
+        timestamp,
+        duration,
+        colorSpace: {
+          primaries: 'bt709',
+          transfer: 'iec61966-2-1',
+          matrix: 'rgb',
+          fullRange: true,
+        },
+      });
+    }
 
     while (this.encodeQueue >= this.MAX_ENCODE_QUEUE && !this.cancelled) {
       await new Promise<void>((resolve) => queueMicrotask(resolve));

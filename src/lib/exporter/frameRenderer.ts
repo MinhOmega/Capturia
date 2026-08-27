@@ -46,6 +46,34 @@ interface FrameRenderConfig {
   previewHeight?: number;
   cursorTrack?: CursorTrack | null;
   cursorStyle?: Partial<CursorStyleConfig>;
+  /** `process.platform` of the host; enables the Linux CPU readback path. */
+  platform?: string;
+}
+
+/**
+ * 2D context attributes for canvases the export loop reads back every frame.
+ * Only Linux hints `willReadFrequently`; other platforms keep the GPU-backed
+ * default so their output stays byte-identical.
+ */
+export function compositeContextAttributes(platform?: string): CanvasRenderingContext2DSettings {
+  return { willReadFrequently: platform === 'linux' };
+}
+
+/**
+ * `gl.readPixels` returns rows bottom-to-top; flip them in place so the buffer
+ * matches canvas/ImageData row order. Pure so it can be unit-tested.
+ */
+export function flipPixelRowsInPlace(buf: Uint8Array, width: number, height: number): Uint8Array {
+  const rowSize = width * 4;
+  const temp = new Uint8Array(rowSize);
+  for (let top = 0, bot = height - 1; top < bot; top++, bot--) {
+    const tOff = top * rowSize;
+    const bOff = bot * rowSize;
+    temp.set(buf.subarray(tOff, tOff + rowSize));
+    buf.copyWithin(tOff, bOff, bOff + rowSize);
+    buf.set(temp, bOff);
+  }
+  return buf;
 }
 
 interface AnimationState {
@@ -81,6 +109,9 @@ export class FrameRenderer {
   private shadowCtx: CanvasRenderingContext2D | null = null;
   private compositeCanvas: HTMLCanvasElement | null = null;
   private compositeCtx: CanvasRenderingContext2D | null = null;
+  private rasterCanvas: HTMLCanvasElement | null = null;
+  private rasterCtx: CanvasRenderingContext2D | null = null;
+  private readonly isLinux: boolean;
   private config: FrameRenderConfig;
   private animationState: AnimationState;
   private layoutCache: any = null;
@@ -92,6 +123,7 @@ export class FrameRenderer {
 
   constructor(config: FrameRenderConfig) {
     this.config = config;
+    this.isLinux = config.platform === 'linux';
     this.subtitleCues = normalizeSubtitleCues(config.subtitleCues ?? []);
     this.animationState = {
       scale: 1,
@@ -149,10 +181,23 @@ export class FrameRenderer {
     this.compositeCanvas = document.createElement('canvas');
     this.compositeCanvas.width = this.config.width;
     this.compositeCanvas.height = this.config.height;
-    this.compositeCtx = this.compositeCanvas.getContext('2d', { willReadFrequently: false });
+    // On Linux the export loop calls getImageData() on every frame, so hint
+    // frequent CPU readback. Elsewhere the GPU-backed default is kept as-is.
+    this.compositeCtx = this.compositeCanvas.getContext('2d', compositeContextAttributes(this.config.platform));
     
     if (!this.compositeCtx) {
       throw new Error('Failed to get 2D context for composite canvas');
+    }
+
+    if (this.isLinux) {
+      // Raster staging canvas for the WebGL readPixels readback (see readbackVideoCanvas).
+      this.rasterCanvas = document.createElement('canvas');
+      this.rasterCanvas.width = this.config.width;
+      this.rasterCanvas.height = this.config.height;
+      this.rasterCtx = this.rasterCanvas.getContext('2d');
+      if (!this.rasterCtx) {
+        throw new Error('Failed to get 2D context for raster canvas');
+      }
     }
 
     // Setup shadow canvas if needed
@@ -691,10 +736,37 @@ export class FrameRenderer {
     );
   }
 
+  // On Linux/Wayland the implicit GPU-to-2D texture-sharing path behind
+  // drawImage(webglCanvas) can fail silently (EGL/Ozone), giving green/empty
+  // frames. gl.readPixels copies GPU to CPU directly, bypassing that path.
+  private readbackVideoCanvas(): HTMLCanvasElement {
+    const glCanvas = this.app!.canvas as HTMLCanvasElement;
+    const gl =
+      (glCanvas.getContext('webgl2') as WebGL2RenderingContext | null) ??
+      (glCanvas.getContext('webgl') as WebGLRenderingContext | null);
+
+    if (!gl || !this.rasterCanvas || !this.rasterCtx) {
+      return glCanvas;
+    }
+
+    const w = glCanvas.width;
+    const h = glCanvas.height;
+    const buf = new Uint8Array(w * h * 4);
+    gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+    flipPixelRowsInPlace(buf, w, h);
+
+    const imageData = new ImageData(new Uint8ClampedArray(buf.buffer), w, h);
+    this.rasterCtx.putImageData(imageData, 0, 0);
+
+    return this.rasterCanvas;
+  }
+
   private compositeWithShadows(): void {
     if (!this.compositeCanvas || !this.compositeCtx || !this.app) return;
 
-    const videoCanvas = this.app.canvas as HTMLCanvasElement;
+    const videoCanvas = this.isLinux
+      ? this.readbackVideoCanvas()
+      : (this.app.canvas as HTMLCanvasElement);
     const ctx = this.compositeCtx;
     const w = this.compositeCanvas.width;
     const h = this.compositeCanvas.height;
@@ -766,5 +838,7 @@ export class FrameRenderer {
     this.shadowCtx = null;
     this.compositeCanvas = null;
     this.compositeCtx = null;
+    this.rasterCanvas = null;
+    this.rasterCtx = null;
   }
 }
