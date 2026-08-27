@@ -13,6 +13,8 @@
 	"generateSubtitles": "Generate Subtitles",
 	"applyRoughCut": "Apply Rough Cut",
 	"deleteTrim": "Delete Trim Region",
+	"customPlaybackSpeed": "Custom speed",
+	"maxSpeedError": "Speed can't go higher than {{max}}×",
 	"videoEffects": "Video Effects",
 	"motionBlur": "Motion Blur",
 	"blurBg": "Blur BG",
