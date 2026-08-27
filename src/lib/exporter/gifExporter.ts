@@ -52,29 +52,56 @@ interface GifExporterConfig {
  * @param sizePresets - The size presets configuration
  * @returns The calculated output dimensions
  */
+/**
+ * GIF output size for a size preset. Without `targetAspectRatio` the source
+ * ratio is kept (legacy behaviour, exact source dimensions when not scaled).
+ * With it (the editor's selected aspect, incl. 'native' = cropped source ratio)
+ * the output is fitted to that ratio: within the source bounds for 'original'
+ * or when the source is already no taller than the preset, else at the
+ * preset height. Never upscales the source.
+ */
 export function calculateOutputDimensions(
   sourceWidth: number,
   sourceHeight: number,
   sizePreset: GifSizePreset,
-  sizePresets: typeof GIF_SIZE_PRESETS
+  sizePresets: typeof GIF_SIZE_PRESETS,
+  targetAspectRatio?: number,
 ): { width: number; height: number } {
   const preset = sizePresets[sizePreset];
   const maxHeight = preset.maxHeight;
+  const fitsWithoutScaling = sourceHeight <= maxHeight || sizePreset === 'original';
 
-  // If original is smaller than max height or preset is 'original', use source dimensions
-  if (sourceHeight <= maxHeight || sizePreset === 'original') {
-    return { width: sourceWidth, height: sourceHeight };
+  if (targetAspectRatio === undefined) {
+    if (fitsWithoutScaling) {
+      return { width: sourceWidth, height: sourceHeight };
+    }
+    const aspectRatio = sourceWidth / sourceHeight;
+    const newHeight = maxHeight;
+    const newWidth = Math.round(newHeight * aspectRatio);
+    // Ensure dimensions are even (required for some encoders)
+    return {
+      width: newWidth % 2 === 0 ? newWidth : newWidth + 1,
+      height: newHeight % 2 === 0 ? newHeight : newHeight + 1,
+    };
   }
 
-  // Calculate scaled dimensions preserving aspect ratio
-  const aspectRatio = sourceWidth / sourceHeight;
-  const newHeight = maxHeight;
-  const newWidth = Math.round(newHeight * aspectRatio);
+  const sourceAspect = sourceWidth / sourceHeight;
+  const aspectRatio =
+    Number.isFinite(targetAspectRatio) && targetAspectRatio > 0 ? targetAspectRatio : sourceAspect;
+  const toEven = (value: number) => Math.max(2, Math.floor(value / 2) * 2);
 
-  // Ensure dimensions are even (required for some encoders)
+  if (fitsWithoutScaling) {
+    if (aspectRatio >= sourceAspect) {
+      const width = toEven(sourceWidth);
+      return { width, height: toEven(width / aspectRatio) };
+    }
+    const height = toEven(sourceHeight);
+    return { width: toEven(height * aspectRatio), height };
+  }
+
   return {
-    width: newWidth % 2 === 0 ? newWidth : newWidth + 1,
-    height: newHeight % 2 === 0 ? newHeight : newHeight + 1,
+    width: toEven(Math.round(maxHeight * aspectRatio)),
+    height: toEven(maxHeight),
   };
 }
 

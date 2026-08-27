@@ -16,7 +16,7 @@ import { getFocusBoundsForScale } from "./videoPlayback/focusUtils";
 import { CropControl } from "./CropControl";
 import { KeyboardShortcutsHelp } from "./KeyboardShortcutsHelp";
 import { AnnotationSettingsPanel } from "./AnnotationSettingsPanel";
-import { ASPECT_RATIOS, type AspectRatio } from "@/utils/aspectRatioUtils";
+import { ASPECT_RATIOS, type AspectRatio, getAspectRatioLabel } from "@/utils/aspectRatioUtils";
 import type { ExportQuality, ExportFormat, GifFrameRate, GifSizePreset } from "@/lib/exporter";
 import { GIF_FRAME_RATES, GIF_SIZE_PRESETS } from "@/lib/exporter";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -147,6 +147,8 @@ interface SettingsPanelProps {
   onBorderRadiusChange?: (radius: number) => void;
   padding?: number;
   onPaddingChange?: (padding: number) => void;
+  /** True for the 'native' aspect: padding is forced to 0 and the slider is locked. */
+  paddingDisabled?: boolean;
   cropRegion?: CropRegion;
   onCropChange?: (region: CropRegion) => void;
   aspectRatio: AspectRatio;
@@ -313,6 +315,7 @@ export function SettingsPanel({
   onBorderRadiusChange, 
   padding = 50, 
   onPaddingChange, 
+  paddingDisabled = false,
   cropRegion, 
   onCropChange, 
   aspectRatio, 
@@ -1294,8 +1297,12 @@ export function SettingsPanel({
                     min={0}
                     max={100}
                     step={1}
+                    disabled={paddingDisabled}
                     className="w-full [&_[role=slider]]:bg-[#34B27B] [&_[role=slider]]:border-[#34B27B] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
                   />
+                  {paddingDisabled ? (
+                    <p className="mt-1 text-[10px] leading-snug text-slate-500">{t("settings.paddingNativeHint")}</p>
+                  ) : null}
                 </div>
                 <div className="p-2 rounded-lg bg-white/5 border border-white/5">
                   <div className="flex items-center justify-between mb-1">
@@ -1591,7 +1598,7 @@ export function SettingsPanel({
                           : "border-white/10 text-slate-400 hover:border-[#34B27B]/50 hover:text-slate-200",
                       )}
                     >
-                      {ratio}
+                      {ratio === "native" ? t("settings.aspectRatioNative") : getAspectRatioLabel(ratio)}
                     </button>
                   );
                 })}

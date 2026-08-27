@@ -245,7 +245,7 @@ export function ExportDialog({
                   {t('dialogs.export.batchProgress', { current: batchProgress.current, total: batchProgress.total })}
                 </div>
                 <div className="mt-1 text-sm font-medium text-slate-200">
-                  {batchProgress.aspectRatio}
+                  {batchProgress.aspectRatio === 'native' ? t('settings.aspectRatioNative') : batchProgress.aspectRatio}
                 </div>
               </div>
             )}

@@ -10,7 +10,12 @@ function sanitizeAspect(value: number, fallback: number): number {
   return Number.isFinite(value) && value > 0 ? value : fallback
 }
 
-function sanitizeCropRegion(region: CropRegion): CropRegion {
+/**
+ * Clamp a crop into the source without imposing an aspect. This is the crop
+ * model for the 'native' ("Original") aspect: the output ratio follows the crop
+ * instead of the crop following a fixed ratio.
+ */
+export function sanitizeCropRegion(region: CropRegion): CropRegion {
   const width = clamp(Number.isFinite(region.width) ? region.width : 1, MIN_SIZE, 1)
   const height = clamp(Number.isFinite(region.height) ? region.height : 1, MIN_SIZE, 1)
   const x = clamp(Number.isFinite(region.x) ? region.x : 0, 0, 1 - width)

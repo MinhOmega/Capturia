@@ -17,7 +17,7 @@ import { updateOverlayIndicator } from "./videoPlayback/overlayUtils";
 import { layoutVideoContent as layoutVideoContentUtil } from "./videoPlayback/layoutUtils";
 import { applyZoomTransform, createMotionBlurState, resetMotionBlurState } from "./videoPlayback/zoomTransform";
 import { createVideoEventHandlers } from "./videoPlayback/videoEventHandlers";
-import { type AspectRatio, formatAspectRatioForCSS } from "@/utils/aspectRatioUtils";
+import { type AspectRatio, formatAspectRatioForCSS, getNativeAspectRatioValue } from "@/utils/aspectRatioUtils";
 import { AnnotationOverlay } from "./AnnotationOverlay";
 import { getRenderableAnnotations } from "@/lib/annotations/renderOrder";
 import { getPreviewBackgroundFilter } from "@/lib/rendering/backgroundBlur";
@@ -1235,7 +1235,22 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
     : { background: resolvedWallpaper || '' };
 
   return (
-    <div className="relative rounded-sm overflow-hidden" style={{ width: '100%', aspectRatio: formatAspectRatioForCSS(aspectRatio) }}>
+    <div
+      className="relative rounded-sm overflow-hidden"
+      style={{
+        width: '100%',
+        aspectRatio: formatAspectRatioForCSS(
+          aspectRatio,
+          aspectRatio === 'native'
+            ? getNativeAspectRatioValue(
+                lockedVideoDimensionsRef.current?.width || videoRef.current?.videoWidth || 0,
+                lockedVideoDimensionsRef.current?.height || videoRef.current?.videoHeight || 0,
+                cropRegion,
+              )
+            : undefined,
+        ),
+      }}
+    >
       {/* Background layer - always render as DOM element with blur */}
       <div
         className="absolute inset-0 bg-cover bg-center"
