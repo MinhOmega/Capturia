@@ -48,6 +48,46 @@ function filledBuffer(length: number, channels: number, sampleRate: number, fill
 }
 
 describe('VideoExporter createAudioSlice', () => {
+  it('keeps stereo sources at two channels', () => {
+    const exporter = makeExporter();
+    const src = filledBuffer(10, 2, 48000, 0.3);
+
+    const result = exporter.createAudioSlice(src, 0, 10, 1, 1);
+
+    expect(result!.numberOfChannels).toBe(2);
+    expect(result!.getChannelData(1)[9]).toBeCloseTo(0.3, 6);
+  });
+
+  it('downmixes 5.1 sources to stereo before encoding', () => {
+    const exporter = makeExporter();
+    // FL, FR, FC, LFE, BL, BR
+    const src = filledBuffer(10, 6, 48000, 0);
+    src.getChannelData(0).fill(0.5); // front-left only
+    src.getChannelData(5).fill(0.5); // back-right only
+
+    const result = exporter.createAudioSlice(src, 0, 10, 1, 1);
+
+    expect(result!.numberOfChannels).toBe(2);
+    expect(result!.length).toBe(10);
+    expect(result!.getChannelData(0)[0]).toBeGreaterThan(0);
+    expect(result!.getChannelData(1)[0]).toBeGreaterThan(0);
+  });
+
+  it('applies gain and limiter after downmixing', () => {
+    const exporter = makeExporter();
+    const src = filledBuffer(4, 8, 48000, 0.9);
+
+    const result = exporter.createAudioSlice(src, 1, 3, 2, 0.95);
+
+    expect(result!.numberOfChannels).toBe(2);
+    expect(result!.length).toBe(2);
+    for (let ch = 0; ch < 2; ch++) {
+      const out = result!.getChannelData(ch);
+      expect(out[0]).toBeCloseTo(0.95, 6);
+      expect(out[1]).toBeCloseTo(0.95, 6);
+    }
+  });
+
   it('copies the correct sample range', () => {
     const exporter = makeExporter();
     const src = filledBuffer(100, 1, 44100);

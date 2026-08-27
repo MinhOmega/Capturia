@@ -34,6 +34,7 @@ import {
   type FigureData,
   type ProjectState,
 } from "./types";
+import { ANNOTATION_ID_PREFIX, maxIdNum } from "./idCounters";
 import {
   VideoExporter,
   GifExporter,
@@ -660,13 +661,6 @@ export default function VideoEditor() {
             if (saved.success && savedState?.version === 1) {
               const s = savedState;
 
-              // Helper: extract numeric suffix from IDs like "seg-5" or "zoom-12"
-              const maxIdNum = (items: { id: string }[], prefix: string) =>
-                items.reduce((max, it) => {
-                  const m = it.id.match(new RegExp(`^${prefix}(\\d+)$`));
-                  return m ? Math.max(max, parseInt(m[1], 10)) : max;
-                }, 0);
-
               // Restore segments — re-ID duplicates to guarantee uniqueness
               if (Array.isArray(s.segments) && s.segments.length > 0) {
                 const seen = new Set<string>();
@@ -691,7 +685,7 @@ export default function VideoEditor() {
                   // Remove exact content duplicates (same id + startMs + endMs + depth)
                   const contentKeys = new Set<string>();
                   const deduped = regions.filter(r => {
-                    const key = `${r.id}|${r.startMs}|${r.endMs}|${r.depth}|${r.focus?.cx}|${r.focus?.cy}`;
+                    const key = `${r.id}|${r.startMs}|${r.endMs}|${r.depth}|${r.customScale ?? ''}|${r.focus?.cx}|${r.focus?.cy}`;
                     if (contentKeys.has(key)) return false;
                     contentKeys.add(key);
                     return true;
@@ -716,7 +710,7 @@ export default function VideoEditor() {
               // Restore annotation regions and sync counters
               if (Array.isArray(s.annotationRegions)) {
                 setAnnotationRegions(s.annotationRegions);
-                const maxAnno = maxIdNum(s.annotationRegions, 'anno-');
+                const maxAnno = maxIdNum(s.annotationRegions, ANNOTATION_ID_PREFIX);
                 if (maxAnno > 0) nextAnnotationIdRef.current = maxAnno + 1;
                 const maxZ = s.annotationRegions.reduce(
                   (max: number, a: { zIndex?: number }) => Math.max(max, a.zIndex ?? 0), 0,
@@ -1293,7 +1287,7 @@ export default function VideoEditor() {
       : trims.length > 0 ? effectiveToSourceMs(span.start, trims) : span.start;
     const endMs = segs.length > 0 ? effectiveToSourceMsWithSegments(span.end, segs)
       : trims.length > 0 ? effectiveToSourceMs(span.end, trims) : span.end;
-    const id = `annotation-${nextAnnotationIdRef.current++}`;
+    const id = `${ANNOTATION_ID_PREFIX}${nextAnnotationIdRef.current++}`;
     const zIndex = nextAnnotationZIndexRef.current++; // Assign z-index based on creation order
     const newRegion: AnnotationRegion = {
       id,

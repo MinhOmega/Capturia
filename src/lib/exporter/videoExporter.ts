@@ -1,5 +1,7 @@
 import type { ExportConfig, ExportProgress, ExportResult } from './types';
 import { VideoFileDecoder } from './videoDecoder';
+import { downmixPlanarChannelsForExport } from '@/lib/audio/downmix';
+import { isBackgroundLoadError } from './backgroundErrors';
 import { FrameRenderer } from './frameRenderer';
 import { VideoMuxer } from './muxer';
 import type { ZoomRegion, CropRegion, TrimRegion, AnnotationRegion, AudioEditRegion, VideoSegment } from '@/components/video-editor/types';
@@ -58,6 +60,9 @@ type AudioFrameSlice = {
   endFrame: number;
   gain: number;
 };
+
+/** Export encoders are configured for mono/stereo only; wider sources are downmixed. */
+const MAX_EXPORT_AUDIO_CHANNELS = 2;
 
 const DEFAULT_AUDIO_GAIN = 1;
 const MAX_AUDIO_GAIN = 2;
@@ -435,23 +440,43 @@ export class VideoExporter {
       return null;
     }
 
+    const sourceChannels = sourceBuffer.numberOfChannels;
+    const targetChannels = Math.min(sourceChannels, MAX_EXPORT_AUDIO_CHANNELS);
+
     const sliced = new AudioBuffer({
       length: frameCount,
-      numberOfChannels: sourceBuffer.numberOfChannels,
+      numberOfChannels: targetChannels,
       sampleRate: sourceBuffer.sampleRate,
     });
 
-    for (let channel = 0; channel < sourceBuffer.numberOfChannels; channel += 1) {
-      const source = sourceBuffer.getChannelData(channel);
+    let channelPlanes: Float32Array[];
+    if (targetChannels !== sourceChannels) {
+      // Multichannel capture (5.1/7.1 system audio): fold to stereo so the
+      // AAC encoder never sees a 6/8-channel config it cannot encode.
+      const sourcePlanes = Array.from({ length: sourceChannels }, (_, channel) =>
+        sourceBuffer.getChannelData(channel).subarray(safeStart, safeEnd),
+      );
+      const downmixed = downmixPlanarChannelsForExport(sourcePlanes, targetChannels);
+      channelPlanes = Array.from({ length: targetChannels }, (_, channel) =>
+        downmixed.subarray(channel * frameCount, (channel + 1) * frameCount),
+      );
+    } else {
+      channelPlanes = Array.from({ length: targetChannels }, (_, channel) =>
+        sourceBuffer.getChannelData(channel).subarray(safeStart, safeEnd),
+      );
+    }
+
+    for (let channel = 0; channel < targetChannels; channel += 1) {
+      const source = channelPlanes[channel];
       const target = sliced.getChannelData(channel);
 
       if (gain === 1 && limiterLinear >= 0.9999) {
-        target.set(source.subarray(safeStart, safeEnd));
+        target.set(source);
         continue;
       }
 
       for (let i = 0; i < frameCount; i += 1) {
-        const scaled = source[safeStart + i] * gain;
+        const scaled = source[i] * gain;
         target[i] = Math.max(-limiterLinear, Math.min(limiterLinear, scaled));
       }
     }
@@ -749,6 +774,11 @@ export class VideoExporter {
 
       return { success: true, blob, warnings: this.getWarnings() };
     } catch (error) {
+      if (isBackgroundLoadError(error)) {
+        // Not retryable: the background will not load on a second attempt either.
+        console.error('Export error: background failed to load:', error.displayUrl);
+        return { success: false, error: error.message };
+      }
       console.error('Export error:', error);
       return {
         success: false,

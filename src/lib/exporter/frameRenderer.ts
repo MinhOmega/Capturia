@@ -1,13 +1,20 @@
 import { Application, Container, Sprite, Graphics, BlurFilter, Texture, VideoSource } from 'pixi.js';
 import type { ZoomRegion, CropRegion, AnnotationRegion } from '@/components/video-editor/types';
-import { ZOOM_DEPTH_SCALES } from '@/components/video-editor/types';
+import { getZoomScale } from '@/components/video-editor/types';
 import { findDominantRegion } from '@/components/video-editor/videoPlayback/zoomRegionUtils';
 import { applyZoomTransform } from '@/components/video-editor/videoPlayback/zoomTransform';
 import { DEFAULT_FOCUS, MIN_DELTA, resolveAdaptiveSmoothingAlpha } from '@/components/video-editor/videoPlayback/constants';
-import { clampFocusToStage as clampFocusToStageUtil } from '@/components/video-editor/videoPlayback/focusUtils';
+import { clampFocusToScale } from '@/components/video-editor/videoPlayback/focusUtils';
 import { renderAnnotations, preloadAnnotationImages } from './annotationRenderer';
 import { getExportBackgroundFilter } from '@/lib/rendering/backgroundBlur';
 import { getAssetPath } from '@/lib/assetPath';
+import { BackgroundLoadError } from './backgroundErrors';
+import {
+  getLinearGradientPoints,
+  getRadialGradientShape,
+  parseCssGradient,
+  resolveLinearGradientAngle,
+} from './gradientParser';
 import type { SubtitleCue } from '@/lib/analysis/types';
 import { findSubtitleCueAtTime, normalizeSubtitleCues } from '@/lib/analysis/subtitleTrack';
 import { buildSubtitleLines } from '@/lib/rendering/subtitleLayout';
@@ -180,12 +187,13 @@ export class FrameRenderer {
     bgCanvas.height = this.config.height;
     const bgCtx = bgCanvas.getContext('2d')!;
 
-    try {
-      // Render background based on type
-      if (wallpaper.startsWith('file://') || wallpaper.startsWith('data:') || wallpaper.startsWith('/') || wallpaper.startsWith('http')) {
-        // Image background
-        const img = new Image();
-        let imageUrl: string;
+    // Render background based on type. Failures throw BackgroundLoadError so the
+    // exporter reports them instead of silently exporting a black background.
+    if (wallpaper.startsWith('file://') || wallpaper.startsWith('data:') || wallpaper.startsWith('/') || wallpaper.startsWith('http')) {
+      // Image background
+      const img = new Image();
+      let imageUrl: string;
+      try {
         if (wallpaper.startsWith('http')) {
           imageUrl = wallpaper;
           if (!imageUrl.startsWith(window.location.origin)) {
@@ -198,89 +206,74 @@ export class FrameRenderer {
           // getAssetPath so they work in both dev server and packaged Electron.
           imageUrl = await getAssetPath(wallpaper.replace(/^\//, ''));
         }
-        
+      } catch (err) {
+        throw new BackgroundLoadError(wallpaper, err);
+      }
+
+      try {
         await new Promise<void>((resolve, reject) => {
           img.onload = () => resolve();
-          img.onerror = (err) => {
-            console.error('[FrameRenderer] Failed to load background image:', imageUrl, err);
-            reject(new Error(`Failed to load background image: ${imageUrl}`));
-          };
+          img.onerror = (err) => reject(err);
           img.src = imageUrl;
         });
-        
-        // Draw the image using cover and center positioning
-        const imgAspect = img.width / img.height;
-        const canvasAspect = this.config.width / this.config.height;
-        
-        let drawWidth, drawHeight, drawX, drawY;
-        
-        if (imgAspect > canvasAspect) {
-          drawHeight = this.config.height;
-          drawWidth = drawHeight * imgAspect;
-          drawX = (this.config.width - drawWidth) / 2;
-          drawY = 0;
-        } else {
-          drawWidth = this.config.width;
-          drawHeight = drawWidth / imgAspect;
-          drawX = 0;
-          drawY = (this.config.height - drawHeight) / 2;
-        }
-        
-        bgCtx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
-      } else if (wallpaper.startsWith('#')) {
-        bgCtx.fillStyle = wallpaper;
-        bgCtx.fillRect(0, 0, this.config.width, this.config.height);
-      } else if (wallpaper.startsWith('linear-gradient') || wallpaper.startsWith('radial-gradient')) {
-        
-        const gradientMatch = wallpaper.match(/(linear|radial)-gradient\((.+)\)/);
-        if (gradientMatch) {
-          const [, type, params] = gradientMatch;
-          const parts = params.split(',').map(s => s.trim());
-          
-          let gradient: CanvasGradient;
-          
-          if (type === 'linear') {
-            gradient = bgCtx.createLinearGradient(0, 0, 0, this.config.height);
-            parts.forEach((part, index) => {
-              if (part.startsWith('to ') || part.includes('deg')) return;
-              
-              const colorMatch = part.match(/^(#[0-9a-fA-F]{3,8}|rgba?\([^)]+\)|[a-z]+)/);
-              if (colorMatch) {
-                const color = colorMatch[1];
-                const position = index / (parts.length - 1);
-                gradient.addColorStop(position, color);
-              }
-            });
-          } else {
-            const cx = this.config.width / 2;
-            const cy = this.config.height / 2;
-            const radius = Math.max(this.config.width, this.config.height) / 2;
-            gradient = bgCtx.createRadialGradient(cx, cy, 0, cx, cy, radius);
-            
-            parts.forEach((part, index) => {
-              const colorMatch = part.match(/^(#[0-9a-fA-F]{3,8}|rgba?\([^)]+\)|[a-z]+)/);
-              if (colorMatch) {
-                const color = colorMatch[1];
-                const position = index / (parts.length - 1);
-                gradient.addColorStop(position, color);
-              }
-            });
-          }
-          
-          bgCtx.fillStyle = gradient;
-          bgCtx.fillRect(0, 0, this.config.width, this.config.height);
-        } else {
-          console.warn('[FrameRenderer] Could not parse gradient, using black fallback');
-          bgCtx.fillStyle = '#000000';
-          bgCtx.fillRect(0, 0, this.config.width, this.config.height);
-        }
-      } else {
-        bgCtx.fillStyle = wallpaper;
-        bgCtx.fillRect(0, 0, this.config.width, this.config.height);
+      } catch (err) {
+        console.error('[FrameRenderer] Failed to load background image:', imageUrl, err);
+        throw new BackgroundLoadError(imageUrl, err);
       }
-    } catch (error) {
-      console.error('[FrameRenderer] Error setting up background, using fallback:', error);
-      bgCtx.fillStyle = '#000000';
+
+      // Draw the image using cover and center positioning
+      const imgAspect = img.width / img.height;
+      const canvasAspect = this.config.width / this.config.height;
+
+      let drawWidth, drawHeight, drawX, drawY;
+
+      if (imgAspect > canvasAspect) {
+        drawHeight = this.config.height;
+        drawWidth = drawHeight * imgAspect;
+        drawX = (this.config.width - drawWidth) / 2;
+        drawY = 0;
+      } else {
+        drawWidth = this.config.width;
+        drawHeight = drawWidth / imgAspect;
+        drawX = 0;
+        drawY = (this.config.height - drawHeight) / 2;
+      }
+
+      bgCtx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+    } else if (wallpaper.startsWith('#')) {
+      bgCtx.fillStyle = wallpaper;
+      bgCtx.fillRect(0, 0, this.config.width, this.config.height);
+    } else if (/^(linear|radial)-gradient\(/i.test(wallpaper.trim())) {
+      const parsedGradient = parseCssGradient(wallpaper.trim());
+      if (!parsedGradient) {
+        throw new BackgroundLoadError(wallpaper);
+      }
+
+      let gradient: CanvasGradient;
+      if (parsedGradient.type === 'linear') {
+        const points = getLinearGradientPoints(
+          resolveLinearGradientAngle(parsedGradient.descriptor),
+          this.config.width,
+          this.config.height,
+        );
+        gradient = bgCtx.createLinearGradient(points.x0, points.y0, points.x1, points.y1);
+      } else {
+        const shape = getRadialGradientShape(
+          parsedGradient.descriptor,
+          this.config.width,
+          this.config.height,
+        );
+        gradient = bgCtx.createRadialGradient(shape.cx, shape.cy, 0, shape.cx, shape.cy, shape.radius);
+      }
+
+      parsedGradient.stops.forEach((stop) => {
+        gradient.addColorStop(stop.offset, stop.color);
+      });
+
+      bgCtx.fillStyle = gradient;
+      bgCtx.fillRect(0, 0, this.config.width, this.config.height);
+    } else {
+      bgCtx.fillStyle = wallpaper;
       bgCtx.fillRect(0, 0, this.config.width, this.config.height);
     }
 
@@ -626,9 +619,9 @@ export class FrameRenderer {
     };
   }
 
-  private clampFocusToStage(focus: { cx: number; cy: number }, depth: number): { cx: number; cy: number } {
+  private clampFocusToStage(focus: { cx: number; cy: number }, zoomScale: number): { cx: number; cy: number } {
     if (!this.layoutCache) return focus;
-    return clampFocusToStageUtil(focus, depth as any, this.layoutCache);
+    return clampFocusToScale(focus, zoomScale, this.layoutCache.stageSize);
   }
 
   private updateAnimationState(timeMs: number): number {
@@ -641,8 +634,8 @@ export class FrameRenderer {
     let targetFocus = { ...defaultFocus };
 
     if (region && strength > 0) {
-      const zoomScale = ZOOM_DEPTH_SCALES[region.depth];
-      const regionFocus = this.clampFocusToStage(region.focus, region.depth);
+      const zoomScale = getZoomScale(region);
+      const regionFocus = this.clampFocusToStage(region.focus, zoomScale);
       
       targetScaleFactor = 1 + (zoomScale - 1) * strength;
       targetFocus = {
