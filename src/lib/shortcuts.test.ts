@@ -1,12 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect } from 'vitest';
 import {
   bindingsEqual,
   findConflict,
   matchesShortcut,
   formatBinding,
   mergeWithDefaults,
+  isTextEditingTarget,
   DEFAULT_SHORTCUTS,
   SHORTCUT_ACTIONS,
+  SHORTCUT_LABEL_KEYS,
   type ShortcutBinding,
   type ShortcutsConfig,
 } from './shortcuts';
@@ -272,7 +274,93 @@ describe('mergeWithDefaults', () => {
       playPause: { key: '6' },
       speedUp: { key: '7' },
       speedDown: { key: '8' },
+      copySelected: { key: '9', ctrl: true },
+      paste: { key: '0', ctrl: true },
     };
     expect(mergeWithDefaults(full)).toEqual(full);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Default bindings — copy/paste actions and conflict-freeness
+// ---------------------------------------------------------------------------
+describe('DEFAULT_SHORTCUTS', () => {
+  it('binds copy and paste to the platform primary modifier', () => {
+    expect(DEFAULT_SHORTCUTS.copySelected).toEqual({ key: 'c', ctrl: true });
+    expect(DEFAULT_SHORTCUTS.paste).toEqual({ key: 'v', ctrl: true });
+  });
+
+  it('has a label key for every action', () => {
+    for (const action of SHORTCUT_ACTIONS) {
+      expect(SHORTCUT_LABEL_KEYS[action]).toMatch(/^shortcut\./);
+    }
+  });
+
+  it('has no conflicts between any default bindings', () => {
+    for (const action of SHORTCUT_ACTIONS) {
+      expect(findConflict(DEFAULT_SHORTCUTS[action], action, DEFAULT_SHORTCUTS)).toBeNull();
+    }
+  });
+
+  it('keeps old shortcuts.json files valid by filling in the new actions', () => {
+    const legacy = { addZoom: { key: 'q' } } as Partial<ShortcutsConfig>;
+    const merged = mergeWithDefaults(legacy);
+    expect(merged.copySelected).toEqual(DEFAULT_SHORTCUTS.copySelected);
+    expect(merged.paste).toEqual(DEFAULT_SHORTCUTS.paste);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isTextEditingTarget — node env has no DOM, so stub the element classes
+// ---------------------------------------------------------------------------
+describe('isTextEditingTarget', () => {
+  class FakeHTMLElement {
+    isContentEditable = false;
+  }
+  class FakeHTMLInputElement extends FakeHTMLElement {}
+  class FakeHTMLTextAreaElement extends FakeHTMLElement {}
+
+  const g = globalThis as Record<string, unknown>;
+  const saved = {
+    HTMLElement: g.HTMLElement,
+    HTMLInputElement: g.HTMLInputElement,
+    HTMLTextAreaElement: g.HTMLTextAreaElement,
+  };
+
+  beforeEach(() => {
+    g.HTMLElement = FakeHTMLElement;
+    g.HTMLInputElement = FakeHTMLInputElement;
+    g.HTMLTextAreaElement = FakeHTMLTextAreaElement;
+  });
+
+  afterEach(() => {
+    for (const [name, value] of Object.entries(saved)) {
+      if (value === undefined) delete g[name];
+      else g[name] = value;
+    }
+  });
+
+  it('returns true for inputs and textareas', () => {
+    expect(isTextEditingTarget(new FakeHTMLInputElement() as unknown as EventTarget)).toBe(true);
+    expect(isTextEditingTarget(new FakeHTMLTextAreaElement() as unknown as EventTarget)).toBe(true);
+  });
+
+  it('returns true for contentEditable elements only', () => {
+    const editable = new FakeHTMLElement();
+    editable.isContentEditable = true;
+    expect(isTextEditingTarget(editable as unknown as EventTarget)).toBe(true);
+    expect(isTextEditingTarget(new FakeHTMLElement() as unknown as EventTarget)).toBe(false);
+  });
+
+  it('returns false for null and non-element targets', () => {
+    expect(isTextEditingTarget(null)).toBe(false);
+    expect(isTextEditingTarget({} as EventTarget)).toBe(false);
+  });
+
+  it('returns false when no DOM is available at all', () => {
+    delete g.HTMLElement;
+    delete g.HTMLInputElement;
+    delete g.HTMLTextAreaElement;
+    expect(isTextEditingTarget({} as EventTarget)).toBe(false);
   });
 });

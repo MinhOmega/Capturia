@@ -9,6 +9,8 @@ export const SHORTCUT_ACTIONS = [
   'playPause',
   'speedUp',
   'speedDown',
+  'copySelected',
+  'paste',
 ] as const;
 
 export type ShortcutAction = (typeof SHORTCUT_ACTIONS)[number];
@@ -46,6 +48,8 @@ export const SHORTCUT_LABEL_KEYS: Record<ShortcutAction, string> = {
   playPause: 'shortcut.playPause',
   speedUp: 'shortcut.speedUp',
   speedDown: 'shortcut.speedDown',
+  copySelected: 'shortcut.copySelected',
+  paste: 'shortcut.paste',
 };
 
 // ---------------------------------------------------------------------------
@@ -61,6 +65,8 @@ export const DEFAULT_SHORTCUTS: ShortcutsConfig = {
   playPause: { key: ' ' },
   speedUp: { key: ']' },
   speedDown: { key: '[' },
+  copySelected: { key: 'c', ctrl: true },
+  paste: { key: 'v', ctrl: true },
 };
 
 // ---------------------------------------------------------------------------
@@ -134,6 +140,24 @@ export function matchesShortcut(
   if (secondaryMod) return false;
 
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// Event target guards
+// ---------------------------------------------------------------------------
+
+/**
+ * True when the event target is a text-editing surface (input, textarea,
+ * contentEditable) where editor shortcuts must not fire so native text
+ * editing keeps working.
+ */
+export function isTextEditingTarget(target: EventTarget | null): boolean {
+  if (!target || typeof HTMLElement === 'undefined') return false;
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    (target instanceof HTMLElement && target.isContentEditable)
+  );
 }
 
 // ---------------------------------------------------------------------------
