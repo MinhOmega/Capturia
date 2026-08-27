@@ -17,6 +17,7 @@ import {
 import { useI18n } from "@/i18n";
 import { resolveNativeRecorderStartFailureMessage } from "@/lib/permissions/nativeRecorderErrors";
 import { reportUserActionError } from "@/lib/userErrorFeedback";
+import { webcamDeviceIdentityFrom } from "@/lib/webcamDeviceIdentity";
 
 type UseScreenRecorderReturn = {
   recording: boolean;
@@ -38,6 +39,10 @@ type UseScreenRecorderOptions = {
   includeCamera?: boolean;
   cameraShape?: CameraOverlayShape;
   cameraSizePercent?: number;
+  /** Camera chosen in the HUD picker (Chromium deviceId); empty = automatic pick. */
+  cameraDeviceId?: string;
+  /** Label of that camera, forwarded to the native helper which matches by name. */
+  cameraDeviceName?: string;
   captureProfile?: CaptureProfile;
   captureFrameRate?: CaptureFrameRate;
   captureResolutionPreset?: CaptureResolutionPreset;
@@ -156,6 +161,8 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
   const includeCamera = options.includeCamera ?? false;
   const cameraShape = options.cameraShape ?? "rounded";
   const cameraSizePercent = options.cameraSizePercent ?? 22;
+  const cameraDeviceId = options.cameraDeviceId || undefined;
+  const cameraDeviceName = options.cameraDeviceName || undefined;
   const captureProfile = options.captureProfile ?? "quality";
   const captureFrameRate = options.captureFrameRate;
   const captureResolutionPreset = options.captureResolutionPreset;
@@ -171,6 +178,8 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
   const recorderHandle = useRef<RecorderHandle | null>(null);
   const stream = useRef<MediaStream | null>(null);
   const cameraStream = useRef<MediaStream | null>(null);
+  // Identity of the camera actually opened for the last (attempted) recording.
+  const openedCameraRef = useRef<{ deviceId?: string; deviceName?: string } | null>(null);
   const microphoneStream = useRef<MediaStream | null>(null);
   const microphoneSourceStream = useRef<MediaStream | null>(null);
   const microphoneAudioContext = useRef<AudioContext | null>(null);
@@ -556,21 +565,34 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
     sourceFrameRateHint: number,
     overlayOptions: { shape: CameraOverlayShape; sizePercent: number }
   ): Promise<CompositionResources> => {
-    const preferredCameraId = await pickPreferredCameraId();
-    const videoConstraints: MediaTrackConstraints = {
-      width: { ideal: 1280 },
-      height: { ideal: 720 },
-      frameRate: { ideal: 30, max: 60 },
+    const openWebcam = async (deviceId: string | undefined): Promise<MediaStream> => {
+      const videoConstraints: MediaTrackConstraints = {
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        frameRate: { ideal: 30, max: 60 },
+      };
+      if (deviceId) {
+        videoConstraints.deviceId = { exact: deviceId };
+      }
+      return await navigator.mediaDevices.getUserMedia({ audio: false, video: videoConstraints });
     };
-    if (preferredCameraId) {
-      videoConstraints.deviceId = { exact: preferredCameraId };
-    }
 
-    const webcamStream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: videoConstraints,
-    });
+    let webcamStream: MediaStream;
+    if (cameraDeviceId) {
+      try {
+        webcamStream = await openWebcam(cameraDeviceId);
+      } catch (error) {
+        // The picked camera may have been unplugged since the HUD enumerated it;
+        // fall back to the automatic pick before giving up on the overlay.
+        console.warn("Selected camera is unavailable, falling back to the automatic camera pick.", error);
+        webcamStream = await openWebcam(await pickPreferredCameraId());
+      }
+    } else {
+      webcamStream = await openWebcam(await pickPreferredCameraId());
+    }
     cameraStream.current = webcamStream;
+    openedCameraRef.current = webcamDeviceIdentityFrom(webcamStream, cameraDeviceId, cameraDeviceName);
+    console.log("[capture] camera overlay device:", openedCameraRef.current.deviceName ?? openedCameraRef.current.deviceId);
 
     const desktopVideo = document.createElement("video");
     desktopVideo.srcObject = desktopStream;
@@ -928,6 +950,8 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
             cameraEnabled,
             cameraShape,
             cameraSizePercent,
+            cameraDeviceId,
+            cameraDeviceName,
             frameRate: TARGET_CAPTURE_FPS,
             bitrateScale: activeProfile.bitrateScale,
             maxLongEdge: targetMaxLongEdge,
@@ -1350,6 +1374,9 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
           includeCamera,
           cameraShape,
           cameraSizePercent,
+          cameraDeviceId,
+          cameraDeviceName,
+          openedCamera: openedCameraRef.current,
           captureProfile,
           microphoneGain,
           recordSystemCursor,
