@@ -84,3 +84,10 @@ Newest entries first. Each entry: date, cycle stage, what happened, verification
   Review: `reviews/W2-d-cursor.md`.
 - W2-a (zoom model + engine) reviewed and merged (ff). Tree: 71 files / 632 tests. Review: `reviews/W2-a-zoom.md`.
   Auto-zoom constants retuned; needs manual feel check.
+
+## 2026-08-27 — wave 3 (started, overlapping W2-c)
+
+- Spawned W3-a (HUD flow: chain record after selection, source selector polish, Spaces, restart) and
+  W3-c (prefs wiring, close-flush, lazy editor, EditorMenuBar + app menu + edit-menu, global shortcuts
+  module, diagnostics buffer + save-diagnostic, About/install-channel, NSIS, anti-flash).
+  W3-b/W3-d wait for W2-c; W3-e waits for W3-a.
