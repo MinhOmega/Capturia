@@ -82,7 +82,12 @@
 		"openSystemSettings": "Open System Settings",
 		"openSystemSettingsFailed": "Failed to open System Settings.",
 		"checkPermissions": "Check Permissions",
-		"retry": "Retry"
+		"retry": "Retry",
+		"emptyTitle": "No screens or windows found",
+		"emptyDescription": "If you just granted Screen Recording permission, reload this picker. On macOS you may need to reopen Capturia.",
+		"reload": "Reload",
+		"screensCount": "Screens ({{count}})",
+		"windowsCount": "Windows ({{count}})"
 	},
 	"permission": {
 		"loading": "Checking permission status...",
