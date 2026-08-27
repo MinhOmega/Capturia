@@ -101,3 +101,5 @@ Newest entries first. Each entry: date, cycle stage, what happened, verification
 - W3-b (copy/paste, frame step, speed input) reviewed and merged. Review: `reviews/W3-b-clipboard.md`.
 - W3-c (lifecycle/menus/global shortcuts/diagnostics/About) reviewed and merged (ff). Tree: 86 files / 855 tests.
   Review: `reviews/W3-c-lifecycle.md`. Cmd+Z routing needs a macOS check.
+- W3-f (auto-follow zoom) reviewed and merged. Tree: 87 files / 876 tests, i18n 563 keys.
+  Review: `reviews/W3-f-autofollow.md`. Spawned W3-d (motion blur + native aspect).
