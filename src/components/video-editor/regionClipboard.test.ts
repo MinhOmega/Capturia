@@ -241,6 +241,23 @@ describe('zoom paste replaces customScale destructively (F4)', () => {
   });
 });
 
+describe('zoom copy carries the 3D rotation preset (B1-e)', () => {
+  it('copies rotationPreset and pastes it onto the target', () => {
+    const copied = extractZoomAttributes({ ...zoom, rotationPreset: 'iso' });
+    expect(copied.rotationPreset).toBe('iso');
+    const result = buildZoomRegion({ id: 'zoom-9', startMs: 0, endMs: 10 }, copied);
+    expect(result.rotationPreset).toBe('iso');
+  });
+
+  it('a flat copy clears the target preset (destructive paste, same as customScale)', () => {
+    const flat = extractZoomAttributes(zoom);
+    expect('rotationPreset' in flat).toBe(false);
+    const target: ZoomRegion = { ...zoom, id: 'zoom-3', rotationPreset: 'left' };
+    const result = buildZoomRegion(target, flat);
+    expect('rotationPreset' in result).toBe(false);
+  });
+});
+
 describe('figureData guard on paste-onto-existing (F5)', () => {
   it('does not attach figureData onto a non-figure target', () => {
     const figureAttrs = extractAnnotationAttributes(annotation);
