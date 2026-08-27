@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useItem } from "dnd-timeline";
 import type { Span } from "dnd-timeline";
 import { cn } from "@/lib/utils";
-import { ZoomIn, Scissors, MessageSquare, Captions, VolumeX } from "lucide-react";
+import { ZoomIn, Scissors, MessageSquare, Captions, VolumeX, MousePointer2 } from "lucide-react";
 import glassStyles from "./ItemGlass.module.css";
 import { useI18n } from "@/i18n";
 import { formatTooltipMs } from "./snapping";
@@ -21,6 +21,8 @@ interface ItemProps {
   zoomDepth?: number;
   /** Effective zoom scale (customScale-aware); when set it replaces the depth label, e.g. "2.35×". */
   zoomScale?: number;
+  /** Zoom follows the recorded cursor (focusMode 'auto'): shows the cursor marker. */
+  zoomAutoFocus?: boolean;
   variant?: 'zoom' | 'trim' | 'annotation' | 'subtitle' | 'audio-edit';
   editable?: boolean;
 }
@@ -43,6 +45,7 @@ export default function Item({
   onSelect, 
   zoomDepth = 1,
   zoomScale,
+  zoomAutoFocus = false,
   variant = 'zoom',
   editable = true,
   children
@@ -140,6 +143,14 @@ export default function Item({
                 <span className="text-[11px] font-semibold tracking-tight">
                   {zoomScale != null ? `${zoomScale.toFixed(2).replace(/\.?0+$/, '')}×` : (ZOOM_LABELS[zoomDepth] || `${zoomDepth}×`)}
                 </span>
+                {zoomAutoFocus && (
+                  <span className="flex shrink-0" title={t("timeline.zoomAutoFocus")}>
+                    <MousePointer2
+                      className="w-3 h-3 opacity-90"
+                      aria-label={t("timeline.zoomAutoFocus")}
+                    />
+                  </span>
+                )}
               </>
             ) : isTrim ? (
               <>

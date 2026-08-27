@@ -103,6 +103,7 @@ interface TimelineRenderItem {
   label: string;
   zoomDepth?: number;
   zoomScale?: number;
+  zoomAutoFocus?: boolean;
   variant: 'zoom' | 'trim' | 'annotation' | 'subtitle' | 'audio-edit';
 }
 
@@ -803,6 +804,7 @@ function Timeline({
             onSelect={() => onSelectZoom?.(item.id)}
             zoomDepth={item.zoomDepth}
             zoomScale={item.zoomScale}
+            zoomAutoFocus={item.zoomAutoFocus}
             variant="zoom"
           >
             {item.label}
@@ -1460,6 +1462,7 @@ export default function TimelineEditor({
       label: `${t("timeline.zoom")} ${index + 1}`,
       zoomDepth: region.depth,
       zoomScale: getZoomScale(region),
+      zoomAutoFocus: region.focusMode === 'auto',
       variant: 'zoom',
     }));
 
