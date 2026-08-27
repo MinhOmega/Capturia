@@ -27,5 +27,10 @@
 	"addTrim": "添加裁剪 (T)",
 	"addAnnotation": "添加注释 (A)",
 	"resizeLeft": "向左调整",
-	"resizeRight": "向右调整"
+	"resizeRight": "向右调整",
+	"hints": {
+		"pressZoom": "按 {{key}} 添加缩放",
+		"pressAnnotation": "按 {{key}} 添加注释",
+		"noSubtitles": "在设置面板中生成字幕"
+	}
 }

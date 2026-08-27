@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import Block from '@uiw/react-color-block';
-import { Trash2, Download, Crop, X, Bug, Upload, Star, Film, Image, Sparkles, Palette, Captions, Scissors, ScanSearch, WandSparkles } from "lucide-react";
+import { Trash2, Download, Crop, X, Bug, Upload, Star, Film, Image, Sparkles, Palette, Captions, Scissors, ScanSearch, AudioWaveform, WandSparkles } from "lucide-react";
 import { toast } from "sonner";
 import * as SliderPrimitive from "@radix-ui/react-slider";
 import type { ZoomDepth, ZoomFocus, CropRegion, AnnotationRegion, AnnotationType, FigureData } from "./types";
@@ -119,6 +119,9 @@ interface SettingsPanelProps {
   roughCutSuggestionCount?: number;
   seekStepSeconds?: number;
   onSeekStepSecondsChange?: (step: number) => void;
+  // Timeline section (W2-b)
+  showTimelineWaveform?: boolean;
+  onTimelineWaveformChange?: (show: boolean) => void;
 }
 
 export default SettingsPanel;
@@ -275,6 +278,8 @@ export function SettingsPanel({
   roughCutSuggestionCount = 0,
   seekStepSeconds = 5,
   onSeekStepSecondsChange,
+  showTimelineWaveform = false,
+  onTimelineWaveformChange,
 }: SettingsPanelProps) {
   const { t } = useI18n();
   const [wallpaperPaths, setWallpaperPaths] = useState<string[]>([]);
@@ -897,6 +902,16 @@ export function SettingsPanel({
                     </div>
                   )}
                 </div>
+                <div className="rounded-md bg-black/20 border border-white/5 p-2 mb-2">
+                  <div className="flex items-center justify-between">
+                    <div className="text-[10px] text-slate-300">{t("settings.cursorClipToBounds")}</div>
+                    <Switch
+                      checked={cursorStyle.clipToBounds ?? false}
+                      onCheckedChange={(clipToBounds) => updateCursorStyle({ clipToBounds })}
+                      className="data-[state=checked]:bg-[#34B27B] scale-90"
+                    />
+                  </div>
+                </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <div className="flex items-center justify-between mb-1">
@@ -951,6 +966,20 @@ export function SettingsPanel({
                       min={0}
                       max={200}
                       step={5}
+                      className="w-full [&_[role=slider]]:bg-[#34B27B] [&_[role=slider]]:border-[#34B27B] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
+                    />
+                  </div>
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="text-[10px] text-slate-400">{t("settings.cursorMotionBlur")}</div>
+                      <span className="text-[10px] text-slate-500 font-mono">{Math.round((cursorStyle.motionBlur ?? 0) * 100)}%</span>
+                    </div>
+                    <Slider
+                      value={[cursorStyle.motionBlur ?? 0]}
+                      onValueChange={(values) => updateCursorStyle({ motionBlur: values[0] })}
+                      min={0}
+                      max={1}
+                      step={0.01}
                       className="w-full [&_[role=slider]]:bg-[#34B27B] [&_[role=slider]]:border-[#34B27B] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
                     />
                   </div>
@@ -1276,6 +1305,28 @@ export function SettingsPanel({
                   </TabsContent>
                 </div>
               </Tabs>
+            </AccordionContent>
+          </AccordionItem>
+
+          <AccordionItem value="timeline" className="border-white/5 rounded-xl bg-white/[0.02] px-3">
+            <AccordionTrigger className="py-2.5 hover:no-underline">
+              <div className="flex items-center gap-2">
+                <AudioWaveform className="w-4 h-4 text-[#34B27B]" />
+                <span className="text-xs font-medium">{t("settings.timeline.title")}</span>
+              </div>
+            </AccordionTrigger>
+            <AccordionContent className="pb-3">
+              <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-white/5 border border-white/5">
+                <div className="min-w-0">
+                  <div className="text-[10px] font-medium text-slate-300">{t("settings.timeline.waveform")}</div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">{t("settings.timeline.waveformDesc")}</div>
+                </div>
+                <Switch
+                  checked={showTimelineWaveform}
+                  onCheckedChange={(checked) => onTimelineWaveformChange?.(checked)}
+                  className="data-[state=checked]:bg-[#34B27B] scale-90 shrink-0"
+                />
+              </div>
             </AccordionContent>
           </AccordionItem>
         </Accordion>

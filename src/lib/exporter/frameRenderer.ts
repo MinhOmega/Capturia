@@ -22,8 +22,13 @@ import type { SubtitleCue } from '@/lib/analysis/types';
 import { findSubtitleCueAtTime, normalizeSubtitleCues } from '@/lib/analysis/subtitleTrack';
 import { buildSubtitleLines } from '@/lib/rendering/subtitleLayout';
 import {
+  createCursorMotionBlurState,
   drawCompositedCursor,
+  getCursorMotionBlurPx,
   projectCursorToViewport,
+  resolveCursorClipRect,
+  resolveCursorContentScale,
+  resolveCursorSizeNorm,
   resolveCursorState,
   type CursorStyleConfig,
   type CursorTrack,
@@ -121,6 +126,7 @@ export class FrameRenderer {
   // Same spring step as the preview ticker, driven by content time (effectTimeMs).
   private zoomCamera = createZoomCameraState();
   private layoutCache: any = null;
+  private cursorMotionBlurState = createCursorMotionBlurState();
   private currentVideoTime = 0;
   private currentVideoSource: HTMLVideoElement | VideoFrame | null = null;
   private subtitleCues: SubtitleCue[];
@@ -603,12 +609,43 @@ export class FrameRenderer {
 
     if (!drawProjected.inViewport) return;
 
+    const cursorSizeNorm = resolveCursorSizeNorm({ maskRect: this.layoutCache.maskRect, cropRegion: this.config.cropRegion });
+    const motionBlurPx = getCursorMotionBlurPx({
+      motionBlur: this.config.cursorStyle?.motionBlur ?? 0,
+      point: { x: drawProjected.x, y: drawProjected.y },
+      state: this.cursorMotionBlurState,
+      timeMs,
+      sizeNorm: cursorSizeNorm,
+    });
+
     drawCompositedCursor(
       this.compositeCtx,
       { x: drawProjected.x, y: drawProjected.y },
       drawCursorState,
       this.config.cursorStyle,
-      Math.max(0.1, (Math.abs(this.cameraContainer.scale.x) + Math.abs(this.cameraContainer.scale.y)) / 2),
+      resolveCursorContentScale({
+        cameraScale: { x: this.cameraContainer.scale.x, y: this.cameraContainer.scale.y },
+        maskRect: this.layoutCache.maskRect,
+        cropRegion: this.config.cropRegion,
+      }),
+      {
+        motionBlurPx,
+        // The export mask is drawn at 0,0 inside the video container placed at
+        // baseOffset, so offset the mask rect into camera-local coordinates
+        // (same frame the preview overlay uses).
+        clipRect: resolveCursorClipRect({
+          style: this.config.cursorStyle,
+          maskRect: {
+            x: this.layoutCache.baseOffset.x + this.layoutCache.maskRect.x,
+            y: this.layoutCache.baseOffset.y + this.layoutCache.maskRect.y,
+            width: this.layoutCache.maskRect.width,
+            height: this.layoutCache.maskRect.height,
+          },
+          maskBorderRadius: this.layoutCache.maskBorderRadius,
+          cameraScale: { x: this.cameraContainer.scale.x, y: this.cameraContainer.scale.y },
+          cameraPosition: { x: this.cameraContainer.position.x, y: this.cameraContainer.position.y },
+        }),
+      },
     );
   }
 
@@ -670,6 +707,7 @@ export class FrameRenderer {
       baseScale: scale,
       baseOffset: { x: centerOffsetX, y: centerOffsetY },
       maskRect: { x: 0, y: 0, width: croppedDisplayWidth, height: croppedDisplayHeight },
+      maskBorderRadius: scaledBorderRadius,
     };
   }
 

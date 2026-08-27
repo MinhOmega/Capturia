@@ -35,6 +35,7 @@ import {
   type FigureData,
   type ProjectState,
 } from "./types";
+import { DEFAULT_TIMELINE_SETTINGS } from "./editorDefaults";
 import { ANNOTATION_ID_PREFIX, maxIdNum } from "./idCounters";
 import {
   VideoExporter,
@@ -336,6 +337,8 @@ export default function VideoEditor() {
   const [motionBlurEnabled, setMotionBlurEnabled] = useState(false);
   const [seekStepSeconds, setSeekStepSeconds] = useState(5);
   const [previewPlaybackRate, setPreviewPlaybackRate] = useState(1);
+  // View setting (not edit state): persisted with the project, never undone
+  const [showTimelineWaveform, setShowTimelineWaveform] = useState(DEFAULT_TIMELINE_SETTINGS.showWaveform);
   const [timelineZoomInfo, setTimelineZoomInfo] = useState<{ visibleMs: number; totalMs: number; minVisibleMs: number } | null>(null);
   const timelineZoomStepRef = useRef<((direction: 1 | -1) => void) | null>(null);
   const timelineZoomSetRef = useRef<((visibleMs: number) => void) | null>(null);
@@ -802,6 +805,8 @@ export default function VideoEditor() {
               if (Array.isArray(s.exportAspectRatios) && s.exportAspectRatios.length > 0) {
                 setExportAspectRatios(s.exportAspectRatios as AspectRatio[]);
               }
+              // Restore timeline waveform toggle (W2-b); older projects keep the default
+              if (typeof s.showTimelineWaveform === 'boolean') setShowTimelineWaveform(s.showTimelineWaveform);
               // Restore timeline zoom level (v1.1)
               if (typeof s.timelineZoomVisibleMs === 'number' && s.timelineZoomVisibleMs > 0) {
                 const savedZoom = s.timelineZoomVisibleMs;
@@ -879,6 +884,7 @@ export default function VideoEditor() {
         gifSizePreset,
         exportAspectRatios,
         timelineZoomVisibleMs: timelineZoomInfo?.visibleMs,
+        showTimelineWaveform,
         autoZoomEnabled,
       };
       const hash = JSON.stringify(state);
@@ -895,7 +901,7 @@ export default function VideoEditor() {
     audioLimiterDb, exportQuality, exportFormat, seekStepSeconds,
     previewPlaybackRate, cursorStyle, subtitleCues, gifFrameRate,
     gifLoop, gifSizePreset, exportAspectRatios, timelineZoomInfo,
-    autoZoomEnabled,
+    showTimelineWaveform, autoZoomEnabled,
   ]);
 
   // ── Undo / Redo history ──
@@ -1168,7 +1174,10 @@ export default function VideoEditor() {
 
   const handleSelectZoom = useCallback((id: string | null) => {
     setSelectedZoomIdForActiveAspect(id);
-    if (id) setSelectedSegmentId(null);
+    if (id) {
+      setSelectedSegmentId(null);
+      setSelectedAnnotationId(null);
+    }
   }, [setSelectedZoomIdForActiveAspect]);
 
   const handleSelectSegment = useCallback((id: string | null) => {
@@ -2514,6 +2523,7 @@ export default function VideoEditor() {
         gifSizePreset,
         exportAspectRatios,
         timelineZoomVisibleMs: timelineZoomInfo?.visibleMs,
+        showTimelineWaveform,
         autoZoomEnabled,
       };
       window.electronAPI.saveProjectState(videoFilePath, state).catch(() => {});
@@ -2527,7 +2537,7 @@ export default function VideoEditor() {
     audioLimiterDb, exportQuality, exportFormat, seekStepSeconds,
     previewPlaybackRate, cursorStyle, subtitleCues, gifFrameRate,
     gifLoop, gifSizePreset, exportAspectRatios, timelineZoomInfo,
-    autoZoomEnabled,
+    showTimelineWaveform, autoZoomEnabled,
   ]);
 
   if (loading) {
@@ -2752,6 +2762,9 @@ export default function VideoEditor() {
                   onVisibleRangeChange={setTimelineZoomInfo}
                   zoomStepRef={timelineZoomStepRef}
                   zoomSetRef={timelineZoomSetRef}
+                  videoFilePath={videoFilePath}
+                  videoUrl={videoPath}
+                  showWaveform={showTimelineWaveform}
                 />
               </div>
             </Panel>
@@ -2851,6 +2864,8 @@ export default function VideoEditor() {
                 roughCutSuggestionCount={roughCutSuggestions.length}
                 seekStepSeconds={seekStepSeconds}
                 onSeekStepSecondsChange={setSeekStepSeconds}
+                showTimelineWaveform={showTimelineWaveform}
+                onTimelineWaveformChange={setShowTimelineWaveform}
               />
             </div>
           </div>

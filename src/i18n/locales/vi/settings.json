@@ -39,6 +39,8 @@
 	"cursorOffsetX": "Độ lệch con trỏ X",
 	"cursorOffsetY": "Độ lệch con trỏ Y",
 	"cursorOffsetReset": "Đặt lại độ lệch con trỏ",
+	"cursorClipToBounds": "Cắt con trỏ theo khung video",
+	"cursorMotionBlur": "Làm mờ chuyển động con trỏ",
 	"audioTrack": "Luồng âm thanh",
 	"audioVolume": "Âm lượng",
 	"audioNormalizeLoudness": "Chuẩn hóa âm lượng",
@@ -133,5 +135,10 @@
 		"failed": "Thêm phông chữ thất bại",
 		"failed.timeout": "Tải phông chữ mất quá nhiều thời gian. Vui lòng kiểm tra URL và thử lại.",
 		"failed.generic": "Không thể tải phông chữ. Vui lòng xác minh URL Google Fonts là chính xác."
+	},
+	"timeline": {
+		"title": "Dòng thời gian",
+		"waveform": "Hiển thị dạng sóng âm thanh",
+		"waveformDesc": "Vẽ dạng sóng của bản ghi phía sau rãnh âm thanh."
 	}
 }

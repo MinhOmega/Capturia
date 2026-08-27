@@ -1,9 +1,15 @@
+import { useMemo } from "react";
 import { useItem } from "dnd-timeline";
 import type { Span } from "dnd-timeline";
 import { cn } from "@/lib/utils";
 import { ZoomIn, Scissors, MessageSquare, Captions, VolumeX } from "lucide-react";
 import glassStyles from "./ItemGlass.module.css";
 import { useI18n } from "@/i18n";
+import { formatTooltipMs } from "./snapping";
+
+// Minimum clickable width on the outer wrapper. Kept small so items keep their real
+// positions; zoom in to interact with sub-second items precisely.
+const MIN_ITEM_PX = 6;
 
 interface ItemProps {
   id: string;
@@ -73,10 +79,17 @@ export default function Item({
     ? '#2E6EE6'
     : '#B4A046';
 
+  // Start–end label shown on hover / when selected (T13)
+  const timeLabel = useMemo(
+    () => `${formatTooltipMs(span.start)} – ${formatTooltipMs(span.end)}`,
+    [span.start, span.end],
+  );
+  const safeItemStyle = { ...itemStyle, minWidth: MIN_ITEM_PX };
+
   return (
     <div
       ref={setNodeRef}
-      style={itemStyle}
+      style={safeItemStyle}
       {...(editable ? listeners : {})}
       {...(editable ? attributes : {})}
       onPointerDownCapture={() => onSelect?.()}
@@ -119,7 +132,8 @@ export default function Item({
             title={t("timeline.resizeRight")}
           />
           {/* Content */}
-          <div className="relative z-10 flex items-center gap-1.5 text-white/90 opacity-80 group-hover:opacity-100 transition-opacity select-none">
+          <div className="relative z-10 flex min-w-0 flex-col items-center justify-center text-white/90 opacity-80 group-hover:opacity-100 transition-opacity select-none overflow-hidden px-2">
+          <div className="flex items-center gap-1.5">
             {isZoom ? (
               <>
                 <ZoomIn className="w-3.5 h-3.5" />
@@ -156,6 +170,15 @@ export default function Item({
                 </span>
               </>
             )}
+          </div>
+          <span
+            className={cn(
+              "text-[9px] tabular-nums tracking-tight whitespace-nowrap transition-opacity",
+              isSelected ? "opacity-60" : "opacity-0 group-hover:opacity-40",
+            )}
+          >
+            {timeLabel}
+          </span>
           </div>
         </div>
       </div>
