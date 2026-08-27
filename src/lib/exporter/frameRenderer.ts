@@ -103,8 +103,7 @@ export class FrameRenderer {
     // Try to set colorSpace if supported (may not be available on all platforms)
     try {
       if (canvas && 'colorSpace' in canvas) {
-        // @ts-ignore
-        canvas.colorSpace = 'srgb';
+        (canvas as HTMLCanvasElement & { colorSpace?: string }).colorSpace = 'srgb';
       }
     } catch (error) {
       // Silently ignore colorSpace errors on platforms that don't support it
