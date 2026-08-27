@@ -2,6 +2,18 @@
 
 Newest entries first. Each entry: date, cycle stage, what happened, verification result, open items.
 
+## 2026-08-27 — W3-d merged (`2d288a4`) — Wave 3 complete
+
+Motion blur slider (`motionBlurAmount`, velocity-driven `pixi-filters` `MotionBlurFilter`,
+1080-px reference normalisation, legacy-boolean migration), M2 preview filter attached only
+while active, `'native'` ("Original") aspect ratio through preview/crop/zoom maps/MP4 plan/GIF/
+batch export. New dep `pixi-filters@^6.1.5`. Review: `reviews/W3-d-motionblur-aspect.md`.
+
+Gate: lint 0 errors / 116 warnings; tsc + test types clean; i18n 588 en keys; vitest
+**92 files / 927 tests**.
+
+Wave 4 in flight: D-4 streaming decoder (`w4-decoder`), C-1 Whisper fallback (`w4-captions`).
+
 ## 2026-08-27 — plan (gap analysis)
 
 - Baseline verified on `main@4cab381`: tsc clean, 204/204 tests, lint 59 pre-existing problems.
