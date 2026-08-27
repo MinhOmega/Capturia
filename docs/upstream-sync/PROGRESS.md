@@ -103,3 +103,5 @@ Newest entries first. Each entry: date, cycle stage, what happened, verification
   Review: `reviews/W3-c-lifecycle.md`. Cmd+Z routing needs a macOS check.
 - W3-f (auto-follow zoom) reviewed and merged. Tree: 87 files / 876 tests, i18n 563 keys.
   Review: `reviews/W3-f-autofollow.md`. Spawned W3-d (motion blur + native aspect).
+- W3-e (devices/countdown overlay/Notes) reviewed and merged; deps installed. Review: `reviews/W3-e-devices-notes.md`.
+  Swift camera-device change needs macOS verification.
