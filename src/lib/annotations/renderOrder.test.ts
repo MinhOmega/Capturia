@@ -16,7 +16,7 @@ function makeAnnotation(partial: Partial<AnnotationRegion>): AnnotationRegion {
       backgroundColor: "transparent",
       fontSize: 20,
       fontFamily: "Inter",
-      fontWeight: "400",
+      fontWeight: "normal",
       fontStyle: "normal",
       textDecoration: "none",
       textAlign: "center",
@@ -24,7 +24,6 @@ function makeAnnotation(partial: Partial<AnnotationRegion>): AnnotationRegion {
     startMs: partial.startMs ?? 0,
     endMs: partial.endMs ?? 1000,
     zIndex: partial.zIndex ?? 0,
-    createdAt: partial.createdAt ?? Date.now(),
     ...partial,
   };
 }
