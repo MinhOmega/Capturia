@@ -13,6 +13,7 @@ import type { Range, Span } from "dnd-timeline";
 import type { ZoomRegion, TrimRegion, VideoSegment, AnnotationRegion, AudioEditRegion } from "../types";
 import type { SubtitleCue } from "@/lib/analysis/types";
 import { sourceToEffectiveMsWithSegments } from "@/lib/trim/timeMapping";
+import { spansIntersect } from "./snapping";
 import { v4 as uuidv4 } from 'uuid';
 import {
   DropdownMenu,
@@ -1053,16 +1054,11 @@ export default function TimelineEditor({
       return false;
     }
 
-    // Helper to check overlap against a specific set of regions
+    // Strict intersection: snapped items land exactly adjacent and must be accepted.
     const checkOverlap = (regions: (ZoomRegion | TrimRegion)[]) => {
       return regions.some((region) => {
         if (region.id === excludeId) return false;
-        const gapBefore = newSpan.start - region.endMs;
-        const gapAfter = region.startMs - newSpan.end;
-        // Snap if gap is 2ms or less
-        if (gapBefore > 0 && gapBefore <= 2) return true;
-        if (gapAfter > 0 && gapAfter <= 2) return true;
-        return !(newSpan.end <= region.startMs || newSpan.start >= region.endMs);
+        return spansIntersect(newSpan, { start: region.startMs, end: region.endMs });
       });
     };
 
@@ -1347,6 +1343,28 @@ export default function TimelineEditor({
     return [...zooms, ...annotations, ...subtitles, ...audioEdits];
   }, [zoomRegions, annotationRegions, subtitleCues, audioEditRegions, t]);
 
+  // Snap sources for TimelineWrapper (all in effective time)
+  const zoomSnapSpans = useMemo(
+    () => zoomRegions.map((r) => ({ id: r.id, start: r.startMs, end: r.endMs })),
+    [zoomRegions],
+  );
+  const annotationSnapSpans = useMemo(
+    () => annotationRegions.map((r) => ({ id: r.id, start: r.startMs, end: r.endMs })),
+    [annotationRegions],
+  );
+  const keyframeTimesMs = useMemo(() => keyframes.map((kf) => kf.time), [keyframes]);
+  // Segment boundaries (the orange split lines) between two kept segments
+  const segmentBoundaryTimesMs = useMemo(() => {
+    const times: number[] = [];
+    for (let i = 1; i < segments.length; i++) {
+      const prev = segments[i - 1];
+      const seg = segments[i];
+      if (prev.deleted || seg.deleted) continue;
+      times.push(Math.round(sourceToEffectiveMsWithSegments(seg.startMs, segments)));
+    }
+    return times;
+  }, [segments]);
+
   const handleItemSpanChange = useCallback((id: string, span: Span) => {
     if (zoomRegions.some(r => r.id === id)) {
       onZoomSpanChange(id, span);
@@ -1460,6 +1478,11 @@ export default function TimelineEditor({
           minVisibleRangeMs={timelineScale.minVisibleRangeMs}
           gridSizeMs={displayInterval.gridMs}
           onItemSpanChange={handleItemSpanChange}
+          allRegionSpans={zoomSnapSpans}
+          softSnapSpans={annotationSnapSpans}
+          currentTimeMs={currentTimeMs}
+          keyframeTimesMs={keyframeTimesMs}
+          extraSnapTimesMs={segmentBoundaryTimesMs}
         >
           <KeyframeMarkers
             keyframes={keyframes}
