@@ -70,3 +70,10 @@ Newest entries first. Each entry: date, cycle stage, what happened, verification
   lockfile synced for `@fix-webm-duration/parser`. Tree: 55 files / 448 tests. Review: `reviews/W1-b-recording.md`.
 - W1-c (exporter groundwork) done on its branch; merge delegated to an integration agent because its 14
   new `export.*` keys/call sites must move to `dialogs.export.*` after the i18n restructure.
+- W1-c (exporter groundwork) merged via integration branch. **Wave 1 complete.** Tree: lint 0 err / 116 warn,
+  tsc + typecheck:test clean, i18n:check PASS (445 keys), 60 files / 507 tests. Review: `reviews/W1-c-exporter.md`.
+
+## 2026-08-27 — wave 2 (started)
+
+- Spawned W2-a zoom (B2-1 model/UI + B2-2 engine; auto-follow B2-3 deferred to wave 3), W2-b timeline
+  (B3-2 + B3-3), W2-c annotations + background (B3-4 + B1-b), W2-d cursor polish (B2-4).
