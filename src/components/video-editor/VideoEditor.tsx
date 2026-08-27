@@ -1131,7 +1131,10 @@ export default function VideoEditor() {
 
   const handleSelectZoom = useCallback((id: string | null) => {
     setSelectedZoomIdForActiveAspect(id);
-    if (id) setSelectedSegmentId(null);
+    if (id) {
+      setSelectedSegmentId(null);
+      setSelectedAnnotationId(null);
+    }
   }, [setSelectedZoomIdForActiveAspect]);
 
   const handleSelectSegment = useCallback((id: string | null) => {
