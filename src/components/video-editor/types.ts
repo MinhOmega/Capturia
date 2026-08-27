@@ -245,6 +245,9 @@ export interface ProjectState {
     offsetX: number;
     offsetY: number;
     timeOffsetMs: number;
+    // W2-d additions (optional; older projects fall back to DEFAULT_CURSOR_STYLE)
+    clipToBounds?: boolean;
+    motionBlur?: number;
   };
   subtitleCues?: Array<{
     id: string;
@@ -259,6 +262,8 @@ export interface ProjectState {
   gifSizePreset?: string;
   exportAspectRatios?: string[];
   timelineZoomVisibleMs?: number;
+  /** W2-b: draw the audio waveform behind the AUDIO row (view setting, not edit state). */
+  showTimelineWaveform?: boolean;
   /** Auto-zoom wand state (v1.2). Missing in older saves -> treated as enabled. */
   autoZoomEnabled?: boolean;
 }

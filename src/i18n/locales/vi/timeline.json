@@ -27,5 +27,10 @@
 	"addTrim": "Thêm Cắt (T)",
 	"addAnnotation": "Thêm Chú thích (A)",
 	"resizeLeft": "Kéo cạnh trái",
-	"resizeRight": "Kéo cạnh phải"
+	"resizeRight": "Kéo cạnh phải",
+	"hints": {
+		"pressZoom": "Nhấn {{key}} để thêm thu phóng",
+		"pressAnnotation": "Nhấn {{key}} để thêm chú thích",
+		"noSubtitles": "Tạo phụ đề từ bảng cài đặt"
+	}
 }

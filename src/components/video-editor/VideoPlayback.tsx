@@ -26,8 +26,13 @@ import { findSubtitleCueAtTime, normalizeSubtitleCues } from "@/lib/analysis/sub
 import { resolvePreviewAudioState } from "@/lib/audio/audioEditRegions";
 import {
   DEFAULT_CURSOR_STYLE,
+  createCursorMotionBlurState,
   drawCompositedCursor,
+  getCursorMotionBlurPx,
   projectCursorToViewport,
+  resolveCursorClipRect,
+  resolveCursorContentScale,
+  resolveCursorSizeNorm,
   resolveCursorState,
   type CursorStyleConfig,
   type CursorTrack,
@@ -172,6 +177,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
   const baseScaleRef = useRef(1);
   const baseOffsetRef = useRef({ x: 0, y: 0 });
   const baseMaskRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
+  const baseMaskRadiusRef = useRef(0);
   const cropBoundsRef = useRef({ startX: 0, endX: 0, startY: 0, endY: 0 });
   const maskGraphicsRef = useRef<Graphics | null>(null);
   const isPlayingRef = useRef(isPlaying);
@@ -186,6 +192,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
   const preferredFpsRef = useRef(preferredFps);
   const cursorCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const cursorCanvasCtxRef = useRef<CanvasRenderingContext2D | null>(null);
+  const cursorMotionBlurStateRef = useRef(createCursorMotionBlurState());
   const cursorTrackRef = useRef<CursorTrack | null>(cursorTrack);
   const cursorStyleRef = useRef<Partial<CursorStyleConfig>>(cursorStyle ?? DEFAULT_CURSOR_STYLE);
   const cropRegionRef = useRef(cropRegion);
@@ -334,6 +341,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
       baseScaleRef.current = result.baseScale;
       baseOffsetRef.current = result.baseOffset;
       baseMaskRef.current = result.maskRect;
+      baseMaskRadiusRef.current = result.maskBorderRadius;
       cropBoundsRef.current = result.cropBounds;
 
       // Reset camera container to identity
@@ -707,10 +715,15 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
   const renderCursorOverlay = useCallback((timeMs: number) => {
     ensureCursorCanvas();
     const ctx = cursorCanvasCtxRef.current;
+    // The preview mask is drawn in stage coordinates at maskRect.x/y (the video
+    // container sits at 0,0), so the mask rect is the camera-local origin for
+    // both the crop re-normalised projection and the clip rect. This matches the
+    // exporter, whose mask is at 0,0 inside a container placed at baseOffset.
     const layout = {
       stageSize: stageSizeRef.current,
-      baseOffset: baseOffsetRef.current,
+      baseOffset: { x: baseMaskRef.current.x, y: baseMaskRef.current.y },
       maskRect: baseMaskRef.current,
+      maskBorderRadius: baseMaskRadiusRef.current,
     };
     const cameraContainer = cameraContainerRef.current;
 
@@ -750,12 +763,35 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
 
     if (!drawProjected.inViewport) return;
 
+    const cursorSizeNorm = resolveCursorSizeNorm({ maskRect: layout.maskRect, cropRegion: cropRegionRef.current });
+    const motionBlurPx = getCursorMotionBlurPx({
+      motionBlur: cursorStyleRef.current.motionBlur ?? 0,
+      point: { x: drawProjected.x, y: drawProjected.y },
+      state: cursorMotionBlurStateRef.current,
+      timeMs,
+      sizeNorm: cursorSizeNorm,
+    });
+
     drawCompositedCursor(
       ctx,
       { x: drawProjected.x, y: drawProjected.y },
       drawCursorState,
       cursorStyleRef.current,
-      Math.max(0.1, (Math.abs(cameraContainer.scale.x) + Math.abs(cameraContainer.scale.y)) / 2),
+      resolveCursorContentScale({
+        cameraScale: { x: cameraContainer.scale.x, y: cameraContainer.scale.y },
+        maskRect: layout.maskRect,
+        cropRegion: cropRegionRef.current,
+      }),
+      {
+        motionBlurPx,
+        clipRect: resolveCursorClipRect({
+          style: cursorStyleRef.current,
+          maskRect: layout.maskRect,
+          maskBorderRadius: layout.maskBorderRadius,
+          cameraScale: { x: cameraContainer.scale.x, y: cameraContainer.scale.y },
+          cameraPosition: { x: cameraContainer.position.x, y: cameraContainer.position.y },
+        }),
+      },
     );
   }, [ensureCursorCanvas]);
 

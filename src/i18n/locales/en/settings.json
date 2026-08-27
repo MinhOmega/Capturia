@@ -39,6 +39,8 @@
 	"cursorOffsetX": "Cursor Offset X",
 	"cursorOffsetY": "Cursor Offset Y",
 	"cursorOffsetReset": "Reset Cursor Offset",
+	"cursorClipToBounds": "Clip Cursor to Video",
+	"cursorMotionBlur": "Cursor Motion Blur",
 	"audioTrack": "Audio Track",
 	"audioVolume": "Audio Volume",
 	"audioNormalizeLoudness": "Loudness Normalization",
@@ -133,5 +135,10 @@
 		"failed": "Failed to add font",
 		"failed.timeout": "Font took too long to load. Please check the URL and try again.",
 		"failed.generic": "The font could not be loaded. Please verify the Google Fonts URL is correct."
+	},
+	"timeline": {
+		"title": "Timeline",
+		"waveform": "Show audio waveform",
+		"waveformDesc": "Draw the recording's waveform behind the audio track."
 	}
 }
