@@ -56,3 +56,11 @@ Newest entries first. Each entry: date, cycle stage, what happened, verification
 - W0-b (IPC security + lifecycle) reviewed and merged. Merged tree: tsc/typecheck:test clean, lint 0 err,
   36 files / 260 tests. Manual Electron smoke pending (no display on lead machine).
   Review: `reviews/W0-b-security.md`. `.gitignore` += `.claude/worktrees/`.
+- W0-c (pure libs) reviewed and merged. Wave 0 complete. Tree: lint 0 err / 117 warn, tsc +
+  typecheck:test clean, 48 files / 392 tests. Review: `reviews/W0-c-purelibs.md`.
+
+## 2026-08-27 — wave 1 (started)
+
+- Spawned W1-a (i18n restructure), W1-b (recording pipeline: streaming to disk, discard fix,
+  parallel capture), W1-c (exporter groundwork: Linux readback, file-read IPC/OPFS, Opus fallback,
+  diagnostics, save-path memory). Merge order: W1-a first, then W1-b, W1-c (i18n key reconciliation).
