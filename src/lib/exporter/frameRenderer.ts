@@ -10,7 +10,7 @@ import {
 } from '@/components/video-editor/videoPlayback/zoomCamera';
 import { renderAnnotations, preloadAnnotationFonts, preloadAnnotationImages } from './annotationRenderer';
 import { getExportBackgroundFilter } from '@/lib/rendering/backgroundBlur';
-import { getAssetPath } from '@/lib/assetPath';
+import { classifyWallpaper, resolveImageWallpaperUrl } from '@/lib/wallpaper';
 import { BackgroundLoadError } from './backgroundErrors';
 import {
   getLinearGradientPoints,
@@ -250,25 +250,15 @@ export class FrameRenderer {
 
     // Render background based on type. Failures throw BackgroundLoadError so the
     // exporter reports them instead of silently exporting a black background.
-    if (wallpaper.startsWith('file://') || wallpaper.startsWith('data:') || wallpaper.startsWith('/') || wallpaper.startsWith('http')) {
-      // Image background
+    const classified = classifyWallpaper(wallpaper);
+    if (classified.kind === 'image') {
+      // Image background: canonical "/wallpapers/wallpaperN.jpg" values are
+      // resolved through the asset path so they load in both the dev server
+      // and the packaged app; absolute URLs and data URIs pass through.
       const img = new Image();
-      let imageUrl: string;
-      try {
-        if (wallpaper.startsWith('http')) {
-          imageUrl = wallpaper;
-          if (!imageUrl.startsWith(window.location.origin)) {
-            img.crossOrigin = 'anonymous';
-          }
-        } else if (wallpaper.startsWith('file://') || wallpaper.startsWith('data:')) {
-          imageUrl = wallpaper;
-        } else {
-          // Resolve relative paths (e.g. "/wallpapers/wallpaper1.jpg") via
-          // getAssetPath so they work in both dev server and packaged Electron.
-          imageUrl = await getAssetPath(wallpaper.replace(/^\//, ''));
-        }
-      } catch (err) {
-        throw new BackgroundLoadError(wallpaper, err);
+      const imageUrl = await resolveImageWallpaperUrl(classified.path);
+      if (imageUrl.startsWith('http') && !imageUrl.startsWith(window.location.origin)) {
+        img.crossOrigin = 'anonymous';
       }
 
       try {
@@ -301,11 +291,8 @@ export class FrameRenderer {
       }
 
       bgCtx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
-    } else if (wallpaper.startsWith('#')) {
-      bgCtx.fillStyle = wallpaper;
-      bgCtx.fillRect(0, 0, this.config.width, this.config.height);
-    } else if (/^(linear|radial)-gradient\(/i.test(wallpaper.trim())) {
-      const parsedGradient = parseCssGradient(wallpaper.trim());
+    } else if (classified.kind === 'gradient') {
+      const parsedGradient = parseCssGradient(classified.value);
       if (!parsedGradient) {
         throw new BackgroundLoadError(wallpaper);
       }
@@ -334,7 +321,7 @@ export class FrameRenderer {
       bgCtx.fillStyle = gradient;
       bgCtx.fillRect(0, 0, this.config.width, this.config.height);
     } else {
-      bgCtx.fillStyle = wallpaper;
+      bgCtx.fillStyle = classified.value;
       bgCtx.fillRect(0, 0, this.config.width, this.config.height);
     }
 

@@ -35,6 +35,13 @@ export interface ExportResult {
   success: boolean;
   blob?: Blob;
   error?: string;
+  /**
+   * Set when the failure is a BackgroundLoadError: the editor shows a
+   * dedicated, localised toast naming `backgroundUrl` (basename only, never a
+   * full local path). The retry loop never retries these.
+   */
+  errorKind?: 'background-load';
+  backgroundUrl?: string;
   warnings?: string[];
 }
 

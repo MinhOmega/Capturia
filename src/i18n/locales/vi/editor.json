@@ -15,6 +15,7 @@
 	"saveVideoFailed": "Không thể lưu video",
 	"gifExportFailed": "Xuất GIF thất bại",
 	"exportFailed": "Xuất thất bại",
+	"exportBackgroundLoadFailed": "Xuất thất bại: không thể tải hình nền ({{url}})",
 	"exportError": "Xuất thất bại: {{message}}",
 	"exportResolutionLimited": "Độ phân giải nguồn giới hạn bản xuất này ở {{width}}x{{height}}.",
 	"exportAspectRatioRequired": "Chọn ít nhất một tỷ lệ khung hình trước khi xuất.",

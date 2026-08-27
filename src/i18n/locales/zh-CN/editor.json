@@ -15,6 +15,7 @@
 	"saveVideoFailed": "保存视频失败",
 	"gifExportFailed": "GIF 导出失败",
 	"exportFailed": "导出失败",
+	"exportBackgroundLoadFailed": "导出失败：无法加载背景图片（{{url}}）",
 	"exportError": "导出失败：{{message}}",
 	"exportResolutionLimited": "源视频分辨率受限，本次导出最高为 {{width}}x{{height}}。",
 	"exportAspectRatioRequired": "导出前请至少选择一个导出画幅。",

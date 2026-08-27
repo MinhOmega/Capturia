@@ -1,6 +1,6 @@
 import type React from "react";
 import { useEffect, useRef, useImperativeHandle, forwardRef, useState, useMemo, useCallback } from "react";
-import { getAssetPath } from "@/lib/assetPath";
+import { classifyWallpaper, DEFAULT_WALLPAPER, resolveImageWallpaperUrl } from "@/lib/wallpaper";
 import { Application, Container, Sprite, Graphics, BlurFilter, Texture, VideoSource } from 'pixi.js';
 import { getZoomScale, type ZoomRegion, type ZoomFocus, type TrimRegion, type AnnotationRegion, type AudioEditRegion } from "./types";
 import { DEFAULT_FOCUS } from "./videoPlayback/constants";
@@ -1165,43 +1165,24 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
 
   const [resolvedWallpaper, setResolvedWallpaper] = useState<string | null>(null);
 
+  // The wallpaper prop is the canonical value (see lib/wallpaper.ts); bundled
+  // images are resolved to a loadable URL here, colours/gradients pass through.
   useEffect(() => {
     let mounted = true
     ;(async () => {
+      const value = wallpaper || DEFAULT_WALLPAPER
+      const classified = classifyWallpaper(value)
       try {
-        if (!wallpaper) {
-          const def = await getAssetPath('wallpapers/wallpaper1.jpg')
-          if (mounted) setResolvedWallpaper(def)
-          return
+        if (classified.kind === 'image') {
+          const url = await resolveImageWallpaperUrl(classified.path)
+          if (mounted) setResolvedWallpaper(url)
+        } else if (mounted) {
+          // Keep the full string (a url() overlay + gradient composite paints fine in CSS)
+          setResolvedWallpaper(value)
         }
-
-        if (wallpaper.startsWith('#') || wallpaper.startsWith('linear-gradient') || wallpaper.startsWith('radial-gradient')) {
-          if (mounted) setResolvedWallpaper(wallpaper)
-          return
-        }
-
-        // If it's a data URL (custom uploaded image), use as-is
-        if (wallpaper.startsWith('data:')) {
-          if (mounted) setResolvedWallpaper(wallpaper)
-          return
-        }
-
-        // If it's an absolute web/http or file path, use as-is
-        if (wallpaper.startsWith('http') || wallpaper.startsWith('file://') || wallpaper.startsWith('/')) {
-          // If it's an absolute server path (starts with '/'), resolve via getAssetPath as well
-          if (wallpaper.startsWith('/')) {
-            const rel = wallpaper.replace(/^\//, '')
-            const p = await getAssetPath(rel)
-            if (mounted) setResolvedWallpaper(p)
-            return
-          }
-          if (mounted) setResolvedWallpaper(wallpaper)
-          return
-        }
-        const p = await getAssetPath(wallpaper.replace(/^\//, ''))
-        if (mounted) setResolvedWallpaper(p)
-      } catch {
-        if (mounted) setResolvedWallpaper(wallpaper || '/wallpapers/wallpaper1.jpg')
+      } catch (err) {
+        console.warn('[VideoPlayback] Failed to resolve wallpaper, using raw value:', err)
+        if (mounted) setResolvedWallpaper(value)
       }
     })()
     return () => { mounted = false }

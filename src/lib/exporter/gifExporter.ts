@@ -337,7 +337,7 @@ export class GifExporter {
       if (isBackgroundLoadError(error)) {
         // Not retryable: the background will not load on a second attempt either.
         console.error('GIF Export error: background failed to load:', error.displayUrl);
-        return { success: false, error: error.message };
+        return { success: false, error: error.message, errorKind: 'background-load', backgroundUrl: error.displayUrl };
       }
       console.error('GIF Export error:', error);
       return {
