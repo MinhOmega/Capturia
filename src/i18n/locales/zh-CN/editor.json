@@ -36,5 +36,17 @@
 	"hideSettings": "隐藏设置",
 	"showSettings": "显示设置",
 	"hideTimeline": "隐藏时间线",
-	"showTimeline": "显示时间线"
+	"showTimeline": "显示时间线",
+	"regionClipboard": {
+		"copied": "已复制{{region}}属性",
+		"pasted": "已粘贴{{region}}属性",
+		"nothingToCopy": "选择一个缩放、片段或标注以复制其属性",
+		"nothingToPaste": "尚未复制任何属性",
+		"noSegmentTarget": "选择一个片段以粘贴速度",
+		"kinds": {
+			"zoom": "缩放",
+			"segmentSpeed": "片段速度",
+			"annotation": "标注"
+		}
+	}
 }

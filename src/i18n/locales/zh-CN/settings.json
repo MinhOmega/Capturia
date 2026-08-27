@@ -13,6 +13,8 @@
 	"generateSubtitles": "生成字幕",
 	"applyRoughCut": "应用粗剪",
 	"deleteTrim": "删除裁剪片段",
+	"customPlaybackSpeed": "自定义速度",
+	"maxSpeedError": "速度不能超过 {{max}}×",
 	"videoEffects": "视频效果",
 	"motionBlur": "运动模糊",
 	"blurBg": "背景模糊",

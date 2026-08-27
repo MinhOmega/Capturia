@@ -36,5 +36,17 @@
 	"hideSettings": "Ẩn cài đặt",
 	"showSettings": "Hiện cài đặt",
 	"hideTimeline": "Ẩn dòng thời gian",
-	"showTimeline": "Hiện dòng thời gian"
+	"showTimeline": "Hiện dòng thời gian",
+	"regionClipboard": {
+		"copied": "Đã sao chép thuộc tính {{region}}",
+		"pasted": "Đã dán thuộc tính {{region}}",
+		"nothingToCopy": "Chọn một vùng thu phóng, phân đoạn hoặc chú thích để sao chép thuộc tính",
+		"nothingToPaste": "Chưa sao chép thuộc tính nào",
+		"noSegmentTarget": "Chọn một phân đoạn để dán tốc độ",
+		"kinds": {
+			"zoom": "Thu phóng",
+			"segmentSpeed": "Tốc độ phân đoạn",
+			"annotation": "Chú thích"
+		}
+	}
 }
