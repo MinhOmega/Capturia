@@ -22,6 +22,7 @@ import {
   DEFAULT_CURSOR_STYLE,
   drawCompositedCursor,
   projectCursorToViewport,
+  resolveCursorClipRect,
   resolveCursorContentScale,
   resolveCursorState,
   type CursorStyleConfig,
@@ -154,6 +155,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
   const baseScaleRef = useRef(1);
   const baseOffsetRef = useRef({ x: 0, y: 0 });
   const baseMaskRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
+  const baseMaskRadiusRef = useRef(0);
   const cropBoundsRef = useRef({ startX: 0, endX: 0, startY: 0, endY: 0 });
   const maskGraphicsRef = useRef<Graphics | null>(null);
   const isPlayingRef = useRef(isPlaying);
@@ -315,6 +317,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
       baseScaleRef.current = result.baseScale;
       baseOffsetRef.current = result.baseOffset;
       baseMaskRef.current = result.maskRect;
+      baseMaskRadiusRef.current = result.maskBorderRadius;
       cropBoundsRef.current = result.cropBounds;
 
       // Reset camera container to identity
@@ -683,10 +686,15 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
   const renderCursorOverlay = useCallback((timeMs: number) => {
     ensureCursorCanvas();
     const ctx = cursorCanvasCtxRef.current;
+    // The preview mask is drawn in stage coordinates at maskRect.x/y (the video
+    // container sits at 0,0), so the mask rect is the camera-local origin for
+    // both the crop re-normalised projection and the clip rect. This matches the
+    // exporter, whose mask is at 0,0 inside a container placed at baseOffset.
     const layout = {
       stageSize: stageSizeRef.current,
-      baseOffset: baseOffsetRef.current,
+      baseOffset: { x: baseMaskRef.current.x, y: baseMaskRef.current.y },
       maskRect: baseMaskRef.current,
+      maskBorderRadius: baseMaskRadiusRef.current,
     };
     const cameraContainer = cameraContainerRef.current;
 
@@ -736,6 +744,15 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
         maskRect: layout.maskRect,
         cropRegion: cropRegionRef.current,
       }),
+      {
+        clipRect: resolveCursorClipRect({
+          style: cursorStyleRef.current,
+          maskRect: layout.maskRect,
+          maskBorderRadius: layout.maskBorderRadius,
+          cameraScale: { x: cameraContainer.scale.x, y: cameraContainer.scale.y },
+          cameraPosition: { x: cameraContainer.position.x, y: cameraContainer.position.y },
+        }),
+      },
     );
   }, [ensureCursorCanvas]);
 

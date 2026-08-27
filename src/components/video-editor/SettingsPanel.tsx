@@ -693,6 +693,16 @@ export function SettingsPanel({
                     </div>
                   )}
                 </div>
+                <div className="rounded-md bg-black/20 border border-white/5 p-2 mb-2">
+                  <div className="flex items-center justify-between">
+                    <div className="text-[10px] text-slate-300">{t("settings.cursorClipToBounds")}</div>
+                    <Switch
+                      checked={cursorStyle.clipToBounds ?? false}
+                      onCheckedChange={(clipToBounds) => updateCursorStyle({ clipToBounds })}
+                      className="data-[state=checked]:bg-[#34B27B] scale-90"
+                    />
+                  </div>
+                </div>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <div className="flex items-center justify-between mb-1">

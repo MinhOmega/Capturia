@@ -3,6 +3,8 @@ import { DEFAULT_FOCUS } from '@/components/video-editor/videoPlayback/constants
 import { findDominantRegion } from '@/components/video-editor/videoPlayback/zoomRegionUtils';
 import {
   DEFAULT_CURSOR_STYLE,
+  type CursorClipRect,
+  type CursorDrawOptions,
   type CursorKind,
   type CursorMovementStyle,
   type CursorResolvedState,
@@ -93,6 +95,7 @@ function normalizeCursorStyle(input?: Partial<CursorStyleConfig>): CursorStyleCo
     offsetX: Math.max(-240, Math.min(240, Number.isFinite(merged.offsetX) ? merged.offsetX : 0)),
     offsetY: Math.max(-240, Math.min(240, Number.isFinite(merged.offsetY) ? merged.offsetY : 0)),
     timeOffsetMs: Math.max(-300, Math.min(300, Number.isFinite(merged.timeOffsetMs) ? merged.timeOffsetMs : 0)),
+    clipToBounds: Boolean(merged.clipToBounds),
   };
 }
 
@@ -641,6 +644,58 @@ export function resolveCursorContentScale(args: {
   return Math.max(0.1, camera * resolveCursorSizeNorm(args));
 }
 
+/**
+ * Camera-aware rounded mask rect in canvas px, used to clip the cursor when
+ * `style.clipToBounds` is on. `maskRect` is the video mask in camera-local
+ * coordinates (preview: the stage-space mask rect; export: the mask offset by
+ * the video container position). Not clamped to the stage on purpose: the
+ * canvas clips to its own bounds, so clamping would pin rounded corners to
+ * the stage edge and break preview/export parity when zoom pushes the mask
+ * off-stage. Returns `null` when clipping is disabled or the mask is empty.
+ */
+export function resolveCursorClipRect(args: {
+  style?: Partial<CursorStyleConfig>;
+  maskRect: { x: number; y: number; width: number; height: number };
+  maskBorderRadius?: number;
+  cameraScale: { x: number; y: number };
+  cameraPosition: { x: number; y: number };
+}): CursorClipRect | null {
+  const { maskRect, cameraScale, cameraPosition } = args;
+  if (!normalizeCursorStyle(args.style).clipToBounds) return null;
+  if (!(maskRect.width > 0) || !(maskRect.height > 0)) return null;
+
+  const scaleX = Number.isFinite(cameraScale.x) ? cameraScale.x : 1;
+  const scaleY = Number.isFinite(cameraScale.y) ? cameraScale.y : 1;
+  const width = Math.abs(scaleX) * maskRect.width;
+  const height = Math.abs(scaleY) * maskRect.height;
+  const radiusScale = (Math.abs(scaleX) + Math.abs(scaleY)) / 2;
+  const baseRadius = Number.isFinite(args.maskBorderRadius) ? Math.max(0, Number(args.maskBorderRadius)) : 0;
+
+  return {
+    x: cameraPosition.x + scaleX * maskRect.x,
+    y: cameraPosition.y + scaleY * maskRect.y,
+    width,
+    height,
+    radius: Math.min(baseRadius * radiusScale, Math.min(width, height) / 2),
+  };
+}
+
+function traceRoundedRect(ctx: CanvasRenderingContext2D, rect: CursorClipRect): void {
+  const { x, y, width, height } = rect;
+  const r = Math.max(0, Math.min(rect.radius, Math.min(width, height) / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + width - r, y);
+  ctx.arcTo(x + width, y, x + width, y + r, r);
+  ctx.lineTo(x + width, y + height - r);
+  ctx.arcTo(x + width, y + height, x + width - r, y + height, r);
+  ctx.lineTo(x + r, y + height);
+  ctx.arcTo(x, y + height, x, y + height - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+
 // macOS-style cursor using Path2D (synchronous, no async image loading).
 // SVG viewBox: 0 0 1024 1024. Cursor tip at ~(384, 213).
 // We pre-scale the paths so (0,0) = cursor tip and the glyph is ~28 units tall.
@@ -754,6 +809,7 @@ export function drawCompositedCursor(
   state: CursorResolvedState,
   style?: Partial<CursorStyleConfig>,
   contentScale = 1,
+  options: CursorDrawOptions = {},
 ): void {
   if (!state.visible) return;
 
@@ -766,6 +822,10 @@ export function drawCompositedCursor(
   const translatedY = point.y + normalized.offsetY;
 
   ctx.save();
+  if (options.clipRect) {
+    traceRoundedRect(ctx, options.clipRect);
+    ctx.clip();
+  }
   ctx.translate(translatedX, translatedY);
 
   if (state.rippleAlpha > 0.001) {
