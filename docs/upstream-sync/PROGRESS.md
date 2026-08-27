@@ -48,3 +48,8 @@ Newest entries first. Each entry: date, cycle stage, what happened, verification
   `singleInstanceLock.ts`; dependency upgrades late (electron-builder 26 -> vite 7 -> Electron 41);
   `update-checker` only, no `electron-updater` yet.
 - All 6 gap reports in. Wrote `PLAN.md`; starting wave 0.
+
+## 2026-08-27 — wave 0
+
+- W0-a (tooling + test harness) reviewed and merged (ff). New baseline: lint 0 err / 118 warn,
+  tsc + typecheck:test clean, 34 files / 208 tests. Review: `reviews/W0-a-tooling.md`.
