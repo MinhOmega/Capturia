@@ -1,10 +1,13 @@
 import { Application, Container, Sprite, Graphics, BlurFilter, Texture, VideoSource } from 'pixi.js';
 import type { ZoomRegion, CropRegion, AnnotationRegion } from '@/components/video-editor/types';
-import { getZoomScale } from '@/components/video-editor/types';
-import { findDominantRegion } from '@/components/video-editor/videoPlayback/zoomRegionUtils';
 import { applyZoomTransform } from '@/components/video-editor/videoPlayback/zoomTransform';
-import { DEFAULT_FOCUS, MIN_DELTA, resolveAdaptiveSmoothingAlpha } from '@/components/video-editor/videoPlayback/constants';
-import { clampFocusToScale } from '@/components/video-editor/videoPlayback/focusUtils';
+import { DEFAULT_FOCUS } from '@/components/video-editor/videoPlayback/constants';
+import {
+  advanceZoomCamera,
+  createZoomCameraState,
+  measureZoomMotionIntensity,
+  resolveZoomCameraTarget,
+} from '@/components/video-editor/videoPlayback/zoomCamera';
 import { renderAnnotations, preloadAnnotationImages } from './annotationRenderer';
 import { getExportBackgroundFilter } from '@/lib/rendering/backgroundBlur';
 import { getAssetPath } from '@/lib/assetPath';
@@ -76,11 +79,12 @@ export function flipPixelRowsInPlace(buf: Uint8Array, width: number, height: num
   return buf;
 }
 
+/** Camera target for the current frame (mirrors VideoPlayback's animationStateRef). */
 interface AnimationState {
   scale: number;
   focusX: number;
   focusY: number;
-  lastTimeMs: number | null;
+  progress: number;
 }
 
 interface FrameRenderOptions {
@@ -114,6 +118,8 @@ export class FrameRenderer {
   private readonly isLinux: boolean;
   private config: FrameRenderConfig;
   private animationState: AnimationState;
+  // Same spring step as the preview ticker, driven by content time (effectTimeMs).
+  private zoomCamera = createZoomCameraState();
   private layoutCache: any = null;
   private currentVideoTime = 0;
   private currentVideoSource: HTMLVideoElement | VideoFrame | null = null;
@@ -129,7 +135,7 @@ export class FrameRenderer {
       scale: 1,
       focusX: DEFAULT_FOCUS.cx,
       focusY: DEFAULT_FOCUS.cy,
-      lastTimeMs: null,
+      progress: 0,
     };
   }
 
@@ -446,11 +452,14 @@ export class FrameRenderer {
       stageSize: this.layoutCache.stageSize,
       baseMask: this.layoutCache.maskRect,
       zoomScale: this.animationState.scale,
+      zoomProgress: this.animationState.progress,
       focusX: this.animationState.focusX,
       focusY: this.animationState.focusY,
       motionIntensity: maxMotionIntensity,
       isPlaying: true,
       motionBlurEnabled: this.config.motionBlurEnabled ?? false,
+      transformOverride: this.zoomCamera.applied,
+      frameTimeMs: effectTimeMs,
     });
 
     // Render the PixiJS stage to its canvas (video only, transparent background)
@@ -664,76 +673,29 @@ export class FrameRenderer {
     };
   }
 
-  private clampFocusToStage(focus: { cx: number; cy: number }, zoomScale: number): { cx: number; cy: number } {
-    if (!this.layoutCache) return focus;
-    return clampFocusToScale(focus, zoomScale, this.layoutCache.stageSize);
-  }
-
+  /**
+   * Same step as the preview ticker (zoomCamera.ts): resolve the eased target
+   * for content time `timeMs` and spring-chase it by the content-time delta.
+   * Always "animating" - the exporter never takes the paused/scrub snap branch;
+   * only the first frame or a jump larger than ZOOM_SPRING_MAX_STEP_MS snaps.
+   */
   private updateAnimationState(timeMs: number): number {
     if (!this.cameraContainer || !this.layoutCache) return 0;
 
-    const { region, strength } = findDominantRegion(this.config.zoomRegions, timeMs);
-    
-    const defaultFocus = DEFAULT_FOCUS;
-    let targetScaleFactor = 1;
-    let targetFocus = { ...defaultFocus };
-
-    if (region && strength > 0) {
-      const zoomScale = getZoomScale(region);
-      const regionFocus = this.clampFocusToStage(region.focus, zoomScale);
-      
-      targetScaleFactor = 1 + (zoomScale - 1) * strength;
-      targetFocus = {
-        cx: defaultFocus.cx + (regionFocus.cx - defaultFocus.cx) * strength,
-        cy: defaultFocus.cy + (regionFocus.cy - defaultFocus.cy) * strength,
-      };
-    }
+    const target = resolveZoomCameraTarget(this.config.zoomRegions, timeMs, {
+      stageSize: this.layoutCache.stageSize,
+      baseMask: this.layoutCache.maskRect,
+    });
 
     const state = this.animationState;
-    const previousTimeMs = state.lastTimeMs;
-    const deltaMs = previousTimeMs === null ? 0 : timeMs - previousTimeMs;
-    const smoothingAlpha = resolveAdaptiveSmoothingAlpha(deltaMs);
-    state.lastTimeMs = timeMs;
+    state.scale = target.scale;
+    state.focusX = target.focus.cx;
+    state.focusY = target.focus.cy;
+    state.progress = target.progress;
 
-    const prevScale = state.scale;
-    const prevFocusX = state.focusX;
-    const prevFocusY = state.focusY;
-
-    const scaleDelta = targetScaleFactor - state.scale;
-    const focusXDelta = targetFocus.cx - state.focusX;
-    const focusYDelta = targetFocus.cy - state.focusY;
-
-    let nextScale = prevScale;
-    let nextFocusX = prevFocusX;
-    let nextFocusY = prevFocusY;
-
-    if (Math.abs(scaleDelta) > MIN_DELTA) {
-      nextScale = prevScale + scaleDelta * smoothingAlpha;
-    } else {
-      nextScale = targetScaleFactor;
-    }
-
-    if (Math.abs(focusXDelta) > MIN_DELTA) {
-      nextFocusX = prevFocusX + focusXDelta * smoothingAlpha;
-    } else {
-      nextFocusX = targetFocus.cx;
-    }
-
-    if (Math.abs(focusYDelta) > MIN_DELTA) {
-      nextFocusY = prevFocusY + focusYDelta * smoothingAlpha;
-    } else {
-      nextFocusY = targetFocus.cy;
-    }
-
-    state.scale = nextScale;
-    state.focusX = nextFocusX;
-    state.focusY = nextFocusY;
-
-    return Math.max(
-      Math.abs(nextScale - prevScale),
-      Math.abs(nextFocusX - prevFocusX),
-      Math.abs(nextFocusY - prevFocusY)
-    );
+    const previous = this.zoomCamera.applied;
+    const applied = advanceZoomCamera(this.zoomCamera, target.transform, timeMs, true);
+    return measureZoomMotionIntensity(previous, applied, this.layoutCache.stageSize);
   }
 
   // On Linux/Wayland the implicit GPU-to-2D texture-sharing path behind
