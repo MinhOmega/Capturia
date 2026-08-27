@@ -36,7 +36,8 @@
       "NSScreenCaptureUsageDescription": "Capturia needs screen recording access to capture your screen.",
       "NSCameraUsageDescription": "Capturia needs camera access to render camera overlays while recording.",
       "NSMicrophoneUsageDescription": "Capturia needs microphone access to record your voice during screen capture.",
-      "NSSpeechRecognitionUsageDescription": "Capturia needs speech recognition access to generate subtitles from recordings."
+      "NSSpeechRecognitionUsageDescription": "Capturia needs speech recognition access to generate subtitles from recordings.",
+      "NSCameraUseContinuityCameraDeviceType": true
     },
     "target": [
       {
