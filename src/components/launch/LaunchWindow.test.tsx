@@ -8,6 +8,7 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CapturePermissionSnapshot } from "@/lib/permissions/capturePermissions";
+import type { RecordingPhase } from "../../hooks/recordingPhase";
 import { LaunchWindow } from "./LaunchWindow";
 
 type SelectedSourceChangedListener = Parameters<Window["electronAPI"]["onSelectedSourceChanged"]>[0];
@@ -27,7 +28,7 @@ class StubResizeObserver {
 const recorderState = vi.hoisted(() => ({
   value: {
     recording: false,
-    recordingState: "idle" as const,
+    recordingState: "idle" as RecordingPhase,
     canPause: false,
     toggleRecording: vi.fn(),
     pauseRecording: vi.fn(),
@@ -48,17 +49,16 @@ vi.mock("../../hooks/useScreenRecorder", () => ({
 // strings instead of a parallel translation table.
 vi.mock("@/i18n", async () => {
   const loader = await vi.importActual<typeof import("@/i18n/loader")>("@/i18n/loader");
+  // Stable `t`: components key effects on it (e.g. SourceSelector's fetch).
+  const t = (qualifiedKey: string, vars?: Record<string, string | number>) => {
+    const [namespace, ...rest] = qualifiedKey.split(".");
+    return loader.translate("en", namespace as never, rest.join("."), vars);
+  };
+  const setLocale = vi.fn();
   return {
     getAvailableLocales: () => ["en"],
     getLocaleName: () => "English",
-    useI18n: () => ({
-      locale: "en",
-      setLocale: vi.fn(),
-      t: (qualifiedKey: string, vars?: Record<string, string | number>) => {
-        const [namespace, ...rest] = qualifiedKey.split(".");
-        return loader.translate("en", namespace as never, rest.join("."), vars);
-      },
-    }),
+    useI18n: () => ({ locale: "en", setLocale, t }),
   };
 });
 
@@ -238,6 +238,25 @@ describe("LaunchWindow record button", () => {
       expect(screen.getByTestId("launch-record-button")).toHaveAttribute("title", "Display 1");
     });
     expect(recorderState.value.toggleRecording).not.toHaveBeenCalled();
+  });
+
+  it("offers restart in the compact recording bar", async () => {
+    const original = recorderState.value;
+    const recordingHook = { ...original, recording: true, recordingState: "recording" as RecordingPhase };
+    recorderState.value = recordingHook;
+    try {
+      render(<LaunchWindow />);
+
+      const restartButton = await screen.findByTestId("launch-restart-button");
+      expect(restartButton).toHaveAttribute("title", "Restart recording");
+      expect(restartButton).toBeEnabled();
+
+      fireEvent.click(restartButton);
+      expect(recordingHook.restartRecording).toHaveBeenCalledTimes(1);
+      expect(recordingHook.toggleRecording).not.toHaveBeenCalled();
+    } finally {
+      recorderState.value = original;
+    }
   });
 
   it("clears record-after-selection intent when required permissions are missing", async () => {
