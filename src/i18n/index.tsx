@@ -4,6 +4,7 @@
 // ./loader.ts; the React binding is in src/contexts/I18nContext.tsx.
 
 export {
+	detectSystemLocale,
 	getLocaleFromStorage,
 	I18nProvider,
 	normalizeLocale,

@@ -22,8 +22,12 @@ export const SUPPORTED_LOCALES = [
 ] as const;
 
 /**
- * Locales whose translation is complete and therefore parity-checked by
- * `scripts/i18n-check.mjs`. The others are partial and fall back to `en`.
+ * Locales whose translation is complete. Single source of truth for:
+ * - first-launch language detection (I18nContext.detectSystemLocale only
+ *   picks from this list; partial locales must be chosen manually),
+ * - the strict parity list of `scripts/i18n-check.mjs`, which parses this
+ *   array literal from the file.
+ * The others are partial and fall back to `en` per key.
  */
 export const COMPLETE_LOCALES = ["en", "zh-CN", "vi"] as const;
 

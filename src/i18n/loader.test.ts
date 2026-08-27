@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeLocale } from "@/contexts/I18nContext";
+import { detectSystemLocale, normalizeLocale } from "@/contexts/I18nContext";
 import { COMPLETE_LOCALES, DEFAULT_LOCALE, type I18nNamespace, SUPPORTED_LOCALES } from "./config";
 import {
 	getAvailableLocales,
@@ -98,10 +98,50 @@ describe("normalizeLocale", () => {
 		expect(normalizeLocale("ja")).toBe("ja-JP");
 	});
 
+	it("maps Traditional Chinese tags to zh-TW when it is a candidate", () => {
+		expect(normalizeLocale("zh-TW")).toBe("zh-TW");
+		expect(normalizeLocale("zh-HK")).toBe("zh-TW");
+		expect(normalizeLocale("zh-Hant-TW")).toBe("zh-TW");
+		expect(normalizeLocale("zh-Hans-CN")).toBe("zh-CN");
+	});
+
 	it("falls back to the default locale", () => {
 		expect(normalizeLocale("xx")).toBe(DEFAULT_LOCALE);
 		expect(normalizeLocale("")).toBe(DEFAULT_LOCALE);
 		expect(normalizeLocale(null)).toBe(DEFAULT_LOCALE);
 		expect(normalizeLocale(undefined)).toBe(DEFAULT_LOCALE);
+	});
+});
+
+describe("detectSystemLocale (first launch, no stored preference)", () => {
+	it("only lands on complete locales", () => {
+		expect(COMPLETE_LOCALES).toEqual(["en", "zh-CN", "vi"]);
+		expect(detectSystemLocale("en-GB")).toBe("en");
+		expect(detectSystemLocale("vi-VN")).toBe("vi");
+		expect(detectSystemLocale("zh-CN")).toBe("zh-CN");
+		expect(detectSystemLocale("zh-Hans-CN")).toBe("zh-CN");
+	});
+
+	it("sends partial-locale systems to en even though the picker offers them", () => {
+		expect(getAvailableLocales()).toContain("fr");
+		expect(detectSystemLocale("fr")).toBe("en");
+		expect(detectSystemLocale("fr-FR")).toBe("en");
+		expect(detectSystemLocale("ja-JP")).toBe("en");
+		expect(detectSystemLocale("pt-BR")).toBe("en");
+		expect(normalizeLocale("fr-FR")).toBe("fr");
+	});
+
+	it("maps Traditional Chinese to zh-CN while zh-TW is partial", () => {
+		expect(getAvailableLocales()).toContain("zh-TW");
+		expect(detectSystemLocale("zh-TW")).toBe("zh-CN");
+		expect(detectSystemLocale("zh-HK")).toBe("zh-CN");
+		expect(detectSystemLocale("zh-Hant")).toBe("zh-CN");
+		// manual selection still reaches zh-TW
+		expect(normalizeLocale("zh-TW")).toBe("zh-TW");
+	});
+
+	it("falls back to the default locale", () => {
+		expect(detectSystemLocale("xx")).toBe(DEFAULT_LOCALE);
+		expect(detectSystemLocale(null)).toBe(DEFAULT_LOCALE);
 	});
 });

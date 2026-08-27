@@ -7,7 +7,13 @@ import {
 	useMemo,
 	useState,
 } from "react";
-import { DEFAULT_LOCALE, type I18nNamespace, LOCALE_STORAGE_KEY, type Locale } from "@/i18n/config";
+import {
+	COMPLETE_LOCALES,
+	DEFAULT_LOCALE,
+	type I18nNamespace,
+	LOCALE_STORAGE_KEY,
+	type Locale,
+} from "@/i18n/config";
 import { getAvailableLocales, isAvailableLocale, type TranslateVars, translate } from "@/i18n/loader";
 
 interface I18nContextValue {
@@ -34,31 +40,49 @@ export function useScopedT(namespace: I18nNamespace) {
 	);
 }
 
+const TRADITIONAL_CHINESE_TAG = /^zh[-_](hant|tw|hk|mo)\b/i;
+
 /**
- * Map any language tag (stored value, `navigator.language`, ...) to an
- * available locale: exact tag, then case-insensitive tag, then `zh*` -> zh-CN,
- * then base language (`fr-CA` -> `fr`), else the default locale.
+ * Map a language tag to one of `candidates` (default: every available locale):
+ * exact tag, then case-insensitive tag, then Chinese by script (`zh-TW`,
+ * `zh-HK`, `zh-Hant*` -> zh-TW when it is a candidate, otherwise zh-CN; any
+ * other `zh*` -> zh-CN), then base language (`fr-CA` -> `fr`), else the
+ * default locale.
  */
-export function normalizeLocale(input: string | null | undefined): Locale {
+export function normalizeLocale(
+	input: string | null | undefined,
+	candidates: readonly Locale[] = getAvailableLocales(),
+): Locale {
 	const raw = (input ?? "").trim();
 	if (!raw) return DEFAULT_LOCALE;
-	if (isAvailableLocale(raw)) return raw;
+	if (candidates.includes(raw)) return raw;
 	const lower = raw.toLowerCase();
-	const available = getAvailableLocales();
-	const exact = available.find((locale) => locale.toLowerCase() === lower);
+	const exact = candidates.find((locale) => locale.toLowerCase() === lower);
 	if (exact) return exact;
 	const base = lower.split(/[-_]/)[0];
-	if (base === "zh" && available.includes("zh-CN")) return "zh-CN";
-	const baseMatch = available.find((locale) => locale.toLowerCase().split("-")[0] === base);
+	if (base === "zh") {
+		if (TRADITIONAL_CHINESE_TAG.test(raw) && candidates.includes("zh-TW")) return "zh-TW";
+		if (candidates.includes("zh-CN")) return "zh-CN";
+	}
+	const baseMatch = candidates.find((locale) => locale.toLowerCase().split("-")[0] === base);
 	if (baseMatch) return baseMatch;
 	return DEFAULT_LOCALE;
 }
 
+/**
+ * First-launch detection (no stored preference): only COMPLETE_LOCALES are
+ * candidates, so a French OS lands on `en` rather than the partial `fr`.
+ * The manual picker can still select any available locale.
+ */
+export function detectSystemLocale(tag: string | null | undefined): Locale {
+	return normalizeLocale(tag, COMPLETE_LOCALES.filter(isAvailableLocale));
+}
+
 export function getLocaleFromStorage(): Locale {
 	try {
-		return normalizeLocale(
-			window.localStorage.getItem(LOCALE_STORAGE_KEY) || window.navigator.language,
-		);
+		const stored = window.localStorage.getItem(LOCALE_STORAGE_KEY);
+		if (stored) return normalizeLocale(stored);
+		return detectSystemLocale(window.navigator.language);
 	} catch {
 		return DEFAULT_LOCALE;
 	}
