@@ -352,6 +352,7 @@ export default function VideoEditor() {
   });
   const [zoomRegionsByAspect, setZoomRegionsByAspect] = useState<ZoomRegionsByAspect>({});
   const [selectedZoomIdByAspect, setSelectedZoomIdByAspect] = useState<SelectedZoomIdByAspect>({});
+  const [isPreviewingZoom, setIsPreviewingZoom] = useState(false);
   const [audioEditRegions, setAudioEditRegions] = useState<AudioEditRegion[]>([]);
   const [annotationRegions, setAnnotationRegions] = useState<AnnotationRegion[]>([]);
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
@@ -2583,6 +2584,7 @@ export default function VideoEditor() {
                       onSelectZoom={handleSelectZoom}
                       onZoomFocusChange={handleZoomFocusChange}
                       isPlaying={isPlaying}
+                      isPreviewingZoom={isPreviewingZoom}
                       showShadow={shadowIntensity > 0}
                       shadowIntensity={shadowIntensity}
                       showBlur={showBlur}
@@ -2733,6 +2735,8 @@ export default function VideoEditor() {
                 selectedZoomFocus={selectedZoomRegion?.focus ?? null}
                 onZoomFocusCoordinateChange={handleZoomFocusCoordinateChange}
                 onZoomFocusCoordinateCommit={endHistoryBatch}
+                onZoomPreviewStart={() => setIsPreviewingZoom(true)}
+                onZoomPreviewEnd={() => setIsPreviewingZoom(false)}
                 selectedZoomId={selectedZoomId}
                 onZoomDelete={handleZoomDelete}
                 selectedSegment={segments.find((s) => s.id === selectedSegmentId) ?? null}

@@ -47,6 +47,9 @@ interface SettingsPanelProps {
   onZoomFocusCoordinateChange?: (focus: ZoomFocus) => void;
   /** Blur / Enter on an X/Y input: the typed value commits as one history entry. */
   onZoomFocusCoordinateCommit?: () => void;
+  /** Hold-to-preview: pointer/key down shows the zoomed camera at the playhead, up restores the unzoomed view. */
+  onZoomPreviewStart?: () => void;
+  onZoomPreviewEnd?: () => void;
   selectedZoomId?: string | null;
   onZoomDelete?: (id: string) => void;
   selectedSegment?: import('./types').VideoSegment | null;
@@ -201,6 +204,8 @@ export function SettingsPanel({
   selectedZoomFocus = null,
   onZoomFocusCoordinateChange,
   onZoomFocusCoordinateCommit,
+  onZoomPreviewStart,
+  onZoomPreviewEnd,
   selectedZoomId,
   onZoomDelete,
   selectedSegment = null,
@@ -523,6 +528,34 @@ export function SettingsPanel({
                 <span>{MAX_ZOOM_SCALE.toFixed(1)}×</span>
               </div>
             </div>
+          )}
+          {zoomEnabled && onZoomPreviewStart && onZoomPreviewEnd && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onPointerDown={() => onZoomPreviewStart()}
+              onPointerUp={() => onZoomPreviewEnd()}
+              onPointerLeave={() => onZoomPreviewEnd()}
+              onPointerCancel={() => onZoomPreviewEnd()}
+              onKeyDown={(e) => {
+                if ((e.key === " " || e.key === "Enter") && !e.repeat) {
+                  e.preventDefault();
+                  onZoomPreviewStart();
+                }
+              }}
+              onKeyUp={(e) => {
+                if (e.key === " " || e.key === "Enter") {
+                  e.preventDefault();
+                  onZoomPreviewEnd();
+                }
+              }}
+              onBlur={() => onZoomPreviewEnd()}
+              className="mt-2 w-full select-none gap-2 bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10 hover:border-white/20 hover:text-white active:border-[#34B27B]/50 active:bg-[#34B27B] active:text-white transition-all h-8 text-xs"
+            >
+              <ScanSearch className="w-3 h-3" />
+              {t("settings.zoomPreviewHold")}
+            </Button>
           )}
           {zoomEnabled && selectedZoomFocus && onZoomFocusCoordinateChange && (() => {
             // 0-100 % spans the focus range allowed at the effective scale, so the
