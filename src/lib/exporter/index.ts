@@ -3,6 +3,29 @@ export { VideoFileDecoder } from './videoDecoder';
 export { FrameRenderer } from './frameRenderer';
 export { VideoMuxer } from './muxer';
 export { GifExporter, calculateOutputDimensions } from './gifExporter';
+export {
+  materializeLocalSourceFile,
+  releaseLocalSourceFile,
+  clearStaleSourceCache,
+  type MaterializeOptions,
+  type MaterializeProgress,
+} from './localSourceFile';
+export { MAX_IN_MEMORY_SOURCE_BYTES } from './sourceFileLimits';
+export { resolveSourceDurationMs } from './sourceDuration';
+export {
+  buildExportDiagnosticMessage,
+  buildSaveDiagnosticMessage,
+  getFileNameForDiagnostics,
+  type ExportDiagnostics,
+  type ExportDiagnosticLabels,
+  type ExportFormatLabel,
+} from './exportDiagnostics';
+export {
+  EXPORT_AUDIO_CODECS,
+  selectExportAudioCodec,
+  isAudioCodecEncodingSupported,
+  type ExportAudioCodec,
+} from './audioCodecSelection';
 export { calculateMp4ExportPlan, resolveExportFrameRate, normalizeExportSourceFrameRate } from './mp4ExportPlan';
 export type { 
   ExportConfig, 

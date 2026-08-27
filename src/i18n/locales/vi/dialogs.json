@@ -33,7 +33,23 @@
 		"saved": "Đã lưu {{format}} thành công!",
 		"showInFolder": "Hiển thị trong thư mục",
 		"exportedTo": "Đã xuất tới {{path}}",
-		"revealFailed": "Không thể hiển thị tệp trong thư mục"
+		"revealFailed": "Không thể hiển thị tệp trong thư mục",
+		"phasePreparing": "Đang chuẩn bị",
+		"statusPreparing": "Đang chuẩn bị video nguồn...",
+		"saveAgain": "Lưu lại",
+		"unsavedExportHint": "Đã xuất xong nhưng không thể lưu tệp. Hãy chọn vị trí khác để giữ lại.",
+		"diag": {
+			"exportFailed": "Xuất {{format}} thất bại",
+			"saveFailed": "Lưu tệp xuất {{format}} thất bại",
+			"reason": "Lý do",
+			"source": "Nguồn",
+			"output": "Đầu ra",
+			"codec": "Codec",
+			"bitrate": "Bitrate",
+			"videoEncoder": "VideoEncoder",
+			"available": "khả dụng",
+			"unavailable": "không khả dụng"
+		}
 	},
 	"format": {
 		"mp4": {
