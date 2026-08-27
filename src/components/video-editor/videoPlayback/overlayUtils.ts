@@ -14,7 +14,8 @@ interface OverlayUpdateParams {
 export function updateOverlayIndicator(params: OverlayUpdateParams) {
   const { overlayEl, indicatorEl, region, focusOverride, videoSize, baseScale, isPlaying } = params;
 
-  if (!region) {
+  // Auto-follow regions take their focus from the cursor: no indicator, no drag.
+  if (!region || region.focusMode === 'auto') {
     indicatorEl.style.display = 'none';
     overlayEl.style.pointerEvents = 'none';
     return;

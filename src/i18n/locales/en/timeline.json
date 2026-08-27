@@ -1,4 +1,5 @@
 {
+	"zoomAutoFocus": "Follows the cursor",
 	"noVideoLoaded": "No Video Loaded",
 	"dragDropToStart": "Drag and drop a video to start editing",
 	"cannotPlaceZoom": "Cannot place zoom here",
