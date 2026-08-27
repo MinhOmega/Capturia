@@ -1,5 +1,5 @@
-import { ZOOM_DEPTH_SCALES, type ZoomRegion, type ZoomFocus } from "../types";
-import { clampFocusToStage } from "./focusUtils";
+import { getZoomScale, type ZoomRegion, type ZoomFocus } from "../types";
+import { clampFocusToScale } from "./focusUtils";
 
 interface OverlayUpdateParams {
   overlayEl: HTMLDivElement;
@@ -35,10 +35,10 @@ export function updateOverlayIndicator(params: OverlayUpdateParams) {
     return;
   }
 
-  const zoomScale = ZOOM_DEPTH_SCALES[region.depth];
-  const focus = clampFocusToStage(
+  const zoomScale = getZoomScale(region);
+  const focus = clampFocusToScale(
     focusOverride ?? region.focus,
-    region.depth,
+    zoomScale,
     { width: stageWidth, height: stageHeight }
   );
 

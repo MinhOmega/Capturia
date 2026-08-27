@@ -1,33 +1,43 @@
-import { ZOOM_DEPTH_SCALES, clampFocusToDepth, type ZoomFocus, type ZoomDepth } from "../types";
+import { ZOOM_DEPTH_SCALES, clampFocus, type ZoomFocus, type ZoomDepth } from "../types";
 
 interface StageSize {
   width: number;
   height: number;
 }
 
-export function clampFocusToStage(
+/**
+ * Clamp a focus point so the zoom window (stage / zoomScale) stays inside the
+ * stage. Takes the effective scale so custom zoom scales are honoured.
+ */
+export function clampFocusToScale(
   focus: ZoomFocus,
-  depth: ZoomDepth,
+  zoomScale: number,
   stageSize: StageSize
 ): ZoomFocus {
+  const baseFocus = clampFocus(focus);
   if (!stageSize.width || !stageSize.height) {
-    return clampFocusToDepth(focus, depth);
+    return baseFocus;
   }
 
-  const zoomScale = ZOOM_DEPTH_SCALES[depth];
-  
   const windowWidth = stageSize.width / zoomScale;
   const windowHeight = stageSize.height / zoomScale;
-  
+
   const marginX = windowWidth / (2 * stageSize.width);
   const marginY = windowHeight / (2 * stageSize.height);
-
-  const baseFocus = clampFocusToDepth(focus, depth);
 
   return {
     cx: Math.max(marginX, Math.min(1 - marginX, baseFocus.cx)),
     cy: Math.max(marginY, Math.min(1 - marginY, baseFocus.cy)),
   };
+}
+
+/** Depth-preset wrapper around clampFocusToScale. */
+export function clampFocusToStage(
+  focus: ZoomFocus,
+  depth: ZoomDepth,
+  stageSize: StageSize
+): ZoomFocus {
+  return clampFocusToScale(focus, ZOOM_DEPTH_SCALES[depth], stageSize);
 }
 
 export function stageFocusToVideoSpace(

@@ -2,11 +2,11 @@ import type React from "react";
 import { useEffect, useRef, useImperativeHandle, forwardRef, useState, useMemo, useCallback } from "react";
 import { getAssetPath } from "@/lib/assetPath";
 import { Application, Container, Sprite, Graphics, BlurFilter, Texture, VideoSource } from 'pixi.js';
-import { ZOOM_DEPTH_SCALES, type ZoomRegion, type ZoomFocus, type ZoomDepth, type TrimRegion, type AnnotationRegion, type AudioEditRegion } from "./types";
+import { getZoomScale, type ZoomRegion, type ZoomFocus, type TrimRegion, type AnnotationRegion, type AudioEditRegion } from "./types";
 import { DEFAULT_FOCUS, MIN_DELTA, resolveAdaptiveSmoothingAlpha } from "./videoPlayback/constants";
 import { clamp01 } from "./videoPlayback/mathUtils";
 import { findDominantRegion } from "./videoPlayback/zoomRegionUtils";
-import { clampFocusToStage as clampFocusToStageUtil } from "./videoPlayback/focusUtils";
+import { clampFocusToScale } from "./videoPlayback/focusUtils";
 import { updateOverlayIndicator } from "./videoPlayback/overlayUtils";
 import { layoutVideoContent as layoutVideoContentUtil } from "./videoPlayback/layoutUtils";
 import { applyZoomTransform } from "./videoPlayback/zoomTransform";
@@ -177,8 +177,9 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
     return Math.max(30, Math.min(120, Math.round(fps)));
   }, []);
 
-  const clampFocusToStage = useCallback((focus: ZoomFocus, depth: ZoomDepth) => {
-    return clampFocusToStageUtil(focus, depth, stageSizeRef.current);
+  // Clamp against the region's effective scale so customScale is honoured.
+  const clampFocusToStage = useCallback((focus: ZoomFocus, zoomScale: number) => {
+    return clampFocusToScale(focus, zoomScale, stageSizeRef.current);
   }, []);
 
   const audioGraphFailedRef = useRef(false);
@@ -407,7 +408,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
       cx: clamp01(localX / stageWidth),
       cy: clamp01(localY / stageHeight),
     };
-    const clampedFocus = clampFocusToStage(unclampedFocus, region.depth);
+    const clampedFocus = clampFocusToStage(unclampedFocus, getZoomScale(region));
 
     onZoomFocusChange(region.id, clampedFocus);
     updateOverlayForRegion({ ...region, focus: clampedFocus }, clampedFocus);
@@ -955,8 +956,8 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
       const shouldShowUnzoomedView = hasSelectedZoom && !isPlayingRef.current;
 
       if (region && strength > 0 && !shouldShowUnzoomedView) {
-        const zoomScale = ZOOM_DEPTH_SCALES[region.depth];
-        const regionFocus = clampFocusToStage(region.focus, region.depth);
+        const zoomScale = getZoomScale(region);
+        const regionFocus = clampFocusToStage(region.focus, zoomScale);
         
         // Interpolate scale and focus based on region strength
         targetScaleFactor = 1 + (zoomScale - 1) * strength;

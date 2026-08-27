@@ -11,6 +11,8 @@ export interface ZoomRegion {
   endMs: number;
   depth: ZoomDepth;
   focus: ZoomFocus;
+  /** Continuous zoom scale; when set it overrides the depth preset (see getZoomScale). */
+  customScale?: number;
 }
 
 export interface TrimRegion {
@@ -59,6 +61,15 @@ export interface AnnotationSize {
   height: number;
 }
 
+export type AnnotationTextAnimation =
+  | 'none'
+  | 'fade'
+  | 'rise'
+  | 'pop'
+  | 'slide-left'
+  | 'typewriter'
+  | 'pulse';
+
 export interface AnnotationTextStyle {
   color: string;
   backgroundColor: string;
@@ -68,6 +79,8 @@ export interface AnnotationTextStyle {
   fontStyle: 'normal' | 'italic';
   textDecoration: 'none' | 'underline';
   textAlign: 'left' | 'center' | 'right';
+  /** Entrance animation (see lib/annotationTextAnimation). Optional for older saves. */
+  textAnimation?: AnnotationTextAnimation;
 }
 
 export interface AnnotationRegion {
@@ -104,6 +117,7 @@ export const DEFAULT_ANNOTATION_STYLE: AnnotationTextStyle = {
   fontStyle: 'normal',
   textDecoration: 'none',
   textAlign: 'center',
+  textAnimation: 'none',
 };
 
 export const DEFAULT_FIGURE_DATA: FigureData = {
@@ -111,6 +125,39 @@ export const DEFAULT_FIGURE_DATA: FigureData = {
   color: '#34B27B',
   strokeWidth: 4,
 };
+
+/**
+ * A freshly created text annotation starts with no content: the properties
+ * panel's textarea shows a real placeholder for the empty state, so the value
+ * must be empty for it to show and for typing to replace rather than append to
+ * baked-in text (upstream #127).
+ */
+export function createTextAnnotationRegion(params: {
+  id: string;
+  startMs: number;
+  endMs: number;
+  zIndex: number;
+}): AnnotationRegion {
+  return {
+    id: params.id,
+    startMs: params.startMs,
+    endMs: params.endMs,
+    type: 'text',
+    content: '',
+    position: { ...DEFAULT_ANNOTATION_POSITION },
+    size: { ...DEFAULT_ANNOTATION_SIZE },
+    style: { ...DEFAULT_ANNOTATION_STYLE },
+    zIndex: params.zIndex,
+  };
+}
+
+/**
+ * Content for a region whose type is being switched to "text" -- same
+ * empty-by-default rule as a freshly created one when no prior text was stored.
+ */
+export function resolveTextAnnotationContent(existingTextContent?: string): string {
+  return existingTextContent || '';
+}
 
 
 
@@ -127,6 +174,16 @@ export const DEFAULT_CROP_REGION: CropRegion = {
   width: 1,
   height: 1,
 };
+
+export type PlaybackSpeed = number;
+
+/** Segment speed range shared by the presets, the custom input and handleSegmentSpeedChange. */
+export const MIN_PLAYBACK_SPEED = 0.25;
+export const MAX_PLAYBACK_SPEED = 40;
+
+export function clampPlaybackSpeed(speed: number): PlaybackSpeed {
+  return Math.round(Math.min(MAX_PLAYBACK_SPEED, Math.max(MIN_PLAYBACK_SPEED, speed)) * 100) / 100;
+}
 
 export const ZOOM_DEPTH_SCALES: Record<ZoomDepth, number> = {
   1: 1.25,
@@ -198,11 +255,31 @@ export interface ProjectState {
 
 export const DEFAULT_ZOOM_DEPTH: ZoomDepth = 3;
 
-export function clampFocusToDepth(focus: ZoomFocus, _depth: ZoomDepth): ZoomFocus {
+export const MIN_ZOOM_SCALE = 1.0;
+export const MAX_ZOOM_SCALE = 5.0;
+
+/**
+ * Effective zoom scale for a region: a finite customScale (clamped to
+ * MIN/MAX_ZOOM_SCALE) wins over the depth preset; NaN falls back to the preset.
+ */
+export function getZoomScale(region: ZoomRegion): number {
+  if (region.customScale != null) {
+    const clamped = Math.max(MIN_ZOOM_SCALE, Math.min(MAX_ZOOM_SCALE, region.customScale));
+    if (Number.isFinite(clamped)) return clamped;
+  }
+  return ZOOM_DEPTH_SCALES[region.depth];
+}
+
+/** Clamp a focus point into the normalized 0-1 stage square (NaN -> centre). */
+export function clampFocus(focus: ZoomFocus): ZoomFocus {
   return {
     cx: clamp(focus.cx, 0, 1),
     cy: clamp(focus.cy, 0, 1),
   };
+}
+
+export function clampFocusToDepth(focus: ZoomFocus, _depth: ZoomDepth): ZoomFocus {
+  return clampFocus(focus);
 }
 
 function clamp(value: number, min: number, max: number) {

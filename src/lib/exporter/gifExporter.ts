@@ -1,6 +1,7 @@
 import GIF from 'gif.js';
 import type { ExportProgress, ExportResult, GifFrameRate, GifSizePreset, GIF_SIZE_PRESETS } from './types';
 import { VideoFileDecoder } from './videoDecoder';
+import { isBackgroundLoadError } from './backgroundErrors';
 import { FrameRenderer } from './frameRenderer';
 import type { ZoomRegion, CropRegion, TrimRegion, AnnotationRegion, VideoSegment } from '@/components/video-editor/types';
 import { effectiveToSourceMsWithSegments, getEffectiveDurationMsWithSegments } from '@/lib/trim/timeMapping';
@@ -70,6 +71,17 @@ export function calculateOutputDimensions(
     width: newWidth % 2 === 0 ? newWidth : newWidth + 1,
     height: newHeight % 2 === 0 ? newHeight : newHeight + 1,
   };
+}
+
+/**
+ * gif.js worker pool size: leave one core for the render loop, never fewer than
+ * one worker and never more than eight (diminishing returns past that).
+ */
+export function resolveGifWorkerCount(hardwareConcurrency: number | undefined): number {
+  const cores = Number.isFinite(hardwareConcurrency) && (hardwareConcurrency as number) > 0
+    ? Math.floor(hardwareConcurrency as number)
+    : 4;
+  return Math.max(1, Math.min(8, cores - 1));
 }
 
 export class GifExporter {
@@ -160,7 +172,7 @@ export class GifExporter {
       const repeat = this.config.loop ? 0 : 1;
       
       this.gif = new GIF({
-        workers: 4,
+        workers: resolveGifWorkerCount(navigator.hardwareConcurrency),
         quality: 10,
         width: this.config.width,
         height: this.config.height,
@@ -314,6 +326,11 @@ export class GifExporter {
 
       return { success: true, blob };
     } catch (error) {
+      if (isBackgroundLoadError(error)) {
+        // Not retryable: the background will not load on a second attempt either.
+        console.error('GIF Export error: background failed to load:', error.displayUrl);
+        return { success: false, error: error.message };
+      }
       console.error('GIF Export error:', error);
       return {
         success: false,
