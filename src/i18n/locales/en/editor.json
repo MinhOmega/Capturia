@@ -48,5 +48,9 @@
 			"segmentSpeed": "Segment speed",
 			"annotation": "Annotation"
 		}
-	}
+	},
+	"loadingEditor": "Loading editor...",
+	"importVideoFailed": "Failed to import video",
+	"diagnosticSaved": "Diagnostics saved to {{path}}",
+	"diagnosticSaveFailed": "Failed to save diagnostics"
 }

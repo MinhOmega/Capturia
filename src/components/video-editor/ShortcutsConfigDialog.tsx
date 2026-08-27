@@ -6,11 +6,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Button } from '@/components/ui/button';
 import {
   DEFAULT_SHORTCUTS,
+  EDITOR_SHORTCUT_ACTIONS,
   FIXED_SHORTCUTS,
-  SHORTCUT_ACTIONS,
+  GLOBAL_SHORTCUT_ACTIONS,
   SHORTCUT_LABEL_KEYS,
   findConflict,
   formatBinding,
+  isGlobalShortcutAction,
   type ShortcutAction,
   type ShortcutBinding,
   type ShortcutConflict,
@@ -20,6 +22,11 @@ import { useShortcuts } from '@/contexts/ShortcutsContext';
 import { useI18n } from '@/i18n';
 
 const MODIFIER_KEYS = new Set(['Control', 'Shift', 'Alt', 'Meta']);
+
+/** Global accelerators without Ctrl/Cmd or Alt would swallow a plain key system-wide. */
+function isAllowedGlobalBinding(binding: ShortcutBinding): boolean {
+  return Boolean(binding.ctrl || binding.alt);
+}
 
 export function ShortcutsConfigDialog() {
   const { t } = useI18n();
@@ -65,6 +72,11 @@ export function ShortcutsConfigDialog() {
         ...(e.altKey ? { alt: true } : {}),
       };
 
+      if (isGlobalShortcutAction(captureFor) && !isAllowedGlobalBinding(binding)) {
+        toast.error(t('shortcuts.globalNeedsModifier'));
+        return;
+      }
+
       const found = findConflict(binding, captureFor, draft);
       setCaptureFor(null);
 
@@ -99,11 +111,25 @@ export function ShortcutsConfigDialog() {
   const handleCancelConflict = useCallback(() => setConflict(null), []);
 
   const handleSave = useCallback(async () => {
+    const result = await persistShortcuts(draft);
+    if (!result.ok) {
+      // Keep the dialog (and the draft) open so the user can pick another combo.
+      if (result.reason === 'registration') {
+        toast.error(
+          t('shortcuts.registrationFailed', {
+            label: t(SHORTCUT_LABEL_KEYS[result.action]),
+            shortcut: formatBinding(draft[result.action], isMac),
+          }),
+        );
+      } else {
+        toast.error(t('shortcuts.saveFailed'));
+      }
+      return;
+    }
     setShortcuts(draft);
-    await persistShortcuts(draft);
     toast.success(t('shortcuts.saved'));
     closeConfig();
-  }, [draft, setShortcuts, persistShortcuts, closeConfig, t]);
+  }, [draft, isMac, setShortcuts, persistShortcuts, closeConfig, t]);
 
   const handleReset = useCallback(() => {
     setDraft({ ...DEFAULT_SHORTCUTS });
@@ -132,12 +158,19 @@ export function ShortcutsConfigDialog() {
 
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto min-h-0 px-5 themed-scrollbar">
-          {/* Configurable shortcuts */}
-          <div className="space-y-0.5">
+          {/* Configurable shortcuts (editor, then global) */}
+          {[
+            { key: 'editor', titleKey: 'shortcuts.configurable', hintKey: null, actions: EDITOR_SHORTCUT_ACTIONS },
+            { key: 'global', titleKey: 'shortcuts.global', hintKey: 'shortcuts.globalHint', actions: GLOBAL_SHORTCUT_ACTIONS },
+          ].map((section) => (
+          <div key={section.key} className={section.key === 'global' ? 'space-y-0.5 mt-4' : 'space-y-0.5'}>
             <p className="text-[10px] text-slate-500 mb-2 uppercase tracking-wide font-semibold">
-              {t('shortcuts.configurable')}
+              {t(section.titleKey)}
             </p>
-            {SHORTCUT_ACTIONS.map((action) => {
+            {section.hintKey && (
+              <p className="text-[10px] text-slate-500 mb-2">{t(section.hintKey)}</p>
+            )}
+            {section.actions.map((action) => {
               const isCapturing = captureFor === action;
               const hasConflict = conflict?.forAction === action;
               return (
@@ -192,6 +225,7 @@ export function ShortcutsConfigDialog() {
               );
             })}
           </div>
+          ))}
 
           {/* Fixed shortcuts */}
           <div className="space-y-0.5 mt-4 mb-4">

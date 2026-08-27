@@ -48,5 +48,9 @@
 			"segmentSpeed": "片段速度",
 			"annotation": "标注"
 		}
-	}
+	},
+	"loadingEditor": "正在加载编辑器...",
+	"importVideoFailed": "导入视频失败",
+	"diagnosticSaved": "诊断信息已保存到 {{path}}",
+	"diagnosticSaveFailed": "保存诊断信息失败"
 }
