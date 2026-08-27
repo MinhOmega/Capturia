@@ -52,6 +52,8 @@ interface VideoPlaybackProps {
   onSelectZoom: (id: string | null) => void;
   onZoomFocusChange: (id: string, focus: ZoomFocus) => void;
   isPlaying: boolean;
+  /** Hold-to-preview: show the zoomed camera at the playhead even though a zoom is selected and playback is paused. */
+  isPreviewingZoom?: boolean;
   showShadow?: boolean;
   shadowIntensity?: number;
   showBlur?: boolean;
@@ -104,6 +106,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
   onSelectZoom,
   onZoomFocusChange,
   isPlaying,
+  isPreviewingZoom = false,
   showShadow,
   shadowIntensity = 0,
   showBlur,
@@ -156,6 +159,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
   const cropBoundsRef = useRef({ startX: 0, endX: 0, startY: 0, endY: 0 });
   const maskGraphicsRef = useRef<Graphics | null>(null);
   const isPlayingRef = useRef(isPlaying);
+  const isPreviewingZoomRef = useRef(isPreviewingZoom);
   const isSeekingRef = useRef(false);
   const allowPlaybackRef = useRef(false);
   const lockedVideoDimensionsRef = useRef<{ width: number; height: number } | null>(null);
@@ -465,6 +469,10 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
   useEffect(() => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
+
+  useEffect(() => {
+    isPreviewingZoomRef.current = isPreviewingZoom;
+  }, [isPreviewingZoom]);
 
   useEffect(() => {
     trimRegionsRef.current = trimRegions;
@@ -953,10 +961,11 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
       let targetFocus = defaultFocus;
 
       // If a zoom is selected but video is not playing, show default unzoomed view
-      // (the overlay will show where the zoom will be)
+      // (the overlay will show where the zoom will be) unless the user is holding
+      // the preview button, which shows the dominant region at the playhead.
       const selectedId = selectedZoomIdRef.current;
       const hasSelectedZoom = selectedId !== null;
-      const shouldShowUnzoomedView = hasSelectedZoom && !isPlayingRef.current;
+      const shouldShowUnzoomedView = hasSelectedZoom && !isPlayingRef.current && !isPreviewingZoomRef.current;
 
       if (region && strength > 0 && !shouldShowUnzoomedView) {
         const zoomScale = getZoomScale(region);
