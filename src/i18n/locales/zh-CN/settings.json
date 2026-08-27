@@ -32,6 +32,8 @@
 	"cursorOffsetX": "光标偏移 X",
 	"cursorOffsetY": "光标偏移 Y",
 	"cursorOffsetReset": "重置光标偏移",
+	"cursorClipToBounds": "光标裁剪到视频范围",
+	"cursorMotionBlur": "光标运动模糊",
 	"audioTrack": "音轨",
 	"audioVolume": "音量",
 	"audioNormalizeLoudness": "响度标准化",

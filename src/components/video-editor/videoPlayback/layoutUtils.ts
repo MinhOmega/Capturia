@@ -19,6 +19,8 @@ interface LayoutResult {
   baseScale: number;
   baseOffset: { x: number; y: number };
   maskRect: { x: number; y: number; width: number; height: number };
+  /** Corner radius (stage px) applied to `maskRect`, as drawn by the Pixi mask. */
+  maskBorderRadius: number;
   cropBounds: { startX: number; endX: number; startY: number; endY: number };
 }
 
@@ -106,6 +108,7 @@ export function layoutVideoContent(params: LayoutParams): LayoutResult | null {
     baseScale: scale,
     baseOffset: { x: spriteX, y: spriteY },
     maskRect: { x: maskX, y: maskY, width: croppedDisplayWidth, height: croppedDisplayHeight },
+    maskBorderRadius: borderRadius,
     cropBounds: { startX: cropStartX, endX: cropEndX, startY: cropStartY, endY: cropEndY },
   };
 }
