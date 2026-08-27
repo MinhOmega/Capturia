@@ -99,3 +99,5 @@ Newest entries first. Each entry: date, cycle stage, what happened, verification
 - W3-a (HUD flow) reviewed and merged. Tree: 79 files / 764 tests, i18n 487 keys. Review: `reviews/W3-a-hud.md`.
   Spawned W3-e (devices + countdown overlay + Notes window).
 - W3-b (copy/paste, frame step, speed input) reviewed and merged. Review: `reviews/W3-b-clipboard.md`.
+- W3-c (lifecycle/menus/global shortcuts/diagnostics/About) reviewed and merged (ff). Tree: 86 files / 855 tests.
+  Review: `reviews/W3-c-lifecycle.md`. Cmd+Z routing needs a macOS check.
