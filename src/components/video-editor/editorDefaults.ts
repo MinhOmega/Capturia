@@ -74,6 +74,13 @@ export const DEFAULT_AUDIO_SETTINGS: {
   limiterDb: -1,
 };
 
+export const DEFAULT_TIMELINE_SETTINGS: {
+  /** Waveform decoding costs a full audio decode; off until the user opts in. */
+  showWaveform: boolean;
+} = {
+  showWaveform: false,
+};
+
 export const DEFAULT_PLAYBACK_SETTINGS: {
   seekStepSeconds: number;
   previewPlaybackRate: number;

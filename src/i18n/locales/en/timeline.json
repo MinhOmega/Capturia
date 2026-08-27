@@ -27,5 +27,10 @@
 	"addTrim": "Add Trim (T)",
 	"addAnnotation": "Add Annotation (A)",
 	"resizeLeft": "Resize left",
-	"resizeRight": "Resize right"
+	"resizeRight": "Resize right",
+	"hints": {
+		"pressZoom": "Press {{key}} to add zoom",
+		"pressAnnotation": "Press {{key}} to add annotation",
+		"noSubtitles": "Generate subtitles from the settings panel"
+	}
 }
