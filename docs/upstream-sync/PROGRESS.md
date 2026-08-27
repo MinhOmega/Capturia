@@ -96,3 +96,5 @@ Newest entries first. Each entry: date, cycle stage, what happened, verification
 - Spawned W3-b (copy/paste, frame step, custom speed input) and W3-f (auto-follow zoom, B2-3) after
   wave 2 closed. Running now: W3-a, W3-c, W3-b, W3-f. Queued: W3-d (motion blur + native aspect, after
   W3-f), W3-e (devices + notes, after W3-a).
+- W3-a (HUD flow) reviewed and merged. Tree: 79 files / 764 tests, i18n 487 keys. Review: `reviews/W3-a-hud.md`.
+  Spawned W3-e (devices + countdown overlay + Notes window).
