@@ -27,41 +27,43 @@ function createRecordingContext(): RecordedContext {
   const arcCalls: Array<{ x: number; y: number; radius: number }> = [];
   const translateCalls: Array<{ x: number; y: number }> = [];
   const gradientRadii: number[] = [];
+  const noop = () => undefined;
+  // Style properties are plain writable fields; only the calls we assert on are recorded.
   const ctx = {
-    save: () => {},
-    restore: () => {},
+    save: noop,
+    restore: noop,
     translate: (x: number, y: number) => {
       translateCalls.push({ x, y });
     },
     scale: (x: number, y: number) => {
       scaleCalls.push({ x, y });
     },
-    beginPath: () => {},
-    moveTo: () => {},
-    lineTo: () => {},
-    arcTo: () => {},
-    closePath: () => {},
-    fill: () => {},
-    stroke: () => {},
-    clip: () => {},
+    beginPath: noop,
+    moveTo: noop,
+    lineTo: noop,
+    arcTo: noop,
+    closePath: noop,
+    fill: noop,
+    stroke: noop,
+    clip: noop,
     arc: (x: number, y: number, radius: number) => {
       arcCalls.push({ x, y, radius });
     },
     createRadialGradient: (_x0: number, _y0: number, _r0: number, _x1: number, _y1: number, r1: number) => {
       gradientRadii.push(r1);
-      return { addColorStop: () => {} };
+      return { addColorStop: noop };
     },
-    set globalAlpha(_: number) {},
-    set fillStyle(_: string | CanvasGradient | CanvasPattern) {},
-    set strokeStyle(_: string | CanvasGradient | CanvasPattern) {},
-    set lineWidth(_: number) {},
-    set lineCap(_: CanvasLineCap) {},
-    set lineJoin(_: CanvasLineJoin) {},
-    set shadowColor(_: string) {},
-    set shadowBlur(_: number) {},
-    set shadowOffsetX(_: number) {},
-    set shadowOffsetY(_: number) {},
-    set filter(_: string) {},
+    globalAlpha: 1,
+    fillStyle: '',
+    strokeStyle: '',
+    lineWidth: 1,
+    lineCap: 'butt',
+    lineJoin: 'miter',
+    shadowColor: '',
+    shadowBlur: 0,
+    shadowOffsetX: 0,
+    shadowOffsetY: 0,
+    filter: 'none',
   } as unknown as CanvasRenderingContext2D;
 
   return { ctx, scaleCalls, arcCalls, translateCalls, gradientRadii };
