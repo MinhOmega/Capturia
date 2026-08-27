@@ -18,6 +18,7 @@ import {
 } from '@/lib/audio/exportAudioProcessing';
 import { ALL_FORMATS, AudioBufferSink, BlobSource, Input, UrlSource, type InputAudioTrack } from 'mediabunny';
 import { getPlatform } from '@/utils/platformUtils';
+import { selectExportAudioCodec, type ExportAudioCodec } from './audioCodecSelection';
 
 interface VideoExporterConfig extends ExportConfig {
   videoUrl: string;
@@ -70,21 +71,6 @@ const MAX_AUDIO_GAIN = 2;
 const EXPORT_WARNING_AUDIO_TRACK_UNAVAILABLE = 'editor.exportWarningAudioTrackUnavailable';
 const EXPORT_WARNING_AUDIO_CODEC_UNSUPPORTED = 'editor.exportWarningAudioCodecUnsupported';
 const EXPORT_WARNING_SPEED_AUDIO_UNAVAILABLE = 'editor.exportWarningSpeedAudioUnavailable';
-
-async function isAacEncodingSupported(): Promise<boolean> {
-  if (typeof AudioEncoder === 'undefined') return false;
-  try {
-    const result = await AudioEncoder.isConfigSupported({
-      codec: 'mp4a.40.2',
-      sampleRate: 48000,
-      numberOfChannels: 1,
-      bitrate: 128_000,
-    });
-    return result.supported === true;
-  } catch {
-    return false;
-  }
-}
 
 function isExportAudioDebugEnabled(): boolean {
   try {
@@ -283,6 +269,7 @@ export class VideoExporter {
   private maxObservedTimingDriftMs = 0;
   private sourceDurationMs = 0;
   private platform: string | undefined;
+  private audioCodec: ExportAudioCodec = 'aac';
   private sourceTrimRanges: TimeRangeMs[] = [];
   private sourceAudioEditRegions: AudioEditRegion[] = [];
   private sourceAudioInput: Input | null = null;
@@ -665,15 +652,22 @@ export class VideoExporter {
         this.addWarning(EXPORT_WARNING_SPEED_AUDIO_UNAVAILABLE);
       }
 
-      // AAC encoding is required for MP4 audio but may not be available
-      // on some platforms (e.g. Chromium on Linux without proprietary codecs).
+      // MP4 audio needs AAC or, when that encoder is missing (e.g. Chromium on
+      // Linux without proprietary codecs), Opus. Only when neither is available
+      // is the audio dropped with a warning.
+      this.audioCodec = 'aac';
       if (hasSourceAudio) {
-        const aacSupported = await isAacEncodingSupported();
-        if (!aacSupported) {
-          console.warn('[VideoExporter] AAC audio encoding not supported on this system, exporting without audio');
+        const selectedCodec = await selectExportAudioCodec();
+        if (!selectedCodec) {
+          console.warn('[VideoExporter] Neither AAC nor Opus audio encoding is supported on this system, exporting without audio');
           hasSourceAudio = false;
           this.sourceAudioTrack = null;
           this.addWarning(EXPORT_WARNING_AUDIO_CODEC_UNSUPPORTED);
+        } else {
+          this.audioCodec = selectedCodec;
+          if (selectedCodec !== 'aac') {
+            console.info(`[VideoExporter] AAC encoder unavailable, using ${selectedCodec} audio in MP4`);
+          }
         }
       }
 
@@ -703,7 +697,7 @@ export class VideoExporter {
 
       await this.initializeEncoder();
 
-      this.muxer = new VideoMuxer(this.config, hasSourceAudio);
+      this.muxer = new VideoMuxer(this.config, hasSourceAudio, this.audioCodec);
       await this.muxer.initialize();
 
       const videoElement = this.decoder.getVideoElement();

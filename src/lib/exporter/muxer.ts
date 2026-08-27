@@ -1,4 +1,5 @@
 import type { ExportConfig } from './types';
+import { EXPORT_AUDIO_BITRATE, type ExportAudioCodec } from './audioCodecSelection';
 import { 
   Output, 
   Mp4OutputFormat, 
@@ -14,12 +15,23 @@ export class VideoMuxer {
   private videoSource: EncodedVideoPacketSource | null = null;
   private audioSource: EncodedAudioPacketSource | AudioBufferSource | null = null;
   private hasAudio: boolean;
+  private readonly audioCodec: ExportAudioCodec;
   private target: BufferTarget | null = null;
   private config: ExportConfig;
 
-  constructor(config: ExportConfig, hasAudio = false) {
+  /**
+   * @param audioCodec MP4 audio codec for the PCM (`AudioBufferSource`) track.
+   *   AAC by default; Opus when the AAC encoder is unavailable (see
+   *   `selectExportAudioCodec`). mediabunny writes Opus-in-MP4 (`dOps`).
+   */
+  constructor(config: ExportConfig, hasAudio = false, audioCodec: ExportAudioCodec = 'aac') {
     this.config = config;
     this.hasAudio = hasAudio;
+    this.audioCodec = audioCodec;
+  }
+
+  getAudioCodec(): ExportAudioCodec {
+    return this.audioCodec;
   }
 
   async initialize(): Promise<void> {
@@ -42,9 +54,9 @@ export class VideoMuxer {
     // Create audio source if needed
     if (this.hasAudio) {
       this.audioSource = new AudioBufferSource({
-        // MP4 container requires an ISO BMFF-compatible audio codec.
-        codec: 'aac',
-        bitrate: 128_000,
+        // MP4 container requires an ISO BMFF-compatible audio codec (AAC or Opus).
+        codec: this.audioCodec,
+        bitrate: EXPORT_AUDIO_BITRATE,
       });
       this.output.addAudioTrack(this.audioSource);
     }
