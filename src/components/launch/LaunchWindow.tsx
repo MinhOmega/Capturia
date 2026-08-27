@@ -316,6 +316,25 @@ export function LaunchWindow() {
   };
   const [selectedSource, setSelectedSource] = useState(t("launch.sourceFallback"));
   const [hasSelectedSource, setHasSelectedSource] = useState(false);
+  // Set when the record button opened the picker: the next `selected-source-changed`
+  // event starts recording (through the countdown + permission preflight). Cleared
+  // when the picker closes without a pick or fails to open.
+  const recordAfterSourceSelectionRef = useRef(false);
+  // Incremented by the chained-start path; the effect below consumes it once
+  // `hasSelectedSource` reflects the new source, so the start never runs against
+  // a stale closure.
+  const [chainedStartRequest, setChainedStartRequest] = useState(0);
+
+  const applySelectedSource = useCallback((input: unknown) => {
+    const source = normalizeSelectedSourceSnapshot(input);
+    if (source) {
+      setSelectedSource(source.name || t("launch.sourceFallback"));
+      setHasSelectedSource(true);
+      return;
+    }
+    setSelectedSource(t("launch.sourceFallback"));
+    setHasSelectedSource(false);
+  }, [t]);
 
   useEffect(() => {
     try {
@@ -529,14 +548,7 @@ export function LaunchWindow() {
       if (!window.electronAPI) return;
 
       try {
-        const source = normalizeSelectedSourceSnapshot(await window.electronAPI.getSelectedSource());
-        if (source) {
-          setSelectedSource(source.name || t("launch.sourceFallback"));
-          setHasSelectedSource(true);
-        } else {
-          setSelectedSource(t("launch.sourceFallback"));
-          setHasSelectedSource(false);
-        }
+        applySelectedSource(await window.electronAPI.getSelectedSource());
       } catch (error) {
         const now = Date.now();
         if (now - selectedSourceSyncErrorAtRef.current >= 10_000) {
@@ -554,10 +566,26 @@ export function LaunchWindow() {
     };
 
     void checkSelectedSource();
-    
+
     const interval = setInterval(checkSelectedSource, 500);
     return () => clearInterval(interval);
-  }, [t]);
+  }, [applySelectedSource, t]);
+
+  useEffect(() => {
+    const cleanupSourceChanged = window.electronAPI?.onSelectedSourceChanged?.((source) => {
+      applySelectedSource(source);
+      if (!recordAfterSourceSelectionRef.current) return;
+      recordAfterSourceSelectionRef.current = false;
+      setChainedStartRequest((value) => value + 1);
+    });
+    const cleanupSelectorClosed = window.electronAPI?.onSourceSelectorClosed?.(() => {
+      recordAfterSourceSelectionRef.current = false;
+    });
+    return () => {
+      cleanupSourceChanged?.();
+      cleanupSelectorClosed?.();
+    };
+  }, [applySelectedSource]);
 
   const cameraShapeLabelMap: Record<CameraOverlayShape, string> = {
     rounded: t("launch.shape.rounded"),
@@ -582,29 +610,30 @@ export function LaunchWindow() {
     })
     : captureProfileLabelMap[captureProfile];
 
-  const openSourceSelector = useCallback(() => {
-    if (!window.electronAPI) return;
+  /** Resolves to `true` only when the picker window was actually opened. */
+  const openSourceSelector = useCallback(async (): Promise<boolean> => {
+    if (!window.electronAPI) return false;
 
-    void (async () => {
-      try {
-        const permissionSnapshot = await window.electronAPI.getCapturePermissionSnapshot();
-        const readiness = resolveRecordingPermissionReadiness(permissionSnapshot);
-        if (!readiness.ready) {
-          await window.electronAPI.openPermissionChecker();
-          toast.error(t("launch.permission.missingRequiredHint"));
-          return;
-        }
-        await window.electronAPI.openSourceSelector();
-      } catch (error) {
-        reportUserActionError({
-          t,
-          userMessage: t("launch.openSourceSelectorFailed"),
-          error,
-          context: "launch-window.open-source-selector",
-          dedupeKey: "launch-window.open-source-selector",
-        });
+    try {
+      const permissionSnapshot = await window.electronAPI.getCapturePermissionSnapshot();
+      const readiness = resolveRecordingPermissionReadiness(permissionSnapshot);
+      if (!readiness.ready) {
+        await window.electronAPI.openPermissionChecker();
+        toast.error(t("launch.permission.missingRequiredHint"));
+        return false;
       }
-    })();
+      await window.electronAPI.openSourceSelector();
+      return true;
+    } catch (error) {
+      reportUserActionError({
+        t,
+        userMessage: t("launch.openSourceSelectorFailed"),
+        error,
+        context: "launch-window.open-source-selector",
+        dedupeKey: "launch-window.open-source-selector",
+      });
+      return false;
+    }
   }, [t]);
 
   const openPermissionChecker = useCallback(() => {
@@ -656,6 +685,36 @@ export function LaunchWindow() {
     toggleRecording,
   ]);
 
+  /** Permission preflight, then the user's countdown (which starts the recording). */
+  const requestRecordStart = useCallback(async () => {
+    try {
+      const permissionSnapshot = await window.electronAPI.getCapturePermissionSnapshot();
+      const readiness = resolveRecordingPermissionReadiness(permissionSnapshot);
+      if (!readiness.ready) {
+        await window.electronAPI.openPermissionChecker();
+        toast.error(t("launch.permission.missingRequiredHint"));
+        return;
+      }
+      beginRecordCountdown();
+    } catch (error) {
+      reportUserActionError({
+        t,
+        userMessage: t("launch.permission.refreshFailed"),
+        error,
+        context: "launch-window.record-permission-preflight",
+        dedupeKey: "launch-window.record-permission-preflight",
+      });
+    }
+  }, [beginRecordCountdown, t]);
+
+  // Chained start: the record button opened the picker and a source was chosen.
+  // Runs once `hasSelectedSource` is true so the countdown guard sees the source.
+  useEffect(() => {
+    if (chainedStartRequest === 0 || !hasSelectedSource) return;
+    setChainedStartRequest(0);
+    void requestRecordStart();
+  }, [chainedStartRequest, hasSelectedSource, requestRecordStart]);
+
   const handleRecordButtonClick = useCallback(() => {
     if (recording || recordingState === "recording") {
       clearRecordCountdown();
@@ -666,7 +725,12 @@ export function LaunchWindow() {
     if (isTransitioning) return;
 
     if (!hasSelectedSource) {
-      openSourceSelector();
+      recordAfterSourceSelectionRef.current = true;
+      void openSourceSelector().then((opened) => {
+        if (!opened) {
+          recordAfterSourceSelectionRef.current = false;
+        }
+      });
       return;
     }
 
@@ -675,37 +739,17 @@ export function LaunchWindow() {
       return;
     }
 
-    void (async () => {
-      try {
-        const permissionSnapshot = await window.electronAPI.getCapturePermissionSnapshot();
-        const readiness = resolveRecordingPermissionReadiness(permissionSnapshot);
-        if (!readiness.ready) {
-          await window.electronAPI.openPermissionChecker();
-          toast.error(t("launch.permission.missingRequiredHint"));
-          return;
-        }
-        beginRecordCountdown();
-      } catch (error) {
-        reportUserActionError({
-          t,
-          userMessage: t("launch.permission.refreshFailed"),
-          error,
-          context: "launch-window.record-permission-preflight",
-          dedupeKey: "launch-window.record-permission-preflight",
-        });
-      }
-    })();
+    void requestRecordStart();
   }, [
-    beginRecordCountdown,
     countdownRemaining,
     hasSelectedSource,
     isTransitioning,
     openSourceSelector,
     recording,
     recordingState,
+    requestRecordStart,
     clearRecordCountdown,
     toggleRecording,
-    t,
   ]);
 
   const openVideoFile = async () => {
@@ -873,9 +917,10 @@ export function LaunchWindow() {
           variant="link"
           size="sm"
           className={`gap-1 min-w-[120px] w-fit max-w-[280px] shrink-0 overflow-hidden text-white bg-transparent hover:bg-transparent px-1 justify-start text-xs ${styles.electronNoDrag}`}
-          onClick={openSourceSelector}
+          onClick={() => void openSourceSelector()}
           disabled={controlsLocked}
           title={selectedSource}
+          data-testid="launch-source-button"
         >
           <MdMonitor size={14} className="text-white" />
           <span className="truncate max-w-[240px] block pointer-events-none">{selectedSource}</span>
@@ -886,11 +931,14 @@ export function LaunchWindow() {
           size="sm"
           onClick={handleRecordButtonClick}
           disabled={isTransitioning}
+          data-testid="launch-record-button"
           className={`relative z-20 gap-1 shrink-0 min-w-[96px] text-white bg-white/5 hover:bg-white/10 border border-white/10 rounded-md px-2 text-center text-xs ${styles.electronNoDrag}`}
           title={
             countdownRemaining !== null
               ? t("launch.countdownCancelHint", { seconds: countdownRemaining })
-              : undefined
+              : hasSelectedSource
+                ? selectedSource
+                : t("launch.recordSourceRequired")
           }
         >
           {countdownRemaining !== null ? (
