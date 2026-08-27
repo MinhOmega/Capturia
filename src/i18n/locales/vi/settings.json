@@ -152,5 +152,15 @@
 		"slideLeft": "Trượt sang trái",
 		"typewriter": "Máy đánh chữ",
 		"pulse": "Nhịp đập"
+	},
+	"fontStyles": {
+		"classic": "Cổ điển",
+		"editor": "Biên tập",
+		"strong": "Đậm nét",
+		"typewriter": "Máy đánh chữ",
+		"deco": "Trang trí",
+		"simple": "Đơn giản",
+		"modern": "Hiện đại",
+		"clean": "Gọn gàng"
 	}
 }

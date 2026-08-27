@@ -8,7 +8,7 @@ import {
   measureZoomMotionIntensity,
   resolveZoomCameraTarget,
 } from '@/components/video-editor/videoPlayback/zoomCamera';
-import { renderAnnotations, preloadAnnotationImages } from './annotationRenderer';
+import { renderAnnotations, preloadAnnotationFonts, preloadAnnotationImages } from './annotationRenderer';
 import { getExportBackgroundFilter } from '@/lib/rendering/backgroundBlur';
 import { getAssetPath } from '@/lib/assetPath';
 import { BackgroundLoadError } from './backgroundErrors';
@@ -229,9 +229,13 @@ export class FrameRenderer {
     this.videoContainer.addChild(this.maskGraphics);
     this.videoContainer.mask = this.maskGraphics;
 
-    // Pre-load annotation images so renderFrame never blocks on I/O
+    // Pre-load annotation images and web fonts so renderFrame never blocks on
+    // I/O and canvas text is drawn with the chosen family, not a fallback.
     if (this.config.annotationRegions && this.config.annotationRegions.length > 0) {
-      await preloadAnnotationImages(this.config.annotationRegions);
+      await Promise.all([
+        preloadAnnotationImages(this.config.annotationRegions),
+        preloadAnnotationFonts(this.config.annotationRegions),
+      ]);
     }
   }
 

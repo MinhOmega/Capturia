@@ -152,5 +152,15 @@
 		"slideLeft": "Slide Left",
 		"typewriter": "Typewriter",
 		"pulse": "Pulse"
+	},
+	"fontStyles": {
+		"classic": "Classic",
+		"editor": "Editor",
+		"strong": "Strong",
+		"typewriter": "Typewriter",
+		"deco": "Deco",
+		"simple": "Simple",
+		"modern": "Modern",
+		"clean": "Clean"
 	}
 }
