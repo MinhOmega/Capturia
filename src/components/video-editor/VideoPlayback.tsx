@@ -927,7 +927,9 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
     blurFilter.quality = 3;
     blurFilter.resolution = app.renderer.resolution;
     blurFilter.strength = 0;
-    videoContainer.filters = [blurFilter];
+    // Not attached here: the ticker only assigns videoContainer.filters while
+    // motion blur is active. A permanently attached filter routes every frame
+    // through a filter render-texture and softens the idle preview.
     blurFilterRef.current = blurFilter;
     
     layoutVideoContent();
@@ -980,8 +982,8 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
       }
       videoContainer.mask = null;
       maskGraphicsRef.current = null;
+      videoContainer.filters = null;
       if (blurFilterRef.current) {
-        videoContainer.filters = [];
         blurFilterRef.current.destroy();
         blurFilterRef.current = null;
       }
@@ -998,6 +1000,10 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
     const videoSprite = videoSpriteRef.current;
     const videoContainer = videoContainerRef.current;
     if (!app || !videoSprite || !videoContainer) return;
+
+    // Cached so videoContainer.filters is only touched on transitions; assigning
+    // it per frame rebuilds the filter pipeline.
+    let lastMotionBlurActive: boolean | null = null;
 
     const ticker = () => {
       const cameraContainer = cameraContainerRef.current;
@@ -1056,6 +1062,20 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
         transformOverride: applied,
         frameTimeMs: timeMs,
       });
+
+      const isMotionBlurActive =
+        motionBlurEnabledRef.current && isPlayingRef.current && !isScrubbingRef.current;
+      if (isMotionBlurActive !== lastMotionBlurActive) {
+        if (isMotionBlurActive) {
+          if (blurFilterRef.current) {
+            videoContainer.filters = [blurFilterRef.current];
+            lastMotionBlurActive = true;
+          }
+        } else {
+          videoContainer.filters = null;
+          lastMotionBlurActive = false;
+        }
+      }
       renderCursorOverlay(timeMs);
     };
 
