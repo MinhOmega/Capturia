@@ -10,8 +10,9 @@ import Block from '@uiw/react-color-block';
 import { Trash2, Download, Crop, X, Bug, Upload, Star, Film, Image, Sparkles, Palette, Captions, Scissors, ScanSearch } from "lucide-react";
 import { toast } from "sonner";
 import * as SliderPrimitive from "@radix-ui/react-slider";
-import type { ZoomDepth, CropRegion, AnnotationRegion, AnnotationType, FigureData } from "./types";
+import type { ZoomDepth, ZoomFocus, CropRegion, AnnotationRegion, AnnotationType, FigureData } from "./types";
 import { MAX_ZOOM_SCALE, MIN_ZOOM_SCALE, ZOOM_DEPTH_SCALES } from "./types";
+import { getFocusBoundsForScale } from "./videoPlayback/focusUtils";
 import { CropControl } from "./CropControl";
 import { KeyboardShortcutsHelp } from "./KeyboardShortcutsHelp";
 import { AnnotationSettingsPanel } from "./AnnotationSettingsPanel";
@@ -40,6 +41,12 @@ interface SettingsPanelProps {
   onZoomCustomScaleChange?: (scale: number) => void;
   /** Fired when a slider drag / keyboard adjustment ends (one history entry per gesture). */
   onZoomCustomScaleCommit?: () => void;
+  /** Focus of the selected zoom region, shown in the precision X/Y inputs. */
+  selectedZoomFocus?: ZoomFocus | null;
+  /** Live focus edits from the X/Y inputs (already inside the bounds for the effective scale). */
+  onZoomFocusCoordinateChange?: (focus: ZoomFocus) => void;
+  /** Blur / Enter on an X/Y input: the typed value commits as one history entry. */
+  onZoomFocusCoordinateCommit?: () => void;
   selectedZoomId?: string | null;
   onZoomDelete?: (id: string) => void;
   selectedSegment?: import('./types').VideoSegment | null;
@@ -120,6 +127,58 @@ const ZOOM_DEPTH_OPTIONS: Array<{ depth: ZoomDepth; label: string }> = [
   { depth: 6, label: "5×" },
 ];
 
+/**
+ * Percentage input for one zoom-focus axis. While focused it keeps a local draft
+ * so partial entries ("5", "") survive re-renders; when not focused it mirrors
+ * the live prop so overlay drags update the number. Blur / Enter commits.
+ */
+function ZoomFocusCoordInput({
+  percent,
+  onChange,
+  onCommit,
+  disabled,
+  ariaLabel,
+}: {
+  percent: number;
+  onChange: (nextPercent: number) => void;
+  onCommit?: () => void;
+  disabled?: boolean;
+  ariaLabel: string;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const display = percent.toFixed(1);
+
+  return (
+    <input
+      type="number"
+      inputMode="decimal"
+      min={0}
+      max={100}
+      step={0.1}
+      value={draft ?? display}
+      disabled={disabled}
+      aria-label={ariaLabel}
+      onFocus={() => setDraft(display)}
+      onChange={(e) => {
+        const next = e.target.value;
+        setDraft(next);
+        const parsed = Number(next);
+        if (next !== "" && Number.isFinite(parsed)) {
+          onChange(Math.min(100, Math.max(0, parsed)));
+        }
+      }}
+      onBlur={() => {
+        setDraft(null);
+        onCommit?.();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+      }}
+      className="h-7 w-full rounded-md border border-white/10 bg-white/5 px-2 text-[11px] text-slate-200 outline-none focus:border-[#34B27B]/50 focus:ring-1 focus:ring-[#34B27B]/30 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none disabled:opacity-50 disabled:cursor-not-allowed"
+    />
+  );
+}
+
 const CURSOR_MOVEMENT_PRESETS: Array<{
   style: Exclude<CursorMovementStyle, "custom">;
   smoothingMs: number;
@@ -139,6 +198,9 @@ export function SettingsPanel({
   selectedZoomCustomScale = null,
   onZoomCustomScaleChange,
   onZoomCustomScaleCommit,
+  selectedZoomFocus = null,
+  onZoomFocusCoordinateChange,
+  onZoomFocusCoordinateCommit,
   selectedZoomId,
   onZoomDelete,
   selectedSegment = null,
@@ -462,6 +524,42 @@ export function SettingsPanel({
               </div>
             </div>
           )}
+          {zoomEnabled && selectedZoomFocus && onZoomFocusCoordinateChange && (() => {
+            // 0-100 % spans the focus range allowed at the effective scale, so the
+            // typed value always lands on a reachable position.
+            const bounds = getFocusBoundsForScale(effectiveZoomScale);
+            const xRange = bounds.maxX - bounds.minX;
+            const yRange = bounds.maxY - bounds.minY;
+            const toPercent = (value: number, min: number, range: number) =>
+              range <= 0 ? 50 : Math.max(0, Math.min(100, ((value - min) / range) * 100));
+            const fromPercent = (p: number, min: number, range: number) =>
+              range <= 0 ? min : min + (p / 100) * range;
+            return (
+              <div className="mt-3">
+                <span className="text-[11px] font-medium text-slate-400 mb-1.5 block">{t("settings.zoomFocusPosition")}</span>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">{t("settings.zoomFocusX")}</label>
+                    <ZoomFocusCoordInput
+                      ariaLabel={t("settings.zoomFocusX")}
+                      percent={toPercent(selectedZoomFocus.cx, bounds.minX, xRange)}
+                      onChange={(p) => onZoomFocusCoordinateChange({ cx: fromPercent(p, bounds.minX, xRange), cy: selectedZoomFocus.cy })}
+                      onCommit={onZoomFocusCoordinateCommit}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">{t("settings.zoomFocusY")}</label>
+                    <ZoomFocusCoordInput
+                      ariaLabel={t("settings.zoomFocusY")}
+                      percent={toPercent(selectedZoomFocus.cy, bounds.minY, yRange)}
+                      onChange={(p) => onZoomFocusCoordinateChange({ cx: selectedZoomFocus.cx, cy: fromPercent(p, bounds.minY, yRange) })}
+                      onCommit={onZoomFocusCoordinateCommit}
+                    />
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
           {zoomEnabled && (
             <Button
               onClick={handleDeleteClick}

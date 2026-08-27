@@ -1295,6 +1295,14 @@ export default function VideoEditor() {
     );
   }, [selectedZoomId, setZoomRegionsForActiveAspect]);
 
+  // Precision X/Y inputs: every keystroke updates the focus live, the whole
+  // typing session is one history entry (committed on blur / Enter).
+  const handleZoomFocusCoordinateChange = useCallback((focus: ZoomFocus) => {
+    if (!selectedZoomId) return;
+    beginHistoryBatch();
+    handleZoomFocusChange(selectedZoomId, focus);
+  }, [beginHistoryBatch, handleZoomFocusChange, selectedZoomId]);
+
   // Slider drags call this per pixel; the drag is one history entry (see
   // beginHistoryBatch / onZoomCustomScaleCommit).
   const handleZoomCustomScaleChange = useCallback((scale: number) => {
@@ -2722,6 +2730,9 @@ export default function VideoEditor() {
                 selectedZoomCustomScale={selectedZoomRegion?.customScale ?? null}
                 onZoomCustomScaleChange={handleZoomCustomScaleChange}
                 onZoomCustomScaleCommit={endHistoryBatch}
+                selectedZoomFocus={selectedZoomRegion?.focus ?? null}
+                onZoomFocusCoordinateChange={handleZoomFocusCoordinateChange}
+                onZoomFocusCoordinateCommit={endHistoryBatch}
                 selectedZoomId={selectedZoomId}
                 onZoomDelete={handleZoomDelete}
                 selectedSegment={segments.find((s) => s.id === selectedSegmentId) ?? null}
