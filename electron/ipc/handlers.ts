@@ -30,6 +30,7 @@ import {
   stopNativeMouseButtonMonitor,
 } from '../native/mouseButtonMonitor'
 import { getWindowBoundsById, parseWindowIdFromSourceId } from './windowBounds'
+import { registerFileReadHandlers } from './fileReadHandlers'
 import {
   isPointInsideBounds,
   normalizePointToBounds,
@@ -1168,6 +1169,7 @@ export function registerIpcHandlers(
   let currentVideoMetadata: CurrentVideoMetadata | null = null
   let cursorTracker: CursorTrackerRuntime | null = null
   const analysisService = new VideoAnalysisService()
+  registerFileReadHandlers({ ipcMain, recordingsDir: RECORDINGS_DIR })
 
   const stopCursorTracker = (): CursorTrackPayload | undefined => {
     if (!cursorTracker) return undefined

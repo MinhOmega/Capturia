@@ -47,6 +47,7 @@ import {
   GIF_SIZE_PRESETS,
   calculateOutputDimensions,
   calculateMp4ExportPlan,
+  clearStaleSourceCache,
 } from "@/lib/exporter";
 import { ASPECT_RATIOS, type AspectRatio, getAspectRatioValue } from "@/utils/aspectRatioUtils";
 import { getAssetPath } from "@/lib/assetPath";
@@ -343,6 +344,13 @@ export default function VideoEditor() {
   const [exportedFilePath, setExportedFilePath] = useState<string | undefined>(undefined);
   const [settingsPanelVisible, setSettingsPanelVisible] = useState(true);
   const [timelinePanelVisible, setTimelinePanelVisible] = useState(true);
+
+  // Reclaim OPFS source copies left behind by a previous session (localSourceFile.ts).
+  useEffect(() => {
+    void clearStaleSourceCache().catch((error) => {
+      console.warn('[VideoEditor] Failed to prune stale source cache:', error);
+    });
+  }, []);
 
   // Sync timeline panel visibility with imperative panel collapse/expand
   useEffect(() => {

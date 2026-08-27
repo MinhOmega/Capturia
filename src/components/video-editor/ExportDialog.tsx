@@ -78,6 +78,7 @@ export function ExportDialog({
   // Determine if we're in the compiling phase (frames done but still exporting)
   const isCompiling = isExporting && progress && progress.percentage >= 100 && exportFormat === 'gif';
   const isFinalizing = progress?.phase === 'finalizing';
+  const isPreparing = progress?.phase === 'preparing';
   const renderProgress = progress?.renderProgress;
   const updatedAtMs = progress?.updatedAtMs ?? nowMs;
   const staleMs = Math.max(0, nowMs - updatedAtMs);
@@ -117,6 +118,7 @@ export function ExportDialog({
   // Get status message based on phase
   const getStatusMessage = () => {
     if (error) return t('export.statusTryAgain');
+    if (isPreparing) return t('export.statusPreparing');
     if (isCompiling) {
       if (renderProgress !== undefined && renderProgress > 0) {
         return t('export.statusCompilingPct', { progress: renderProgress });
@@ -236,7 +238,9 @@ export function ExportDialog({
                       ? t('export.phaseCompiling')
                       : isFinalizing
                         ? t('export.phaseFinalizing')
-                        : t('export.phaseRendering')}
+                        : isPreparing
+                          ? t('export.phasePreparing')
+                          : t('export.phaseRendering')}
                   </span>
                 <span className="font-mono text-slate-200">
                   {isCompiling || (isFinalizing && exportFormat === 'gif') ? (
