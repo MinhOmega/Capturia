@@ -25,7 +25,9 @@ import {
 import { type AspectRatio, getAspectRatioLabel, ASPECT_RATIOS } from "@/utils/aspectRatioUtils";
 import { formatShortcut } from "@/utils/platformUtils";
 import { useShortcuts } from "@/contexts/ShortcutsContext";
-import { matchesShortcut } from "@/lib/shortcuts";
+import { formatBinding, matchesShortcut } from "@/lib/shortcuts";
+import { useAudioPeaks } from "@/hooks/useAudioPeaks";
+import BackgroundWaveform from "./BackgroundWaveform";
 import { TutorialHelp } from "../TutorialHelp";
 import { useI18n } from "@/i18n";
 
@@ -71,6 +73,18 @@ interface TimelineEditorProps {
   onVisibleRangeChange?: (info: { visibleMs: number; totalMs: number; minVisibleMs: number }) => void;
   zoomStepRef?: React.MutableRefObject<((direction: 1 | -1) => void) | null>;
   zoomSetRef?: React.MutableRefObject<((visibleMs: number) => void) | null>;
+  /** Raw path of the loaded video (read through the approved-file IPC for the waveform). */
+  videoFilePath?: string | null;
+  /** `local-media://` URL of the loaded video (fetch fallback for the waveform). */
+  videoUrl?: string | null;
+  /** Draw the audio waveform behind the AUDIO row. */
+  showWaveform?: boolean;
+}
+
+interface RowHints {
+  zoom: string;
+  annotation: string;
+  subtitle: string;
 }
 
 interface TimelineScaleConfig {
@@ -521,6 +535,8 @@ function Timeline({
   onHoverCommit,
   isPlaying = false,
   onRangeChange,
+  rowHints,
+  waveform,
 }: {
   items: TimelineRenderItem[];
   videoDurationMs: number;
@@ -545,6 +561,9 @@ function Timeline({
   onHoverCommit?: () => void;
   isPlaying?: boolean;
   onRangeChange?: (updater: (previous: Range) => Range) => void;
+  rowHints?: RowHints;
+  /** Decoded peaks in source time; null while loading / disabled. */
+  waveform?: { peaks: Float32Array; durationMs: number } | null;
 }) {
   const { t } = useI18n();
   const { setTimelineRef, style, sidebarWidth, range, pixelsToValue, valueToPixels } = useTimelineContext();
@@ -771,7 +790,7 @@ function Timeline({
         onRangeChange={onRangeChange}
       />
 
-      <Row id={ZOOM_ROW_ID}>
+      <Row id={ZOOM_ROW_ID} isEmpty={zoomItems.length === 0} hint={rowHints?.zoom}>
         {zoomItems.map((item) => (
           <Item
             id={item.id}
@@ -838,7 +857,7 @@ function Timeline({
         })}
       </Row>
 
-      <Row id={ANNOTATION_ROW_ID}>
+      <Row id={ANNOTATION_ROW_ID} isEmpty={annotationItems.length === 0} hint={rowHints?.annotation}>
         {annotationItems.map((item) => (
           <Item
             id={item.id}
@@ -854,7 +873,7 @@ function Timeline({
         ))}
       </Row>
 
-      <Row id={SUBTITLE_ROW_ID}>
+      <Row id={SUBTITLE_ROW_ID} isEmpty={subtitleItems.length === 0} hint={rowHints?.subtitle}>
         {subtitleItems.map((item) => (
           <Item
             id={item.id}
@@ -870,14 +889,29 @@ function Timeline({
         ))}
       </Row>
 
-      <Row id={AUDIO_ROW_ID}>
+      <Row
+        id={AUDIO_ROW_ID}
+        background={
+          waveform ? (
+            <BackgroundWaveform
+              peaks={waveform.peaks}
+              sourceDurationMs={waveform.durationMs}
+              segments={segments}
+              topInset={4}
+              bottomInset={4}
+            />
+          ) : undefined
+        }
+      >
         <div className="h-10 w-full px-2 flex items-center pointer-events-none">
           <div
             className={cn(
               "w-full h-8 rounded-lg border px-3 flex items-center justify-between",
-              hasAudioTrack
-                ? "border-[#34B27B]/30 bg-[linear-gradient(90deg,rgba(52,178,123,0.18),rgba(52,178,123,0.06))]"
-                : "border-white/10 bg-white/5",
+              !hasAudioTrack
+                ? "border-white/10 bg-white/5"
+                : waveform
+                ? "border-[#34B27B]/20 bg-transparent"
+                : "border-[#34B27B]/30 bg-[linear-gradient(90deg,rgba(52,178,123,0.18),rgba(52,178,123,0.06))]",
             )}
           >
             <span className="text-[10px] font-medium text-slate-300 uppercase tracking-wide">{t("timeline.audio")}</span>
@@ -944,6 +978,9 @@ export default function TimelineEditor({
   onVisibleRangeChange,
   zoomStepRef,
   zoomSetRef,
+  videoFilePath,
+  videoUrl,
+  showWaveform = false,
 }: TimelineEditorProps) {
   const { t } = useI18n();
   const totalMs = useMemo(() => Math.max(0, Math.round(videoDuration * 1000)), [videoDuration]);
@@ -963,6 +1000,29 @@ export default function TimelineEditor({
   });
   const { shortcuts: keyShortcuts, isMac: isMacPlatform } = useShortcuts();
   const [scissorsMode, setScissorsMode] = useState(false);
+
+  // Waveform peaks (source time). Only decoded when the toggle is on and the
+  // source has audio; the hook drops stale peaks as soon as the source changes.
+  const waveformSource = useMemo(
+    () =>
+      showWaveform && hasAudioTrack && (videoFilePath || videoUrl)
+        ? { filePath: videoFilePath ?? null, url: videoUrl ?? null }
+        : undefined,
+    [showWaveform, hasAudioTrack, videoFilePath, videoUrl],
+  );
+  const audioPeaks = useAudioPeaks(waveformSource);
+  const waveform = showWaveform && audioPeaks && audioPeaks.peaks.length > 0 ? audioPeaks : null;
+
+  const rowHints = useMemo<RowHints>(
+    () => ({
+      zoom: t("timeline.hints.pressZoom", { key: formatBinding(keyShortcuts.addZoom, isMacPlatform) }),
+      annotation: t("timeline.hints.pressAnnotation", {
+        key: formatBinding(keyShortcuts.addAnnotation, isMacPlatform),
+      }),
+      subtitle: t("timeline.hints.noSubtitles"),
+    }),
+    [t, keyShortcuts.addZoom, keyShortcuts.addAnnotation, isMacPlatform],
+  );
   const timelineContainerRef = useRef<HTMLDivElement>(null);
   const currentTimeMsRef = useRef(currentTimeMs);
   currentTimeMsRef.current = currentTimeMs;
@@ -1615,6 +1675,8 @@ export default function TimelineEditor({
             onHoverCommit={onHoverCommit}
             isPlaying={isPlaying}
             onRangeChange={setRange}
+            rowHints={rowHints}
+            waveform={waveform}
           />
         </TimelineWrapper>
       </div>
