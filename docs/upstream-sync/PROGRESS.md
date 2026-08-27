@@ -53,3 +53,6 @@ Newest entries first. Each entry: date, cycle stage, what happened, verification
 
 - W0-a (tooling + test harness) reviewed and merged (ff). New baseline: lint 0 err / 118 warn,
   tsc + typecheck:test clean, 34 files / 208 tests. Review: `reviews/W0-a-tooling.md`.
+- W0-b (IPC security + lifecycle) reviewed and merged. Merged tree: tsc/typecheck:test clean, lint 0 err,
+  36 files / 260 tests. Manual Electron smoke pending (no display on lead machine).
+  Review: `reviews/W0-b-security.md`. `.gitignore` += `.claude/worktrees/`.
