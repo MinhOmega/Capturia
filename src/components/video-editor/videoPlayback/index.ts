@@ -5,4 +5,7 @@ export * from './focusUtils';
 export * from './overlayUtils';
 export * from './layoutUtils';
 export * from './zoomTransform';
+export * from './zoomSpring';
+export * from './zoomCamera';
+export * from './rafCoalescer';
 export * from './videoEventHandlers';

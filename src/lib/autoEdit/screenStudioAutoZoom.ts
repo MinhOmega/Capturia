@@ -41,8 +41,13 @@ type Candidate = {
 
 type DraftWithWeight = AutoZoomDraft & { weight: number };
 
+// Holds are tuned for the Screen Studio camera curve (zoomRegionUtils): the
+// zoom-in ease starts ~1 s before startMs and reaches full zoom at
+// startMs + ZOOM_IN_OVERLAP_MS (500 ms), the zoom-out takes ~1 s after endMs.
+// A region therefore needs >= ~1.2 s to be seen at full zoom at all, and
+// regions closer than CONNECTED_ZOOM_GAP_MS (1.5 s) pan into each other.
 const CLICK_PRE_ROLL_MS = 220;
-const CLICK_HOLD_MS = 1_400;
+const CLICK_HOLD_MS = 1_600;
 const CLICK_MIN_GAP_MS = 260;
 
 const SELECTION_PRE_ROLL_MS = 120;
@@ -53,15 +58,25 @@ const SELECTION_SPAN_HOLD_FACTOR = 2_000;
 const SELECTION_MIN_DIMENSION = 0.008;
 
 const MOVEMENT_PRE_ROLL_MS = 120;
-const MOVEMENT_HOLD_MS = 920;
+const MOVEMENT_HOLD_MS = 1_200;
 const MOVEMENT_MIN_GAP_MS = 680;
 const MOVEMENT_MIN_DISTANCE = 0.018;
 const MOVEMENT_BASE_SPEED = 0.42;
 const MOVEMENT_PERCENTILE = 0.86;
 
-const MERGE_GAP_MS = 140;
-const MIN_REGION_DURATION_MS = 420;
+// Closer than this: one region. 300 ms - 1.5 s apart: two regions joined by a connected pan.
+const MERGE_GAP_MS = 300;
+// 500 ms zoom-in overlap + >= 700 ms visibly held at full zoom.
+const MIN_REGION_DURATION_MS = 1_200;
 const DEFAULT_MAX_REGIONS = 64;
+
+/** Exposed for tests that check drafts against the camera curve. */
+export const AUTO_ZOOM_TUNING = {
+  clickHoldMs: CLICK_HOLD_MS,
+  movementHoldMs: MOVEMENT_HOLD_MS,
+  mergeGapMs: MERGE_GAP_MS,
+  minRegionDurationMs: MIN_REGION_DURATION_MS,
+} as const;
 
 function clamp01(value: number): number {
   if (!Number.isFinite(value)) return 0;
