@@ -1,5 +1,6 @@
 import type { ExportConfig, ExportProgress, ExportResult } from './types';
 import { VideoFileDecoder } from './videoDecoder';
+import { isBackgroundLoadError } from './backgroundErrors';
 import { FrameRenderer } from './frameRenderer';
 import { VideoMuxer } from './muxer';
 import type { ZoomRegion, CropRegion, TrimRegion, AnnotationRegion, AudioEditRegion, VideoSegment } from '@/components/video-editor/types';
@@ -749,6 +750,11 @@ export class VideoExporter {
 
       return { success: true, blob, warnings: this.getWarnings() };
     } catch (error) {
+      if (isBackgroundLoadError(error)) {
+        // Not retryable: the background will not load on a second attempt either.
+        console.error('Export error: background failed to load:', error.displayUrl);
+        return { success: false, error: error.message };
+      }
       console.error('Export error:', error);
       return {
         success: false,

@@ -1,6 +1,7 @@
 import GIF from 'gif.js';
 import type { ExportProgress, ExportResult, GifFrameRate, GifSizePreset, GIF_SIZE_PRESETS } from './types';
 import { VideoFileDecoder } from './videoDecoder';
+import { isBackgroundLoadError } from './backgroundErrors';
 import { FrameRenderer } from './frameRenderer';
 import type { ZoomRegion, CropRegion, TrimRegion, AnnotationRegion, VideoSegment } from '@/components/video-editor/types';
 import { effectiveToSourceMsWithSegments, getEffectiveDurationMsWithSegments } from '@/lib/trim/timeMapping';
@@ -314,6 +315,11 @@ export class GifExporter {
 
       return { success: true, blob };
     } catch (error) {
+      if (isBackgroundLoadError(error)) {
+        // Not retryable: the background will not load on a second attempt either.
+        console.error('GIF Export error: background failed to load:', error.displayUrl);
+        return { success: false, error: error.message };
+      }
       console.error('GIF Export error:', error);
       return {
         success: false,
