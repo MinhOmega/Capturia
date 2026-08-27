@@ -108,7 +108,7 @@ export default function PlaybackControls({
             ? "bg-white/10 text-white hover:bg-white/20"
             : "bg-white text-black hover:bg-white/90 hover:scale-105 shadow-[0_0_15px_rgba(255,255,255,0.3)]"
         )}
-        aria-label={isPlaying ? t("playback.pause") : t("playback.play")}
+        aria-label={isPlaying ? t("common.playback.pause") : t("common.playback.play")}
       >
         {isPlaying ? (
           <Pause className="w-3.5 h-3.5 fill-current" />
@@ -157,7 +157,7 @@ export default function PlaybackControls({
 
       {/* Timeline zoom slider with label */}
       {zoomSlider && (
-        <div className="flex items-center gap-1.5 shrink-0" title={t("playback.timelineZoom")}>
+        <div className="flex items-center gap-1.5 shrink-0" title={t("common.playback.timelineZoom")}>
           <ZoomIn className="w-3 h-3 text-slate-500 shrink-0" />
           <div className="relative w-16 h-5 flex items-center group/zoom">
             {/* Track */}
@@ -202,7 +202,7 @@ export default function PlaybackControls({
                 ? "text-slate-400 bg-white/5 hover:bg-white/10"
                 : "text-[#34B27B] bg-[#34B27B]/10 hover:bg-[#34B27B]/20"
             )}
-            title={t("playback.previewSpeed")}
+            title={t("common.playback.previewSpeed")}
           >
             {previewPlaybackRate}x
           </button>
@@ -238,7 +238,7 @@ export default function PlaybackControls({
           onClick={onToggleFullscreen}
           size="icon"
           className="w-7 h-7 rounded-full bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white border-0 transition-colors"
-          aria-label={isFullscreen ? t("playback.exitFullscreen") : t("playback.fullscreen")}
+          aria-label={isFullscreen ? t("common.playback.exitFullscreen") : t("common.playback.fullscreen")}
         >
           {isFullscreen ? (
             <Minimize2 className="w-3 h-3" />

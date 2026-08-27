@@ -55,7 +55,7 @@ export default function App() {
     default:
       content = (
         <div className="w-full h-full bg-background text-foreground">
-          <h1>{t("app.name")}</h1>
+          <h1>{t("common.app.name")}</h1>
         </div>
       );
       break;
