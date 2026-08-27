@@ -366,6 +366,11 @@ function createSourceSelectorWindowWrapper() {
   sourceSelectorWindow = createSourceSelectorWindow()
   sourceSelectorWindow.on('closed', () => {
     sourceSelectorWindow = null
+    // Lets the HUD drop a pending "record after selection" intent when the
+    // picker is dismissed without choosing a source.
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('source-selector-closed')
+    }
   })
   return sourceSelectorWindow
 }
