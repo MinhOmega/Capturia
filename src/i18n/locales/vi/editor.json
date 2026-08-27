@@ -48,5 +48,9 @@
 			"segmentSpeed": "Tốc độ phân đoạn",
 			"annotation": "Chú thích"
 		}
-	}
+	},
+	"loadingEditor": "Đang tải trình chỉnh sửa...",
+	"importVideoFailed": "Không thể nhập video",
+	"diagnosticSaved": "Đã lưu chẩn đoán vào {{path}}",
+	"diagnosticSaveFailed": "Không thể lưu chẩn đoán"
 }

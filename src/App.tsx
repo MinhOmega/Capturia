@@ -1,14 +1,18 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { LaunchWindow } from "./components/launch/LaunchWindow";
 import { PermissionCheckerWindow } from "./components/launch/PermissionCheckerWindow";
 import { SourceSelector } from "./components/launch/SourceSelector";
-import VideoEditor from "./components/video-editor/VideoEditor";
 import { GlobalErrorObserver } from "./components/app/GlobalErrorObserver";
 import { Toaster } from "./components/ui/sonner";
 import { loadAllCustomFonts } from "./lib/customFonts";
 import { useI18n } from "./i18n";
 import { ShortcutsProvider } from "./contexts/ShortcutsContext";
 import { ShortcutsConfigDialog } from "./components/video-editor/ShortcutsConfigDialog";
+
+// The editor pulls in PixiJS, the exporter and the timeline; the HUD,
+// source-selector and permission windows never need any of it, so the editor
+// bundle is only fetched by the editor window (upstream 42c596da).
+const VideoEditor = lazy(() => import("./components/video-editor/VideoEditor"));
 
 export default function App() {
   const { t } = useI18n();
@@ -47,7 +51,15 @@ export default function App() {
     case 'editor':
       content = (
         <ShortcutsProvider>
-          <VideoEditor />
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center h-screen bg-[#09090b] text-slate-400">
+                {t("editor.loadingEditor")}
+              </div>
+            }
+          >
+            <VideoEditor />
+          </Suspense>
           <ShortcutsConfigDialog />
         </ShortcutsProvider>
       );
