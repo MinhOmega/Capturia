@@ -147,6 +147,42 @@ describe('screenStudioAutoZoom', () => {
     expect(drafts[0].focus.cy).toBeCloseTo(0.52, 4);
   });
 
+  it('carves drafts around avoidSpans so re-suggesting works around existing regions', () => {
+    const track = trackFrom([
+      { timeMs: 0, x: 0.2, y: 0.3, visible: true },
+      { timeMs: 350, x: 0.22, y: 0.31, visible: true, click: true },
+      { timeMs: 700, x: 0.25, y: 0.34, visible: true },
+    ]);
+    // Without avoidance the click draft spans 130-1750 (see the first test).
+    const baseline = generateAutoZoomDrafts(track, { durationMs: 2_000 });
+    expect(baseline).toHaveLength(1);
+
+    // A manual region fully covering the draft removes it.
+    expect(
+      generateAutoZoomDrafts(track, { durationMs: 2_000, avoidSpans: [{ startMs: 0, endMs: 2_000 }] }),
+    ).toEqual([]);
+
+    // A manual region in the middle splits it; both halves are long enough to keep.
+    const split = generateAutoZoomDrafts(track, {
+      durationMs: 2_000,
+      avoidSpans: [{ startMs: 800, endMs: 1_100 }],
+    });
+    expect(split.map((d) => [d.startMs, d.endMs])).toEqual([[130, 800], [1_100, 1_750]]);
+    expect(split.every((d) => d.reason === 'click' && d.focus.cx === baseline[0].focus.cx)).toBe(true);
+
+    // A sliver left over next to a manual region is dropped (shorter than the minimum).
+    const trimmed = generateAutoZoomDrafts(track, {
+      durationMs: 2_000,
+      avoidSpans: [{ startMs: 300, endMs: 1_750 }],
+    });
+    expect(trimmed).toEqual([]);
+
+    // Invalid spans are ignored.
+    expect(
+      generateAutoZoomDrafts(track, { durationMs: 2_000, avoidSpans: [{ startMs: 500, endMs: 400 }] }),
+    ).toEqual(baseline);
+  });
+
   it('returns empty list for invalid or too short input', () => {
     expect(generateAutoZoomDrafts(null, { durationMs: 10_000 })).toEqual([]);
     expect(generateAutoZoomDrafts(trackFrom([]), { durationMs: 10_000 })).toEqual([]);

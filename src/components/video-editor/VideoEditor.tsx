@@ -353,6 +353,8 @@ export default function VideoEditor() {
   const [zoomRegionsByAspect, setZoomRegionsByAspect] = useState<ZoomRegionsByAspect>({});
   const [selectedZoomIdByAspect, setSelectedZoomIdByAspect] = useState<SelectedZoomIdByAspect>({});
   const [isPreviewingZoom, setIsPreviewingZoom] = useState(false);
+  // Auto-zoom wand: ON keeps/suggests `source: 'auto'` regions, OFF removes them.
+  const [autoZoomEnabled, setAutoZoomEnabled] = useState(true);
   const [audioEditRegions, setAudioEditRegions] = useState<AudioEditRegion[]>([]);
   const [annotationRegions, setAnnotationRegions] = useState<AnnotationRegion[]>([]);
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
@@ -751,6 +753,8 @@ export default function VideoEditor() {
                 setZoomRegionsByAspect(fixedByAspect);
                 nextZoomIdRef.current = globalMaxZoom + 1;
               }
+              // Auto-zoom wand (v1.2): older saves have no flag and keep the default (on).
+              if (typeof s.autoZoomEnabled === 'boolean') setAutoZoomEnabled(s.autoZoomEnabled);
 
               // Restore annotation regions and sync counters
               if (Array.isArray(s.annotationRegions)) {
@@ -875,6 +879,7 @@ export default function VideoEditor() {
         gifSizePreset,
         exportAspectRatios,
         timelineZoomVisibleMs: timelineZoomInfo?.visibleMs,
+        autoZoomEnabled,
       };
       const hash = JSON.stringify(state);
       if (hash === lastSavedHashRef.current) return;
@@ -890,6 +895,7 @@ export default function VideoEditor() {
     audioLimiterDb, exportQuality, exportFormat, seekStepSeconds,
     previewPlaybackRate, cursorStyle, subtitleCues, gifFrameRate,
     gifLoop, gifSizePreset, exportAspectRatios, timelineZoomInfo,
+    autoZoomEnabled,
   ]);
 
   // ── Undo / Redo history ──
@@ -1195,6 +1201,7 @@ export default function VideoEditor() {
       endMs: Math.round(endMs),
       depth: DEFAULT_ZOOM_DEPTH,
       focus: { cx: 0.5, cy: 0.5 },
+      source: 'manual',
     };
     setZoomRegionsForActiveAspect((prev) => [...prev, newRegion]);
     setSelectedZoomIdForActiveAspect(id);
@@ -1257,6 +1264,7 @@ export default function VideoEditor() {
               ...region,
               startMs: Math.round(startMs),
               endMs: Math.round(endMs),
+              source: 'manual',
             }
           : region,
       ),
@@ -1272,6 +1280,7 @@ export default function VideoEditor() {
           ? {
               ...region,
               focus: clampFocusToDepth(focus, region.depth),
+              source: 'manual',
             }
           : region,
       ),
@@ -1290,6 +1299,7 @@ export default function VideoEditor() {
               // (getZoomScale prefers customScale).
               customScale: ZOOM_DEPTH_SCALES[depth],
               focus: clampFocusToDepth(region.focus, depth),
+              source: 'manual',
             }
           : region,
       ),
@@ -1314,7 +1324,7 @@ export default function VideoEditor() {
     setZoomRegionsForActiveAspect((prev) =>
       prev.map((region) =>
         region.id === selectedZoomId
-          ? { ...region, customScale: rounded }
+          ? { ...region, customScale: rounded, source: 'manual' }
           : region,
       ),
     );
@@ -1327,37 +1337,49 @@ export default function VideoEditor() {
     }
   }, [selectedZoomId, setSelectedZoomIdForActiveAspect, setZoomRegionsForActiveAspect]);
 
-  const applyAutoZoomEdits = useCallback((options?: { silent?: boolean }) => {
+  // Builds fresh `source: 'auto'` regions from the cursor track, carved around
+  // `existingRegions` so re-suggesting never overlaps what the user placed or
+  // edited. Shared by the first-load pass and the wand toggle.
+  const buildAutoZoomRegions = useCallback((existingRegions: ZoomRegion[]): ZoomRegion[] => {
     const durationMs = Math.round(duration * 1000);
     if (!Number.isFinite(durationMs) || durationMs < 200 || !cursorTrack?.samples?.length) {
-      if (!options?.silent) {
-        toast.info(t("editor.autoEditUnavailable"));
-      }
-      return 0;
+      return [];
     }
 
     const drafts = generateAutoZoomDrafts(cursorTrack, {
       durationMs,
       maxRegions: 64,
+      avoidSpans: existingRegions.map((region) => ({ startMs: region.startMs, endMs: region.endMs })),
     });
 
-    if (drafts.length === 0) {
+    return drafts.map((draft) => ({
+      id: `zoom-${nextZoomIdRef.current++}`,
+      startMs: draft.startMs,
+      endMs: draft.endMs,
+      depth: draft.depth,
+      focus: clampFocusToDepth(draft.focus, draft.depth),
+      source: 'auto' as const,
+    }));
+  }, [cursorTrack, duration]);
+
+  // Appends auto suggestions around the active aspect's existing regions in a
+  // single state update (one undo entry).
+  const applyAutoZoomEdits = useCallback((options?: { silent?: boolean }) => {
+    const generatedZoomRegions = buildAutoZoomRegions(zoomRegions);
+
+    if (generatedZoomRegions.length === 0) {
       if (!options?.silent) {
         toast.info(t("editor.autoEditUnavailable"));
       }
       return 0;
     }
 
-    const generatedZoomRegions: ZoomRegion[] = drafts.map((draft) => ({
-      id: `zoom-${nextZoomIdRef.current++}`,
-      startMs: draft.startMs,
-      endMs: draft.endMs,
-      depth: draft.depth,
-      focus: clampFocusToDepth(draft.focus, draft.depth),
-    }));
-
     setZoomRegionsByAspect((previous) =>
-      setZoomRegionsForAspect(previous, aspectRatio, generatedZoomRegions),
+      setZoomRegionsForAspect(
+        previous,
+        aspectRatio,
+        [...getZoomRegionsForAspect(previous, aspectRatio), ...generatedZoomRegions],
+      ),
     );
     setSelectedZoomIdForActiveAspect(generatedZoomRegions[0]?.id ?? null);
     setSelectedSegmentId(null);
@@ -1368,11 +1390,25 @@ export default function VideoEditor() {
     }
 
     return generatedZoomRegions.length;
-  }, [aspectRatio, cursorTrack, duration, setSelectedZoomIdForActiveAspect, t]);
+  }, [aspectRatio, buildAutoZoomRegions, setSelectedZoomIdForActiveAspect, t, zoomRegions]);
 
-  const handleAutoEdit = useCallback(() => {
+  // Wand toggle. ON: re-suggest around the regions that are there (manual and
+  // edited-to-manual survive). OFF: remove only untouched `source: 'auto'`
+  // regions. Each direction is one zoom-regions update, so one undo entry.
+  const handleToggleAutoZoom = useCallback((enabled: boolean) => {
     autoEditInitializedAspectsRef.current.add(aspectRatio);
-    applyAutoZoomEdits();
+    setAutoZoomEnabled(enabled);
+    if (enabled) {
+      applyAutoZoomEdits();
+      return;
+    }
+    setZoomRegionsByAspect((previous) => {
+      const current = getZoomRegionsForAspect(previous, aspectRatio);
+      const kept = current.filter((region) => region.source !== 'auto');
+      return kept.length === current.length
+        ? previous
+        : setZoomRegionsForAspect(previous, aspectRatio, kept);
+    });
   }, [applyAutoZoomEdits, aspectRatio]);
 
 
@@ -1640,6 +1676,10 @@ export default function VideoEditor() {
   useEffect(() => {
     if (loading) return;
     if (autoEditInitializedAspectsRef.current.has(aspectRatio)) return;
+    if (!autoZoomEnabled) {
+      autoEditInitializedAspectsRef.current.add(aspectRatio);
+      return;
+    }
     if (zoomRegions.length > 0) {
       autoEditInitializedAspectsRef.current.add(aspectRatio);
       return;
@@ -1652,7 +1692,7 @@ export default function VideoEditor() {
 
     autoEditInitializedAspectsRef.current.add(aspectRatio);
     applyAutoZoomEdits({ silent: true });
-  }, [applyAutoZoomEdits, aspectRatio, cursorTrack, duration, loading, zoomRegions.length]);
+  }, [applyAutoZoomEdits, aspectRatio, autoZoomEnabled, cursorTrack, duration, loading, zoomRegions.length]);
 
   const handleAnalyzeCursor = useCallback(async () => {
     if (cursorAnalysisProgress !== null) return;
@@ -2474,6 +2514,7 @@ export default function VideoEditor() {
         gifSizePreset,
         exportAspectRatios,
         timelineZoomVisibleMs: timelineZoomInfo?.visibleMs,
+        autoZoomEnabled,
       };
       window.electronAPI.saveProjectState(videoFilePath, state).catch(() => {});
     }
@@ -2486,6 +2527,7 @@ export default function VideoEditor() {
     audioLimiterDb, exportQuality, exportFormat, seekStepSeconds,
     previewPlaybackRate, cursorStyle, subtitleCues, gifFrameRate,
     gifLoop, gifSizePreset, exportAspectRatios, timelineZoomInfo,
+    autoZoomEnabled,
   ]);
 
   if (loading) {
@@ -2797,7 +2839,8 @@ export default function VideoEditor() {
                 cursorStyle={cursorStyle}
                 onCursorStyleChange={setCursorStyle}
                 hasCursorTrack={Boolean(cursorTrack?.samples?.length)}
-                onAutoEdit={handleAutoEdit}
+                autoZoomEnabled={autoZoomEnabled}
+                onToggleAutoZoom={handleToggleAutoZoom}
                 autoEditDisabled={!cursorTrack?.samples?.length || !Number.isFinite(duration) || duration <= 0}
                 onAnalyzeCursor={handleAnalyzeCursor}
                 cursorAnalysisProgress={cursorAnalysisProgress}
