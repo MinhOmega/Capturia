@@ -1,6 +1,9 @@
 const VIDEO_EXTENSIONS = new Set(['webm', 'mp4', 'mov', 'm4v', 'mkv', 'avi']);
 const VIDEO_FILE_PATTERN = /^(recording-\d+)\.([a-z0-9]+)$/i;
 const SIDECAR_PATTERN = /^(recording-\d+)\.(cursor|analysis)\.json$/i;
+// Scratch file of the on-disk WebM duration patch (`electron/recording/webm-duration.ts`).
+// Only exists while a patch is running; one left behind means the process died mid-patch.
+const DURATION_PATCH_TEMP_PATTERN = /^(recording-\d+)\.[a-z0-9]+\.duration-patch\.tmp$/i;
 
 export interface RecordingArtifactEntry {
   name: string;
@@ -23,7 +26,7 @@ export interface RecordingCleanupPlan {
   estimatedBytesFreed: number;
 }
 
-type ManagedKind = 'video' | 'cursor-sidecar' | 'analysis-sidecar';
+type ManagedKind = 'video' | 'cursor-sidecar' | 'analysis-sidecar' | 'duration-patch-temp';
 
 interface ManagedArtifact {
   key: string;
@@ -33,6 +36,8 @@ interface ManagedArtifact {
 interface RecordingGroup {
   key: string;
   files: RecordingArtifactEntry[];
+  /** Leftover duration-patch scratch files; never useful once the patch is over. */
+  tempFiles: RecordingArtifactEntry[];
   hasVideo: boolean;
   totalBytes: number;
   latestMtimeMs: number;
@@ -76,6 +81,11 @@ function normalizePolicy(input?: Partial<RecordingCleanupPolicy>): RecordingClea
 }
 
 function parseManagedArtifactName(fileName: string): ManagedArtifact | null {
+  const tempMatch = DURATION_PATCH_TEMP_PATTERN.exec(fileName);
+  if (tempMatch) {
+    return { key: tempMatch[1], kind: 'duration-patch-temp' };
+  }
+
   const sidecarMatch = SIDECAR_PATTERN.exec(fileName);
   if (sidecarMatch) {
     const sidecarKind = String(sidecarMatch[2] ?? '').toLowerCase();
@@ -118,12 +128,16 @@ function groupManagedArtifacts(entries: RecordingArtifactEntry[]): RecordingGrou
     const group = existing ?? {
       key: managed.key,
       files: [],
+      tempFiles: [],
       hasVideo: false,
       totalBytes: 0,
       latestMtimeMs: 0,
     };
 
     group.files.push(entry);
+    if (managed.kind === 'duration-patch-temp') {
+      group.tempFiles.push(entry);
+    }
     group.hasVideo ||= managed.kind === 'video';
     group.totalBytes += entry.size;
     group.latestMtimeMs = Math.max(group.latestMtimeMs, entry.mtimeMs);
@@ -203,8 +217,18 @@ export function planRecordingCleanup(
   const filesToDelete: string[] = [];
   let estimatedBytesFreed = 0;
   for (const group of groupsByNewest) {
-    if (!deletedKeys.has(group.key)) continue;
-    for (const file of group.files) {
+    if (deletedKeys.has(group.key)) {
+      for (const file of group.files) {
+        filesToDelete.push(file.name);
+        estimatedBytesFreed += file.size;
+      }
+      continue;
+    }
+    // A duration-patch scratch file next to a kept video is an orphan in its own right:
+    // the patch either finished (renamed over the video) or died. Apply the orphan age
+    // so an in-flight patch on a recording that just finished is never raced.
+    for (const file of group.tempFiles) {
+      if (file.mtimeMs > orphanThreshold) continue;
       filesToDelete.push(file.name);
       estimatedBytesFreed += file.size;
     }
