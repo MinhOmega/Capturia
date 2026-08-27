@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as fc from 'fast-check';
-import { calculateOutputDimensions } from './gifExporter';
+import { calculateOutputDimensions, resolveGifWorkerCount } from './gifExporter';
 import { GIF_SIZE_PRESETS, GifSizePreset } from './types';
 
 /**
@@ -470,5 +470,28 @@ describe('Property 7: MP4 Export Regression', () => {
       ),
       { numRuns: 100 }
     );
+  });
+});
+
+describe('resolveGifWorkerCount', () => {
+  it('leaves one core free for the render loop', () => {
+    expect(resolveGifWorkerCount(4)).toBe(3);
+    expect(resolveGifWorkerCount(6)).toBe(5);
+  });
+
+  it('never drops below one worker', () => {
+    expect(resolveGifWorkerCount(1)).toBe(1);
+    expect(resolveGifWorkerCount(2)).toBe(1);
+  });
+
+  it('caps the pool at eight workers', () => {
+    expect(resolveGifWorkerCount(16)).toBe(8);
+    expect(resolveGifWorkerCount(64)).toBe(8);
+  });
+
+  it('assumes four cores when hardwareConcurrency is unavailable', () => {
+    expect(resolveGifWorkerCount(undefined)).toBe(3);
+    expect(resolveGifWorkerCount(0)).toBe(3);
+    expect(resolveGifWorkerCount(Number.NaN)).toBe(3);
   });
 });
