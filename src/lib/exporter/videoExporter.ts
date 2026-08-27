@@ -273,7 +273,7 @@ export class VideoExporter {
   private lastRenderingFrameCount = 0;
   private lastThroughputLogAtMs = 0;
   private seekCount = 0;
-  private samplingMode: 'seek-only' = 'seek-only';
+  private samplingMode = 'seek-only' as const;
   private maxObservedTimingDriftMs = 0;
   private sourceDurationMs = 0;
   private sourceTrimRanges: TimeRangeMs[] = [];
@@ -858,7 +858,7 @@ export class VideoExporter {
 
     const canvas = this.renderer!.getCanvas();
 
-    // @ts-ignore - colorSpace not in TypeScript definitions but works at runtime.
+    // @ts-expect-error - colorSpace is not in TypeScript's VideoFrameInit yet but works at runtime.
     const exportFrame = new VideoFrame(canvas, {
       timestamp,
       duration,

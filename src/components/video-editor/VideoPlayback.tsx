@@ -1130,7 +1130,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
         }
         const p = await getAssetPath(wallpaper.replace(/^\//, ''))
         if (mounted) setResolvedWallpaper(p)
-      } catch (err) {
+      } catch {
         if (mounted) setResolvedWallpaper(wallpaper || '/wallpapers/wallpaper1.jpg')
       }
     })()

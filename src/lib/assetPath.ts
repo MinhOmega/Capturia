@@ -14,7 +14,7 @@ export async function getAssetPath(relativePath: string): Promise<string> {
         }
       }
     }
-  } catch (err) {
+  } catch {
     // ignore and use fallback
   }
 

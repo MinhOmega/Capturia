@@ -1217,7 +1217,7 @@ export default function TimelineEditor({
         setRange(prev => {
           let start = prev.start;
           let end = prev.end;
-          let dur = end - start;
+          const dur = end - start;
 
           // Pan (Shift + Ctrl/Cmd + Scroll)
           if (pd !== 0) {

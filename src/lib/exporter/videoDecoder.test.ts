@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { VideoFileDecoder } from './videoDecoder';
 
 function createMockVideo() {
-  const listeners: Record<string, Function[]> = {};
+  type Listener = () => void;
+  const listeners: Record<string, Listener[]> = {};
   return {
     defaultMuted: false,
     muted: false,
@@ -11,10 +12,12 @@ function createMockVideo() {
     playsInline: false,
     paused: true,
     setAttribute: vi.fn(),
-    addEventListener(event: string, handler: Function) {
-      (listeners[event] ??= []).push(handler);
+    addEventListener(event: string, handler: Listener) {
+      const arr = listeners[event] ?? [];
+      arr.push(handler);
+      listeners[event] = arr;
     },
-    removeEventListener(event: string, handler: Function) {
+    removeEventListener(event: string, handler: Listener) {
       const arr = listeners[event];
       if (arr) listeners[event] = arr.filter((h) => h !== handler);
     },

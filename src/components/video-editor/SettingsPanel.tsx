@@ -248,7 +248,7 @@ export function SettingsPanel({
       try {
         const resolved = await Promise.all(WALLPAPER_RELATIVE.map(p => getAssetPath(p)))
         if (mounted) setWallpaperPaths(resolved)
-      } catch (err) {
+      } catch {
         if (mounted) setWallpaperPaths(WALLPAPER_RELATIVE.map(p => `/${p}`))
       }
     })()
