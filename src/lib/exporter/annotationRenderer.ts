@@ -1,5 +1,6 @@
 import type { AnnotationRegion, ArrowDirection } from '@/components/video-editor/types';
 import { getRenderableAnnotations } from '@/lib/annotations/renderOrder';
+import { wrapTextLines } from './textWrap';
 
 // SVG path data for each arrow direction
 const ARROW_PATHS: Record<ArrowDirection, string[]> = {
@@ -157,6 +158,18 @@ function renderArrow(
   ctx.restore();
 }
 
+/**
+ * Layout constants mirrored from the preview overlay (`AnnotationOverlay`):
+ * Tailwind `p-2` on the container, `padding: 0.1em 0.2em` and
+ * `line-height: 1.4` on the span. The wrap width and the per-line background
+ * box derive from the same numbers so preview and export break lines at the
+ * same width.
+ */
+const TEXT_BOX_PADDING_PX = 8;
+const TEXT_SPAN_HORIZONTAL_PADDING_EM = 0.2;
+const TEXT_SPAN_VERTICAL_PADDING_EM = 0.1;
+const TEXT_LINE_HEIGHT = 1.4;
+
 function renderText(
   ctx: CanvasRenderingContext2D,
   annotation: AnnotationRegion,
@@ -167,64 +180,71 @@ function renderText(
   scaleFactor: number
 ) {
   const style = annotation.style;
-  
+
   ctx.save();
-  
+
+  // Clip to the box, matching the preview's overflow: hidden
+  ctx.beginPath();
+  ctx.rect(x, y, width, height);
+  ctx.clip();
+
   const fontWeight = style.fontWeight === 'bold' ? 'bold' : 'normal';
   const fontStyle = style.fontStyle === 'italic' ? 'italic' : 'normal';
   const scaledFontSize = style.fontSize * scaleFactor;
   ctx.font = `${fontStyle} ${fontWeight} ${scaledFontSize}px ${style.fontFamily}`;
   ctx.textBaseline = 'middle';
-  
-  const containerPadding = 8 * scaleFactor;
-  
+
+  const containerPadding = TEXT_BOX_PADDING_PX * scaleFactor;
+  const horizontalPadding = scaledFontSize * TEXT_SPAN_HORIZONTAL_PADDING_EM;
+  const verticalPadding = scaledFontSize * TEXT_SPAN_VERTICAL_PADDING_EM;
+
   let textX = x;
   const textY = y + height / 2;
-  
+
   if (style.textAlign === 'center') {
     textX = x + width / 2;
     ctx.textAlign = 'center';
   } else if (style.textAlign === 'right') {
-    textX = x + width - containerPadding;
+    textX = x + width - containerPadding - horizontalPadding;
     ctx.textAlign = 'right';
   } else {
-    textX = x + containerPadding;
+    textX = x + containerPadding + horizontalPadding;
     ctx.textAlign = 'left';
   }
-  
-  const lines = annotation.content.split('\n');
-  const lineHeight = scaledFontSize * 1.4;
+
+  // Same available width as the preview span: the box minus the container
+  // padding and the span's own horizontal padding on both sides.
+  const availableWidth = width - containerPadding * 2 - horizontalPadding * 2;
+  const lines = wrapTextLines(annotation.content, availableWidth, (text) => ctx.measureText(text).width);
+  const lineHeight = scaledFontSize * TEXT_LINE_HEIGHT;
 
   const startY = textY - ((lines.length - 1) * lineHeight) / 2;
-  
+
   lines.forEach((line, index) => {
     const currentY = startY + index * lineHeight;
-    
+
     if (style.backgroundColor && style.backgroundColor !== 'transparent') {
       const metrics = ctx.measureText(line);
-      const verticalPadding = scaledFontSize * 0.1;
-      const horizontalPadding = scaledFontSize * 0.2;
       const borderRadius = 4 * scaleFactor;
-      
+
       let bgX = textX - horizontalPadding;
       const bgWidth = metrics.width + horizontalPadding * 2;
-      
-      const contentHeight = scaledFontSize * 1.4;
-      const bgHeight = contentHeight + verticalPadding * 2;
+
+      const bgHeight = lineHeight + verticalPadding * 2;
       const bgY = currentY - bgHeight / 2;
-      
+
       if (style.textAlign === 'center') {
         bgX = textX - bgWidth / 2;
       } else if (style.textAlign === 'right') {
-        bgX = textX - bgWidth;
+        bgX = textX - metrics.width - horizontalPadding;
       }
-      
+
       ctx.fillStyle = style.backgroundColor;
       ctx.beginPath();
       ctx.roundRect(bgX, bgY, bgWidth, bgHeight, borderRadius);
       ctx.fill();
     }
-    
+
     ctx.fillStyle = style.color;
     ctx.fillText(line, textX, currentY);
     
