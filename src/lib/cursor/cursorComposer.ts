@@ -3,7 +3,10 @@ import { DEFAULT_FOCUS } from '@/components/video-editor/videoPlayback/constants
 import { findDominantRegion } from '@/components/video-editor/videoPlayback/zoomRegionUtils';
 import {
   DEFAULT_CURSOR_STYLE,
+  type CursorClipRect,
+  type CursorDrawOptions,
   type CursorKind,
+  type CursorMotionBlurState,
   type CursorMovementStyle,
   type CursorResolvedState,
   type CursorResolveParams,
@@ -14,6 +17,13 @@ import {
 } from './types';
 
 const CLICK_PULSE_MS = 420;
+/**
+ * Output width the cursor glyph units are authored against. The glyph is
+ * `28 * style.size` px on a canvas whose (uncropped) video spans this many px,
+ * so preview stage, 1080p export and 4K export all show the same cursor
+ * relative to the video.
+ */
+export const CURSOR_REFERENCE_WIDTH = 1920;
 const CURSOR_GLYPH_HOTSPOT: Record<CursorKind, { x: number; y: number }> = {
   arrow: { x: 0, y: 0 },
   ibeam: { x: 0, y: 0 },
@@ -86,6 +96,8 @@ function normalizeCursorStyle(input?: Partial<CursorStyleConfig>): CursorStyleCo
     offsetX: Math.max(-240, Math.min(240, Number.isFinite(merged.offsetX) ? merged.offsetX : 0)),
     offsetY: Math.max(-240, Math.min(240, Number.isFinite(merged.offsetY) ? merged.offsetY : 0)),
     timeOffsetMs: Math.max(-300, Math.min(300, Number.isFinite(merged.timeOffsetMs) ? merged.timeOffsetMs : 0)),
+    clipToBounds: Boolean(merged.clipToBounds),
+    motionBlur: clamp01(toFiniteNumber(merged.motionBlur, 0)),
   };
 }
 
@@ -585,8 +597,15 @@ export function projectCursorToViewport(args: {
 }): ProjectedCursorPoint {
   const { normalizedX, normalizedY, cropRegion, baseOffset, maskRect, cameraScale, cameraPosition, stageSize } = args;
 
+  // Samples are normalised against the full frame; re-normalise against the
+  // crop before projecting onto the mask (which shows only the cropped area).
+  // A degenerate crop or a position outside it means the cursor is over
+  // content that is not visible, so it must be hidden rather than drawn
+  // beside the video.
+  const cropValid = cropRegion.width > 0 && cropRegion.height > 0;
   const inCropX = (normalizedX - cropRegion.x) / Math.max(0.0001, cropRegion.width);
   const inCropY = (normalizedY - cropRegion.y) / Math.max(0.0001, cropRegion.height);
+  const inCrop = cropValid && inCropX >= 0 && inCropX <= 1 && inCropY >= 0 && inCropY <= 1;
 
   const localX = baseOffset.x + inCropX * maskRect.width;
   const localY = baseOffset.y + inCropY * maskRect.height;
@@ -594,9 +613,161 @@ export function projectCursorToViewport(args: {
   const x = localX * cameraScale.x + cameraPosition.x;
   const y = localY * cameraScale.y + cameraPosition.y;
 
-  const inViewport = x >= -32 && y >= -32 && x <= stageSize.width + 32 && y <= stageSize.height + 32;
+  const inStage = x >= -32 && y >= -32 && x <= stageSize.width + 32 && y <= stageSize.height + 32;
+  const inViewport = inCrop && inStage;
 
-  return { x, y, inViewport };
+  return { x, y, inViewport, inCrop };
+}
+
+/**
+ * Cursor size as a fraction of the video, independent of the canvas the
+ * cursor is drawn on: `displayedFullVideoWidth / CURSOR_REFERENCE_WIDTH`,
+ * where the displayed full-video width is the mask (cropped display) width
+ * divided by the crop width. Cropping therefore enlarges the cursor together
+ * with the content, and the factor is the same for preview and export.
+ */
+export function resolveCursorSizeNorm(args: {
+  maskRect: { width: number };
+  cropRegion?: CropRegion | { width: number } | null;
+}): number {
+  const maskWidth = Number.isFinite(args.maskRect.width) ? Math.max(0, args.maskRect.width) : 0;
+  const cropWidth = Number.isFinite(args.cropRegion?.width)
+    ? Math.min(1, Math.max(0.0001, Number(args.cropRegion?.width)))
+    : 1;
+  if (maskWidth <= 0) return 1;
+  return (maskWidth / cropWidth) / CURSOR_REFERENCE_WIDTH;
+}
+
+/**
+ * `contentScale` for `drawCompositedCursor`: camera zoom multiplied by the
+ * output-size normalisation. Both the preview overlay and the exporter must
+ * call this so the cursor is the same size relative to the video.
+ */
+export function resolveCursorContentScale(args: {
+  cameraScale: { x: number; y: number };
+  maskRect: { width: number };
+  cropRegion?: CropRegion | { width: number } | null;
+}): number {
+  const cameraX = Number.isFinite(args.cameraScale.x) ? Math.abs(args.cameraScale.x) : 1;
+  const cameraY = Number.isFinite(args.cameraScale.y) ? Math.abs(args.cameraScale.y) : 1;
+  const camera = (cameraX + cameraY) / 2;
+  return Math.max(0.1, camera * resolveCursorSizeNorm(args));
+}
+
+/**
+ * Camera-aware rounded mask rect in canvas px, used to clip the cursor when
+ * `style.clipToBounds` is on. `maskRect` is the video mask in camera-local
+ * coordinates (preview: the stage-space mask rect; export: the mask offset by
+ * the video container position). Not clamped to the stage on purpose: the
+ * canvas clips to its own bounds, so clamping would pin rounded corners to
+ * the stage edge and break preview/export parity when zoom pushes the mask
+ * off-stage. Returns `null` when clipping is disabled or the mask is empty.
+ */
+export function resolveCursorClipRect(args: {
+  style?: Partial<CursorStyleConfig>;
+  maskRect: { x: number; y: number; width: number; height: number };
+  maskBorderRadius?: number;
+  cameraScale: { x: number; y: number };
+  cameraPosition: { x: number; y: number };
+}): CursorClipRect | null {
+  const { maskRect, cameraScale, cameraPosition } = args;
+  if (!normalizeCursorStyle(args.style).clipToBounds) return null;
+  if (!(maskRect.width > 0) || !(maskRect.height > 0)) return null;
+
+  const scaleX = Number.isFinite(cameraScale.x) ? cameraScale.x : 1;
+  const scaleY = Number.isFinite(cameraScale.y) ? cameraScale.y : 1;
+  const width = Math.abs(scaleX) * maskRect.width;
+  const height = Math.abs(scaleY) * maskRect.height;
+  const radiusScale = (Math.abs(scaleX) + Math.abs(scaleY)) / 2;
+  const baseRadius = Number.isFinite(args.maskBorderRadius) ? Math.max(0, Number(args.maskBorderRadius)) : 0;
+
+  return {
+    x: cameraPosition.x + scaleX * maskRect.x,
+    y: cameraPosition.y + scaleY * maskRect.y,
+    width,
+    height,
+    radius: Math.min(baseRadius * radiusScale, Math.min(width, height) / 2),
+  };
+}
+
+const CURSOR_MOTION_BLUR_MAX_PX = 6;
+const CURSOR_MOTION_BLUR_SPEED_FACTOR = 0.004;
+
+export function createCursorMotionBlurState(): CursorMotionBlurState {
+  return { x: 0, y: 0, lastTimeMs: null, initialized: false };
+}
+
+export function resetCursorMotionBlurState(state: CursorMotionBlurState): void {
+  state.x = 0;
+  state.y = 0;
+  state.lastTimeMs = null;
+  state.initialized = false;
+}
+
+/**
+ * Speed-based cursor motion blur radius in canvas px.
+ * `blur = clamp(speed * motionBlur * 0.004, 0, 6)` with the speed measured in
+ * reference (1080p) px/s, i.e. canvas speed divided by `sizeNorm`
+ * (`resolveCursorSizeNorm`), and the result scaled back by `sizeNorm`, so the
+ * preview stage and a 4K export blur the same fraction of the frame. The
+ * state snaps (returns 0) on the first call, when blur is off, and when
+ * content time does not advance (pause, scrub back, seek).
+ */
+export function getCursorMotionBlurPx(args: {
+  motionBlur: number;
+  point: { x: number; y: number };
+  state: CursorMotionBlurState;
+  timeMs: number;
+  sizeNorm?: number;
+}): number {
+  const { point, state, timeMs } = args;
+  const motionBlur = clamp01(toFiniteNumber(args.motionBlur, 0));
+  const sizeNorm = Number.isFinite(args.sizeNorm) && Number(args.sizeNorm) > 0 ? Number(args.sizeNorm) : 1;
+  const previousTimeMs = state.lastTimeMs;
+  const shouldSnap =
+    motionBlur <= 0
+    || !state.initialized
+    || previousTimeMs === null
+    || !Number.isFinite(timeMs)
+    || timeMs <= previousTimeMs;
+
+  if (shouldSnap) {
+    state.x = point.x;
+    state.y = point.y;
+    state.lastTimeMs = Number.isFinite(timeMs) ? timeMs : null;
+    state.initialized = true;
+    return 0;
+  }
+
+  const deltaMs = Math.max(1, timeMs - previousTimeMs);
+  const distance = Math.hypot(point.x - state.x, point.y - state.y);
+  const speedPxPerSecond = (distance / deltaMs) * 1000;
+  state.x = point.x;
+  state.y = point.y;
+  state.lastTimeMs = timeMs;
+
+  const referenceSpeed = speedPxPerSecond / sizeNorm;
+  const referenceBlur = Math.min(
+    CURSOR_MOTION_BLUR_MAX_PX,
+    Math.max(0, referenceSpeed * motionBlur * CURSOR_MOTION_BLUR_SPEED_FACTOR),
+  );
+  return referenceBlur * sizeNorm;
+}
+
+function traceRoundedRect(ctx: CanvasRenderingContext2D, rect: CursorClipRect): void {
+  const { x, y, width, height } = rect;
+  const r = Math.max(0, Math.min(rect.radius, Math.min(width, height) / 2));
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + width - r, y);
+  ctx.arcTo(x + width, y, x + width, y + r, r);
+  ctx.lineTo(x + width, y + height - r);
+  ctx.arcTo(x + width, y + height, x + width - r, y + height, r);
+  ctx.lineTo(x + r, y + height);
+  ctx.arcTo(x, y + height, x, y + height - r, r);
+  ctx.lineTo(x, y + r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
 }
 
 // macOS-style cursor using Path2D (synchronous, no async image loading).
@@ -712,6 +883,7 @@ export function drawCompositedCursor(
   state: CursorResolvedState,
   style?: Partial<CursorStyleConfig>,
   contentScale = 1,
+  options: CursorDrawOptions = {},
 ): void {
   if (!state.visible) return;
 
@@ -724,6 +896,15 @@ export function drawCompositedCursor(
   const translatedY = point.y + normalized.offsetY;
 
   ctx.save();
+  if (options.clipRect) {
+    traceRoundedRect(ctx, options.clipRect);
+    ctx.clip();
+  }
+  const motionBlurPx = Number.isFinite(options.motionBlurPx) ? Math.max(0, Number(options.motionBlurPx)) : 0;
+  if (motionBlurPx > 0.05 && 'filter' in ctx) {
+    // Canvas2D filter (supported by Chromium/Electron); blurs ripple, highlight and glyph alike.
+    ctx.filter = `blur(${motionBlurPx.toFixed(2)}px)`;
+  }
   ctx.translate(translatedX, translatedY);
 
   if (state.rippleAlpha > 0.001) {

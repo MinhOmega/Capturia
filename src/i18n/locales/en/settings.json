@@ -32,6 +32,8 @@
 	"cursorOffsetX": "Cursor Offset X",
 	"cursorOffsetY": "Cursor Offset Y",
 	"cursorOffsetReset": "Reset Cursor Offset",
+	"cursorClipToBounds": "Clip Cursor to Video",
+	"cursorMotionBlur": "Cursor Motion Blur",
 	"audioTrack": "Audio Track",
 	"audioVolume": "Audio Volume",
 	"audioNormalizeLoudness": "Loudness Normalization",
