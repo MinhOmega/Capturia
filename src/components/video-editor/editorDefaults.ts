@@ -21,12 +21,13 @@ export const DEFAULT_WALLPAPER = '/wallpapers/wallpaper1.jpg';
 export const DEFAULT_EDITOR_APPEARANCE_SETTINGS: {
   shadowIntensity: number;
   showBlur: boolean;
-  motionBlurEnabled: boolean;
+  /** Zoom motion blur amount 0..1; 0 = off. */
+  motionBlurAmount: number;
   borderRadius: number;
 } = {
   shadowIntensity: 0,
   showBlur: false,
-  motionBlurEnabled: false,
+  motionBlurAmount: 0,
   borderRadius: 0,
 };
 

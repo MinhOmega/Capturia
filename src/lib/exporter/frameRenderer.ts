@@ -1,10 +1,14 @@
-import { Application, Container, Sprite, Graphics, BlurFilter, Texture, VideoSource } from 'pixi.js';
+import { Application, Container, Sprite, Graphics, Texture, VideoSource } from 'pixi.js';
+import { MotionBlurFilter } from 'pixi-filters/motion-blur';
 import type { ZoomRegion, CropRegion, AnnotationRegion } from '@/components/video-editor/types';
-import { applyZoomTransform } from '@/components/video-editor/videoPlayback/zoomTransform';
+import {
+  applyZoomTransform,
+  createMotionBlurState,
+  type MotionBlurState,
+} from '@/components/video-editor/videoPlayback/zoomTransform';
 import { DEFAULT_FOCUS } from '@/components/video-editor/videoPlayback/constants';
 import {
   createZoomCameraState,
-  measureZoomMotionIntensity,
   stepZoomCamera,
 } from '@/components/video-editor/videoPlayback/zoomCamera';
 import {
@@ -45,7 +49,8 @@ interface FrameRenderConfig {
   showShadow: boolean;
   shadowIntensity: number;
   showBlur: boolean;
-  motionBlurEnabled?: boolean;
+  /** Zoom motion blur amount 0..1 (0 = off); same scale as the preview. */
+  motionBlurAmount?: number;
   borderRadius?: number;
   padding?: number;
   cropRegion: CropRegion;
@@ -116,7 +121,8 @@ export class FrameRenderer {
   private videoSprite: Sprite | null = null;
   private backgroundSprite: Sprite | null = null;
   private maskGraphics: Graphics | null = null;
-  private blurFilter: BlurFilter | null = null;
+  private motionBlurFilter: MotionBlurFilter | null = null;
+  private motionBlurState: MotionBlurState = createMotionBlurState();
   private shadowCanvas: HTMLCanvasElement | null = null;
   private shadowCtx: CanvasRenderingContext2D | null = null;
   private compositeCanvas: HTMLCanvasElement | null = null;
@@ -189,12 +195,13 @@ export class FrameRenderer {
     // Setup background (render separately, not in PixiJS)
     await this.setupBackground();
 
-    // Setup blur filter for video container
-    this.blurFilter = new BlurFilter();
-    this.blurFilter.quality = 3;
-    this.blurFilter.resolution = this.app.renderer.resolution;
-    this.blurFilter.strength = 0;
-    this.videoContainer.filters = [this.blurFilter];
+    // Directional motion blur. Kept attached for the whole export (every frame
+    // is rendered anyway); at zero velocity the filter is a passthrough.
+    if ((this.config.motionBlurAmount ?? 0) > 0) {
+      this.motionBlurFilter = new MotionBlurFilter({ velocity: { x: 0, y: 0 }, kernelSize: 5, offset: 0 });
+      this.motionBlurFilter.resolution = this.app.renderer.resolution;
+      this.videoContainer.filters = [this.motionBlurFilter];
+    }
 
     // Setup composite canvas for final output with shadows
     this.compositeCanvas = document.createElement('canvas');
@@ -441,27 +448,20 @@ export class FrameRenderer {
 
     const sampledTimeMs = this.currentVideoTime * 1000;
     const effectTimeMs = Number.isFinite(options.effectTimeMs) ? Number(options.effectTimeMs) : sampledTimeMs;
-    const TICKS_PER_FRAME = 1;
-    
-    let maxMotionIntensity = 0;
-    for (let i = 0; i < TICKS_PER_FRAME; i++) {
-      const motionIntensity = this.updateAnimationState(effectTimeMs);
-      maxMotionIntensity = Math.max(maxMotionIntensity, motionIntensity);
-    }
-    
-    // Apply transform once with maximum motion intensity from all ticks
+    this.updateAnimationState(effectTimeMs);
+
     applyZoomTransform({
       cameraContainer: this.cameraContainer,
-      blurFilter: this.blurFilter,
+      motionBlurFilter: this.motionBlurFilter,
+      motionBlurState: this.motionBlurState,
       stageSize: this.layoutCache.stageSize,
       baseMask: this.layoutCache.maskRect,
       zoomScale: this.animationState.scale,
       zoomProgress: this.animationState.progress,
       focusX: this.animationState.focusX,
       focusY: this.animationState.focusY,
-      motionIntensity: maxMotionIntensity,
       isPlaying: true,
-      motionBlurEnabled: this.config.motionBlurEnabled ?? false,
+      motionBlurAmount: this.config.motionBlurAmount ?? 0,
       transformOverride: this.zoomCamera.applied,
       frameTimeMs: effectTimeMs,
     });
@@ -717,11 +717,10 @@ export class FrameRenderer {
    * paused/scrub snap branch; only the first frame or a jump larger than
    * ZOOM_SPRING_MAX_STEP_MS snaps the spring.
    */
-  private updateAnimationState(timeMs: number): number {
-    if (!this.cameraContainer || !this.layoutCache) return 0;
+  private updateAnimationState(timeMs: number): void {
+    if (!this.cameraContainer || !this.layoutCache) return;
 
-    const previous = this.zoomCamera.applied;
-    const { target, applied } = stepZoomCamera(
+    const { target } = stepZoomCamera(
       this.zoomCamera,
       this.config.zoomRegions,
       timeMs,
@@ -734,8 +733,6 @@ export class FrameRenderer {
     state.focusX = target.focus.cx;
     state.focusY = target.focus.cy;
     state.progress = target.progress;
-
-    return measureZoomMotionIntensity(previous, applied, this.layoutCache.stageSize);
   }
 
   // On Linux/Wayland the implicit GPU-to-2D texture-sharing path behind
@@ -835,7 +832,7 @@ export class FrameRenderer {
     this.cameraContainer = null;
     this.videoContainer = null;
     this.maskGraphics = null;
-    this.blurFilter = null;
+    this.motionBlurFilter = null;
     this.shadowCanvas = null;
     this.shadowCtx = null;
     this.compositeCanvas = null;
