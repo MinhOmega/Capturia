@@ -64,3 +64,9 @@ Newest entries first. Each entry: date, cycle stage, what happened, verification
 - Spawned W1-a (i18n restructure), W1-b (recording pipeline: streaming to disk, discard fix,
   parallel capture), W1-c (exporter groundwork: Linux readback, file-read IPC/OPFS, Opus fallback,
   diagnostics, save-path memory). Merge order: W1-a first, then W1-b, W1-c (i18n key reconciliation).
+- W1-a (i18n restructure) reviewed and merged; lead follow-up: OS-language auto-detect limited to
+  complete locales (en/zh-CN/vi). Tree: 51 files / 416 tests, i18n:check PASS. Review: `reviews/W1-a-i18n.md`.
+- W1-b (recording pipeline) merged; one conflict (`launch.cameraFallback`) resolved into JSON locales;
+  lockfile synced for `@fix-webm-duration/parser`. Tree: 55 files / 448 tests. Review: `reviews/W1-b-recording.md`.
+- W1-c (exporter groundwork) done on its branch; merge delegated to an integration agent because its 14
+  new `export.*` keys/call sites must move to `dialogs.export.*` after the i18n restructure.
