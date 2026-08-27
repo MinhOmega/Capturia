@@ -11,6 +11,7 @@ export {
   type MaterializeProgress,
 } from './localSourceFile';
 export { MAX_IN_MEMORY_SOURCE_BYTES } from './sourceFileLimits';
+export { resolveSourceDurationMs } from './sourceDuration';
 export {
   buildExportDiagnosticMessage,
   buildSaveDiagnosticMessage,

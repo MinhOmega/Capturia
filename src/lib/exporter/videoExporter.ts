@@ -19,6 +19,7 @@ import {
 import { ALL_FORMATS, AudioBufferSink, BlobSource, Input, UrlSource, type InputAudioTrack } from 'mediabunny';
 import { getPlatform } from '@/utils/platformUtils';
 import { selectExportAudioCodec, type ExportAudioCodec } from './audioCodecSelection';
+import { resolveSourceDurationMs } from './sourceDuration';
 
 interface VideoExporterConfig extends ExportConfig {
   videoUrl: string;
@@ -43,6 +44,11 @@ interface VideoExporterConfig extends ExportConfig {
   onProgress?: (progress: ExportProgress) => void;
   playbackSpeed?: number;
   segments?: VideoSegment[];
+  /**
+   * Probed real duration of the source (ms). Preferred over `video.duration`
+   * when present; see `resolveSourceDurationMs`.
+   */
+  sourceDurationMs?: number;
 }
 
 type TimeRangeMs = {
@@ -634,7 +640,10 @@ export class VideoExporter {
       this.platform = await getPlatform();
       this.decoder = new VideoFileDecoder();
       const videoInfo = await this.decoder.loadVideo(this.config.videoUrl);
-      this.sourceDurationMs = Math.max(0, videoInfo.duration * 1000);
+      this.sourceDurationMs = resolveSourceDurationMs(videoInfo.duration, this.config.sourceDurationMs);
+      if (this.sourceDurationMs !== Math.max(0, videoInfo.duration * 1000)) {
+        console.warn('[VideoExporter] Using probed source duration', this.sourceDurationMs, 'ms instead of', videoInfo.duration, 's');
+      }
       this.sourceTrimRanges = normalizeTrimRanges(this.config.trimRegions, this.sourceDurationMs);
       this.sourceAudioEditRegions = normalizeAudioEditRegions(this.config.audioEditRegions, this.sourceDurationMs);
       let hasSourceAudio = await this.resolveSourceAudioTrack();
@@ -705,10 +714,10 @@ export class VideoExporter {
         throw new Error('Video element not available');
       }
 
-      const effectiveDuration = this.getEffectiveDuration(videoInfo.duration);
+      const effectiveDuration = this.getEffectiveDuration(this.sourceDurationMs / 1000);
       const totalFrames = Math.ceil(effectiveDuration * this.config.frameRate);
 
-      console.log('[VideoExporter] Original duration:', videoInfo.duration, 's');
+      console.log('[VideoExporter] Original duration:', videoInfo.duration, 's (using', this.sourceDurationMs / 1000, 's)');
       console.log('[VideoExporter] Effective duration:', effectiveDuration, 's');
       console.log('[VideoExporter] Total frames to export:', totalFrames);
 
