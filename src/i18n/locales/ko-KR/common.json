@@ -1,0 +1,38 @@
+{
+	"cancel": "취소",
+	"close": "닫기",
+	"done": "완료",
+	"loading": "로딩 중…",
+	"processing": "처리 중...",
+	"status": "상태",
+	"format": "형식",
+	"frames": "프레임",
+	"loop": "반복",
+	"language": "언어",
+	"playback": {
+		"play": "재생",
+		"pause": "일시정지",
+		"fullscreen": "전체화면",
+		"exitFullscreen": "전체화면 종료"
+	},
+	"apply": "적용",
+	"electron": {
+		"tray": {
+			"recording": "녹화 중: {{source}}",
+			"stopRecording": "녹화 중지",
+			"open": "열기",
+			"quit": "종료"
+		},
+		"saveGif": "내보낸 GIF 저장",
+		"saveVideo": "내보낸 비디오 저장",
+		"exportCancelled": "내보내기가 취소되었습니다",
+		"exportSaveFailed": "내보낸 비디오 저장에 실패했습니다",
+		"selectVideoFile": "비디오 파일 선택",
+		"videoFiles": "비디오 파일",
+		"allFiles": "모든 파일"
+	},
+	"locale": {
+		"name": "한국어",
+		"short": "KO"
+	}
+}

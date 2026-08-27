@@ -21,29 +21,29 @@ export function TutorialHelp() {
                     className="h-7 px-2 text-xs text-slate-400 hover:text-slate-200 hover:bg-white/10 transition-all gap-1.5"
                 >
                     <HelpCircle className="w-3.5 h-3.5" />
-                    <span className="font-medium">{t("tutorial.trigger")}</span>
+                    <span className="font-medium">{t("dialogs.tutorial.trigger")}</span>
                 </Button>
             </DialogTrigger>
             <DialogContent className="max-w-2xl bg-[#09090b] border-white/10 [&>button]:text-slate-400 [&>button:hover]:text-white">
                 <DialogHeader>
                     <DialogTitle className="text-xl font-semibold text-slate-200 flex items-center gap-2">
-                        <Scissors className="w-5 h-5 text-[#ef4444]" /> {t("tutorial.title")}
+                        <Scissors className="w-5 h-5 text-[#ef4444]" /> {t("dialogs.tutorial.title")}
                     </DialogTitle>
                     <DialogDescription className="text-slate-400">
-                        {t("tutorial.desc")}
+                        {t("dialogs.tutorial.desc")}
                     </DialogDescription>
                 </DialogHeader>
                 <div className="mt-4 space-y-8">
                     {/* Explanation */}
                     <div className="bg-white/5 rounded-lg p-4 border border-white/5">
                         <p className="text-slate-300 leading-relaxed">
-                            {t("tutorial.explain")}
+                            {t("dialogs.tutorial.explain")}
                         </p>
                     </div>
                     {/* Visual Illustration */}
                     <div className="space-y-2">
                         <h3 className="text-sm font-medium text-slate-400 uppercase tracking-wider">
-                            {t("tutorial.visualExample")}
+                            {t("dialogs.tutorial.visualExample")}
                         </h3>
                         <div className="relative h-24 bg-[#000] rounded-lg border border-white/10 flex items-center px-4 overflow-hidden select-none">
                             {/* Background track (Kept parts) */}
@@ -56,7 +56,7 @@ export function TutorialHelp() {
                                 style={{ width: "20%" }}
                             >
                                 <span className="text-[10px] font-bold text-[#ef4444] bg-black/50 px-1 rounded">
-                                    {t("tutorial.removed")}
+                                    {t("dialogs.tutorial.removed")}
                                 </span>
                             </div>
                             {/* Removed Segment 2 */}
@@ -65,18 +65,18 @@ export function TutorialHelp() {
                                 style={{ width: "15%" }}
                             >
                                 <span className="text-[10px] font-bold text-[#ef4444] bg-black/50 px-1 rounded">
-                                    {t("tutorial.removed")}
+                                    {t("dialogs.tutorial.removed")}
                                 </span>
                             </div>
                             {/* Labels for kept parts */}
                             <div className="absolute left-[5%] text-[10px] text-slate-400 font-medium">
-                                {t("tutorial.kept")}
+                                {t("dialogs.tutorial.kept")}
                             </div>
                             <div className="absolute left-[50%] text-[10px] text-slate-400 font-medium">
-                                {t("tutorial.kept")}
+                                {t("dialogs.tutorial.kept")}
                             </div>
                             <div className="absolute left-[90%] text-[10px] text-slate-400 font-medium">
-                                {t("tutorial.kept")}
+                                {t("dialogs.tutorial.kept")}
                             </div>
                         </div>
                         <div className="flex justify-center mt-2">
@@ -90,7 +90,7 @@ export function TutorialHelp() {
                                 style={{ width: "30%" }}
                             >
                                 <span className="text-[10px] text-white font-medium">
-                                    {t("tutorial.part", { index: 1 })}
+                                    {t("dialogs.tutorial.part", { index: 1 })}
                                 </span>
                             </div>
                             <div
@@ -98,7 +98,7 @@ export function TutorialHelp() {
                                 style={{ width: "30%" }}
                             >
                                 <span className="text-[10px] text-white font-medium">
-                                    {t("tutorial.part", { index: 2 })}
+                                    {t("dialogs.tutorial.part", { index: 2 })}
                                 </span>
                             </div>
                             <div
@@ -106,11 +106,11 @@ export function TutorialHelp() {
                                 style={{ width: "30%" }}
                             >
                                 <span className="text-[10px] text-white font-medium">
-                                    {t("tutorial.part", { index: 3 })}
+                                    {t("dialogs.tutorial.part", { index: 3 })}
                                 </span>
                             </div>
                             <span className="absolute right-4 text-xs text-slate-400">
-                                {t("tutorial.finalVideo")}
+                                {t("dialogs.tutorial.finalVideo")}
                             </span>
                         </div>
                     </div>
@@ -118,18 +118,18 @@ export function TutorialHelp() {
                     <div className="grid grid-cols-2 gap-4">
                         <div className="p-3 rounded bg-white/5 border border-white/5">
                             <div className="text-[#ef4444] font-bold mb-1">
-                                {t("tutorial.step1")}
+                                {t("dialogs.tutorial.step1")}
                             </div>
                             <p className="text-xs text-slate-400">
-                                {t("tutorial.step1desc")}
+                                {t("dialogs.tutorial.step1desc")}
                             </p>
                         </div>
                         <div className="p-3 rounded bg-white/5 border border-white/5">
                             <div className="text-[#ef4444] font-bold mb-1">
-                                {t("tutorial.step2")}
+                                {t("dialogs.tutorial.step2")}
                             </div>
                             <p className="text-xs text-slate-400">
-                                {t("tutorial.step2desc")}
+                                {t("dialogs.tutorial.step2desc")}
                             </p>
                         </div>
                     </div>

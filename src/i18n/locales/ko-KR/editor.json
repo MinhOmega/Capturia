@@ -1,0 +1,11 @@
+{
+	"loadingVideo": "비디오 로드 중...",
+	"videoNotReady": "비디오가 준비되지 않았습니다",
+	"noVideoLoaded": "불러온 비디오가 없습니다",
+	"exportCancelled": "내보내기가 취소되었습니다",
+	"saveGifFailed": "GIF 저장에 실패했습니다",
+	"saveVideoFailed": "비디오 저장에 실패했습니다",
+	"gifExportFailed": "GIF 내보내기에 실패했습니다",
+	"exportFailed": "내보내기에 실패했습니다",
+	"exportError": "내보내기 실패: {{message}}"
+}

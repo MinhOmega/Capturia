@@ -19,14 +19,14 @@ interface FormatOption {
 const formatOptions: FormatOption[] = [
   {
     value: 'mp4',
-    labelKey: 'format.mp4.label',
-    descriptionKey: 'format.mp4.desc',
+    labelKey: 'dialogs.format.mp4.label',
+    descriptionKey: 'dialogs.format.mp4.desc',
     icon: <Film className="w-5 h-5" />,
   },
   {
     value: 'gif',
-    labelKey: 'format.gif.label',
-    descriptionKey: 'format.gif.desc',
+    labelKey: 'dialogs.format.gif.label',
+    descriptionKey: 'dialogs.format.gif.desc',
     icon: <Image className="w-5 h-5" />,
   },
 ];

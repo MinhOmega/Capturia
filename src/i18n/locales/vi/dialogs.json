@@ -1,0 +1,69 @@
+{
+	"export": {
+		"title": "Đang xuất {{format}}",
+		"titleCompilingGif": "Biên dịch GIF",
+		"titleFinalizingVideo": "Hoàn tất video",
+		"titleFailed": "Xuất thất bại",
+		"statusTryAgain": "Vui lòng thử lại",
+		"statusMoment": "Có thể mất một chút thời gian...",
+		"statusCompiling": "Đang biên dịch GIF... Có thể mất một lúc",
+		"statusCompilingPct": "Đang biên dịch GIF... {{progress}}%",
+		"statusFinalizingVideo": "Đang hoàn tất định dạng video...",
+		"statusFinalizingVideoStep": "{{step}}...",
+		"phaseCompiling": "Đang biên dịch",
+		"phaseFinalizing": "Đang hoàn tất...",
+		"phaseRendering": "Kết xuất khung hình",
+		"batchProgress": "Xuất {{current}}/{{total}}",
+		"elapsed": "Đã trôi qua",
+		"eta": "Còn lại",
+		"activity": "Hoạt động",
+		"activityActive": "Đang xử lý",
+		"activityWaiting": "Vẫn đang chạy",
+		"activityStalled": "Không có cập nhật mới",
+		"activityStalledHint": "Không có cập nhật trong {{seconds}}s. Quá trình xuất có thể vẫn đang hoàn tất; hãy hủy và thử lại nếu tình trạng này kéo dài.",
+		"finalize": {
+			"flush": "Đang xả bộ mã hóa",
+			"mux": "Đang ghi luồng video",
+			"audio": "Đang mã hóa luồng âm thanh",
+			"package": "Đang đóng gói MP4"
+		},
+		"complete": "Xuất hoàn tất",
+		"ready": "{{format}} của bạn đã sẵn sàng",
+		"cancelExport": "Hủy xuất",
+		"saved": "Đã lưu {{format}} thành công!",
+		"showInFolder": "Hiển thị trong thư mục",
+		"exportedTo": "Đã xuất tới {{path}}",
+		"revealFailed": "Không thể hiển thị tệp trong thư mục"
+	},
+	"format": {
+		"mp4": {
+			"label": "Video MP4",
+			"desc": "Tệp video chất lượng cao"
+		},
+		"gif": {
+			"label": "Ảnh động GIF",
+			"desc": "Hình ảnh động để chia sẻ"
+		}
+	},
+	"gif": {
+		"frameRate": "Tốc độ khung hình",
+		"outputSize": "Kích thước đầu ra",
+		"loopAnimation": "Lặp hoạt ảnh",
+		"loopDesc": "GIF sẽ phát liên tục"
+	},
+	"tutorial": {
+		"trigger": "Cách hoạt động của công cụ cắt",
+		"title": "Cách cắt video",
+		"desc": "Hiểu cách cắt bỏ các phần không mong muốn trong video của bạn.",
+		"explain": "Công cụ Cắt hoạt động bằng cách xác định các đoạn bạn muốn loại bỏ. Mọi phần nằm trong đoạn cắt màu đỏ sẽ bị loại khỏi video khi xuất.",
+		"visualExample": "Ví dụ trực quan",
+		"removed": "ĐÃ XÓA",
+		"kept": "Giữ lại",
+		"part": "Phần {{index}}",
+		"finalVideo": "Video cuối cùng",
+		"step1": "1. Thêm đoạn cắt",
+		"step1desc": "Nhấn T hoặc nhấp biểu tượng cái kéo để đánh dấu đoạn cần loại bỏ.",
+		"step2": "2. Điều chỉnh",
+		"step2desc": "Kéo các cạnh của vùng màu đỏ để bao phủ chính xác những gì bạn muốn cắt bỏ."
+	}
+}

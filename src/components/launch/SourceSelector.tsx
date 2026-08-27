@@ -46,7 +46,7 @@ export function SourceSelector() {
 
       if (isScreenCaptureAccessBlocked(accessStatus)) {
         setLoadFailed(true);
-        setLoadErrorDetail(t("source.screenPermissionHint"));
+        setLoadErrorDetail(t("launch.source.screenPermissionHint"));
         return;
       }
 
@@ -71,7 +71,7 @@ export function SourceSelector() {
       );
     } catch (error) {
       setLoadFailed(true);
-      const fallbackDetail = isScreenCaptureAccessBlocked(accessStatus) ? t("source.screenPermissionHint") : "";
+      const fallbackDetail = isScreenCaptureAccessBlocked(accessStatus) ? t("launch.source.screenPermissionHint") : "";
       const errorDetail = error instanceof Error ? error.message : String(error);
       setLoadErrorDetail(errorDetail);
       if (fallbackDetail) {
@@ -80,7 +80,7 @@ export function SourceSelector() {
       if (!isScreenCaptureAccessBlocked(accessStatus)) {
         reportUserActionError({
           t,
-          userMessage: t("source.loadFailed"),
+          userMessage: t("launch.source.loadFailed"),
           error,
           context: "source-selector.fetch-sources",
           dedupeKey: "source-selector.fetch-sources",
@@ -105,7 +105,7 @@ export function SourceSelector() {
       if (!result.success) {
         reportUserActionError({
           t,
-          userMessage: t("source.openSystemSettingsFailed"),
+          userMessage: t("launch.source.openSystemSettingsFailed"),
           error: result.message || "openScreenCaptureSettings returned unsuccessful result",
           context: "source-selector.open-system-settings",
           dedupeKey: "source-selector.open-system-settings",
@@ -114,7 +114,7 @@ export function SourceSelector() {
     } catch (error) {
       reportUserActionError({
         t,
-        userMessage: t("source.openSystemSettingsFailed"),
+        userMessage: t("launch.source.openSystemSettingsFailed"),
         error,
         context: "source-selector.open-system-settings",
         dedupeKey: "source-selector.open-system-settings",
@@ -127,7 +127,7 @@ export function SourceSelector() {
     } catch (error) {
       reportUserActionError({
         t,
-        userMessage: t("permission.openSettingsFailed"),
+        userMessage: t("launch.permission.openSettingsFailed"),
         error,
         context: "source-selector.open-permission-checker",
         dedupeKey: "source-selector.open-permission-checker",
@@ -144,7 +144,7 @@ export function SourceSelector() {
     } catch (error) {
       reportUserActionError({
         t,
-        userMessage: t("source.shareFailed"),
+        userMessage: t("launch.source.shareFailed"),
         error,
         context: "source-selector.share",
         details: {
@@ -161,7 +161,7 @@ export function SourceSelector() {
       <div className={`h-full flex items-center justify-center ${styles.glassContainer}`} style={{ minHeight: '100vh' }}>
         <div className="text-center">
           <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-zinc-600 mx-auto mb-2" />
-          <p className="text-xs text-zinc-300">{t("source.loading")}</p>
+          <p className="text-xs text-zinc-300">{t("launch.source.loading")}</p>
         </div>
       </div>
     );
@@ -172,7 +172,7 @@ export function SourceSelector() {
     return (
       <div className={`h-full flex items-center justify-center ${styles.glassContainer}`} style={{ minHeight: '100vh' }}>
         <div className="text-center px-6">
-          <p className="text-sm text-zinc-100 mb-3">{t("source.loadFailed")}</p>
+          <p className="text-sm text-zinc-100 mb-3">{t("launch.source.loadFailed")}</p>
           {loadErrorDetail ? (
             <p className="text-xs text-zinc-400 mb-3 whitespace-pre-wrap break-all max-w-[560px]">
               {loadErrorDetail}
@@ -184,17 +184,17 @@ export function SourceSelector() {
                 onClick={() => void handleOpenSystemSettings()}
                 className="bg-zinc-700 text-white hover:bg-zinc-600"
               >
-                {t("source.openSystemSettings")}
+                {t("launch.source.openSystemSettings")}
               </Button>
             ) : null}
             <Button
               onClick={() => void handleOpenPermissionChecker()}
               className="bg-zinc-700 text-white hover:bg-zinc-600"
             >
-              {t("source.checkPermissions")}
+              {t("launch.source.checkPermissions")}
             </Button>
             <Button onClick={() => void fetchSources()} className="bg-[#34B27B] text-white hover:bg-[#34B27B]/85">
-              {t("source.retry")}
+              {t("launch.source.retry")}
             </Button>
           </div>
         </div>
@@ -207,8 +207,8 @@ export function SourceSelector() {
       <div className="flex-1 flex flex-col w-full max-w-xl" style={{ padding: 0 }}>
         <Tabs defaultValue="screens">
           <TabsList className="grid grid-cols-2 mb-3 bg-zinc-900/40 rounded-full">
-            <TabsTrigger value="screens" className="data-[state=active]:bg-[#34B27B] data-[state=active]:text-white text-zinc-200 rounded-full text-xs py-1">{t("source.screens")}</TabsTrigger>
-            <TabsTrigger value="windows" className="data-[state=active]:bg-[#34B27B] data-[state=active]:text-white text-zinc-200 rounded-full text-xs py-1">{t("source.windows")}</TabsTrigger>
+            <TabsTrigger value="screens" className="data-[state=active]:bg-[#34B27B] data-[state=active]:text-white text-zinc-200 rounded-full text-xs py-1">{t("launch.source.screens")}</TabsTrigger>
+            <TabsTrigger value="windows" className="data-[state=active]:bg-[#34B27B] data-[state=active]:text-white text-zinc-200 rounded-full text-xs py-1">{t("launch.source.windows")}</TabsTrigger>
           </TabsList>
             <div className="h-72 flex flex-col justify-stretch">
             <TabsContent value="screens" className="h-full">
@@ -269,7 +269,7 @@ export function SourceSelector() {
                         {source.appIcon && (
                           <img
                             src={source.appIcon}
-                            alt={t("source.appIcon")}
+                            alt={t("launch.source.appIcon")}
                             className={styles.icon + " flex-shrink-0"}
                           />
                         )}
@@ -285,8 +285,8 @@ export function SourceSelector() {
       </div>
       <div className="border-t border-zinc-800 p-2 w-full max-w-xl">
         <div className="flex justify-center gap-2">
-          <Button variant="outline" onClick={() => window.close()} className="px-4 py-1 text-xs bg-zinc-800 border-zinc-700 text-zinc-200 hover:bg-zinc-700">{t("source.cancel")}</Button>
-          <Button onClick={handleShare} disabled={!selectedSource} className="px-4 py-1 text-xs bg-[#34B27B] text-white hover:bg-[#34B27B]/80 disabled:opacity-50 disabled:bg-zinc-700">{t("source.share")}</Button>
+          <Button variant="outline" onClick={() => window.close()} className="px-4 py-1 text-xs bg-zinc-800 border-zinc-700 text-zinc-200 hover:bg-zinc-700">{t("launch.source.cancel")}</Button>
+          <Button onClick={handleShare} disabled={!selectedSource} className="px-4 py-1 text-xs bg-[#34B27B] text-white hover:bg-[#34B27B]/80 disabled:opacity-50 disabled:bg-zinc-700">{t("launch.source.share")}</Button>
         </div>
       </div>
     </div>

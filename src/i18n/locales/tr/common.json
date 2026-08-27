@@ -1,0 +1,38 @@
+{
+	"cancel": "İptal",
+	"close": "Kapat",
+	"done": "Tamam",
+	"loading": "Yükleniyor…",
+	"processing": "İşleniyor...",
+	"status": "Durum",
+	"format": "Biçim",
+	"frames": "Kareler",
+	"loop": "Döngü",
+	"language": "Dil",
+	"playback": {
+		"play": "Oynat",
+		"pause": "Duraklat",
+		"fullscreen": "Tam Ekran",
+		"exitFullscreen": "Tam Ekrandan Çık"
+	},
+	"apply": "Uygula",
+	"electron": {
+		"tray": {
+			"recording": "Kaydediliyor: {{source}}",
+			"stopRecording": "Kaydı Durdur",
+			"open": "Aç",
+			"quit": "Çıkış"
+		},
+		"saveGif": "Dışa Aktarılan GIF'i Kaydet",
+		"saveVideo": "Dışa Aktarılan Videoyu Kaydet",
+		"exportCancelled": "Dışa aktarım iptal edildi",
+		"exportSaveFailed": "Dışa aktarılan video kaydedilemedi",
+		"selectVideoFile": "Video Dosyası Seç",
+		"videoFiles": "Video Dosyaları",
+		"allFiles": "Tüm Dosyalar"
+	},
+	"locale": {
+		"name": "Türkçe",
+		"short": "TR"
+	}
+}

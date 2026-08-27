@@ -116,30 +116,30 @@ export function ExportDialog({
   
   // Get status message based on phase
   const getStatusMessage = () => {
-    if (error) return t('export.statusTryAgain');
+    if (error) return t('dialogs.export.statusTryAgain');
     if (isCompiling) {
       if (renderProgress !== undefined && renderProgress > 0) {
-        return t('export.statusCompilingPct', { progress: renderProgress });
+        return t('dialogs.export.statusCompilingPct', { progress: renderProgress });
       }
-      return t('export.statusCompiling');
+      return t('dialogs.export.statusCompiling');
     }
     if (isFinalizing) {
       if (phaseDetailText) {
-        return t('export.statusFinalizingVideoStep', { step: phaseDetailText });
+        return t('dialogs.export.statusFinalizingVideoStep', { step: phaseDetailText });
       }
-      return exportFormat === 'gif' ? t('export.statusCompiling') : t('export.statusFinalizingVideo');
+      return exportFormat === 'gif' ? t('dialogs.export.statusCompiling') : t('dialogs.export.statusFinalizingVideo');
     }
-    return t('export.statusMoment');
+    return t('dialogs.export.statusMoment');
   };
 
   // Get title based on phase
   const getTitle = () => {
-    if (error) return t('export.titleFailed');
-    if (isCompiling) return t('export.titleCompilingGif');
+    if (error) return t('dialogs.export.titleFailed');
+    if (isCompiling) return t('dialogs.export.titleCompilingGif');
     if (isFinalizing) {
-      return exportFormat === 'gif' ? t('export.titleCompilingGif') : t('export.titleFinalizingVideo');
+      return exportFormat === 'gif' ? t('dialogs.export.titleCompilingGif') : t('dialogs.export.titleFinalizingVideo');
     }
-    return t('export.title', { format: formatLabel });
+    return t('dialogs.export.title', { format: formatLabel });
   };
 
   return (
@@ -170,7 +170,7 @@ export function ExportDialog({
                 </div>
                 <div>
                   <span className="text-xl font-bold text-slate-200 block">Export Complete</span>
-                  <span className="text-sm text-slate-400">{t('export.ready', { format: formatLabel.toLowerCase() })}</span>
+                  <span className="text-sm text-slate-400">{t('dialogs.export.ready', { format: formatLabel.toLowerCase() })}</span>
                 </div>
               </>
             ) : (
@@ -222,7 +222,7 @@ export function ExportDialog({
             {batchProgress && batchProgress.total > 1 && (
               <div className="rounded-xl border border-[#34B27B]/30 bg-[#34B27B]/10 p-3">
                 <div className="text-[10px] uppercase tracking-wider text-[#34B27B]">
-                  {t('export.batchProgress', { current: batchProgress.current, total: batchProgress.total })}
+                  {t('dialogs.export.batchProgress', { current: batchProgress.current, total: batchProgress.total })}
                 </div>
                 <div className="mt-1 text-sm font-medium text-slate-200">
                   {batchProgress.aspectRatio}
@@ -233,10 +233,10 @@ export function ExportDialog({
               <div className="flex justify-between text-xs font-medium text-slate-400 uppercase tracking-wider">
                   <span>
                     {isCompiling
-                      ? t('export.phaseCompiling')
+                      ? t('dialogs.export.phaseCompiling')
                       : isFinalizing
-                        ? t('export.phaseFinalizing')
-                        : t('export.phaseRendering')}
+                        ? t('dialogs.export.phaseFinalizing')
+                        : t('dialogs.export.phaseRendering')}
                   </span>
                 <span className="font-mono text-slate-200">
                   {isCompiling || (isFinalizing && exportFormat === 'gif') ? (
@@ -293,11 +293,11 @@ export function ExportDialog({
                 </div>
                 <div className="text-slate-200 font-medium text-sm">
                   {isCompiling
-                    ? t('export.titleCompilingGif')
+                    ? t('dialogs.export.titleCompilingGif')
                     : isFinalizing
                       ? exportFormat === 'gif'
-                        ? t('export.titleCompilingGif')
-                        : t('export.titleFinalizingVideo')
+                        ? t('dialogs.export.titleCompilingGif')
+                        : t('dialogs.export.titleFinalizingVideo')
                       : formatLabel}
                 </div>
               </div>
@@ -308,30 +308,30 @@ export function ExportDialog({
                 </div>
               </div>
               <div className="bg-white/5 rounded-xl p-3 border border-white/5">
-                <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">{t('export.elapsed')}</div>
+                <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">{t('dialogs.export.elapsed')}</div>
                 <div className="text-slate-200 font-medium text-sm">{formatElapsed(elapsedMs)}</div>
               </div>
               <div className="bg-white/5 rounded-xl p-3 border border-white/5">
-                <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">{t('export.eta')}</div>
+                <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">{t('dialogs.export.eta')}</div>
                 <div className="text-slate-200 font-medium text-sm">
                   {isFinalizing ? t('common.processing') : formatEta(etaSeconds)}
                 </div>
               </div>
               <div className="bg-white/5 rounded-xl p-3 border border-white/5">
-                <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">{t('export.activity')}</div>
+                <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">{t('dialogs.export.activity')}</div>
                 <div className="text-slate-200 font-medium text-sm">
                   {activityState === 'active'
-                    ? t('export.activityActive')
+                    ? t('dialogs.export.activityActive')
                     : activityState === 'waiting'
-                      ? t('export.activityWaiting')
-                      : t('export.activityStalled')}
+                      ? t('dialogs.export.activityWaiting')
+                      : t('dialogs.export.activityStalled')}
                 </div>
               </div>
             </div>
 
             {activityState === 'stalled' && (
               <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-amber-300 text-xs">
-                {t('export.activityStalledHint', { seconds: Math.floor(staleMs / 1000) })}
+                {t('dialogs.export.activityStalledHint', { seconds: Math.floor(staleMs / 1000) })}
               </div>
             )}
 
@@ -342,7 +342,7 @@ export function ExportDialog({
                   variant="destructive"
                   className="w-full py-6 bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 transition-all rounded-xl"
                 >
-                  {t('export.cancelExport')}
+                  {t('dialogs.export.cancelExport')}
                 </Button>
               </div>
             )}
@@ -352,7 +352,7 @@ export function ExportDialog({
         {showSuccess && (
           <div className="text-center py-4 animate-in zoom-in-95 flex flex-col items-center gap-2">
             <p className="text-lg text-slate-200 font-medium">
-              {t('export.saved', { format: formatLabel })}
+              {t('dialogs.export.saved', { format: formatLabel })}
             </p>
             {exportedFilePath && (
               <Button
@@ -361,7 +361,7 @@ export function ExportDialog({
                   try {
                     const result = await window.electronAPI.revealInFolder(exportedFilePath);
                     if (!result.success) {
-                      toast.error(result.error || result.message || t('export.revealFailed'));
+                      toast.error(result.error || result.message || t('dialogs.export.revealFailed'));
                     }
                   } catch (err) {
                     toast.error(String(err));
@@ -370,7 +370,7 @@ export function ExportDialog({
                 className="mt-1 px-3 py-1.5 text-sm rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 border border-white/10 gap-2"
               >
                 <FolderOpen className="w-3.5 h-3.5" />
-                {t('export.showInFolder')}
+                {t('dialogs.export.showInFolder')}
               </Button>
             )}
             {exportedFilePath && (

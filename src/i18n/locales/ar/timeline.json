@@ -1,0 +1,19 @@
+{
+	"noVideoLoaded": "لم يتم تحميل أي فيديو",
+	"dragDropToStart": "اسحب وأفلت مقطع فيديو لبدء التعديل",
+	"cannotPlaceZoom": "لا يمكن وضع التكبير هنا",
+	"cannotPlaceZoomDesc": "يوجد تكبير بالفعل في هذا الموقع أو لا توجد مساحة كافية متاحة.",
+	"cannotPlaceTrim": "لا يمكن وضع القص هنا",
+	"cannotPlaceTrimDesc": "يوجد قص بالفعل في هذا الموقع أو لا توجد مساحة كافية متاحة.",
+	"zoom": "تكبير",
+	"trim": "قص",
+	"annotation": "شرح",
+	"audio": "الصوت",
+	"image": "صورة",
+	"emptyText": "نص فارغ",
+	"pan": "تحريك",
+	"zoomAction": "تكبير",
+	"addZoom": "إضافة تكبير (Z)",
+	"addTrim": "إضافة قص (T)",
+	"addAnnotation": "إضافة شرح (A)"
+}

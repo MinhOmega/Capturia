@@ -1,0 +1,19 @@
+{
+	"noVideoLoaded": "ビデオが読み込まれていません",
+	"dragDropToStart": "ビデオをドラッグアンドドロップして編集を開始してください",
+	"cannotPlaceZoom": "ここにズームを配置できません",
+	"cannotPlaceZoomDesc": "この場所にはすでにズームが存在するか、十分なスペースがありません。",
+	"cannotPlaceTrim": "ここにトリムを配置できません",
+	"cannotPlaceTrimDesc": "この場所にはすでにトリムが存在するか、十分なスペースがありません。",
+	"zoom": "ズーム",
+	"trim": "トリム",
+	"annotation": "注釈",
+	"audio": "オーディオ",
+	"image": "画像",
+	"emptyText": "空のテキスト",
+	"pan": "移動",
+	"zoomAction": "ズーム",
+	"addZoom": "ズームを追加 (Z)",
+	"addTrim": "トリムを追加 (T)",
+	"addAnnotation": "注釈を追加 (A)"
+}

@@ -1,0 +1,19 @@
+{
+	"noVideoLoaded": "未載入影片",
+	"dragDropToStart": "拖放影片以開始編輯",
+	"cannotPlaceZoom": "無法在此處放置縮放",
+	"cannotPlaceZoomDesc": "此位置已存在縮放或沒有足夠的空間。",
+	"cannotPlaceTrim": "無法在此處放置剪輯",
+	"cannotPlaceTrimDesc": "此位置已存在剪輯或沒有足夠的空間。",
+	"zoom": "縮放",
+	"trim": "剪輯",
+	"annotation": "標註",
+	"audio": "音訊",
+	"image": "圖片",
+	"emptyText": "空文字",
+	"pan": "平移",
+	"zoomAction": "縮放",
+	"addZoom": "新增縮放 (Z)",
+	"addTrim": "新增剪輯 (T)",
+	"addAnnotation": "新增標註 (A)"
+}

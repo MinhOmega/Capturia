@@ -15,7 +15,7 @@ import { RxDragHandleDots2 } from "react-icons/rx";
 import { FaFolderMinus } from "react-icons/fa6";
 import { FiCamera, FiMinus, FiMousePointer, FiX } from "react-icons/fi";
 import { EyeOff, Keyboard, Pause, Play, RotateCcw, Shield, SlidersHorizontal, Timer, Trash2 } from "lucide-react";
-import { useI18n } from "@/i18n";
+import { getAvailableLocales, getLocaleName, useI18n } from "@/i18n";
 import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { reportUserActionError } from "@/lib/userErrorFeedback";
@@ -590,7 +590,7 @@ export function LaunchWindow() {
         const readiness = resolveRecordingPermissionReadiness(permissionSnapshot);
         if (!readiness.ready) {
           await window.electronAPI.openPermissionChecker();
-          toast.error(t("permission.missingRequiredHint"));
+          toast.error(t("launch.permission.missingRequiredHint"));
           return;
         }
         await window.electronAPI.openSourceSelector();
@@ -614,7 +614,7 @@ export function LaunchWindow() {
       } catch (error) {
         reportUserActionError({
           t,
-          userMessage: t("permission.openSettingsFailed"),
+          userMessage: t("launch.permission.openSettingsFailed"),
           error,
           context: "launch-window.open-permission-checker",
           dedupeKey: "launch-window.open-permission-checker",
@@ -680,14 +680,14 @@ export function LaunchWindow() {
         const readiness = resolveRecordingPermissionReadiness(permissionSnapshot);
         if (!readiness.ready) {
           await window.electronAPI.openPermissionChecker();
-          toast.error(t("permission.missingRequiredHint"));
+          toast.error(t("launch.permission.missingRequiredHint"));
           return;
         }
         beginRecordCountdown();
       } catch (error) {
         reportUserActionError({
           t,
-          userMessage: t("permission.refreshFailed"),
+          userMessage: t("launch.permission.refreshFailed"),
           error,
           context: "launch-window.record-permission-preflight",
           dedupeKey: "launch-window.record-permission-preflight",
@@ -1245,12 +1245,13 @@ export function LaunchWindow() {
 
         <select
           value={locale}
-          onChange={(event) => setLocale(event.target.value as typeof locale)}
+          onChange={(event) => setLocale(event.target.value)}
           className={`h-6 w-[92px] shrink-0 rounded bg-white/10 text-[10px] text-white border border-white/20 px-1.5 ${styles.electronNoDrag}`}
           title={t("common.language")}
         >
-          <option value="en">{t("common.english")}</option>
-          <option value="zh-CN">{t("common.chinese")}</option>
+          {getAvailableLocales().map((option) => (
+            <option key={option} value={option}>{getLocaleName(option)}</option>
+          ))}
         </select>
 
         <div className={`flex items-center gap-1 shrink-0 ${styles.electronNoDrag}`}>

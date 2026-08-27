@@ -66,7 +66,7 @@ async function openReportUrl(t: Translator, url: string): Promise<void> {
     window.open(url, '_blank', 'noopener,noreferrer')
   } catch (error) {
     console.error('Failed to open issue report URL:', error)
-    toast.error(t('error.reportOpenFailed'))
+    toast.error(t('common.error.reportOpenFailed'))
   }
 }
 
@@ -122,10 +122,10 @@ export function reportUserActionError(input: ReportUserActionErrorInput): string
   })
 
   toast.error(input.userMessage, {
-    description: `${input.t('error.reference', { id: errorId })}\n${errorMessage}`,
+    description: `${input.t('common.error.reference', { id: errorId })}\n${errorMessage}`,
     duration: 12_000,
     action: {
-      label: input.t('error.reportAction'),
+      label: input.t('common.error.reportAction'),
       onClick: () => {
         void openReportUrl(input.t, issueUrl)
       },

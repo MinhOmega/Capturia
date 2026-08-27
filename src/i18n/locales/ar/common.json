@@ -1,0 +1,38 @@
+{
+	"cancel": "الغاء",
+	"close": "اغلاق",
+	"done": "تم",
+	"loading": "جارٍ التحميل...",
+	"processing": "جاري المعالجة...",
+	"status": "الحالة",
+	"format": "الصيغة",
+	"frames": "الإطارات",
+	"loop": "تكرار",
+	"language": "اللغة",
+	"playback": {
+		"play": "تشغيل",
+		"pause": "ايقاف مؤقت",
+		"fullscreen": "ملء الشاشة",
+		"exitFullscreen": "خروج من ملء الشاشة"
+	},
+	"apply": "تطبيق",
+	"electron": {
+		"tray": {
+			"recording": "جاري التسجيل: {{source}}",
+			"stopRecording": "إيقاف التسجيل",
+			"open": "فتح",
+			"quit": "خروج"
+		},
+		"saveGif": "حفظ GIF المصدر",
+		"saveVideo": "حفظ الفيديو المصدر",
+		"exportCancelled": "تم إلغاء التصدير",
+		"exportSaveFailed": "فشل حفظ الفيديو المُصدَّر",
+		"selectVideoFile": "حدد ملف فيديو",
+		"videoFiles": "ملفات فيديو",
+		"allFiles": "جميع الملفات"
+	},
+	"locale": {
+		"name": "عربي",
+		"short": "AR"
+	}
+}

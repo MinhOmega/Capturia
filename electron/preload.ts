@@ -13,6 +13,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     hudOverlayRestore: () => {
       ipcRenderer.send('hud-overlay-restore');
     },
+  setLocale: (locale: string) => {
+    return ipcRenderer.invoke('set-locale', locale)
+  },
   getAssetBasePath: async () => {
     // ask main process for the correct base path (production vs dev)
     return await ipcRenderer.invoke('get-asset-base-path')

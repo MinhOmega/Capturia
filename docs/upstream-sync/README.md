@@ -40,6 +40,9 @@ Reference checkouts used for diffing (not part of the repo):
    (upstream often lands a feature then 3-6 fix commits; port the *final* state).
 5. Decisions and progress are recorded in this folder so the work can resume across
    sessions.
+6. UI strings go through the namespaced locale files (`src/i18n/locales/<locale>/<ns>.json`,
+   see `docs/i18n.md`); `npm run i18n:check` must pass (en/zh-CN/vi in parity, other
+   locales may be partial). Ported components may use upstream key names verbatim.
 
 ## Work streams
 

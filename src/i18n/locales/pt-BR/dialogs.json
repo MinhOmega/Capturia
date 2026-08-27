@@ -1,0 +1,45 @@
+{
+	"export": {
+		"title": "Exportando {{format}}",
+		"titleCompilingGif": "Compilando GIF",
+		"titleFinalizingVideo": "Finalizando Vídeo",
+		"titleFailed": "Falha na Exportação",
+		"statusTryAgain": "Por favor, tente novamente",
+		"statusMoment": "Isso pode levar um momento...",
+		"statusCompiling": "Compilando GIF... Isso pode demorar um pouco",
+		"statusCompilingPct": "Compilando GIF... {{progress}}%",
+		"phaseCompiling": "Compilando",
+		"phaseFinalizing": "Finalizando...",
+		"phaseRendering": "Renderizando Quadros",
+		"complete": "Exportação Concluída",
+		"ready": "Seu {{format}} está pronto",
+		"cancelExport": "Cancelar Exportação",
+		"saved": "{{format}} salvo com sucesso!",
+		"showInFolder": "Mostrar na Pasta"
+	},
+	"format": {
+		"mp4": {
+			"label": "Vídeo MP4",
+			"desc": "Arquivo de vídeo de alta qualidade"
+		},
+		"gif": {
+			"label": "Animação GIF",
+			"desc": "Imagem animada para compartilhamento"
+		}
+	},
+	"gif": {
+		"frameRate": "Taxa de quadros"
+	},
+	"tutorial": {
+		"trigger": "Como funciona o recorte",
+		"title": "Como Funciona o Recorte",
+		"desc": "Entendendo como cortar partes indesejadas do seu vídeo.",
+		"visualExample": "Exemplo Visual",
+		"removed": "REMOVIDO",
+		"kept": "Mantido",
+		"finalVideo": "Vídeo Final",
+		"step1": "1. Adicionar Recorte",
+		"step2": "2. Ajustar",
+		"step2desc": "Arraste as bordas da região vermelha para cobrir exatamente o que você deseja cortar."
+	}
+}
