@@ -125,5 +125,35 @@
 		"relaunchHint": "After granting Screen Recording, macOS may require relaunching Capturia before changes fully apply.",
 		"continue": "Continue"
 	},
-	"cameraFallback": "Camera unavailable. Recording screen only."
+	"cameraFallback": "Camera unavailable. Recording screen only.",
+	"cameraDevice": "Camera",
+	"webcam": {
+		"defaultCamera": "Default Camera",
+		"noneFound": "No camera found"
+	},
+	"microphone": "Mic",
+	"microphoneFallback": "Microphone unavailable. Recording without audio.",
+	"audio": {
+		"enableMicrophone": "Enable microphone",
+		"disableMicrophone": "Disable microphone",
+		"defaultMicrophone": "Default Microphone",
+		"microphoneDevice": "Microphone",
+		"noneFound": "No microphone found",
+		"level": "Input level",
+		"settings": "Microphone settings"
+	},
+	"notes": "Notes",
+	"openNotesFailed": "Failed to open the Notes window.",
+	"tooltips": {
+		"openNotes": "Open Notes (hidden from the recording)",
+		"notesToolbar": {
+			"bold": "Bold",
+			"italic": "Italic",
+			"strikethrough": "Strikethrough",
+			"bulletList": "Bullet list",
+			"numberedList": "Numbered list",
+			"blockquote": "Blockquote",
+			"codeBlock": "Code block"
+		}
+	}
 }

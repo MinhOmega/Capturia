@@ -173,6 +173,8 @@ interface Window {
       cameraEnabled?: boolean
       cameraShape?: 'rounded' | 'square' | 'circle'
       cameraSizePercent?: number
+      cameraDeviceId?: string
+      cameraDeviceName?: string
       frameRate?: number
       maxLongEdge?: number
       bitrateScale?: number
@@ -209,6 +211,12 @@ interface Window {
     }) => Promise<{ success: boolean; warningCode?: string; warningMessage?: string }>
     stopCursorTracking: () => Promise<{ success: boolean; track?: CursorTrackMetadata }>
     onStopRecordingFromTray: (callback: () => void) => () => void
+    showCountdownOverlay: (value: number, runId: number) => Promise<void>
+    setCountdownOverlayValue: (value: number, runId: number) => Promise<void>
+    hideCountdownOverlay: (runId: number) => Promise<void>
+    onCountdownOverlayValue: (callback: (value: number | null, runId: number) => void) => () => void
+    openNotes: () => Promise<{ success: boolean; focused?: boolean; message?: string }>
+    onNotesWindowClosed: (callback: () => void) => () => void
     setStopRecordingShortcut: (accelerator: string) => Promise<{ success: boolean; accelerator: string; message?: string }>
     getStopRecordingShortcut: () => Promise<{ success: boolean; accelerator: string; message?: string }>
     openExternalUrl: (url: string) => Promise<{ success: boolean; error?: string }>

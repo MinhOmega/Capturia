@@ -35,6 +35,7 @@ import {
 } from '../native/mouseButtonMonitor'
 import { getWindowBoundsById, parseWindowIdFromSourceId } from './windowBounds'
 import { registerFileReadHandlers } from './fileReadHandlers'
+import { type HudWindowsContext, registerHudWindowsHandlers } from './hudWindowsHandlers'
 import {
   isPointInsideBounds,
   normalizePointToBounds,
@@ -129,11 +130,21 @@ type NativeRecorderStartOptions = {
   cameraEnabled?: boolean
   cameraShape?: 'rounded' | 'square' | 'circle'
   cameraSizePercent?: number
+  cameraDeviceId?: string
+  cameraDeviceName?: string
   frameRate?: number
   maxLongEdge?: number
   bitrateScale?: number
   width?: number
   height?: number
+}
+
+/** Device ids/labels travel to the native helper as argv: keep them short and printable. */
+function normalizeDeviceArgument(input: unknown): string | undefined {
+  if (typeof input !== 'string') return undefined
+  const trimmed = input.replace(/[\r\n\0]/g, '').trim()
+  if (!trimmed) return undefined
+  return trimmed.slice(0, 256)
 }
 
 type SaveExportedVideoOptions = {
@@ -1173,12 +1184,14 @@ export function registerIpcHandlers(
   getPermissionCheckerWindow: () => BrowserWindow | null,
   onRecordingStateChange?: (recording: boolean, sourceName: string) => void,
   onSourceSelectionChange?: (source: SelectedSource | null) => void,
+  hudWindows?: Omit<HudWindowsContext, 'ipcMain'>,
 ) {
   let currentVideoPath: string | null = null
   let currentVideoMetadata: CurrentVideoMetadata | null = null
   let cursorTracker: CursorTrackerRuntime | null = null
   const analysisService = new VideoAnalysisService()
   registerFileReadHandlers({ ipcMain, recordingsDir: RECORDINGS_DIR })
+  if (hudWindows) registerHudWindowsHandlers({ ipcMain, ...hudWindows })
 
   // On-disk write streams for in-progress MediaRecorder recordings, keyed by output
   // file name. Chunks append as they arrive so the renderer never buffers the full video.
@@ -1738,6 +1751,8 @@ export function registerIpcHandlers(
       const cameraSizePercent = Number.isFinite(options?.cameraSizePercent)
         ? Number(options?.cameraSizePercent)
         : 22
+      const cameraDeviceId = normalizeDeviceArgument(options?.cameraDeviceId)
+      const cameraDeviceName = normalizeDeviceArgument(options?.cameraDeviceName)
       const frameRate = Number.isFinite(options?.frameRate) ? Number(options?.frameRate) : 60
       const maxLongEdge = Number.isFinite(options?.maxLongEdge) ? Math.max(2, Math.round(Number(options?.maxLongEdge))) : undefined
       const bitrateScale = Number.isFinite(options?.bitrateScale)
@@ -1766,6 +1781,8 @@ export function registerIpcHandlers(
         cameraEnabled,
         cameraShape,
         cameraSizePercent,
+        cameraDeviceId,
+        cameraDeviceName,
         frameRate,
         bitrateScale,
         width,

@@ -15,6 +15,141 @@ const HEADLESS = process.env['HEADLESS'] === 'true'
 let hudOverlayWindow: BrowserWindow | null = null;
 let permissionCheckerWindow: BrowserWindow | null = null;
 
+// macOS 26 (Darwin 25) never paints a content-protected window: the Notes window
+// would exist but stay invisible. Skip protection there unless forced back on.
+const CONTENT_PROTECTION_DISABLED = process.env['CAPTURIA_DISABLE_CONTENT_PROTECTION'] === '1'
+const CONTENT_PROTECTION_FORCED = process.env['CAPTURIA_FORCE_CONTENT_PROTECTION'] === '1'
+const CONTENT_PROTECTION_BREAKS_DISPLAY =
+  process.platform === 'darwin' && Number.parseInt(process.getSystemVersion().split('.')[0] ?? '0', 10) >= 26
+
+/**
+ * Keep a window out of screen captures (including Capturia's own recording)
+ * where the OS supports it. Linux has no equivalent; callers hide the feature
+ * there instead of calling this.
+ */
+export function applyContentProtection(win: BrowserWindow, label: string): void {
+  if (CONTENT_PROTECTION_DISABLED) {
+    console.warn(
+      `[content-protection] OFF for the ${label} window (CAPTURIA_DISABLE_CONTENT_PROTECTION=1) - it will appear in screen captures, including recordings. Unset it for anything but automated testing.`,
+    )
+    return
+  }
+  if (CONTENT_PROTECTION_BREAKS_DISPLAY && !CONTENT_PROTECTION_FORCED) {
+    console.warn(
+      `[content-protection] OFF for the ${label} window - macOS ${process.getSystemVersion()} never displays a content-protected window, so enabling it would make this window permanently invisible. It may therefore appear in screen captures. Set CAPTURIA_FORCE_CONTENT_PROTECTION=1 to re-test.`,
+    )
+    return
+  }
+  win.setContentProtection(true)
+}
+
+/**
+ * Always-on-top scratchpad for notes while recording. Content-protected so it
+ * stays out of the capture (see `applyContentProtection`).
+ */
+export function createNotesWindow(): BrowserWindow {
+  const win = new BrowserWindow({
+    width: 400,
+    height: 540,
+    minWidth: 360,
+    minHeight: 400,
+    maxWidth: 640,
+    maxHeight: 720,
+    title: 'Capturia - Notes',
+    backgroundColor: '#ffffff',
+    resizable: true,
+    alwaysOnTop: true,
+    skipTaskbar: false,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.mjs'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      backgroundThrottling: false,
+    },
+  })
+
+  attachDevWindowLogging(win, 'notes')
+
+  // Match the editor: no native OS menu bar on Windows/Linux (reachable via Alt).
+  if (process.platform !== 'darwin') {
+    win.setAutoHideMenuBar(true)
+  }
+
+  applyContentProtection(win, 'Notes')
+  win.once('ready-to-show', () => {
+    applyContentProtection(win, 'Notes')
+    win.show()
+  })
+
+  if (VITE_DEV_SERVER_URL) {
+    win.loadURL(VITE_DEV_SERVER_URL + '?showNotes=true')
+  } else {
+    win.loadFile(path.join(RENDERER_DIST, 'index.html'), {
+      query: { showNotes: 'true' },
+    })
+  }
+
+  return win
+}
+
+/**
+ * Transparent, non-focusable countdown overlay centred on the primary display.
+ * The HUD drives it over IPC (`countdown-overlay-show/set-value/hide`) from its
+ * own countdown timer; the window is created once and hidden between runs.
+ */
+export function createCountdownOverlayWindow(): BrowserWindow {
+  const { workArea } = screen.getPrimaryDisplay()
+  const overlayWidth = 420
+  const overlayHeight = 260
+
+  const win = new BrowserWindow({
+    width: overlayWidth,
+    height: overlayHeight,
+    minWidth: overlayWidth,
+    maxWidth: overlayWidth,
+    minHeight: overlayHeight,
+    maxHeight: overlayHeight,
+    x: Math.round(workArea.x + (workArea.width - overlayWidth) / 2),
+    y: Math.round(workArea.y + (workArea.height - overlayHeight) / 2),
+    frame: false,
+    resizable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    focusable: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    hasShadow: false,
+    show: false,
+    title: 'Capturia Countdown',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.mjs'),
+      nodeIntegration: false,
+      contextIsolation: true,
+      backgroundThrottling: false,
+    },
+  })
+
+  attachDevWindowLogging(win, 'countdown-overlay')
+
+  // Purely decorative: clicks fall through to whatever is underneath.
+  win.setIgnoreMouseEvents(true)
+
+  if (process.platform === 'darwin') {
+    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  }
+
+  if (VITE_DEV_SERVER_URL) {
+    win.loadURL(VITE_DEV_SERVER_URL + '?windowType=countdown-overlay')
+  } else {
+    win.loadFile(path.join(RENDERER_DIST, 'index.html'), {
+      query: { windowType: 'countdown-overlay' },
+    })
+  }
+
+  return win
+}
+
 function attachDevWindowLogging(win: BrowserWindow, label: string): void {
   if (!VITE_DEV_SERVER_URL) return
 
