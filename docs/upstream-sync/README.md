@@ -68,4 +68,16 @@ plan -> test -> implement -> review -> verify -> remember -> improve
 
 - `npx tsc --noEmit`: clean
 - `npm test`: 32 files / 204 tests passing
-- `npm run lint`: 59 problems (46 errors, 13 warnings) - pre-existing
+- `npm run lint` (ESLint, before W0-a): 59 problems (46 errors, 13 warnings) - pre-existing
+
+## Baseline after W0-a (tooling + test harness)
+
+- `npx tsc --noEmit`: clean
+- `npm run typecheck:test` (`tsconfig.test.json`, test files now typechecked): clean
+- `npm test`: 34 files / 208 tests passing (204 existing + 2 harness smoke files)
+- `npm run lint` (`biome lint .`, 166 files): **0 errors, 118 warnings**. Errors are the gate
+  (exit code), warnings are informational and must not grow. Warning breakdown:
+  `noEmptyBlockStatements` 65, `noExplicitAny` 29, `useExhaustiveDependencies` 24.
+  No rule was downgraded from upstream's `biome.json`; the 13 initial errors were fixed
+  (`useConst`, unused `catch (err)`, `noBannedTypes`/`noAssignInExpressions` in a test mock,
+  `useAsConstAssertion`, `@ts-ignore` -> typed cast / `@ts-expect-error`).
