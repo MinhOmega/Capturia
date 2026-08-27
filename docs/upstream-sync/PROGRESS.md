@@ -79,3 +79,4 @@ Newest entries first. Each entry: date, cycle stage, what happened, verification
   (B3-2 + B3-3), W2-c annotations + background (B3-4 + B1-b), W2-d cursor polish (B2-4).
 - Wave 2 agents were terminated by an API usage limit before committing anything (worktrees clean at
   `0dd7d04`). Resumed all four after the limit reset; agents instructed to commit per item.
+- W2-b (timeline) reviewed and merged. Tree: 64 files / 562 tests, i18n 451 keys. Review: `reviews/W2-b-timeline.md`.
