@@ -82,3 +82,5 @@ Newest entries first. Each entry: date, cycle stage, what happened, verification
 - W2-b (timeline) reviewed and merged. Tree: 64 files / 562 tests, i18n 451 keys. Review: `reviews/W2-b-timeline.md`.
 - W2-d (cursor polish) reviewed and merged; cursor size default kept (export-unchanged, preview matches).
   Review: `reviews/W2-d-cursor.md`.
+- W2-a (zoom model + engine) reviewed and merged (ff). Tree: 71 files / 632 tests. Review: `reviews/W2-a-zoom.md`.
+  Auto-zoom constants retuned; needs manual feel check.
