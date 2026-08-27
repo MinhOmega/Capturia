@@ -125,5 +125,35 @@
 		"relaunchHint": "开启“屏幕录制”后，macOS 可能要求重启 Capturia 才能完全生效。",
 		"continue": "继续"
 	},
-	"cameraFallback": "摄像头不可用，仅录制屏幕。"
+	"cameraFallback": "摄像头不可用，仅录制屏幕。",
+	"cameraDevice": "摄像头",
+	"webcam": {
+		"defaultCamera": "默认摄像头",
+		"noneFound": "未找到摄像头"
+	},
+	"microphone": "麦克风",
+	"microphoneFallback": "麦克风不可用，将录制无声视频。",
+	"audio": {
+		"enableMicrophone": "启用麦克风",
+		"disableMicrophone": "禁用麦克风",
+		"defaultMicrophone": "默认麦克风",
+		"microphoneDevice": "麦克风",
+		"noneFound": "未找到麦克风",
+		"level": "输入电平",
+		"settings": "麦克风设置"
+	},
+	"notes": "笔记",
+	"openNotesFailed": "无法打开笔记窗口。",
+	"tooltips": {
+		"openNotes": "打开笔记（不会出现在录制中）",
+		"notesToolbar": {
+			"bold": "加粗",
+			"italic": "斜体",
+			"strikethrough": "删除线",
+			"bulletList": "无序列表",
+			"numberedList": "有序列表",
+			"blockquote": "引用",
+			"codeBlock": "代码块"
+		}
+	}
 }

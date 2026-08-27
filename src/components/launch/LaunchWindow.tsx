@@ -7,6 +7,10 @@ import {
   type CaptureResolutionPreset,
 } from "../../hooks/useScreenRecorder";
 import type { CameraOverlayShape } from "../../hooks/cameraOverlay";
+import { useCameraDevices } from "../../hooks/useCameraDevices";
+import { useMicrophoneDevices } from "../../hooks/useMicrophoneDevices";
+import { useAudioLevelMeter } from "../../hooks/useAudioLevelMeter";
+import { AudioLevelMeter } from "../ui/audio-level-meter";
 import { Button } from "../ui/button";
 import { BsRecordCircle } from "react-icons/bs";
 import { FaRegStopCircle } from "react-icons/fa";
@@ -14,7 +18,7 @@ import { MdMonitor } from "react-icons/md";
 import { RxDragHandleDots2 } from "react-icons/rx";
 import { FaFolderMinus } from "react-icons/fa6";
 import { FiCamera, FiMinus, FiMousePointer, FiX } from "react-icons/fi";
-import { EyeOff, Keyboard, Pause, Play, RotateCcw, Shield, SlidersHorizontal, Timer, Trash2 } from "lucide-react";
+import { EyeOff, Keyboard, Mic, MicOff, NotebookPen, Pause, Play, RotateCcw, Settings2, Shield, SlidersHorizontal, Timer, Trash2 } from "lucide-react";
 import { getAvailableLocales, getLocaleName, useI18n } from "@/i18n";
 import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -45,6 +49,9 @@ try {
 } catch { /* no-op */ }
 
 const STOP_SHORTCUT_STORAGE_KEY = "capturia.stopRecordingShortcut";
+const CAMERA_DEVICE_STORAGE_KEY = "capturia.cameraDeviceId";
+const MICROPHONE_ENABLED_STORAGE_KEY = "capturia.microphoneEnabled";
+const MICROPHONE_DEVICE_STORAGE_KEY = "capturia.microphoneDeviceId";
 const DEFAULT_STOP_RECORDING_SHORTCUT = "CommandOrControl+Shift+2";
 const AUTO_HIDE_HUD_ON_RECORD_STORAGE_KEY = "capturia.autoHideHudOnRecord";
 const CAPTURE_MODE_STORAGE_KEY = "capturia.captureMode";
@@ -59,6 +66,26 @@ type SelectedSourceSnapshot = {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function readStoredString(key: string): string {
+  try {
+    return window.localStorage.getItem(key) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function writeStoredString(key: string, value: string): void {
+  try {
+    if (value) {
+      window.localStorage.setItem(key, value);
+    } else {
+      window.localStorage.removeItem(key);
+    }
+  } catch {
+    // no-op
+  }
 }
 
 function isModifierKey(key: string): boolean {
@@ -157,6 +184,25 @@ export function LaunchWindow() {
     }
     return 22;
   });
+  // Camera picker (A12): the list is only enumerated while the overlay is on; the
+  // persisted id seeds the selection and is replaced when that camera is unplugged.
+  const {
+    devices: cameraDevices,
+    selectedDeviceId: cameraDeviceId,
+    setSelectedDeviceId: setCameraDeviceId,
+  } = useCameraDevices(includeCamera, readStoredString(CAMERA_DEVICE_STORAGE_KEY));
+  const cameraDeviceName = cameraDevices.find((device) => device.deviceId === cameraDeviceId)?.label;
+  // Microphone (A13): off records without an audio track; "" = system default device.
+  const [microphoneEnabled, setMicrophoneEnabled] = useState(
+    () => readStoredString(MICROPHONE_ENABLED_STORAGE_KEY) !== "0",
+  );
+  const {
+    devices: microphoneDevices,
+    selectedDeviceId: microphoneDeviceId,
+    setSelectedDeviceId: setMicrophoneDeviceId,
+  } = useMicrophoneDevices(microphoneEnabled, readStoredString(MICROPHONE_DEVICE_STORAGE_KEY));
+  const microphoneDeviceName = microphoneDevices.find((device) => device.deviceId === microphoneDeviceId)?.label;
+  const [microphonePopoverOpen, setMicrophonePopoverOpen] = useState(false);
   const [captureProfile, setCaptureProfile] = useState<CaptureProfile>(() => {
     try {
       const value = window.localStorage.getItem("capturia.captureProfile");
@@ -238,6 +284,13 @@ export function LaunchWindow() {
     if (typeof navigator === "undefined") return false;
     return /Mac|iPhone|iPad|iPod/.test(navigator.platform);
   });
+  // Notes window (A14): content protection does not exist on Linux, so the button
+  // is hidden there rather than shipping a window that lands in the recording.
+  const [isLinuxPlatform, setIsLinuxPlatform] = useState(() => {
+    if (typeof navigator === "undefined") return false;
+    return /Linux/.test(navigator.platform) && !/Android/.test(navigator.userAgent);
+  });
+  const [notesWindowOpen, setNotesWindowOpen] = useState(false);
   const [recordCountdownSeconds, setRecordCountdownSeconds] = useState<RecordCountdownSeconds>(() => {
     try {
       const value = Number(window.localStorage.getItem("capturia.recordCountdownSeconds"));
@@ -265,6 +318,10 @@ export function LaunchWindow() {
     includeCamera,
     cameraShape,
     cameraSizePercent,
+    cameraDeviceId,
+    cameraDeviceName,
+    microphoneEnabled,
+    microphoneDeviceId,
     captureProfile,
     captureFrameRate: captureMode === "pro" ? captureFrameRate : undefined,
     captureResolutionPreset: captureMode === "pro" ? captureResolutionPreset : undefined,
@@ -274,7 +331,16 @@ export function LaunchWindow() {
   const [countdownRemaining, setCountdownRemaining] = useState<number | null>(null);
   const isCountingDown = countdownRemaining !== null;
   const controlsLocked = recording || isTransitioning || isCountingDown;
+  // The meter opens the mic only while its popover is visible and no recording
+  // owns the device, so the OS mic indicator does not stay on from the HUD.
+  const { level: microphoneLevel } = useAudioLevelMeter({
+    enabled: microphoneEnabled && microphonePopoverOpen && !controlsLocked,
+    deviceId: microphoneDeviceId || undefined,
+  });
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Token of the countdown run currently shown in the overlay window. Every run
+  // gets a fresh id so the overlay ignores ticks/hides from a cancelled run.
+  const countdownRunIdRef = useRef(0);
   const previousRecordingRef = useRef(false);
   const selectedSourceSyncErrorAtRef = useRef(0);
   const [elapsed, setElapsed] = useState(0);
@@ -306,6 +372,11 @@ export function LaunchWindow() {
     if (countdownTimerRef.current) {
       clearInterval(countdownTimerRef.current);
       countdownTimerRef.current = null;
+    }
+    const runId = countdownRunIdRef.current;
+    if (runId > 0) {
+      countdownRunIdRef.current = 0;
+      void window.electronAPI?.hideCountdownOverlay?.(runId)?.catch?.(() => undefined);
     }
     setCountdownRemaining(null);
   }, []);
@@ -360,6 +431,19 @@ export function LaunchWindow() {
       // no-op
     }
   }, [cameraSizePercent]);
+
+  useEffect(() => {
+    // Only persist a real choice: the hook reports "" until the list has loaded.
+    if (cameraDeviceId) writeStoredString(CAMERA_DEVICE_STORAGE_KEY, cameraDeviceId);
+  }, [cameraDeviceId]);
+
+  useEffect(() => {
+    writeStoredString(MICROPHONE_ENABLED_STORAGE_KEY, microphoneEnabled ? "1" : "0");
+  }, [microphoneEnabled]);
+
+  useEffect(() => {
+    writeStoredString(MICROPHONE_DEVICE_STORAGE_KEY, microphoneDeviceId);
+  }, [microphoneDeviceId]);
 
   useEffect(() => {
     try {
@@ -424,6 +508,7 @@ export function LaunchWindow() {
         const platform = await window.electronAPI.getPlatform();
         if (!cancelled) {
           setIsMacPlatform(platform === "darwin");
+          setIsLinuxPlatform(platform === "linux");
         }
       } catch {
         // ignore platform probe failures
@@ -654,6 +739,34 @@ export function LaunchWindow() {
     })();
   }, [t]);
 
+  useEffect(() => {
+    const subscribe = window.electronAPI?.onNotesWindowClosed;
+    if (!subscribe) return;
+    return subscribe(() => setNotesWindowOpen(false));
+  }, []);
+
+  const openNotes = useCallback(() => {
+    if (!window.electronAPI?.openNotes) return;
+    void (async () => {
+      try {
+        const result = await window.electronAPI.openNotes();
+        if (result?.success) {
+          setNotesWindowOpen(true);
+          return;
+        }
+        toast.error(result?.message || t("launch.openNotesFailed"));
+      } catch (error) {
+        reportUserActionError({
+          t,
+          userMessage: t("launch.openNotesFailed"),
+          error,
+          context: "launch-window.open-notes",
+          dedupeKey: "launch-window.open-notes",
+        });
+      }
+    })();
+  }, [t]);
+
   const beginRecordCountdown = useCallback(() => {
     if (!hasSelectedSource || recording || isTransitioning || countdownRemaining !== null) {
       return;
@@ -667,6 +780,14 @@ export function LaunchWindow() {
     let remaining = recordCountdownSeconds;
     setCountdownRemaining(remaining);
 
+    // The overlay window mirrors the HUD countdown; the token lets a late IPC
+    // round-trip from this run be ignored once it is cancelled or finished.
+    const runId = Date.now();
+    countdownRunIdRef.current = runId;
+    void window.electronAPI?.showCountdownOverlay?.(remaining, runId)?.catch?.((error: unknown) => {
+      console.warn("Failed to show the countdown overlay.", error);
+    });
+
     countdownTimerRef.current = setInterval(() => {
       remaining -= 1;
       if (remaining <= 0) {
@@ -675,6 +796,9 @@ export function LaunchWindow() {
         return;
       }
       setCountdownRemaining(remaining);
+      if (countdownRunIdRef.current === runId) {
+        void window.electronAPI?.setCountdownOverlayValue?.(remaining, runId)?.catch?.(() => undefined);
+      }
     }, 1000);
   }, [
     countdownRemaining,
@@ -986,6 +1110,70 @@ export function LaunchWindow() {
           <span className={includeCamera ? "text-cyan-300" : "text-white/50"}>{t("launch.camera")}</span>
         </Button>
 
+        <div className={`flex items-center shrink-0 ${styles.electronNoDrag}`}>
+          <Button
+            variant="link"
+            size="sm"
+            className={`gap-1 shrink-0 min-w-[64px] text-white bg-transparent hover:bg-transparent px-1 text-center text-xs ${styles.electronNoDrag}`}
+            onClick={() => setMicrophoneEnabled((value) => !value)}
+            disabled={controlsLocked}
+            title={microphoneEnabled ? t("launch.audio.disableMicrophone") : t("launch.audio.enableMicrophone")}
+            aria-pressed={microphoneEnabled}
+            data-testid="launch-microphone-toggle"
+          >
+            {microphoneEnabled ? (
+              <Mic size={14} className="text-cyan-300" />
+            ) : (
+              <MicOff size={14} className="text-white/50" />
+            )}
+            <span className={microphoneEnabled ? "text-cyan-300" : "text-white/50"}>{t("launch.microphone")}</span>
+          </Button>
+          {microphoneEnabled ? (
+            <Popover open={microphonePopoverOpen} onOpenChange={setMicrophonePopoverOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="link"
+                  size="icon"
+                  className={`h-7 w-6 shrink-0 text-cyan-200 bg-transparent hover:bg-cyan-400/10 ${styles.electronNoDrag}`}
+                  disabled={controlsLocked}
+                  title={microphoneDeviceName ?? t("launch.audio.defaultMicrophone")}
+                  data-testid="launch-microphone-settings"
+                >
+                  <Settings2 size={12} />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent
+                side="top"
+                sideOffset={8}
+                align="center"
+                collisionPadding={12}
+                className={`w-[230px] bg-[#11131a] border border-cyan-300/20 text-cyan-100 p-2 ${styles.electronNoDrag}`}
+              >
+                <div className="text-[11px] mb-2">{t("launch.audio.settings")}</div>
+                <label className="flex items-center gap-2 text-[11px] mb-2">
+                  <span className="shrink-0">{t("launch.audio.microphoneDevice")}</span>
+                  <select
+                    value={microphoneDeviceId}
+                    onChange={(event) => setMicrophoneDeviceId(event.target.value)}
+                    disabled={controlsLocked}
+                    className={`h-6 min-w-0 flex-1 rounded bg-white/10 text-[10px] text-cyan-100 border border-cyan-300/20 px-1 ${styles.electronNoDrag}`}
+                    data-testid="launch-microphone-device-select"
+                  >
+                    <option value="">{t("launch.audio.defaultMicrophone")}</option>
+                    {microphoneDevices.map((device) => (
+                      <option key={device.deviceId} value={device.deviceId}>{device.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <div className="flex items-center gap-2 text-[11px]">
+                  <span className="shrink-0">{t("launch.audio.level")}</span>
+                  <AudioLevelMeter level={microphoneLevel} className="flex-1" />
+                </div>
+              </PopoverContent>
+            </Popover>
+          ) : null}
+        </div>
+
         <Button
           variant="link"
           size="sm"
@@ -997,6 +1185,20 @@ export function LaunchWindow() {
           <Shield size={13} className="text-white/80" />
           <span className="text-white/90">{t("launch.permissions")}</span>
         </Button>
+
+        {!isLinuxPlatform ? (
+          <Button
+            variant="link"
+            size="sm"
+            className={`gap-1 shrink-0 min-w-[70px] text-white bg-transparent hover:bg-transparent px-1 text-center text-xs ${styles.electronNoDrag}`}
+            onClick={openNotes}
+            title={t("launch.tooltips.openNotes")}
+            data-testid="launch-notes-button"
+          >
+            <NotebookPen size={13} className={notesWindowOpen ? "text-cyan-300" : "text-white/80"} />
+            <span className={notesWindowOpen ? "text-cyan-300" : "text-white/90"}>{t("launch.notes")}</span>
+          </Button>
+        ) : null}
 
         <Popover>
           <PopoverTrigger asChild>
@@ -1255,6 +1457,25 @@ export function LaunchWindow() {
                 <span>{t("launch.shape")}</span>
                 <span className={styles.cameraConfigBadge}>{cameraShapeLabelMap[cameraShape]}</span>
               </div>
+              <label className="flex items-center gap-2 text-[11px] mb-2">
+                <span className="shrink-0">{t("launch.cameraDevice")}</span>
+                <select
+                  value={cameraDeviceId}
+                  onChange={(event) => setCameraDeviceId(event.target.value)}
+                  disabled={controlsLocked || cameraDevices.length === 0}
+                  className={`h-6 min-w-0 flex-1 rounded bg-white/10 text-[10px] text-cyan-100 border border-cyan-300/20 px-1 ${styles.electronNoDrag}`}
+                  title={cameraDeviceName ?? t("launch.webcam.defaultCamera")}
+                  data-testid="launch-camera-device-select"
+                >
+                  {cameraDevices.length === 0 ? (
+                    <option value="">{t("launch.webcam.noneFound")}</option>
+                  ) : (
+                    cameraDevices.map((device) => (
+                      <option key={device.deviceId} value={device.deviceId}>{device.label}</option>
+                    ))
+                  )}
+                </select>
+              </label>
               <div className="flex items-center gap-2">
                 <Button
                   variant="link"

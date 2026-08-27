@@ -1,5 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from "react";
+import { CountdownOverlay } from "./components/launch/CountdownOverlay";
 import { LaunchWindow } from "./components/launch/LaunchWindow";
+import { NotesWindow } from "./components/launch/NotesWindow";
 import { PermissionCheckerWindow } from "./components/launch/PermissionCheckerWindow";
 import { SourceSelector } from "./components/launch/SourceSelector";
 import { GlobalErrorObserver } from "./components/app/GlobalErrorObserver";
@@ -17,12 +19,14 @@ const VideoEditor = lazy(() => import("./components/video-editor/VideoEditor"));
 export default function App() {
   const { t } = useI18n();
   const [windowType, setWindowType] = useState('');
+  // The Notes window is addressed by its own query flag (`createNotesWindow`).
+  const showNotes = new URLSearchParams(window.location.search).get('showNotes') === 'true';
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const type = params.get('windowType') || '';
     setWindowType(type);
-    if (type === 'hud-overlay' || type === 'source-selector') {
+    if (type === 'hud-overlay' || type === 'source-selector' || type === 'countdown-overlay') {
       document.body.style.background = 'transparent';
       document.documentElement.style.background = 'transparent';
       document.body.style.overflow = 'hidden';
@@ -44,6 +48,9 @@ export default function App() {
       break;
     case 'source-selector':
       content = <SourceSelector />;
+      break;
+    case 'countdown-overlay':
+      content = <CountdownOverlay />;
       break;
     case 'permission-checker':
       content = <PermissionCheckerWindow />;
@@ -76,7 +83,7 @@ export default function App() {
   return (
     <>
       <GlobalErrorObserver />
-      {content}
+      {showNotes ? <NotesWindow /> : content}
       <Toaster theme="dark" className="pointer-events-auto" />
     </>
   );

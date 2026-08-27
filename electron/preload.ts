@@ -119,6 +119,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       cameraEnabled?: boolean
       cameraShape?: 'rounded' | 'square' | 'circle'
       cameraSizePercent?: number
+      cameraDeviceId?: string
+      cameraDeviceName?: string
       frameRate?: number
     maxLongEdge?: number
     bitrateScale?: number
@@ -155,6 +157,32 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const listener = () => callback()
     ipcRenderer.on('source-selector-closed', listener)
     return () => ipcRenderer.removeListener('source-selector-closed', listener)
+  },
+  // Countdown overlay window (W3-e): driven by the HUD's countdown timer. `runId`
+  // identifies one countdown so stale ticks after a cancel are ignored.
+  showCountdownOverlay: (value: number, runId: number) => {
+    return ipcRenderer.invoke('countdown-overlay-show', value, runId)
+  },
+  setCountdownOverlayValue: (value: number, runId: number) => {
+    return ipcRenderer.invoke('countdown-overlay-set-value', value, runId)
+  },
+  hideCountdownOverlay: (runId: number) => {
+    return ipcRenderer.invoke('countdown-overlay-hide', runId)
+  },
+  onCountdownOverlayValue: (callback: (value: number | null, runId: number) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, value: number | null, runId: number) =>
+      callback(value, runId)
+    ipcRenderer.on('countdown-overlay-value', listener)
+    return () => ipcRenderer.removeListener('countdown-overlay-value', listener)
+  },
+  // Notes window (W3-e): opens once, focuses on repeat; `closed` is echoed to the HUD.
+  openNotes: () => {
+    return ipcRenderer.invoke('open-notes')
+  },
+  onNotesWindowClosed: (callback: () => void) => {
+    const listener = () => callback()
+    ipcRenderer.on('notes-window-closed', listener)
+    return () => ipcRenderer.removeListener('notes-window-closed', listener)
   },
   setStopRecordingShortcut: (accelerator: string) => {
     return ipcRenderer.invoke('set-stop-recording-shortcut', accelerator)
