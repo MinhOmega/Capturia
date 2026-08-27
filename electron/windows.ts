@@ -44,7 +44,7 @@ ipcMain.on('hud-overlay-resize', () => {
   if (!hudOverlayWindow || hudOverlayWindow.isDestroyed()) return;
   // Re-apply always-on-top so the recording bar stays visible over other apps
   hudOverlayWindow.setAlwaysOnTop(true, 'screen-saver');
-  hudOverlayWindow.setVisibleOnAllWorkspaces(true);
+  hudOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 });
 
 ipcMain.on('hud-overlay-restore', () => {
@@ -55,7 +55,7 @@ ipcMain.on('hud-overlay-restore', () => {
   }
   hudOverlayWindow.showInactive();
   hudOverlayWindow.setAlwaysOnTop(true, 'screen-saver');
-  hudOverlayWindow.setVisibleOnAllWorkspaces(true);
+  hudOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 });
 
 export function createHudOverlayWindow(): BrowserWindow {
@@ -107,11 +107,14 @@ export function createHudOverlayWindow(): BrowserWindow {
 
   // Re-apply always-on-top after creation and after show — some Linux X11 WMs
   // ignore the constructor option and need a post-show re-apply.
+  // `visibleOnFullScreen` (macOS) lets the HUD follow the user across Spaces and
+  // stay visible over a fullscreen app instead of staying pinned to the Space it
+  // was first opened on. Wayland compositors reject the workspace hint entirely.
   win.setAlwaysOnTop(true, 'screen-saver');
-  win.setVisibleOnAllWorkspaces(!isLinuxWayland);
+  win.setVisibleOnAllWorkspaces(!isLinuxWayland, { visibleOnFullScreen: true });
   win.once('show', () => {
     win.setAlwaysOnTop(true, 'screen-saver');
-    win.setVisibleOnAllWorkspaces(!isLinuxWayland);
+    win.setVisibleOnAllWorkspaces(!isLinuxWayland, { visibleOnFullScreen: true });
   });
 
   // Safety net: if the WM drops always-on-top, re-apply immediately.
@@ -234,6 +237,12 @@ export function createSourceSelectorWindow(): BrowserWindow {
 
   attachDevWindowLogging(win, 'source-selector')
 
+  // Follow the user across macOS Spaces so the picker appears on the active
+  // desktop (or over a fullscreen app) regardless of where the HUD was opened.
+  if (process.platform === 'darwin') {
+    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  }
+
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL + '?windowType=source-selector')
   } else {
@@ -275,6 +284,12 @@ export function createPermissionCheckerWindow(): BrowserWindow {
   })
 
   attachDevWindowLogging(win, 'permission-checker')
+
+  // Same Spaces behaviour as the HUD and the source selector: the checker is
+  // opened from the HUD and must show up where the user currently is.
+  if (process.platform === 'darwin') {
+    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  }
 
   permissionCheckerWindow = win
   win.on('closed', () => {
