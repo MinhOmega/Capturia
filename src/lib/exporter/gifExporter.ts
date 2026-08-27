@@ -8,6 +8,7 @@ import { effectiveToSourceMsWithSegments, getEffectiveDurationMsWithSegments } f
 import type { SubtitleCue } from '@/lib/analysis/types';
 import type { CursorStyleConfig, CursorTrack } from '@/lib/cursor';
 import { getPlatform } from '@/utils/platformUtils';
+import { resolveSourceDurationMs } from './sourceDuration';
 
 const GIF_WORKER_URL = new URL('gif.js/dist/gif.worker.js', import.meta.url).toString();
 
@@ -38,6 +39,8 @@ interface GifExporterConfig {
   onProgress?: (progress: ExportProgress) => void;
   playbackSpeed?: number;
   segments?: VideoSegment[];
+  /** Probed real duration of the source (ms); preferred over `video.duration`. */
+  sourceDurationMs?: number;
 }
 
 /**
@@ -194,7 +197,8 @@ export class GifExporter {
       }
 
       // Calculate effective duration and frame count (excluding trim regions)
-      const effectiveDuration = this.getEffectiveDuration(videoInfo.duration);
+      const sourceDurationSec = resolveSourceDurationMs(videoInfo.duration, this.config.sourceDurationMs) / 1000;
+      const effectiveDuration = this.getEffectiveDuration(sourceDurationSec);
       const totalFrames = Math.ceil(effectiveDuration * this.config.frameRate);
       
       // Calculate frame delay in milliseconds (gif.js uses ms)

@@ -40,6 +40,8 @@ const videoAudioContextCache = new WeakMap<HTMLVideoElement, {
 interface VideoPlaybackProps {
   videoPath: string;
   onDurationChange: (duration: number) => void;
+  /** Real end of an inflated WebM found by the background probe (seconds). */
+  onSourceDurationProbed?: (durationSec: number) => void;
   onTimeUpdate: (time: number) => void;
   currentTime: number;
   onPlayStateChange: (playing: boolean) => void;
@@ -91,6 +93,7 @@ export interface VideoPlaybackRef {
 const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
   videoPath,
   onDurationChange,
+  onSourceDurationProbed,
   onTimeUpdate,
   currentTime,
   onPlayStateChange,
@@ -1081,6 +1084,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
           if (actualEnd > 0 && actualEnd < reportedDuration * 0.8) {
             console.warn('[VideoPlayback] WebM duration correction: reported', reportedDuration, 's → actual', actualEnd, 's');
             onDurationChange(actualEnd);
+            onSourceDurationProbed?.(actualEnd);
           }
           cleanupProbe();
         };

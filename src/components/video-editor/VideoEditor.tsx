@@ -366,6 +366,16 @@ export default function VideoEditor() {
   const [settingsPanelVisible, setSettingsPanelVisible] = useState(true);
   const [timelinePanelVisible, setTimelinePanelVisible] = useState(true);
 
+  // Real source duration (ms) found by VideoPlayback's WebM probe, keyed by the
+  // source it was measured for so a stale probe never applies to a new video.
+  const [probedSourceDuration, setProbedSourceDuration] = useState<{ videoPath: string; ms: number } | null>(null);
+  const probedSourceDurationMs = probedSourceDuration?.videoPath === videoPath ? probedSourceDuration.ms : undefined;
+  const handleSourceDurationProbed = useCallback((durationSec: number) => {
+    if (videoPath && Number.isFinite(durationSec) && durationSec > 0) {
+      setProbedSourceDuration({ videoPath, ms: durationSec * 1000 });
+    }
+  }, [videoPath]);
+
   // Reclaim OPFS source copies left behind by a previous session (localSourceFile.ts).
   useEffect(() => {
     void clearStaleSourceCache().catch((error) => {
@@ -1991,6 +2001,7 @@ export default function VideoEditor() {
           cursorTrack,
           cursorStyle,
           segments,
+          sourceDurationMs: probedSourceDurationMs,
           onProgress: (progress: ExportProgress) => {
             setExportProgress(progress);
           },
@@ -2120,6 +2131,7 @@ export default function VideoEditor() {
               limiterDb: audioLimiterDb,
             },
             segments,
+            sourceDurationMs: probedSourceDurationMs,
             onProgress: (progress: ExportProgress) => {
               setExportProgress(progress);
             },
@@ -2214,7 +2226,7 @@ export default function VideoEditor() {
       exportCancelledRef.current = false;
       setActiveBatchExport(null);
     }
-  }, [videoPath, wallpaper, zoomRegions, zoomRegionsByAspect, trimRegions, shadowIntensity, showBlur, motionBlurEnabled, borderRadius, padding, activeCropRegion, cropRegionsByAspect, sourceAspectRatio, annotationRegions, subtitleCues, isPlaying, normalizedExportAspectRatios, exportQuality, locale, sourceFrameRate, sourceHasAudio, audioEnabled, audioGain, audioNormalizeLoudness, audioTargetLufs, audioLimiterDb, audioEditRegions, cursorTrack, cursorStyle, t, diagnosticLabels, saveAgainToastAction, showExportSuccessToast, stashUnsavedExport]);
+  }, [videoPath, wallpaper, zoomRegions, zoomRegionsByAspect, trimRegions, shadowIntensity, showBlur, motionBlurEnabled, borderRadius, padding, activeCropRegion, cropRegionsByAspect, sourceAspectRatio, annotationRegions, subtitleCues, isPlaying, normalizedExportAspectRatios, exportQuality, locale, sourceFrameRate, sourceHasAudio, audioEnabled, audioGain, audioNormalizeLoudness, audioTargetLufs, audioLimiterDb, audioEditRegions, cursorTrack, cursorStyle, t, diagnosticLabels, saveAgainToastAction, showExportSuccessToast, stashUnsavedExport, probedSourceDurationMs]);
 
   const handleOpenExportDialog = useCallback(async () => {
     if (!videoPath) {
@@ -2503,6 +2515,7 @@ export default function VideoEditor() {
                       ref={videoPlaybackRef}
                       videoPath={videoPath || ''}
                       onDurationChange={setDuration}
+                      onSourceDurationProbed={handleSourceDurationProbed}
                       onTimeUpdate={handleTimeUpdate}
                       currentTime={currentTime}
                       onPlayStateChange={setIsPlaying}
