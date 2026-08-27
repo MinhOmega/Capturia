@@ -48,7 +48,11 @@ import {
   calculateOutputDimensions,
   calculateMp4ExportPlan,
   clearStaleSourceCache,
+  buildExportDiagnosticMessage,
+  buildSaveDiagnosticMessage,
+  type ExportDiagnosticLabels,
 } from "@/lib/exporter";
+import { getExportFolder, parentDirectoryOf, saveUserPreferences } from "@/lib/userPreferences";
 import { ASPECT_RATIOS, type AspectRatio, getAspectRatioValue } from "@/utils/aspectRatioUtils";
 import { getAssetPath } from "@/lib/assetPath";
 import { useShortcuts } from "@/contexts/ShortcutsContext";
@@ -300,6 +304,20 @@ function normalizeCursorTrack(input: unknown): CursorTrack | null {
   };
 }
 
+interface UnsavedExport {
+  arrayBuffer: ArrayBuffer;
+  fileName: string;
+  format: 'mp4' | 'gif';
+}
+
+/** Persist the folder of a just-saved export so the next save dialog opens there. */
+function rememberExportFolder(savedPath: string): void {
+  const folder = parentDirectoryOf(savedPath);
+  if (folder) {
+    saveUserPreferences({ exportFolder: folder });
+  }
+}
+
 export default function VideoEditor() {
   const { t, locale } = useI18n();
   const [videoPath, setVideoPath] = useState<string | null>(null);
@@ -342,6 +360,9 @@ export default function VideoEditor() {
   const [showExportDialog, setShowExportDialog] = useState(false);
   const [exportDialogAnim, setExportDialogAnim] = useState<'idle' | 'minimizing' | 'maximizing'>('idle');
   const [exportedFilePath, setExportedFilePath] = useState<string | undefined>(undefined);
+  // Finished export blob whose write failed; kept so the user can pick another location.
+  const [unsavedExport, setUnsavedExport] = useState<UnsavedExport | null>(null);
+  const unsavedExportRef = useRef<UnsavedExport | null>(null);
   const [settingsPanelVisible, setSettingsPanelVisible] = useState(true);
   const [timelinePanelVisible, setTimelinePanelVisible] = useState(true);
 
@@ -1819,6 +1840,87 @@ export default function VideoEditor() {
     }));
   }, [audioEditRegions, duration, roughCutSuggestions, setSelectedZoomIdForActiveAspect, t]);
 
+  const showExportSuccessToast = useCallback((filePath: string) => {
+    toast.success(t('export.exportedTo', { path: filePath }), {
+      action: {
+        label: t('export.showInFolder'),
+        onClick: async () => {
+          try {
+            const result = await window.electronAPI.revealInFolder(filePath);
+            if (!result.success) {
+              toast.error(result.error || result.message || t('export.revealFailed'));
+            }
+          } catch (err) {
+            toast.error(String(err));
+          }
+        },
+      },
+    });
+  }, [t]);
+
+  const diagnosticLabels = useMemo<ExportDiagnosticLabels>(() => ({
+    exportFailed: t('export.diag.exportFailed'),
+    saveFailed: t('export.diag.saveFailed'),
+    reason: t('export.diag.reason'),
+    source: t('export.diag.source'),
+    output: t('export.diag.output'),
+    codec: t('export.diag.codec'),
+    bitrate: t('export.diag.bitrate'),
+    videoEncoder: t('export.diag.videoEncoder'),
+    available: t('export.diag.available'),
+    unavailable: t('export.diag.unavailable'),
+  }), [t]);
+
+  const stashUnsavedExport = useCallback((pending: UnsavedExport | null) => {
+    unsavedExportRef.current = pending;
+    setUnsavedExport(pending);
+  }, []);
+
+  // Re-save a finished export whose write failed (D10): pick a new location and
+  // write the retained blob. Reads the ref so the toast action never goes stale.
+  const handleSaveUnsavedExport = useCallback(async () => {
+    const pending = unsavedExportRef.current;
+    if (!pending) return;
+    const formatLabel = pending.format === 'gif' ? 'GIF' : 'Video';
+    const fallbackKey = pending.format === 'gif' ? 'editor.saveGifFailed' : 'editor.saveVideoFailed';
+    try {
+      const pickResult = await window.electronAPI.pickSaveFilePath(pending.fileName, locale, getExportFolder());
+      if (pickResult.cancelled || !pickResult.path) {
+        toast.info(t('editor.exportCancelled'));
+        return;
+      }
+      const saveResult = await window.electronAPI.saveExportedVideo(
+        pending.arrayBuffer,
+        pending.fileName,
+        locale,
+        { targetFilePath: pickResult.path },
+      );
+      if (saveResult.success && saveResult.path) {
+        stashUnsavedExport(null);
+        setExportError(null);
+        setExportedFilePath(saveResult.path);
+        rememberExportFolder(saveResult.path);
+        showExportSuccessToast(saveResult.path);
+      } else if (!saveResult.cancelled) {
+        const message = buildSaveDiagnosticMessage(formatLabel, saveResult.message || t(fallbackKey), diagnosticLabels);
+        setExportError(message);
+        toast.error(saveResult.message || t(fallbackKey));
+      }
+    } catch (error) {
+      console.error('Error saving unsaved export:', error);
+      const reason = error instanceof Error ? error.message : String(error);
+      setExportError(buildSaveDiagnosticMessage(formatLabel, reason, diagnosticLabels));
+      toast.error(t(fallbackKey));
+    }
+  }, [locale, t, diagnosticLabels, showExportSuccessToast, stashUnsavedExport]);
+
+  const saveAgainToastAction = useMemo(() => ({
+    label: t('export.saveAgain'),
+    onClick: () => {
+      void handleSaveUnsavedExport();
+    },
+  }), [t, handleSaveUnsavedExport]);
+
   const handleExport = useCallback(async (settings: ExportSettings, preSelectedSavePath?: string) => {
     if (!videoPath) {
       toast.error(t('editor.noVideoLoaded'));
@@ -1835,6 +1937,7 @@ export default function VideoEditor() {
     setExportProgress(null);
     setExportError(null);
     setActiveBatchExport(null);
+    stashUnsavedExport(null);
     exportCancelledRef.current = false;
 
     let shouldResumePlayback = false;
@@ -1916,13 +2019,24 @@ export default function VideoEditor() {
           } else if (saveResult.success && saveResult.path) {
             showExportSuccessToast(saveResult.path);
             setExportedFilePath(saveResult.path);
+            rememberExportFolder(saveResult.path);
           } else if (!saveResult.success) {
-            setExportError(saveResult.message || t('editor.saveGifFailed'));
-            toast.error(saveResult.message || t('editor.saveGifFailed'));
+            stashUnsavedExport({ arrayBuffer, fileName, format: 'gif' });
+            const reason = saveResult.message || t('editor.saveGifFailed');
+            setExportError(buildSaveDiagnosticMessage('GIF', reason, diagnosticLabels));
+            toast.error(reason, { action: saveAgainToastAction });
           }
         } else {
-          setExportError(result.error || t('editor.gifExportFailed'));
-          toast.error(result.error || t('editor.gifExportFailed'));
+          const reason = result.error || t('editor.gifExportFailed');
+          setExportError(buildExportDiagnosticMessage({
+            formatLabel: 'GIF',
+            reason,
+            sourcePath: videoPath,
+            width: settings.gifConfig.width,
+            height: settings.gifConfig.height,
+            frameRate: settings.gifConfig.frameRate,
+          }, diagnosticLabels));
+          toast.error(reason);
         }
       } else {
         const quality = settings.quality || exportQuality;
@@ -1934,7 +2048,7 @@ export default function VideoEditor() {
 
         let exportDirectoryPath: string | null = null;
         if (ratiosToExport.length > 1) {
-          const pickDirectoryResult = await window.electronAPI.pickExportDirectory(locale);
+          const pickDirectoryResult = await window.electronAPI.pickExportDirectory(locale, getExportFolder());
           if (pickDirectoryResult.cancelled || !pickDirectoryResult.path) {
             toast.info(t('editor.exportCancelled'));
             return;
@@ -2023,8 +2137,18 @@ export default function VideoEditor() {
           }
 
           if (!(result.success && result.blob)) {
-            setExportError(result.error || t('editor.exportFailed'));
-            toast.error(result.error || t('editor.exportFailed'));
+            const reason = result.error || t('editor.exportFailed');
+            setExportError(buildExportDiagnosticMessage({
+              formatLabel: 'Video',
+              reason,
+              sourcePath: videoPath,
+              width: exportWidth,
+              height: exportHeight,
+              frameRate: exportFrameRate,
+              codec: 'avc1.640033',
+              bitrate,
+            }, diagnosticLabels));
+            toast.error(reason);
             aborted = true;
             break;
           }
@@ -2054,12 +2178,15 @@ export default function VideoEditor() {
           } else if (saveResult.success && saveResult.path) {
             completedCount += 1;
             setExportedFilePath(saveResult.path);
+            rememberExportFolder(saveResult.path);
             if (ratiosToExport.length === 1) {
               showExportSuccessToast(saveResult.path);
             }
           } else if (!saveResult.success) {
-            setExportError(saveResult.message || t('editor.saveVideoFailed'));
-            toast.error(saveResult.message || t('editor.saveVideoFailed'));
+            stashUnsavedExport({ arrayBuffer, fileName, format: 'mp4' });
+            const reason = saveResult.message || t('editor.saveVideoFailed');
+            setExportError(buildSaveDiagnosticMessage('Video', reason, diagnosticLabels));
+            toast.error(reason, { action: saveAgainToastAction });
             aborted = true;
             break;
           }
@@ -2072,7 +2199,11 @@ export default function VideoEditor() {
     } catch (error) {
       console.error('Export error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      setExportError(errorMessage);
+      setExportError(buildExportDiagnosticMessage({
+        formatLabel: settings.format === 'gif' ? 'GIF' : 'Video',
+        reason: errorMessage,
+        sourcePath: videoPath,
+      }, diagnosticLabels));
       toast.error(t('editor.exportError', { message: errorMessage }));
     } finally {
       if (shouldResumePlayback) {
@@ -2083,7 +2214,7 @@ export default function VideoEditor() {
       exportCancelledRef.current = false;
       setActiveBatchExport(null);
     }
-  }, [videoPath, wallpaper, zoomRegions, zoomRegionsByAspect, trimRegions, shadowIntensity, showBlur, motionBlurEnabled, borderRadius, padding, activeCropRegion, cropRegionsByAspect, sourceAspectRatio, annotationRegions, subtitleCues, isPlaying, normalizedExportAspectRatios, exportQuality, locale, sourceFrameRate, sourceHasAudio, audioEnabled, audioGain, audioNormalizeLoudness, audioTargetLufs, audioLimiterDb, audioEditRegions, cursorTrack, cursorStyle, t]);
+  }, [videoPath, wallpaper, zoomRegions, zoomRegionsByAspect, trimRegions, shadowIntensity, showBlur, motionBlurEnabled, borderRadius, padding, activeCropRegion, cropRegionsByAspect, sourceAspectRatio, annotationRegions, subtitleCues, isPlaying, normalizedExportAspectRatios, exportQuality, locale, sourceFrameRate, sourceHasAudio, audioEnabled, audioGain, audioNormalizeLoudness, audioTargetLufs, audioLimiterDb, audioEditRegions, cursorTrack, cursorStyle, t, diagnosticLabels, saveAgainToastAction, showExportSuccessToast, stashUnsavedExport]);
 
   const handleOpenExportDialog = useCallback(async () => {
     if (!videoPath) {
@@ -2126,7 +2257,7 @@ export default function VideoEditor() {
     if (!isBatchExport) {
       const ext = exportFormat === 'gif' ? 'gif' : 'mp4';
       const defaultFileName = `export-${Date.now()}.${ext}`;
-      const pickResult = await window.electronAPI.pickSaveFilePath(defaultFileName, locale);
+      const pickResult = await window.electronAPI.pickSaveFilePath(defaultFileName, locale, getExportFolder());
       if (pickResult.cancelled || !pickResult.path) {
         return;
       }
@@ -2225,24 +2356,6 @@ export default function VideoEditor() {
     setShowExportDialog(true);
     setExportDialogAnim('idle');
   }, []);
-
-  const showExportSuccessToast = useCallback((filePath: string) => {
-    toast.success(t('export.exportedTo', { path: filePath }), {
-      action: {
-        label: t('export.showInFolder'),
-        onClick: async () => {
-          try {
-            const result = await window.electronAPI.revealInFolder(filePath);
-            if (!result.success) {
-              toast.error(result.error || result.message || t('export.revealFailed'));
-            }
-          } catch (err) {
-            toast.error(String(err));
-          }
-        },
-      },
-    });
-  }, [t]);
 
   // Auto-clear export progress float after export is done and dialog is closed
   useEffect(() => {
@@ -2631,6 +2744,8 @@ export default function VideoEditor() {
         batchProgress={activeBatchExport}
         isMinimizing={exportDialogAnim === 'minimizing'}
         onMinimizeEnd={handleMinimizeEnd}
+        unsavedExport={unsavedExport ? { fileName: unsavedExport.fileName, format: unsavedExport.format } : null}
+        onSaveUnsavedExport={handleSaveUnsavedExport}
       />
       {(isExporting || exportProgress || exportError) && !showExportDialog && (
         <ExportProgressFloat

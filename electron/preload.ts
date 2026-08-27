@@ -141,11 +141,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   revealInFolder: (filePath: string) => {
     return ipcRenderer.invoke('reveal-in-folder', filePath)
   },
-  pickSaveFilePath: (fileName: string, locale?: string) => {
-    return ipcRenderer.invoke('pick-save-file-path', fileName, locale)
+  pickSaveFilePath: (fileName: string, locale?: string, exportFolder?: string) => {
+    return ipcRenderer.invoke('pick-save-file-path', fileName, locale, exportFolder)
   },
-  pickExportDirectory: (locale?: string) => {
-    return ipcRenderer.invoke('pick-export-directory', locale)
+  pickExportDirectory: (locale?: string, exportFolder?: string) => {
+    return ipcRenderer.invoke('pick-export-directory', locale, exportFolder)
   },
   saveExportedVideo: (
     videoData: ArrayBuffer,
