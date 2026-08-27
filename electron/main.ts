@@ -1052,6 +1052,13 @@ appReady?.then(async () => {
   ipcMain.on('app-quit', () => {
     app.quit()
   })
+  ipcMain.handle('show-about', async () => {
+    if (usesNativeAboutPanel(process.platform)) {
+      app.showAboutPanel()
+      return
+    }
+    await showAboutDialog()
+  })
 
   // Legacy HUD path: a raw accelerator string. Registered through the shared
   // manager and written through to shortcuts.json so the editor's dialog and
