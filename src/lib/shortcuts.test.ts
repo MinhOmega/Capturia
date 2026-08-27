@@ -6,6 +6,7 @@ import {
   formatBinding,
   mergeWithDefaults,
   isTextEditingTarget,
+  isArrowKeyOwningTarget,
   DEFAULT_SHORTCUTS,
   SHORTCUT_ACTIONS,
   SHORTCUT_LABEL_KEYS,
@@ -86,6 +87,24 @@ describe('findConflict', () => {
   it('detects fixed arrow key conflict', () => {
     const result = findConflict({ key: 'arrowright' }, 'playPause', config);
     expect(result).toEqual({ type: 'fixed', labelKey: 'shortcuts.seekForward' });
+  });
+
+  it('detects fixed frame-step key conflict', () => {
+    expect(findConflict({ key: ',' }, 'playPause', config)).toEqual({
+      type: 'fixed',
+      labelKey: 'shortcuts.frameBack',
+    });
+    expect(findConflict({ key: '.' }, 'playPause', config)).toEqual({
+      type: 'fixed',
+      labelKey: 'shortcuts.frameForward',
+    });
+  });
+
+  it('keeps every default binding clear of the fixed shortcuts', () => {
+    for (const action of SHORTCUT_ACTIONS) {
+      const conflict = findConflict(DEFAULT_SHORTCUTS[action], action, DEFAULT_SHORTCUTS);
+      expect(conflict, `${action} default collides`).toBeNull();
+    }
   });
 });
 
@@ -362,5 +381,59 @@ describe('isTextEditingTarget', () => {
     delete g.HTMLInputElement;
     delete g.HTMLTextAreaElement;
     expect(isTextEditingTarget({} as EventTarget)).toBe(false);
+  });
+});
+
+describe('isArrowKeyOwningTarget', () => {
+  /** Minimal element: `closest` answers by matching the role/tag it was built with. */
+  class FakeHTMLElement {
+    isContentEditable = false;
+    constructor(private readonly selectors: string[] = []) {}
+    closest(selector: string): FakeHTMLElement | null {
+      const wanted = selector.split(',').map((s) => s.trim());
+      return this.selectors.some((own) => wanted.includes(own)) ? this : null;
+    }
+  }
+  class FakeHTMLInputElement extends FakeHTMLElement {}
+  class FakeHTMLTextAreaElement extends FakeHTMLElement {}
+
+  const g = globalThis as Record<string, unknown>;
+  const saved = {
+    HTMLElement: g.HTMLElement,
+    HTMLInputElement: g.HTMLInputElement,
+    HTMLTextAreaElement: g.HTMLTextAreaElement,
+  };
+
+  beforeEach(() => {
+    g.HTMLElement = FakeHTMLElement;
+    g.HTMLInputElement = FakeHTMLInputElement;
+    g.HTMLTextAreaElement = FakeHTMLTextAreaElement;
+  });
+
+  afterEach(() => {
+    for (const [name, value] of Object.entries(saved)) {
+      if (value === undefined) delete g[name];
+      else g[name] = value;
+    }
+  });
+
+  it('treats text-editing surfaces as owning the arrow keys', () => {
+    expect(isArrowKeyOwningTarget(new FakeHTMLInputElement() as unknown as EventTarget)).toBe(true);
+    const editable = new FakeHTMLElement();
+    editable.isContentEditable = true;
+    expect(isArrowKeyOwningTarget(editable as unknown as EventTarget)).toBe(true);
+  });
+
+  it('treats sliders, selects and other arrow-driven ARIA widgets as owners', () => {
+    for (const own of ['[role="slider"]', 'select', '[role="listbox"]', '[role="tab"]', '[role="menuitem"]']) {
+      expect(isArrowKeyOwningTarget(new FakeHTMLElement([own]) as unknown as EventTarget), own).toBe(true);
+    }
+  });
+
+  it('lets plain elements, buttons and the document body through', () => {
+    expect(isArrowKeyOwningTarget(new FakeHTMLElement() as unknown as EventTarget)).toBe(false);
+    expect(isArrowKeyOwningTarget(new FakeHTMLElement(['button']) as unknown as EventTarget)).toBe(false);
+    expect(isArrowKeyOwningTarget(null)).toBe(false);
+    expect(isArrowKeyOwningTarget({} as EventTarget)).toBe(false);
   });
 });

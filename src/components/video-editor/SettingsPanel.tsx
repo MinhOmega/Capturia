@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -10,7 +10,8 @@ import { Trash2, Download, Crop, X, Bug, Upload, Star, Film, Image, Sparkles, Pa
 import { toast } from "sonner";
 import * as SliderPrimitive from "@radix-ui/react-slider";
 import type { ZoomDepth, ZoomFocus, CropRegion, AnnotationRegion, AnnotationType, FigureData } from "./types";
-import { MAX_ZOOM_SCALE, MIN_ZOOM_SCALE, ZOOM_DEPTH_SCALES } from "./types";
+import { MAX_PLAYBACK_SPEED, MAX_ZOOM_SCALE, MIN_PLAYBACK_SPEED, MIN_ZOOM_SCALE, ZOOM_DEPTH_SCALES } from "./types";
+import { parseCustomPlaybackSpeedInput } from "./customPlaybackSpeed";
 import { getFocusBoundsForScale } from "./videoPlayback/focusUtils";
 import { CropControl } from "./CropControl";
 import { KeyboardShortcutsHelp } from "./KeyboardShortcutsHelp";
@@ -28,6 +29,81 @@ import { BACKGROUND_GRADIENT_PRESETS } from "./backgroundPresets";
 import { DEFAULT_WALLPAPER, isSameBuiltInWallpaper, resolveImageWallpaperUrl, WALLPAPER_PATHS } from "@/lib/wallpaper";
 
 const GRADIENTS = BACKGROUND_GRADIENT_PRESETS;
+
+const SEGMENT_SPEED_PRESETS = [0.25, 0.5, 0.75, 1, 1.5, 1.75, 2, 2.5, 3, 5, 8, 10, 20, 40] as const;
+
+/**
+ * Free-form segment speed. Digits and one decimal separator (comma accepted),
+ * applied live while typing when inside [MIN_PLAYBACK_SPEED, MAX_PLAYBACK_SPEED];
+ * values above the cap are refused via `onError`. The draft mirrors the
+ * segment's speed while unfocused (empty when it is one of the presets), so a
+ * preset click, a pasted speed or a different selection is reflected at once.
+ */
+function SegmentSpeedInput({
+  value,
+  onChange,
+  onError,
+  ariaLabel,
+}: {
+  value: number;
+  onChange: (speed: number) => void;
+  onError: () => void;
+  ariaLabel: string;
+}) {
+  const isPreset = (SEGMENT_SPEED_PRESETS as readonly number[]).includes(value);
+  const [draft, setDraft] = useState(isPreset ? "" : String(value));
+  const [isFocused, setIsFocused] = useState(false);
+
+  const prevValue = useRef(value);
+  if (!isFocused && prevValue.current !== value) {
+    prevValue.current = value;
+    setDraft(isPreset ? "" : String(value));
+  }
+
+  const handleChange = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const result = parseCustomPlaybackSpeedInput(e.target.value);
+      if (result.status === "too-fast") {
+        onError();
+        return;
+      }
+      setDraft(result.draft);
+      if (result.status === "valid") {
+        onChange(result.speed);
+      }
+    },
+    [onChange, onError],
+  );
+
+  const handleBlur = useCallback(() => {
+    setIsFocused(false);
+    const result = parseCustomPlaybackSpeedInput(draft);
+    if (result.status === "valid") {
+      setDraft(String(result.speed));
+    } else {
+      setDraft(isPreset ? "" : String(value));
+    }
+  }, [draft, isPreset, value]);
+
+  return (
+    <div className="flex items-center gap-1">
+      <input
+        type="text"
+        inputMode="decimal"
+        pattern="[0-9]*[.,]?[0-9]*"
+        placeholder={`${MIN_PLAYBACK_SPEED}–${MAX_PLAYBACK_SPEED}`}
+        aria-label={ariaLabel}
+        value={draft}
+        onFocus={() => setIsFocused(true)}
+        onChange={handleChange}
+        onBlur={handleBlur}
+        onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+        className="w-16 text-[10px] bg-white/5 border border-white/10 rounded px-2 py-1 text-white text-center tabular-nums outline-none focus:border-[#34B27B]/50"
+      />
+      <span className="text-[10px] font-semibold text-slate-500">×</span>
+    </div>
+  );
+}
 
 interface SettingsPanelProps {
   selected: string;
@@ -344,9 +420,6 @@ export function SettingsPanel({
       onZoomDelete(selectedZoomId);
     }
   };
-
-  const SEGMENT_SPEED_PRESETS = [0.25, 0.5, 0.75, 1, 1.5, 1.75, 2, 2.5, 3, 5, 8, 10, 20, 40] as const;
-  const [customSegmentSpeed, setCustomSegmentSpeed] = useState("");
 
   const toggleExportAspectRatio = (ratio: AspectRatio) => {
     onPreviewAspectRatioChange?.(ratio);
@@ -700,32 +773,17 @@ export function SettingsPanel({
               ))}
             </div>
 
-            {/* Custom speed input */}
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                const val = parseFloat(customSegmentSpeed);
-                if (val >= 0.25 && val <= 40) {
-                  onSegmentSpeedChange?.(selectedSegment.id, val);
-                  setCustomSegmentSpeed("");
-                }
-              }}
-              className="flex items-center gap-1.5"
-            >
-              <input
-                type="number"
-                min="0.25"
-                max="40"
-                step="0.25"
-                value={customSegmentSpeed}
-                onChange={(e) => setCustomSegmentSpeed(e.target.value)}
-                placeholder="0.25–40"
-                className="flex-1 text-[10px] bg-white/5 border border-white/10 rounded px-2 py-1 text-white outline-none focus:border-[#34B27B]/50"
+            {/* Custom speed input; keyed by segment so a new selection never shows a stale draft */}
+            <div className="flex items-center justify-between rounded-lg border border-white/5 bg-white/[0.03] px-2 py-1.5">
+              <span className="text-[10px] text-slate-500">{t("settings.customPlaybackSpeed")}</span>
+              <SegmentSpeedInput
+                key={selectedSegment.id}
+                value={selectedSegment.speed}
+                ariaLabel={t("settings.customPlaybackSpeed")}
+                onChange={(speed) => onSegmentSpeedChange?.(selectedSegment.id, speed)}
+                onError={() => toast.error(t("settings.maxSpeedError", { max: MAX_PLAYBACK_SPEED }))}
               />
-              <button type="submit" className="text-[10px] text-[#34B27B] hover:text-[#34B27B]/80 px-1.5 py-1">
-                {t("common.apply")}
-              </button>
-            </form>
+            </div>
 
             {/* Delete / Restore segment */}
             {!selectedSegment.deleted ? (

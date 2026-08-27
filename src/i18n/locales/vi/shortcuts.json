@@ -11,6 +11,8 @@
 	"seekForward": "Tua tới",
 	"seekBackward": "Tua lui",
 	"seekFine": "Tua tinh chỉnh (±1s)",
+	"frameBack": "Lùi một khung hình",
+	"frameForward": "Tiến một khung hình",
 	"speedUp": "Tăng tốc",
 	"speedDown": "Giảm tốc",
 	"copySelected": "Sao chép mục đã chọn",

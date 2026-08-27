@@ -11,6 +11,8 @@
 	"seekForward": "Seek Forward",
 	"seekBackward": "Seek Backward",
 	"seekFine": "Fine Seek (±1s)",
+	"frameBack": "Frame Back",
+	"frameForward": "Frame Forward",
 	"speedUp": "Speed Up",
 	"speedDown": "Speed Down",
 	"copySelected": "Copy Selected",
