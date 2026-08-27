@@ -3,6 +3,14 @@ export { VideoFileDecoder } from './videoDecoder';
 export { FrameRenderer } from './frameRenderer';
 export { VideoMuxer } from './muxer';
 export { GifExporter, calculateOutputDimensions } from './gifExporter';
+export {
+  materializeLocalSourceFile,
+  releaseLocalSourceFile,
+  clearStaleSourceCache,
+  type MaterializeOptions,
+  type MaterializeProgress,
+} from './localSourceFile';
+export { MAX_IN_MEMORY_SOURCE_BYTES } from './sourceFileLimits';
 export { calculateMp4ExportPlan, resolveExportFrameRate, normalizeExportSourceFrameRate } from './mp4ExportPlan';
 export type { 
   ExportConfig, 

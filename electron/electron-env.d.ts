@@ -276,6 +276,29 @@ interface Window {
     hudOverlayClose: () => void;
     hudOverlayResize: (width?: number, height?: number) => void;
     hudOverlayRestore: () => void;
+    // W1-c: approved-file reads for the exporter (localSourceFile.ts)
+    readBinaryFile: (filePath: string) => Promise<{
+      success: boolean;
+      data?: ArrayBuffer;
+      path?: string | null;
+      message?: string;
+      error?: string;
+    }>;
+    getReadableFileInfo: (filePath: string) => Promise<{
+      success: boolean;
+      size?: number;
+      mtimeMs?: number;
+      path?: string;
+      message?: string;
+      error?: string;
+    }>;
+    readFileChunk: (filePath: string, offset: number, length: number) => Promise<{
+      success: boolean;
+      data?: ArrayBuffer;
+      bytesRead?: number;
+      message?: string;
+      error?: string;
+    }>;
   }
 }
 

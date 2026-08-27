@@ -22,7 +22,7 @@ export interface ExportProgress {
   totalFrames: number;
   percentage: number;
   estimatedTimeRemaining: number; // in seconds
-  phase?: 'extracting' | 'rendering' | 'finalizing'; // Phase of export
+  phase?: 'preparing' | 'extracting' | 'rendering' | 'finalizing'; // Phase of export ('preparing' = source copy before decode)
   phaseDetailKey?: string; // i18n key for current sub-step
   renderProgress?: number; // 0-100, progress of GIF rendering phase
   updatedAtMs?: number; // wall-clock timestamp for last progress event

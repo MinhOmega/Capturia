@@ -228,4 +228,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getCurrentVideoAnalysis: (videoPath?: string) => {
     return ipcRenderer.invoke('analysis-get-current', videoPath)
   },
+  // W1-c: approved-file reads for the exporter (localSourceFile.ts)
+  readBinaryFile: (filePath: string) => {
+    return ipcRenderer.invoke('read-binary-file', filePath)
+  },
+  getReadableFileInfo: (filePath: string) => {
+    return ipcRenderer.invoke('get-readable-file-info', filePath)
+  },
+  readFileChunk: (filePath: string, offset: number, length: number) => {
+    return ipcRenderer.invoke('read-file-chunk', filePath, offset, length)
+  },
 })
