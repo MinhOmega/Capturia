@@ -6,7 +6,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
-import Block from '@uiw/react-color-block';
+import ColorPicker from '@/components/ui/color-picker';
 import { Trash2, Download, Crop, X, Bug, Upload, Star, Film, Image, Sparkles, Palette, Captions, Scissors, ScanSearch, AudioWaveform, WandSparkles } from "lucide-react";
 import { toast } from "sonner";
 import * as SliderPrimitive from "@radix-ui/react-slider";
@@ -1271,20 +1271,18 @@ export function SettingsPanel({
                   </TabsContent>
                   
                   <TabsContent value="color" className="mt-0">
-                    <div className="p-1">
-                      <Block
-                        color={selectedColor}
-                        colors={colorPalette}
-                        onChange={(color) => {
-                          setSelectedColor(color.hex);
-                          onWallpaperChange(color.hex);
-                        }}
-                        style={{
-                          width: '100%',
-                          borderRadius: '8px',
-                        }}
-                      />
-                    </div>
+                    <ColorPicker
+                      selectedColor={selectedColor}
+                      colorPalette={colorPalette}
+                      onUpdateColor={(color) => {
+                        setSelectedColor(color);
+                        onWallpaperChange(color);
+                      }}
+                      translations={{
+                        colorWheel: t("settings.colorWheel"),
+                        colorPalette: t("settings.colorPalette"),
+                      }}
+                    />
                   </TabsContent>
                   
                   <TabsContent value="gradient" className="mt-0">

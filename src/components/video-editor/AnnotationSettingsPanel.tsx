@@ -3,7 +3,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Copy, Trash2, Type, Image as ImageIcon, Upload, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, ChevronDown, Info } from "lucide-react";
 import { toast } from "sonner";
-import Block from "@uiw/react-color-block";
+import ColorPicker from "@/components/ui/color-picker";
 import type { AnnotationRegion, AnnotationType, ArrowDirection, FigureData } from "./types";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -85,6 +85,10 @@ export function AnnotationSettingsPanel({
     "#9B59B6", "#E91E63", "#00BCD4", "#FF5722", "#8BC34A", "#FFC107",
     "#34B27B", "#000000", "#607D8B", "#795548",
   ];
+  const colorPickerTranslations = {
+    colorWheel: t("settings.colorWheel"),
+    colorPalette: t("settings.colorPalette"),
+  };
 
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
@@ -287,7 +291,12 @@ export function AnnotationSettingsPanel({
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-[260px] p-3 bg-[#1a1a1c] border border-white/10 rounded-xl shadow-xl">
-                      <Block color={annotation.style.color} colors={colorPalette} onChange={(color) => onStyleChange({ color: color.hex })} style={{ borderRadius: "8px" }} />
+                      <ColorPicker
+                        selectedColor={annotation.style.color}
+                        colorPalette={colorPalette}
+                        onUpdateColor={(color) => onStyleChange({ color })}
+                        translations={colorPickerTranslations}
+                      />
                     </PopoverContent>
                   </Popover>
                 </div>
@@ -307,15 +316,13 @@ export function AnnotationSettingsPanel({
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-[260px] p-3 bg-[#1a1a1c] border border-white/10 rounded-xl shadow-xl">
-                      <Block
-                        color={annotation.style.backgroundColor === "transparent" ? "#000000" : annotation.style.backgroundColor}
-                        colors={colorPalette}
-                        onChange={(color) => onStyleChange({ backgroundColor: color.hex })}
-                        style={{ borderRadius: "8px" }}
+                      <ColorPicker
+                        selectedColor={annotation.style.backgroundColor}
+                        colorPalette={colorPalette}
+                        onUpdateColor={(backgroundColor) => onStyleChange({ backgroundColor })}
+                        clearBackgroundOption
+                        translations={{ ...colorPickerTranslations, clearBackground: t("settings.annotation.clearBackground") }}
                       />
-                      <Button variant="ghost" size="sm" className="w-full mt-2 text-xs h-7 hover:bg-white/5 text-slate-400" onClick={() => onStyleChange({ backgroundColor: "transparent" })}>
-                        {t("settings.annotation.clearBackground")}
-                      </Button>
                     </PopoverContent>
                   </Popover>
                 </div>
@@ -404,17 +411,17 @@ export function AnnotationSettingsPanel({
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-[260px] p-3 bg-[#1a1a1c] border border-white/10 rounded-xl shadow-xl">
-                  <Block
-                    color={annotation.figureData?.color || "#34B27B"}
-                    colors={colorPalette}
-                    onChange={(color) => {
+                  <ColorPicker
+                    selectedColor={annotation.figureData?.color || "#34B27B"}
+                    colorPalette={colorPalette}
+                    onUpdateColor={(color) => {
                       const newFigureData: FigureData = {
                         ...annotation.figureData!,
-                        color: color.hex,
+                        color,
                       };
                       onFigureDataChange?.(newFigureData);
                     }}
-                    style={{ borderRadius: "8px" }}
+                    translations={colorPickerTranslations}
                   />
                 </PopoverContent>
               </Popover>

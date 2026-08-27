@@ -55,6 +55,8 @@
 	"background": "背景",
 	"backgroundImage": "图片",
 	"backgroundColor": "纯色",
+	"colorWheel": "颜色轮",
+	"colorPalette": "颜色调色板",
 	"backgroundGradient": "渐变",
 	"uploadCustom": "上传自定义",
 	"cropDialogTitle": "裁剪视频",
