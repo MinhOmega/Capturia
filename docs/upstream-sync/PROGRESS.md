@@ -93,3 +93,6 @@ Newest entries first. Each entry: date, cycle stage, what happened, verification
   W3-b/W3-d wait for W2-c; W3-e waits for W3-a.
 - W2-c (annotations + background) reviewed and merged (ff). **Wave 2 complete.** Tree: lint 0 err / 116 warn,
   tsc + typecheck:test clean, i18n 481 keys, 77 files / 751 tests. Review: `reviews/W2-c-annotations.md`.
+- Spawned W3-b (copy/paste, frame step, custom speed input) and W3-f (auto-follow zoom, B2-3) after
+  wave 2 closed. Running now: W3-a, W3-c, W3-b, W3-f. Queued: W3-d (motion blur + native aspect, after
+  W3-f), W3-e (devices + notes, after W3-a).
