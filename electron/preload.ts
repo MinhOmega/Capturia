@@ -265,4 +265,54 @@ contextBridge.exposeInMainWorld('electronAPI', {
   readFileChunk: (filePath: string, offset: number, length: number) => {
     return ipcRenderer.invoke('read-file-chunk', filePath, offset, length)
   },
+
+  // W3-c: global shortcuts, application menu, lifecycle flush, diagnostics
+  updateGlobalShortcut: (action: 'openApp' | 'stopRecording', binding: { key: string; ctrl?: boolean; shift?: boolean; alt?: boolean }) => {
+    return ipcRenderer.invoke('update-global-shortcut', action, binding)
+  },
+  getGlobalShortcuts: () => {
+    return ipcRenderer.invoke('get-global-shortcuts')
+  },
+  appQuit: () => {
+    ipcRenderer.send('app-quit')
+  },
+  /** Native menu actions forwarded to the editor renderer (see main.ts `sendEditorMenuAction`). */
+  onEditorMenuAction: (callback: (action: EditorMenuAction) => void) => {
+    const listeners = EDITOR_MENU_ACTIONS.map((action) => {
+      const listener = () => callback(action)
+      ipcRenderer.on(action, listener)
+      return () => ipcRenderer.removeListener(action, listener)
+    })
+    return () => {
+      for (const dispose of listeners) dispose()
+    }
+  },
+  /** Main asks the editor to write its pending auto-save before the window closes / the app quits. */
+  onRequestSaveBeforeClose: (callback: () => void) => {
+    const listener = () => callback()
+    ipcRenderer.on('request-save-before-close', listener)
+    return () => ipcRenderer.removeListener('request-save-before-close', listener)
+  },
+  saveBeforeCloseDone: () => {
+    ipcRenderer.send('save-before-close-done')
+  },
+  saveDiagnostic: (payload?: { error?: string; stack?: string; projectState?: unknown; logs?: string[]; locale?: string }) => {
+    return ipcRenderer.invoke('save-diagnostic', payload)
+  },
+  getMainLogTail: (lines?: number) => {
+    return ipcRenderer.invoke('get-main-log-tail', lines)
+  },
 })
+
+const EDITOR_MENU_ACTIONS = [
+  'menu-undo',
+  'menu-redo',
+  'menu-import-video',
+  'menu-export',
+  'menu-return-to-recorder',
+  'menu-toggle-timeline',
+  'menu-toggle-settings',
+  'menu-open-shortcuts',
+] as const
+
+type EditorMenuAction = (typeof EDITOR_MENU_ACTIONS)[number]

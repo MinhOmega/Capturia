@@ -9,6 +9,8 @@ const APP_ROOT = path.join(__dirname, '..')
 const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL']
 const RENDERER_DIST = path.join(APP_ROOT, 'dist')
 const LINUX_SESSION_TYPE = (process.env['XDG_SESSION_TYPE'] || '').toLowerCase()
+// e2e / CI: create windows but never show them.
+const HEADLESS = process.env['HEADLESS'] === 'true'
 
 let hudOverlayWindow: BrowserWindow | null = null;
 let permissionCheckerWindow: BrowserWindow | null = null;
@@ -180,7 +182,8 @@ export function createEditorWindow(): BrowserWindow {
     alwaysOnTop: false,
     skipTaskbar: false,
     title: 'Capturia',
-    backgroundColor: '#000000',
+    backgroundColor: '#09090b',
+    show: false, // shown via ready-to-show to avoid a white flash on first load
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
       nodeIntegration: false,
@@ -194,6 +197,26 @@ export function createEditorWindow(): BrowserWindow {
 
   // Maximize the window by default
   win.maximize();
+
+  // The editor renders its own File/Edit/View menu bar in the custom titlebar,
+  // so hide the native OS menu bar on Windows/Linux (it stays reachable via Alt).
+  // macOS keeps its global menu bar.
+  if (!isMac) {
+    win.setAutoHideMenuBar(true);
+  }
+
+  // Show only once painted to avoid a white flash on cold Vite start.
+  win.once('ready-to-show', () => {
+    if (!HEADLESS) win.show();
+  });
+
+  // Inject the dark background before any React paint so the sub-titlebar area
+  // never flashes white on a cold Vite load.
+  win.webContents.on('dom-ready', () => {
+    win.webContents.insertCSS('html, body, #root { background: #09090b !important; }').catch(() => {
+      // Best-effort cosmetic; ignore if the page is mid-teardown.
+    });
+  });
 
   win.webContents.on('did-finish-load', () => {
     win?.webContents.send('main-process-message', (new Date).toLocaleString())
