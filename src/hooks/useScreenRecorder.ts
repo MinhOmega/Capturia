@@ -2,13 +2,25 @@ import { useState, useRef, useEffect } from "react";
 import { fixWebmDuration } from "@fix-webm-duration/fix";
 import { toast } from "sonner";
 import { computeCameraOverlayRect, type CameraOverlayShape } from "./cameraOverlay";
+import { createRecorderHandle, type RecorderHandle } from "./recorderHandle";
+import {
+  beginStopTransition,
+  canPauseRecording,
+  canRequestDiscard,
+  planNativeStopSideEffects,
+  resolveStopRoute,
+  type RecordingPhase,
+  type RecordingTransitionState,
+} from "./recordingPhase";
 import { useI18n } from "@/i18n";
 import { resolveNativeRecorderStartFailureMessage } from "@/lib/permissions/nativeRecorderErrors";
 import { reportUserActionError } from "@/lib/userErrorFeedback";
 
 type UseScreenRecorderReturn = {
   recording: boolean;
-  recordingState: "idle" | "starting" | "recording" | "stopping" | "paused";
+  recordingState: RecordingPhase;
+  /** Pause/resume is only available on the MediaRecorder path; the native macOS recorder cannot pause yet. */
+  canPause: boolean;
   toggleRecording: () => void;
   pauseRecording: () => void;
   resumeRecording: () => void;
@@ -146,14 +158,18 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
   const recordSystemCursor = options.recordSystemCursor ?? true;
   const microphoneGain = normalizeMicrophoneGain(options.microphoneGain);
   const [recording, setRecording] = useState(false);
-  const [recordingState, setRecordingPhase] = useState<"idle" | "starting" | "recording" | "stopping" | "paused">("idle");
-  const mediaRecorder = useRef<MediaRecorder | null>(null);
+  const [recordingState, setRecordingPhase] = useState<RecordingPhase>("idle");
+  // Mirrors `nativeRecordingActive` for rendering (refs don't re-render): the HUD hides
+  // Pause while the native recorder owns the session.
+  const [nativeSessionActive, setNativeSessionActive] = useState(false);
+  // Wraps the MediaRecorder and streams its chunks to disk (or buffers them in memory
+  // when the stream IPC is unavailable). Null outside a MediaRecorder session.
+  const recorderHandle = useRef<RecorderHandle | null>(null);
   const stream = useRef<MediaStream | null>(null);
   const cameraStream = useRef<MediaStream | null>(null);
   const microphoneStream = useRef<MediaStream | null>(null);
   const microphoneSourceStream = useRef<MediaStream | null>(null);
   const microphoneAudioContext = useRef<AudioContext | null>(null);
-  const chunks = useRef<Blob[]>([]);
   const startTime = useRef<number>(0);
   const compositionCleanup = useRef<(() => void) | null>(null);
   const cursorTrackingActive = useRef(false);
@@ -292,11 +308,32 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
     throw lastError instanceof Error ? lastError : new Error("Failed to create MediaRecorder with available codecs.");
   };
 
+  /** Stop the processed + source microphone streams and close the gain AudioContext. */
+  const releaseMicrophoneCapture = () => {
+    const processedMicStream = microphoneStream.current;
+    if (processedMicStream) {
+      processedMicStream.getTracks().forEach(track => track.stop());
+      microphoneStream.current = null;
+    }
+    const sourceMicStream = microphoneSourceStream.current;
+    if (sourceMicStream && sourceMicStream !== processedMicStream) {
+      sourceMicStream.getTracks().forEach(track => track.stop());
+    }
+    microphoneSourceStream.current = null;
+    if (microphoneAudioContext.current) {
+      void microphoneAudioContext.current.close().catch((error) => {
+        console.warn("Failed to close microphone AudioContext during cleanup.", error);
+      });
+      microphoneAudioContext.current = null;
+    }
+  };
+
   const cleanupActiveMedia = (options: { stopNative?: boolean } = {}) => {
     const stopNative = options.stopNative ?? true;
 
     if (stopNative && nativeRecordingActive.current) {
       nativeRecordingActive.current = false;
+      setNativeSessionActive(false);
       nativeRecordingMetadata.current = null;
       void window.electronAPI?.stopNativeScreenRecording?.().catch((error) => {
         console.warn("Failed to stop native ScreenCaptureKit recorder during cleanup.", error);
@@ -318,31 +355,23 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
       cameraStream.current.getTracks().forEach(track => track.stop());
       cameraStream.current = null;
     }
-    const processedMicStream = microphoneStream.current;
-    if (processedMicStream) {
-      processedMicStream.getTracks().forEach(track => track.stop());
-      microphoneStream.current = null;
-    }
-    const sourceMicStream = microphoneSourceStream.current;
-    if (sourceMicStream && sourceMicStream !== processedMicStream) {
-      sourceMicStream.getTracks().forEach(track => track.stop());
-    }
-    microphoneSourceStream.current = null;
-    if (microphoneAudioContext.current) {
-      void microphoneAudioContext.current.close().catch((error) => {
-        console.warn("Failed to close microphone AudioContext during cleanup.", error);
-      });
-      microphoneAudioContext.current = null;
-    }
+    releaseMicrophoneCapture();
     if (stream.current) {
       stream.current.getTracks().forEach(track => track.stop());
       stream.current = null;
     }
   };
 
-  const stopNativeRecording = async () => {
+  /**
+   * Stop the native ScreenCaptureKit session. With `discard`, main deletes the output
+   * file and the HUD returns to idle without opening the editor. Every exit path goes
+   * through `finally`, so the transition flag and cursor tracker are always reset.
+   */
+  const stopNativeRecording = async (options: { discard?: boolean } = {}) => {
+    const discard = options.discard === true;
     const initialMetadata = nativeRecordingMetadata.current;
     nativeRecordingActive.current = false;
+    setNativeSessionActive(false);
     nativeRecordingMetadata.current = null;
 
     let capturedCursorTrack:
@@ -372,19 +401,23 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
       cursorTrackingActive.current = false;
       try {
         const cursorResult = await window.electronAPI.stopCursorTracking();
-        capturedCursorTrack = cursorResult.track;
+        capturedCursorTrack = discard ? undefined : cursorResult.track;
       } catch (error) {
         console.warn("Failed to retrieve cursor tracking payload for native recording.", error);
       }
     }
 
     try {
-      const stopResult = await window.electronAPI.stopNativeScreenRecording();
+      const stopResult = await window.electronAPI.stopNativeScreenRecording(discard ? { discard: true } : undefined);
       setRecording(false);
       setRecordingPhase("stopping");
       window.electronAPI?.setRecordingState(false);
 
-      if (!stopResult.success || !stopResult.path) {
+      const plan = planNativeStopSideEffects({
+        discard,
+        stopSucceeded: Boolean(stopResult.success && stopResult.path),
+      });
+      if (plan.reportFailure) {
         console.error("Failed to stop native ScreenCaptureKit recording:", stopResult.message);
         reportUserActionError({
           t,
@@ -394,6 +427,10 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
           details: stopResult,
           dedupeKey: "recording.stop.native",
         });
+        return;
+      }
+      if (!plan.openEditor || !stopResult.path) {
+        // Discarded: main already removed the file; nothing to publish.
         return;
       }
 
@@ -432,6 +469,7 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
       setRecording(false);
       window.electronAPI?.setRecordingState(false);
     } finally {
+      discardFlag.current = false;
       transitionInFlight.current = false;
       setRecording(false);
       setRecordingPhase("idle");
@@ -445,7 +483,12 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
       return;
     }
 
-    if (nativeRecordingActive.current) {
+    const recorder = recorderHandle.current?.recorder ?? null;
+    const route = resolveStopRoute({
+      nativeRecordingActive: nativeRecordingActive.current,
+      recorderState: recorder?.state,
+    });
+    if (route === "native") {
       transitionInFlight.current = true;
       setRecording(false);
       setRecordingPhase("stopping");
@@ -453,8 +496,7 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
       void stopNativeRecording();
       return;
     }
-    const recorder = mediaRecorder.current;
-    if (recorder?.state === "recording" || recorder?.state === "paused") {
+    if (route === "media-recorder" && recorder) {
       // Account for any in-progress pause
       if (pauseStartTime.current > 0) {
         cumulativePauseMs.current += Date.now() - pauseStartTime.current;
@@ -486,7 +528,7 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
     return () => {
       if (cleanup) cleanup();
 
-      const recorder = mediaRecorder.current;
+      const recorder = recorderHandle.current?.recorder;
       if (recorder?.state === "recording") {
         recorder.stop();
         return;
@@ -825,6 +867,11 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
     }
   };
 
+  /** The recording continues without the webcam overlay; tell the user instead of failing silently. */
+  const notifyCameraFallback = () => {
+    toast.warning(t("launch.cameraFallback"));
+  };
+
   const startRecording = async () => {
     if (transitionInFlight.current || recordingState !== "idle") {
       return;
@@ -888,6 +935,9 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
             nativeStart.message,
           );
           nativeStart = await startNative(false);
+          if (nativeStart.success) {
+            notifyCameraFallback();
+          }
         }
 
         if (!nativeStart.success) {
@@ -928,6 +978,7 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
             hasMicrophoneAudio: nativeStart.hasMicrophoneAudio === true,
           };
           nativeRecordingActive.current = true;
+          setNativeSessionActive(true);
 
           try {
             const trackingResult = await window.electronAPI.startCursorTracking({
@@ -956,7 +1007,28 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
         }
       }
 
-      const desktopStream = await captureDesktopStream(selectedSource, cursorMode);
+      // Capture screen + microphone in parallel: the gap between the two getUserMedia
+      // calls is the dominant source of mic-vs-video lag at the start of a recording.
+      const screenCapture = captureDesktopStream(selectedSource, cursorMode);
+      const micCapture = captureRequiredMicrophoneStream();
+      // The mic result is awaited below; keep an early rejection from being reported
+      // as unhandled while the screen capture is still pending.
+      micCapture.catch(() => undefined);
+
+      let desktopStream: MediaStream;
+      try {
+        desktopStream = await screenCapture;
+      } catch (error) {
+        // The mic may resolve after cleanupActiveMedia() has already run, which would
+        // leave its tracks (and the OS mic indicator) on. Release it when it settles.
+        void micCapture
+          .then((micStream) => {
+            micStream.getTracks().forEach((track) => track.stop());
+            releaseMicrophoneCapture();
+          })
+          .catch(() => undefined);
+        throw error;
+      }
       stream.current = desktopStream;
       if (!desktopStream) {
         throw new Error("Media stream is not available.");
@@ -1006,8 +1078,7 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
         ),
       );
       
-      chunks.current = [];
-      const micStream = await captureRequiredMicrophoneStream();
+      const micStream = await micCapture;
       microphoneStream.current = micStream;
       const desktopRecordingStream = combineVideoAndAudioStream(desktopStream, micStream);
       const hasMicrophoneAudio = micStream.getAudioTracks().length > 0;
@@ -1029,6 +1100,7 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
           frameRate = composition.frameRate;
         } catch (error) {
           console.warn("Camera capture failed, fallback to screen-only recording.", error);
+          notifyCameraFallback();
         }
       }
 
@@ -1053,6 +1125,7 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
             compositionCleanup.current = null;
           }
           recorder = createMediaRecorderWithFallback(desktopRecordingStream, mimeType, videoBitsPerSecond);
+          notifyCameraFallback();
         } else {
           throw error;
         }
@@ -1061,11 +1134,10 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
       const recordedMimeType = recorder.mimeType || mimeType;
       console.log(`MediaRecorder initialized with ${recordedMimeType}`);
 
-      mediaRecorder.current = recorder;
       recorder.onstart = () => {
         void (async () => {
           try {
-            if (mediaRecorder.current !== recorder || recorder.state !== "recording") return;
+            if (recorderHandle.current?.recorder !== recorder || recorder.state !== "recording") return;
             const trackingResult = await window.electronAPI.startCursorTracking({
               source: {
                 id: typeof selectedSource.id === "string" ? selectedSource.id : undefined,
@@ -1084,21 +1156,39 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
           }
         })();
       };
-      recorder.ondataavailable = e => {
-        if (e.data && e.data.size > 0) chunks.current.push(e.data);
-      };
-      recorder.onstop = async () => {
-        // Discard: skip saving, just clean up
+      // The file name is fixed at start so chunks can stream into it; `store-recorded-video`
+      // finalizes the same file (or writes the in-memory fallback to it) on stop.
+      const videoFileName = `recording-${Date.now()}.webm`;
+      // Sets ondataavailable/onstop/onerror and starts the recorder with a 1000 ms timeslice.
+      const handle = createRecorderHandle(recorder, videoFileName);
+      recorderHandle.current = handle;
+
+      const finalizeRecording = async () => {
+        let recordedBlob: Blob | null = null;
+        let recordError: unknown = null;
+        try {
+          recordedBlob = await handle.recordedBlobPromise;
+        } catch (error) {
+          recordError = error;
+        }
+
+        // Discard: skip saving, drop the partial file, just clean up
         if (discardFlag.current) {
           discardFlag.current = false;
-          chunks.current = [];
           if (cursorTrackingActive.current) {
             cursorTrackingActive.current = false;
             try { await window.electronAPI.stopCursorTracking(); } catch { /* ignore */ }
           }
           cleanupActiveMedia();
-          mediaRecorder.current = null;
+          recorderHandle.current = null;
+          try {
+            await handle.discard();
+          } catch (error) {
+            console.warn("Failed to remove discarded recording stream.", error);
+          }
+          setRecording(false);
           setRecordingPhase("idle");
+          window.electronAPI?.setRecordingState(false);
           transitionInFlight.current = false;
           return;
         }
@@ -1144,18 +1234,29 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
             }
           }
           cleanupActiveMedia();
-          mediaRecorder.current = null;
-          if (chunks.current.length === 0) return;
+          recorderHandle.current = null;
+          if (recordError) {
+            // A chunk failed to reach disk mid-stream: the file is truncated, so drop
+            // it rather than saving a silently partial recording.
+            await handle.discard().catch(() => undefined);
+            throw recordError;
+          }
+          const streamed = handle.isStreaming();
+          if (!streamed && (!recordedBlob || recordedBlob.size === 0)) return;
           const duration = Date.now() - startTime.current - cumulativePauseMs.current;
-          const recordedChunks = chunks.current;
-          const buggyBlob = new Blob(recordedChunks, { type: recordedMimeType });
-          // Clear chunks early to free memory immediately after blob creation
-          chunks.current = [];
           const timestamp = Date.now();
-          const videoFileName = `recording-${timestamp}.webm`;
 
-          const videoBlob = await fixWebmDuration(buggyBlob, duration);
-          const arrayBuffer = await videoBlob.arrayBuffer();
+          let arrayBuffer: ArrayBuffer;
+          if (streamed) {
+            // Bytes are already on disk; main patches the WebM Duration header there.
+            arrayBuffer = new ArrayBuffer(0);
+          } else {
+            // In-memory fallback (stream IPC unavailable or failed to open): fix the
+            // header here as before and hand the whole blob to main.
+            const videoBlob = await fixWebmDuration(recordedBlob as Blob, duration);
+            arrayBuffer = await videoBlob.arrayBuffer();
+            recordedBlob = null;
+          }
           const captureMetadata = {
             frameRate,
             width,
@@ -1164,6 +1265,7 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
             capturedAt: timestamp,
             systemCursorMode,
             hasMicrophoneAudio,
+            durationMs: duration,
             cursorTrack: capturedCursorTrack,
           };
           const videoResult = await window.electronAPI.storeRecordedVideo(arrayBuffer, videoFileName, captureMetadata);
@@ -1200,32 +1302,13 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
           window.electronAPI?.setRecordingState(false);
         }
       };
-      recorder.onerror = (event) => {
-        console.error("MediaRecorder error event:", event);
-        reportUserActionError({
-          t,
-          userMessage: t("launch.recordSaveFailed"),
-          error: event,
-          context: "recording.media-recorder.onerror",
-          dedupeKey: "recording.media-recorder.onerror",
-        });
-        transitionInFlight.current = false;
-        setRecording(false);
-        setRecordingPhase("idle");
-        window.electronAPI?.setRecordingState(false);
-        if (cursorTrackingActive.current) {
-          cursorTrackingActive.current = false;
-          void window.electronAPI.stopCursorTracking().catch((error) => {
-            console.warn("Failed to stop cursor tracking after recorder error.", error);
-          });
-        }
-        cleanupActiveMedia();
-      };
+      // A MediaRecorder `error` rejects `recordedBlobPromise`; finalizeRecording reports
+      // it, drops the partial stream and resets the phase, replacing the old onerror.
+      void finalizeRecording();
       startTime.current = Date.now();
       cumulativePauseMs.current = 0;
       pauseStartTime.current = 0;
       discardFlag.current = false;
-      recorder.start(1000);
       setRecording(true);
       setRecordingPhase("recording");
       window.electronAPI?.setRecordingState(true);
@@ -1238,11 +1321,19 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
         ? t("launch.recordStartFailed")
         : message;
       console.error('Failed to start recording:', error);
-      transitionInFlight.current = false;
-      setRecording(false);
-      setRecordingPhase("idle");
-      window.electronAPI?.setRecordingState(false);
-      cleanupActiveMedia();
+      // If the recorder had already started, let finalizeRecording discard it; it owns
+      // the transition reset in that case.
+      const startedHandle = recorderHandle.current;
+      if (startedHandle && startedHandle.recorder.state !== "inactive") {
+        discardFlag.current = true;
+        startedHandle.recorder.stop();
+      } else {
+        transitionInFlight.current = false;
+        setRecording(false);
+        setRecordingPhase("idle");
+        window.electronAPI?.setRecordingState(false);
+        cleanupActiveMedia();
+      }
       reportUserActionError({
         t,
         userMessage,
@@ -1266,7 +1357,7 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
   };
 
   const pauseRecording = () => {
-    const recorder = mediaRecorder.current;
+    const recorder = recorderHandle.current?.recorder;
     if (!recorder || nativeRecordingActive.current) return;
     if (recorder.state === "recording") {
       pauseStartTime.current = Date.now();
@@ -1276,7 +1367,7 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
   };
 
   const resumeRecording = () => {
-    const recorder = mediaRecorder.current;
+    const recorder = recorderHandle.current?.recorder;
     if (!recorder || nativeRecordingActive.current) return;
     if (recorder.state === "paused") {
       if (pauseStartTime.current > 0) {
@@ -1289,30 +1380,50 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
   };
 
   const discardRecording = () => {
-    if (transitionInFlight.current) return;
-    if (!recording && recordingState !== "recording" && recordingState !== "paused") return;
-    discardFlag.current = true;
-    transitionInFlight.current = true;
-    setRecording(false);
-    setRecordingPhase("stopping");
+    const current: RecordingTransitionState = {
+      phase: recordingState,
+      recording,
+      transitionInFlight: transitionInFlight.current,
+      discardRequested: discardFlag.current,
+    };
+    if (!canRequestDiscard(current)) return;
+
+    const next = beginStopTransition(current, { discard: true });
+    discardFlag.current = next.discardRequested;
+    transitionInFlight.current = next.transitionInFlight;
+    setRecording(next.recording);
+    setRecordingPhase(next.phase);
     window.electronAPI?.setRecordingState(false);
 
-    if (nativeRecordingActive.current) {
-      // For native recording, just stop normally (discard not supported)
-      void window.electronAPI?.stopNativeScreenRecording?.();
+    const recorder = recorderHandle.current?.recorder ?? null;
+    const route = resolveStopRoute({
+      nativeRecordingActive: nativeRecordingActive.current,
+      recorderState: recorder?.state,
+    });
+    if (route === "native") {
+      // Same path as a normal stop so `finally` resets the transition flag, phase and
+      // cursor tracker; main deletes the output file instead of returning it.
+      void stopNativeRecording({ discard: true });
       return;
     }
 
-    const recorder = mediaRecorder.current;
-    if (recorder && (recorder.state === "recording" || recorder.state === "paused")) {
+    if (route === "media-recorder" && recorder) {
+      // finalizeRecording sees discardFlag once the recorder drains and cleans up.
       recorder.stop();
-    } else {
-      cleanupActiveMedia();
-      chunks.current = [];
-      discardFlag.current = false;
-      setRecordingPhase("idle");
-      transitionInFlight.current = false;
+      return;
     }
+
+    cleanupActiveMedia();
+    const handle = recorderHandle.current;
+    recorderHandle.current = null;
+    if (handle) {
+      void handle.discard().catch((error) => {
+        console.warn("Failed to remove discarded recording stream.", error);
+      });
+    }
+    discardFlag.current = false;
+    setRecordingPhase("idle");
+    transitionInFlight.current = false;
   };
 
   const toggleRecording = () => {
@@ -1332,9 +1443,12 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
     void startRecording();
   };
 
+  const canPause = canPauseRecording({ phase: recordingState, nativeRecordingActive: nativeSessionActive });
+
   return {
     recording,
     recordingState,
+    canPause,
     toggleRecording,
     pauseRecording,
     resumeRecording,

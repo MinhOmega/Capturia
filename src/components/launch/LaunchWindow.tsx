@@ -252,6 +252,7 @@ export function LaunchWindow() {
   const {
     recording,
     recordingState,
+    canPause,
     toggleRecording,
     pauseRecording,
     resumeRecording,
@@ -821,19 +822,22 @@ export function LaunchWindow() {
             <RxDragHandleDots2 size={16} className="text-white/30" />
           </div>
 
-          {/* Right: Pause/Resume + Discard */}
+          {/* Right: Pause/Resume + Discard. Pause is hidden while the native macOS
+              recorder owns the session: it cannot pause yet, so the button would lie. */}
           <div className={`flex items-center gap-1 shrink-0 ${styles.electronNoDrag}`}>
-            <button
-              onClick={recordingState === "paused" ? resumeRecording : pauseRecording}
-              className="p-1 rounded hover:bg-white/10 transition-colors"
-              title={recordingState === "paused" ? t("launch.resumeRecording") : t("launch.pauseRecording")}
-            >
-              {recordingState === "paused" ? (
-                <Play size={14} className="text-green-400" />
-              ) : (
-                <Pause size={14} className="text-amber-300" />
-              )}
-            </button>
+            {canPause && (
+              <button
+                onClick={recordingState === "paused" ? resumeRecording : pauseRecording}
+                className="p-1 rounded hover:bg-white/10 transition-colors"
+                title={recordingState === "paused" ? t("launch.resumeRecording") : t("launch.pauseRecording")}
+              >
+                {recordingState === "paused" ? (
+                  <Play size={14} className="text-green-400" />
+                ) : (
+                  <Pause size={14} className="text-amber-300" />
+                )}
+              </button>
+            )}
             <button
               onClick={discardRecording}
               className="p-1 rounded hover:bg-white/10 transition-colors"
