@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import Block from '@uiw/react-color-block';
-import { Trash2, Download, Crop, X, Bug, Upload, Star, Film, Image, Sparkles, Palette, Captions, Scissors, ScanSearch } from "lucide-react";
+import { Trash2, Download, Crop, X, Bug, Upload, Star, Film, Image, Sparkles, Palette, Captions, Scissors, ScanSearch, WandSparkles } from "lucide-react";
 import { toast } from "sonner";
 import * as SliderPrimitive from "@radix-ui/react-slider";
 import type { ZoomDepth, ZoomFocus, CropRegion, AnnotationRegion, AnnotationType, FigureData } from "./types";
@@ -106,7 +106,9 @@ interface SettingsPanelProps {
   cursorStyle?: CursorStyleConfig;
   onCursorStyleChange?: (style: CursorStyleConfig) => void;
   hasCursorTrack?: boolean;
-  onAutoEdit?: () => void;
+  /** Auto-zoom wand: ON suggests zooms around existing regions, OFF removes only the suggested ones. */
+  autoZoomEnabled?: boolean;
+  onToggleAutoZoom?: (enabled: boolean) => void;
   autoEditDisabled?: boolean;
   onAnalyzeCursor?: () => void;
   cursorAnalysisProgress?: number | null;
@@ -261,7 +263,8 @@ export function SettingsPanel({
   cursorStyle = DEFAULT_CURSOR_STYLE,
   onCursorStyleChange,
   hasCursorTrack = true,
-  onAutoEdit,
+  autoZoomEnabled = true,
+  onToggleAutoZoom,
   autoEditDisabled = false,
   onAnalyzeCursor,
   cursorAnalysisProgress = null,
@@ -605,13 +608,21 @@ export function SettingsPanel({
             </Button>
           )}
           <Button
-            onClick={() => onAutoEdit?.()}
+            type="button"
+            onClick={() => onToggleAutoZoom?.(!autoZoomEnabled)}
             variant="outline"
             size="sm"
             disabled={autoEditDisabled}
-            className="mt-2 w-full gap-2 bg-white/5 text-slate-200 border border-white/10 hover:bg-white/10 hover:border-white/20 hover:text-white transition-all h-8 text-xs disabled:opacity-50"
+            aria-pressed={autoZoomEnabled}
+            title={autoZoomEnabled ? t("settings.autoZoomOn") : t("settings.autoZoomOff")}
+            className={cn(
+              "mt-2 w-full gap-2 border transition-all h-8 text-xs disabled:opacity-50",
+              autoZoomEnabled
+                ? "bg-[#34B27B]/15 text-[#34B27B] border-[#34B27B]/30 hover:bg-[#34B27B]/25 hover:border-[#34B27B]/40 hover:text-[#34B27B]"
+                : "bg-white/5 text-slate-200 border-white/10 hover:bg-white/10 hover:border-white/20 hover:text-white",
+            )}
           >
-            <Sparkles className="w-3 h-3 text-[#34B27B]" />
+            <WandSparkles className="w-3 h-3" />
             {t("settings.autoEdit")}
           </Button>
           <div className="mt-2 grid grid-cols-2 gap-2">

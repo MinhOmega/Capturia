@@ -11,9 +11,20 @@ export interface AutoZoomDraft {
   reason: AutoZoomReason;
 }
 
+export interface AutoZoomSpan {
+  startMs: number;
+  endMs: number;
+}
+
 export interface AutoZoomGenerationOptions {
   durationMs: number;
   maxRegions?: number;
+  /**
+   * Time spans that must stay free (e.g. the user's existing zoom regions).
+   * Drafts are carved around them; a remaining piece shorter than
+   * MIN_REGION_DURATION_MS is dropped.
+   */
+  avoidSpans?: AutoZoomSpan[];
 }
 
 type Candidate = {
@@ -414,6 +425,49 @@ function mergeDrafts(drafts: DraftWithWeight[]): DraftWithWeight[] {
   return merged;
 }
 
+function normalizeAvoidSpans(spans: AutoZoomSpan[] | undefined): AutoZoomSpan[] {
+  if (!spans?.length) return [];
+  return spans
+    .map((span) => ({ startMs: Number(span.startMs), endMs: Number(span.endMs) }))
+    .filter((span) => Number.isFinite(span.startMs) && Number.isFinite(span.endMs) && span.endMs > span.startMs)
+    .sort((left, right) => left.startMs - right.startMs);
+}
+
+/**
+ * Cut every draft around the avoid spans. A draft fully inside a span is
+ * dropped; one that straddles a span is split and each piece is kept only when
+ * it is still at least MIN_REGION_DURATION_MS long. Pieces inherit the draft's
+ * focus/depth/reason/weight.
+ */
+function carveAroundSpans(drafts: DraftWithWeight[], avoidSpans: AutoZoomSpan[]): DraftWithWeight[] {
+  if (avoidSpans.length === 0) return drafts;
+
+  const carved: DraftWithWeight[] = [];
+  for (const draft of drafts) {
+    let pieces: AutoZoomSpan[] = [{ startMs: draft.startMs, endMs: draft.endMs }];
+    for (const span of avoidSpans) {
+      const next: AutoZoomSpan[] = [];
+      for (const piece of pieces) {
+        if (span.endMs <= piece.startMs || span.startMs >= piece.endMs) {
+          next.push(piece);
+          continue;
+        }
+        if (span.startMs > piece.startMs) next.push({ startMs: piece.startMs, endMs: span.startMs });
+        if (span.endMs < piece.endMs) next.push({ startMs: span.endMs, endMs: piece.endMs });
+      }
+      pieces = next;
+      if (pieces.length === 0) break;
+    }
+
+    for (const piece of pieces) {
+      if (piece.endMs - piece.startMs < MIN_REGION_DURATION_MS) continue;
+      carved.push({ ...draft, startMs: piece.startMs, endMs: piece.endMs });
+    }
+  }
+
+  return carved;
+}
+
 function limitDrafts(drafts: DraftWithWeight[], maxRegions: number): DraftWithWeight[] {
   if (drafts.length <= maxRegions) return drafts;
 
@@ -456,10 +510,13 @@ export function generateAutoZoomDrafts(
   const candidates = collectCandidates(samples, events);
   if (candidates.length === 0) return [];
 
-  const merged = mergeDrafts(
-    candidates
-      .map((candidate) => toDraft(candidate, durationMs))
-      .filter((draft): draft is DraftWithWeight => Boolean(draft)),
+  const merged = carveAroundSpans(
+    mergeDrafts(
+      candidates
+        .map((candidate) => toDraft(candidate, durationMs))
+        .filter((draft): draft is DraftWithWeight => Boolean(draft)),
+    ),
+    normalizeAvoidSpans(options.avoidSpans),
   );
 
   const limited = limitDrafts(merged, maxRegions)

@@ -13,7 +13,15 @@ export interface ZoomRegion {
   focus: ZoomFocus;
   /** Continuous zoom scale; when set it overrides the depth preset (see getZoomScale). */
   customScale?: number;
+  /**
+   * 'auto' = placed by the auto-zoom suggestion pass and untouched since; the
+   * wand toggle removes only these. Any edit promotes the region to 'manual'.
+   * Missing (older saves / hand-placed regions) means 'manual'.
+   */
+  source?: ZoomRegionSource;
 }
+
+export type ZoomRegionSource = 'auto' | 'manual';
 
 export interface TrimRegion {
   id: string;
@@ -251,6 +259,8 @@ export interface ProjectState {
   gifSizePreset?: string;
   exportAspectRatios?: string[];
   timelineZoomVisibleMs?: number;
+  /** Auto-zoom wand state (v1.2). Missing in older saves -> treated as enabled. */
+  autoZoomEnabled?: boolean;
 }
 
 export const DEFAULT_ZOOM_DEPTH: ZoomDepth = 3;
