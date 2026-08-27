@@ -1,22 +1,22 @@
 import { useEffect, useRef, useState } from "react";
 
-export interface CameraDevice {
+export interface MicrophoneDevice {
   deviceId: string;
   label: string;
   groupId: string;
 }
 
 /**
- * Enumerates video inputs for the HUD camera picker (ported from upstream
- * v1.7.0). Enumeration only: the recorder opens the camera at record time, so
- * no preview stream is requested here and the camera light stays off.
+ * Enumerates audio inputs for the HUD microphone picker (adapted from upstream
+ * v1.7.0 `useMicrophoneDevices`). Unlike upstream this does not open a
+ * permission stream: the level meter opens the mic while the popover is
+ * visible, and the recorder opens it at record time.
  *
- * `initialDeviceId` seeds the selection from a persisted preference; it is kept
- * while the device is present and replaced by the first available camera when
- * it is unplugged.
+ * `""` means "system default" (no `deviceId` constraint). A persisted id is kept
+ * while the device is present and reset to the default when it is unplugged.
  */
-export function useCameraDevices(enabled: boolean = false, initialDeviceId: string = "") {
-  const [devices, setDevices] = useState<CameraDevice[]>([]);
+export function useMicrophoneDevices(enabled: boolean = true, initialDeviceId: string = "") {
+  const [devices, setDevices] = useState<MicrophoneDevice[]>([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>(initialDeviceId);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -37,28 +37,26 @@ export function useCameraDevices(enabled: boolean = false, initialDeviceId: stri
         setIsLoading(true);
         setError(null);
 
-        // Unlabeled devices (no camera permission yet) fall back to their device ID.
         const allDevices = await mediaDevices.enumerateDevices();
-        const videoInputs = allDevices
-          .filter((device) => device.kind === "videoinput")
+        const audioInputs = allDevices
+          .filter((device) => device.kind === "audioinput")
           .map((device) => ({
             deviceId: device.deviceId,
-            label: device.label || `Camera ${device.deviceId.slice(0, 8)}`,
+            label: device.label || `Microphone ${device.deviceId.slice(0, 8)}`,
             groupId: device.groupId,
           }));
 
         if (mounted) {
-          setDevices(videoInputs);
+          setDevices(audioInputs);
           const currentId = selectedDeviceIdRef.current;
-          const stillAvailable = videoInputs.some((d) => d.deviceId === currentId);
-          if (!currentId || !stillAvailable) {
-            setSelectedDeviceId(videoInputs[0]?.deviceId ?? "");
+          if (currentId && !audioInputs.some((device) => device.deviceId === currentId)) {
+            setSelectedDeviceId("");
           }
           setIsLoading(false);
         }
       } catch (err) {
         if (mounted) {
-          setError(err instanceof Error ? err.message : "Failed to load cameras");
+          setError(err instanceof Error ? err.message : "Failed to enumerate audio devices");
           setIsLoading(false);
         }
       }

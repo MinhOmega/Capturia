@@ -48,7 +48,14 @@ type UseScreenRecorderOptions = {
   captureResolutionPreset?: CaptureResolutionPreset;
   recordSystemCursor?: boolean;
   microphoneGain?: number;
+  /** Off = record without an audio track. Default on. */
+  microphoneEnabled?: boolean;
+  /** Microphone chosen in the HUD picker (Chromium deviceId); empty = system default. */
+  microphoneDeviceId?: string;
 };
+
+/** Length of the gain ramp at the start of a recording so the first mic packet does not click. */
+const MICROPHONE_FADE_IN_SECONDS = 0.02;
 
 export type CaptureProfile = "balanced" | "quality" | "ultra";
 export type CaptureFrameRate = 24 | 30 | 60 | 120;
@@ -168,6 +175,8 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
   const captureResolutionPreset = options.captureResolutionPreset;
   const recordSystemCursor = options.recordSystemCursor ?? true;
   const microphoneGain = normalizeMicrophoneGain(options.microphoneGain);
+  const microphoneEnabled = options.microphoneEnabled ?? true;
+  const microphoneDeviceId = options.microphoneDeviceId || undefined;
   const [recording, setRecording] = useState(false);
   const [recordingState, setRecordingPhase] = useState<RecordingPhase>("idle");
   // Mirrors `nativeRecordingActive` for rendering (refs don't re-render): the HUD hides
@@ -840,12 +849,13 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
     return await captureWithLegacyDesktopConstraints();
   };
 
-  const captureRequiredMicrophoneStream = async (): Promise<MediaStream> => {
+  /**
+   * Microphone capture for the MediaRecorder path. Resolves to `null` when the
+   * mic is switched off or cannot be opened (denied, unplugged): the recording
+   * then proceeds without an audio track instead of failing outright.
+   */
+  const captureOptionalMicrophoneStream = async (): Promise<MediaStream | null> => {
     const buildAdjustedMicrophoneStream = (sourceStream: MediaStream): MediaStream => {
-      if (Math.abs(microphoneGain - 1) < 0.001) {
-        return sourceStream;
-      }
-
       const AudioContextConstructor = window.AudioContext
         || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (!AudioContextConstructor) {
@@ -856,7 +866,13 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
       const audioContext = new AudioContextConstructor();
       const sourceNode = audioContext.createMediaStreamSource(sourceStream);
       const gainNode = audioContext.createGain();
-      gainNode.gain.value = microphoneGain;
+      // Short ramp from silence to the user's gain: the first packet of a fresh
+      // capture otherwise lands as an audible click at the head of the recording.
+      gainNode.gain.setValueAtTime(0, audioContext.currentTime);
+      gainNode.gain.linearRampToValueAtTime(
+        microphoneGain,
+        audioContext.currentTime + MICROPHONE_FADE_IN_SECONDS,
+      );
 
       const limiterNode = audioContext.createDynamicsCompressor();
       limiterNode.threshold.value = -1;
@@ -877,22 +893,41 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
       return destination.stream;
     };
 
+    if (!microphoneEnabled) {
+      return null;
+    }
+
+    const openMicrophone = async (deviceId: string | undefined): Promise<MediaStream> => {
+      const audioConstraints: MediaTrackConstraints = {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      };
+      if (deviceId) {
+        audioConstraints.deviceId = { exact: deviceId };
+      }
+      return await navigator.mediaDevices.getUserMedia({ audio: audioConstraints, video: false });
+    };
+
     try {
-      const sourceStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-        video: false,
-      });
+      let sourceStream: MediaStream;
+      if (microphoneDeviceId) {
+        try {
+          sourceStream = await openMicrophone(microphoneDeviceId);
+        } catch (error) {
+          // The picked mic may have been unplugged since the HUD enumerated it.
+          console.warn("Selected microphone is unavailable, falling back to the system default.", error);
+          sourceStream = await openMicrophone(undefined);
+        }
+      } else {
+        sourceStream = await openMicrophone(undefined);
+      }
       microphoneSourceStream.current = sourceStream;
       return buildAdjustedMicrophoneStream(sourceStream);
     } catch (error) {
-      console.error("Failed to acquire microphone stream for recording.", error);
-      throw new Error(
-        "Microphone access is required for recording voice. Allow Capturia to use your microphone and try again.",
-      );
+      console.warn("Microphone unavailable, recording without audio.", error);
+      notifyMicrophoneFallback();
+      return null;
     }
   };
 
@@ -900,6 +935,14 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
   const notifyCameraFallback = () => {
     toast.warning(t("launch.cameraFallback"));
   };
+
+  /** The recording continues without an audio track; tell the user instead of aborting. */
+  const notifyMicrophoneFallback = () => {
+    toast.warning(t("launch.microphoneFallback"));
+  };
+
+  const isNativeMicrophoneFailure = (code: string | undefined): boolean =>
+    code === "microphone_permission_denied" || code === "microphone_unavailable";
 
   const startRecording = async () => {
     if (transitionInFlight.current || recordingState !== "idle") {
@@ -941,11 +984,11 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
           id: typeof selectedSource.id === "string" ? selectedSource.id : undefined,
           display_id: selectedSource.display_id ?? undefined,
         };
-        const startNative = async (cameraEnabled: boolean) =>
+        const startNative = async (cameraEnabled: boolean, nativeMicrophoneEnabled = microphoneEnabled) =>
           await window.electronAPI.startNativeScreenRecording({
             source: sourceRef,
             cursorMode,
-            microphoneEnabled: true,
+            microphoneEnabled: nativeMicrophoneEnabled,
             microphoneGain,
             cameraEnabled,
             cameraShape,
@@ -960,6 +1003,15 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
           });
 
         let nativeStart = await startNative(includeCamera);
+        if (!nativeStart.success && microphoneEnabled && isNativeMicrophoneFailure(nativeStart.code)) {
+          // Same policy as the browser path: a denied or missing mic must not
+          // abort the recording. Retry silent and tell the user.
+          console.warn("Native microphone capture failed, retrying native recording without audio.", nativeStart.message);
+          nativeStart = await startNative(includeCamera, false);
+          if (nativeStart.success) {
+            notifyMicrophoneFallback();
+          }
+        }
         if (!nativeStart.success && includeCamera) {
           console.warn(
             "Native camera overlay capture failed, retrying native recording without camera overlay.",
@@ -1041,10 +1093,7 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
       // Capture screen + microphone in parallel: the gap between the two getUserMedia
       // calls is the dominant source of mic-vs-video lag at the start of a recording.
       const screenCapture = captureDesktopStream(selectedSource, cursorMode);
-      const micCapture = captureRequiredMicrophoneStream();
-      // The mic result is awaited below; keep an early rejection from being reported
-      // as unhandled while the screen capture is still pending.
-      micCapture.catch(() => undefined);
+      const micCapture = captureOptionalMicrophoneStream();
 
       let desktopStream: MediaStream;
       try {
@@ -1054,7 +1103,7 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
         // leave its tracks (and the OS mic indicator) on. Release it when it settles.
         void micCapture
           .then((micStream) => {
-            micStream.getTracks().forEach((track) => track.stop());
+            micStream?.getTracks().forEach((track) => track.stop());
             releaseMicrophoneCapture();
           })
           .catch(() => undefined);
@@ -1112,7 +1161,7 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
       const micStream = await micCapture;
       microphoneStream.current = micStream;
       const desktopRecordingStream = combineVideoAndAudioStream(desktopStream, micStream);
-      const hasMicrophoneAudio = micStream.getAudioTracks().length > 0;
+      const hasMicrophoneAudio = (micStream?.getAudioTracks().length ?? 0) > 0;
 
       let recordingStream: MediaStream = desktopRecordingStream;
       if (includeCamera) {
@@ -1379,6 +1428,8 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
           openedCamera: openedCameraRef.current,
           captureProfile,
           microphoneGain,
+          microphoneEnabled,
+          microphoneDeviceId,
           recordSystemCursor,
           normalizedMessage: message,
           nativeStartCode: nativeStartFailure?.code,
