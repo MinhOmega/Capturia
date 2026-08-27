@@ -128,4 +128,42 @@ describe('recordingsCleanupPolicy', () => {
     expect(recordingGroupKeyFromFileName('recording-123.cursor.json')).toBe('recording-123');
     expect(recordingGroupKeyFromFileName('manual-video.mp4')).toBeNull();
   });
+
+  it('treats duration-patch scratch files as managed members of their recording group', () => {
+    // Keyed to the recording so a post-recording cleanup with that path excluded also
+    // spares an in-flight patch file, and so it is deleted along with the group.
+    expect(isManagedRecordingArtifactName('recording-123.webm.duration-patch.tmp')).toBe(true);
+    expect(recordingGroupKeyFromFileName('recording-123.webm.duration-patch.tmp')).toBe('recording-123');
+    expect(recordingGroupKeyFromFileName('other.webm.duration-patch.tmp')).toBeNull();
+  });
+
+  it('deletes stale duration-patch leftovers next to a kept video, but not fresh ones', () => {
+    const entries: RecordingArtifactEntry[] = [
+      // Patch died mid-way long ago: the video is kept, the scratch file is an orphan.
+      entry('recording-10.webm', 120, 4_900),
+      entry('recording-10.webm.duration-patch.tmp', 120, 100),
+      // Patch possibly still running: younger than the orphan threshold, keep it.
+      entry('recording-11.webm', 120, 4_950),
+      entry('recording-11.webm.duration-patch.tmp', 120, 4_950),
+      // Video already gone: the leftover is an orphan group of its own.
+      entry('recording-12.webm.duration-patch.tmp', 120, 100),
+    ];
+
+    const plan = planRecordingCleanup(entries, {
+      nowMs: 5_000,
+      policy: createRecordingCleanupPolicy({
+        maxTotalBytes: 10_000,
+        targetTotalBytes: 8_000,
+        maxVideoAgeMs: 10_000,
+        minKeepVideoGroups: 1,
+        orphanSidecarAgeMs: 500,
+      }),
+    });
+
+    expect(plan.filesToDelete).toEqual([
+      'recording-10.webm.duration-patch.tmp',
+      'recording-12.webm.duration-patch.tmp',
+    ]);
+    expect(plan.estimatedBytesFreed).toBe(240);
+  });
 });
