@@ -77,6 +77,7 @@ import {
   clearStaleSourceCache,
   buildExportDiagnosticMessage,
   buildSaveDiagnosticMessage,
+  readExportDecodePathOverride,
   type ExportDiagnosticLabels,
 } from "@/lib/exporter";
 import { getExportFolder, loadUserPreferences, parentDirectoryOf, saveUserPreferences } from "@/lib/userPreferences";
@@ -2578,6 +2579,7 @@ export default function VideoEditor() {
             },
             segments,
             sourceDurationMs: probedSourceDurationMs,
+            decodePath: readExportDecodePathOverride(),
             onProgress: (progress: ExportProgress) => {
               setExportProgress(progress);
             },

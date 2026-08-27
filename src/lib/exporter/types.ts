@@ -17,6 +17,26 @@ export interface ExportConfig {
   audioProcessing?: ExportAudioProcessingConfig;
 }
 
+/**
+ * How the MP4 exporter reads source frames.
+ * - `'seek'`: `HTMLVideoElement` seek-only path (`VideoFileDecoder`), the
+ *   long-standing default with the silent-playback guard.
+ * - `'webcodecs'`: web-demuxer + `VideoDecoder` single forward pass
+ *   (`StreamingVideoDecoder`); no media element is involved at all. Falls back
+ *   to `'seek'` automatically when the decoder fails before the first frame.
+ */
+export type ExportDecodePath = 'webcodecs' | 'seek';
+
+/** Default until the WebCodecs path has passed browser tests on all platforms. */
+export const DEFAULT_EXPORT_DECODE_PATH: ExportDecodePath = 'seek';
+
+/** `localStorage` key that overrides the decode path (support / QA switch). */
+export const EXPORT_DECODE_PATH_STORAGE_KEY = 'capturia.exportDecodePath';
+
+export function isExportDecodePath(value: unknown): value is ExportDecodePath {
+  return value === 'webcodecs' || value === 'seek';
+}
+
 export interface ExportProgress {
   currentFrame: number;
   totalFrames: number;
