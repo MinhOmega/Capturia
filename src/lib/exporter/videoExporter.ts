@@ -1,5 +1,15 @@
-import type { ExportConfig, ExportProgress, ExportResult } from './types';
+import {
+  DEFAULT_EXPORT_DECODE_PATH,
+  EXPORT_DECODE_PATH_STORAGE_KEY,
+  isExportDecodePath,
+  type ExportConfig,
+  type ExportDecodePath,
+  type ExportProgress,
+  type ExportResult,
+} from './types';
 import { VideoFileDecoder } from './videoDecoder';
+import { StreamingVideoDecoder, type DecodedVideoInfo } from './streamingDecoder';
+import { buildDecodeTimelinePlan, type DecodeTimelinePlan } from './segmentAdapter';
 import { downmixPlanarChannelsForExport } from '@/lib/audio/downmix';
 import { isBackgroundLoadError } from './backgroundErrors';
 import { FrameRenderer } from './frameRenderer';
@@ -21,7 +31,7 @@ import { getPlatform } from '@/utils/platformUtils';
 import { selectExportAudioCodec, type ExportAudioCodec } from './audioCodecSelection';
 import { resolveSourceDurationMs } from './sourceDuration';
 
-interface VideoExporterConfig extends ExportConfig {
+export interface VideoExporterConfig extends ExportConfig {
   videoUrl: string;
   wallpaper: string;
   zoomRegions: ZoomRegion[];
@@ -50,6 +60,12 @@ interface VideoExporterConfig extends ExportConfig {
    * when present; see `resolveSourceDurationMs`.
    */
   sourceDurationMs?: number;
+  /**
+   * Frame source: `'webcodecs'` (StreamingVideoDecoder, single decode pass)
+   * or `'seek'` (HTMLVideoElement seek-only). Defaults to
+   * `DEFAULT_EXPORT_DECODE_PATH`; see `readExportDecodePathOverride`.
+   */
+  decodePath?: ExportDecodePath;
 }
 
 type TimeRangeMs = {
@@ -78,12 +94,110 @@ const MAX_AUDIO_GAIN = 2;
 const EXPORT_WARNING_AUDIO_TRACK_UNAVAILABLE = 'editor.exportWarningAudioTrackUnavailable';
 const EXPORT_WARNING_AUDIO_CODEC_UNSUPPORTED = 'editor.exportWarningAudioCodecUnsupported';
 const EXPORT_WARNING_SPEED_AUDIO_UNAVAILABLE = 'editor.exportWarningSpeedAudioUnavailable';
+const EXPORT_WARNING_DECODER_FALLBACK = 'editor.exportWarningDecoderFallback';
+const EXPORT_WARNING_DECODE_ENDED_EARLY = 'editor.exportWarningDecodeEndedEarly';
 
 function isExportAudioDebugEnabled(): boolean {
   try {
     return globalThis.localStorage?.getItem('capturia.exportDebugAudio') === '1';
   } catch {
     return false;
+  }
+}
+
+/**
+ * Support/QA override for the frame decode path: `localStorage` key
+ * `capturia.exportDecodePath` set to `'webcodecs'` or `'seek'`. Any other
+ * value (or no value) returns `undefined` so the exporter default applies.
+ */
+export function readExportDecodePathOverride(): ExportDecodePath | undefined {
+  try {
+    const value = globalThis.localStorage?.getItem(EXPORT_DECODE_PATH_STORAGE_KEY);
+    return isExportDecodePath(value) ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** How long a full encoder queue may stay full before the attempt is declared stalled. */
+const ENCODER_STALL_TIMEOUT_MS = 15_000;
+/** Upper bound for the final `VideoEncoder.flush()`; a stuck encoder must not hang the export. */
+const ENCODER_FLUSH_TIMEOUT_MS = 20_000;
+/** Software encoders get a shorter queue so Windows does not balloon memory. */
+const SOFTWARE_ENCODER_MAX_QUEUE = 32;
+/**
+ * Platforms that try the software encoder first. Windows hardware encoders
+ * were the source of the upstream stall reports (2a2d7e7a), so software goes
+ * first there; everywhere else hardware is preferred. Kept as a constant so
+ * the ordering can be flipped after measurements.
+ */
+export const SOFTWARE_FIRST_ENCODER_PLATFORMS: ReadonlySet<string> = new Set(['win32']);
+
+/** Encoder preference order for `platform` (an Electron `process.platform` value). */
+export function getEncoderPreferences(platform: string | undefined): HardwareAcceleration[] {
+  if (platform && SOFTWARE_FIRST_ENCODER_PLATFORMS.has(platform)) {
+    return ['prefer-software', 'prefer-hardware'];
+  }
+  return ['prefer-hardware', 'prefer-software'];
+}
+
+/**
+ * Waits for the encoder's queue to drain below maxEncodeQueue before returning.
+ *
+ * The stall timer starts fresh on each call (not from the encoder's last output), so a
+ * long gap before this call - e.g. the decoder discarding frames inside a trim region -
+ * doesn't get blamed on the encoder once real frames resume.
+ */
+export async function waitForEncoderQueueSpace(params: {
+  getQueueSize: () => number;
+  maxEncodeQueue: number;
+  isCancelled: () => boolean;
+  encoderPreference: HardwareAcceleration;
+  now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
+}): Promise<void> {
+  const now = params.now ?? Date.now;
+  const sleep = params.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms)));
+
+  const stallWaitStartAt = now();
+  while (params.getQueueSize() >= params.maxEncodeQueue && !params.isCancelled()) {
+    if (now() - stallWaitStartAt > ENCODER_STALL_TIMEOUT_MS) {
+      throw new Error(
+        params.encoderPreference === 'prefer-hardware'
+          ? 'The hardware video encoder stopped responding. Retrying with a safer encoder.'
+          : 'The video encoder stopped responding during export.',
+      );
+    }
+    await sleep(5);
+  }
+}
+
+/**
+ * Marks a failure caused by the video encoder itself (unsupported config,
+ * `error` callback, queue stall, flush timeout). Only these are retried with
+ * the next encoder preference; decoder, renderer, mux and audio failures are
+ * reported straight away because a different encoder would not fix them.
+ */
+export class ExportEncoderError extends Error {
+  constructor(message: string, readonly cause?: unknown) {
+    super(message);
+    this.name = 'ExportEncoderError';
+  }
+}
+
+/**
+ * Raised when the WebCodecs decode path fails before delivering a single frame
+ * (demux/wasm load failure, unsupported codec, VideoDecoder error). The export
+ * restarts on the seek path and reports `editor.exportWarningDecoderFallback`.
+ */
+class DecoderFallbackError extends Error {
+  readonly cause: unknown;
+
+  constructor(cause: unknown) {
+    const reason = cause instanceof Error ? cause.message : String(cause);
+    super(`WebCodecs decode path unavailable: ${reason}`);
+    this.name = 'DecoderFallbackError';
+    this.cause = cause;
   }
 }
 
@@ -251,12 +365,19 @@ export function buildKeptRanges(totalDurationMs: number, trimRegions: TrimRegion
 export class VideoExporter {
   private config: VideoExporterConfig;
   private decoder: VideoFileDecoder | null = null;
+  private streamingDecoder: StreamingVideoDecoder | null = null;
+  /** Set once the WebCodecs path failed before its first frame; forces the seek path. */
+  private decoderFallbackActive = false;
   private renderer: FrameRenderer | null = null;
   private encoder: VideoEncoder | null = null;
   private muxer: VideoMuxer | null = null;
   private cancelled = false;
   private encodeQueue = 0;
   private readonly MAX_ENCODE_QUEUE = 120;
+  private maxEncodeQueue = this.MAX_ENCODE_QUEUE;
+  private encoderPreference: HardwareAcceleration = 'prefer-hardware';
+  /** Set by the VideoEncoder `error` callback; surfaces at the next frame / flush. */
+  private fatalEncoderError: ExportEncoderError | null = null;
   private videoDescription: Uint8Array | undefined;
   private videoColorSpace: VideoColorSpaceInit | undefined;
   private muxingChain: Promise<void> = Promise.resolve();
@@ -272,7 +393,7 @@ export class VideoExporter {
   private lastRenderingFrameCount = 0;
   private lastThroughputLogAtMs = 0;
   private seekCount = 0;
-  private samplingMode = 'seek-only' as const;
+  private samplingMode: 'seek-only' | 'webcodecs' = 'seek-only';
   private maxObservedTimingDriftMs = 0;
   private sourceDurationMs = 0;
   private platform: string | undefined;
@@ -417,8 +538,58 @@ export class VideoExporter {
   }
 
   private getWarnings(): string[] | undefined {
-    if (this.warnings.size === 0) return undefined;
-    return Array.from(this.warnings);
+    const warnings = new Set(this.warnings);
+    if (this.decoderFallbackActive) {
+      warnings.add(EXPORT_WARNING_DECODER_FALLBACK);
+    }
+    if (warnings.size === 0) return undefined;
+    return Array.from(warnings);
+  }
+
+  private resolveDecodePath(): ExportDecodePath {
+    if (this.decoderFallbackActive) return 'seek';
+    const requested = this.config.decodePath ?? DEFAULT_EXPORT_DECODE_PATH;
+    if (requested === 'webcodecs' && typeof VideoDecoder === 'undefined') {
+      console.warn('[VideoExporter] VideoDecoder is unavailable; using the seek decode path');
+      return 'seek';
+    }
+    return requested;
+  }
+
+  private reportPreparingProgress(copiedBytes: number, totalBytes: number): void {
+    if (!this.config.onProgress) return;
+    this.progressTick += 1;
+    const now = Date.now();
+    this.config.onProgress({
+      currentFrame: 0,
+      totalFrames: 0,
+      percentage: totalBytes > 0 ? Math.min(100, (copiedBytes / totalBytes) * 100) : 0,
+      estimatedTimeRemaining: 0,
+      phase: 'preparing',
+      updatedAtMs: now,
+      elapsedMs: this.exportStartedAtMs > 0 ? Math.max(0, now - this.exportStartedAtMs) : 0,
+      activityTick: this.progressTick,
+      isHeartbeat: false,
+    });
+  }
+
+  /**
+   * Opens the source with the WebCodecs streaming decoder. Large local files
+   * are copied into OPFS first (reported as the `'preparing'` phase). Any
+   * failure here is converted into a `DecoderFallbackError` so `export()`
+   * restarts on the seek path.
+   */
+  private async loadStreamingDecoderMetadata(): Promise<DecodedVideoInfo> {
+    const streamingDecoder = new StreamingVideoDecoder();
+    this.streamingDecoder = streamingDecoder;
+    try {
+      return await streamingDecoder.loadMetadata(this.config.videoUrl, ({ copiedBytes, totalBytes }) => {
+        this.reportPreparingProgress(copiedBytes, totalBytes);
+      });
+    } catch (error) {
+      if (this.cancelled) throw error;
+      throw new DecoderFallbackError(error);
+    }
   }
 
   private createAudioSlice(
@@ -622,11 +793,82 @@ export class VideoExporter {
     });
   }
 
+  /**
+   * Runs the export, retrying with the next encoder preference when the
+   * encoder itself fails (`ExportEncoderError`), and re-running on the seek
+   * decode path when the WebCodecs decoder fails before its first frame.
+   */
   async export(): Promise<ExportResult> {
+    this.decoderFallbackActive = false;
+    this.platform = await getPlatform();
+    const encoderPreferences = getEncoderPreferences(this.platform);
+    let lastError: unknown = null;
+
+    for (let index = 0; index < encoderPreferences.length; index += 1) {
+      const encoderPreference = encoderPreferences[index];
+      try {
+        return await this.runExportAttemptWithDecoderFallback(encoderPreference);
+      } catch (error) {
+        lastError = error;
+        if (this.cancelled) {
+          return { success: false, error: 'Export cancelled' };
+        }
+        const nextPreference = encoderPreferences[index + 1];
+        if (!(error instanceof ExportEncoderError) || !nextPreference) {
+          return this.toFailureResult(error);
+        }
+        console.warn(
+          `[VideoExporter] ${encoderPreference} export attempt failed; retrying with ${nextPreference}.`,
+          error,
+        );
+      }
+    }
+
+    return this.toFailureResult(lastError ?? new Error('Export failed'));
+  }
+
+  private async runExportAttemptWithDecoderFallback(
+    encoderPreference: HardwareAcceleration,
+  ): Promise<ExportResult> {
+    try {
+      return await this.runExportAttempt(encoderPreference);
+    } catch (error) {
+      if (error instanceof DecoderFallbackError && !this.cancelled) {
+        console.warn(
+          '[VideoExporter] WebCodecs decode path failed before the first frame; retrying on the seek path.',
+          error.cause,
+        );
+        this.decoderFallbackActive = true;
+        return await this.runExportAttempt(encoderPreference);
+      }
+      throw error;
+    }
+  }
+
+  private toFailureResult(error: unknown): ExportResult {
+    if (isBackgroundLoadError(error)) {
+      // Not retryable: the background will not load on a second attempt either.
+      console.error('Export error: background failed to load:', error.displayUrl);
+      return { success: false, error: error.message, errorKind: 'background-load', backgroundUrl: error.displayUrl };
+    }
+    console.error('Export error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+
+  /**
+   * One full export pass. Throws on failure (the caller maps errors to an
+   * `ExportResult`); returns a cancelled result when `cancel()` was called.
+   */
+  private async runExportAttempt(encoderPreference: HardwareAcceleration): Promise<ExportResult> {
     try {
       this.cleanup();
       this.cancelled = false;
       this.muxingError = null;
+      this.fatalEncoderError = null;
+      this.encoderPreference = encoderPreference;
       this.exportStartedAtMs = Date.now();
       this.progressTick = 0;
       this.lastRenderingFrameCount = 0;
@@ -639,8 +881,15 @@ export class VideoExporter {
       this.warnings.clear();
 
       this.platform = await getPlatform();
-      this.decoder = new VideoFileDecoder();
-      const videoInfo = await this.decoder.loadVideo(this.config.videoUrl);
+      const decodePath = this.resolveDecodePath();
+      this.samplingMode = decodePath === 'webcodecs' ? 'webcodecs' : 'seek-only';
+      let videoInfo: { width: number; height: number; duration: number };
+      if (decodePath === 'webcodecs') {
+        videoInfo = await this.loadStreamingDecoderMetadata();
+      } else {
+        this.decoder = new VideoFileDecoder();
+        videoInfo = await this.decoder.loadVideo(this.config.videoUrl);
+      }
       this.sourceDurationMs = resolveSourceDurationMs(videoInfo.duration, this.config.sourceDurationMs);
       if (this.sourceDurationMs !== Math.max(0, videoInfo.duration * 1000)) {
         console.warn('[VideoExporter] Using probed source duration', this.sourceDurationMs, 'ms instead of', videoInfo.duration, 's');
@@ -705,32 +954,70 @@ export class VideoExporter {
       });
       await this.renderer.initialize();
 
-      await this.initializeEncoder();
+      await this.initializeEncoder(encoderPreference);
 
       this.muxer = new VideoMuxer(this.config, hasSourceAudio, this.audioCodec);
       await this.muxer.initialize();
 
-      const videoElement = this.decoder.getVideoElement();
-      if (!videoElement) {
+      const videoElement = this.decoder?.getVideoElement() ?? null;
+      if (!this.streamingDecoder && !videoElement) {
         throw new Error('Video element not available');
       }
 
-      const effectiveDuration = this.getEffectiveDuration(this.sourceDurationMs / 1000);
-      const totalFrames = Math.ceil(effectiveDuration * this.config.frameRate);
+      let decodePlan: DecodeTimelinePlan | null = null;
+      let effectiveDuration: number;
+      let totalFrames: number;
+      if (this.streamingDecoder) {
+        // The decoder emits an exact per-segment frame count; take it from the
+        // same trim/speed regions decodeAll() will consume so both agree.
+        decodePlan = buildDecodeTimelinePlan({
+          segments: this.config.segments,
+          trimRegions: this.config.trimRegions,
+          playbackSpeed: this.config.playbackSpeed,
+          sourceDurationMs: this.sourceDurationMs,
+          decoderDurationSec: videoInfo.duration,
+        });
+        const metrics = this.streamingDecoder.getExportMetrics(
+          this.config.frameRate,
+          decodePlan.trimRegions,
+          decodePlan.speedRegions,
+        );
+        effectiveDuration = metrics.effectiveDuration;
+        totalFrames = metrics.totalFrames;
+      } else {
+        effectiveDuration = this.getEffectiveDuration(this.sourceDurationMs / 1000);
+        totalFrames = Math.ceil(effectiveDuration * this.config.frameRate);
+      }
 
       console.log('[VideoExporter] Original duration:', videoInfo.duration, 's (using', this.sourceDurationMs / 1000, 's)');
       console.log('[VideoExporter] Effective duration:', effectiveDuration, 's');
       console.log('[VideoExporter] Total frames to export:', totalFrames);
+      console.log('[VideoExporter] Decode path:', this.samplingMode);
 
       let frameIndex = 0;
       if (isExportAudioDebugEnabled()) {
-        console.log('[ExportAudioDebug][VideoExporter] mode decision', { mode: 'seek-only', audioEnabled: this.config.audioEnabled });
+        console.log('[ExportAudioDebug][VideoExporter] mode decision', { mode: this.samplingMode, audioEnabled: this.config.audioEnabled });
       }
-      this.samplingMode = 'seek-only';
-      frameIndex = await this.exportFramesBySeeking(videoElement, totalFrames, frameIndex);
+      if (this.streamingDecoder && decodePlan) {
+        frameIndex = await this.exportFramesByDecoding(this.streamingDecoder, decodePlan, totalFrames);
+      } else if (videoElement) {
+        frameIndex = await this.exportFramesBySeeking(videoElement, totalFrames, frameIndex);
+      }
 
       if (frameIndex < totalFrames && !this.cancelled) {
-        throw new Error(`Export ended early: rendered ${frameIndex} of ${totalFrames} frames.`);
+        if (this.streamingDecoder) {
+          // The streaming decoder already reported the short decode as a
+          // warning (upstream semantics: the export is slightly shorter, not
+          // failed). Only a decoder that delivered nothing is treated as fatal.
+          console.warn(`[VideoExporter] Streaming decode ended early: rendered ${frameIndex} of ${totalFrames} frames.`);
+          this.addWarning(EXPORT_WARNING_DECODE_ENDED_EARLY);
+        } else {
+          throw new Error(`Export ended early: rendered ${frameIndex} of ${totalFrames} frames.`);
+        }
+      }
+
+      if (this.fatalEncoderError) {
+        throw this.fatalEncoderError;
       }
 
       if (this.cancelled) {
@@ -749,10 +1036,11 @@ export class VideoExporter {
         : Promise.resolve();
 
       if (this.encoder && this.encoder.state === 'configured') {
-        await this.runFinalizingStep(
-          'dialogs.export.finalize.flush',
-          withTimeout(this.encoder.flush(), this.FINALIZE_TIMEOUT_MS, 'encoder flush'),
-        );
+        await this.runFinalizingStep('dialogs.export.finalize.flush', this.flushEncoder());
+      }
+
+      if (this.fatalEncoderError) {
+        throw this.fatalEncoderError;
       }
 
       await this.runFinalizingStep(
@@ -781,20 +1069,89 @@ export class VideoExporter {
       });
 
       return { success: true, blob, warnings: this.getWarnings() };
-    } catch (error) {
-      if (isBackgroundLoadError(error)) {
-        // Not retryable: the background will not load on a second attempt either.
-        console.error('Export error: background failed to load:', error.displayUrl);
-        return { success: false, error: error.message, errorKind: 'background-load', backgroundUrl: error.displayUrl };
-      }
-      console.error('Export error:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : String(error),
-      };
     } finally {
       this.cleanup();
     }
+  }
+
+  /**
+   * Final `VideoEncoder.flush()` with a hard timeout. A hardware encoder that
+   * never drains is reported as an encoder failure so `export()` can retry
+   * with the next preference instead of hanging for the 120 s finalize budget.
+   */
+  private async flushEncoder(): Promise<void> {
+    if (!this.encoder || this.encoder.state !== 'configured') return;
+    const stalledMessage = this.encoderPreference === 'prefer-hardware'
+      ? 'The hardware video encoder stopped responding while finalizing the export.'
+      : 'The video encoder stopped responding while finalizing the export.';
+    try {
+      await withTimeout(this.encoder.flush(), ENCODER_FLUSH_TIMEOUT_MS, 'encoder flush');
+    } catch (error) {
+      if (this.fatalEncoderError) throw this.fatalEncoderError;
+      if (this.cancelled) return;
+      const message = error instanceof Error && /timed out/.test(error.message)
+        ? stalledMessage
+        : `Video encoder flush failed: ${error instanceof Error ? error.message : String(error)}`;
+      throw new ExportEncoderError(message, error);
+    }
+  }
+
+  /**
+   * WebCodecs frame export: `StreamingVideoDecoder.decodeAll` walks the source
+   * once and hands over one `VideoFrame` per output frame (already resampled to
+   * the target frame rate and routed through the trim/speed plan). Each frame
+   * goes through the same `renderAndEncodeFrame` as the seek path. No media
+   * element is involved, so the silent-export guarantee holds by construction.
+   */
+  private async exportFramesByDecoding(
+    streamingDecoder: StreamingVideoDecoder,
+    plan: DecodeTimelinePlan,
+    totalFrames: number,
+  ): Promise<number> {
+    let frameIndex = 0;
+    let callbackError: unknown = null;
+
+    try {
+      await streamingDecoder.decodeAll(
+        this.config.frameRate,
+        plan.trimRegions,
+        plan.speedRegions,
+        async (videoFrame, _exportTimestampUs, sourceTimestampMs) => {
+          try {
+            if (this.cancelled || frameIndex >= totalFrames) {
+              return;
+            }
+            await this.renderAndEncodeFrame(videoFrame, frameIndex, totalFrames, sourceTimestampMs);
+            frameIndex++;
+          } catch (error) {
+            callbackError = callbackError ?? error;
+            streamingDecoder.cancel();
+            throw error;
+          } finally {
+            videoFrame.close();
+          }
+        },
+        (message) => {
+          console.warn('[VideoExporter] Streaming decoder warning:', message);
+          this.addWarning(EXPORT_WARNING_DECODE_ENDED_EARLY);
+        },
+      );
+    } catch (error) {
+      if (callbackError) {
+        // Render/encode failure, not a decoder failure: never fall back.
+        throw callbackError;
+      }
+      if (frameIndex === 0 && !this.cancelled) {
+        throw new DecoderFallbackError(error);
+      }
+      throw error;
+    }
+
+    if (frameIndex === 0 && totalFrames > 0 && !this.cancelled) {
+      throw new DecoderFallbackError(new Error('Streaming decoder delivered no frames'));
+    }
+
+    return frameIndex;
   }
 
   private getSourceTimeMsForFrame(frameIndex: number): number {
@@ -881,16 +1238,20 @@ export class VideoExporter {
   }
 
   private async renderAndEncodeFrame(
-    videoElement: HTMLVideoElement,
+    videoSource: HTMLVideoElement | VideoFrame,
     frameIndex: number,
     totalFrames: number,
     sampledFrameTimeMs: number,
     effectTimeMs = sampledFrameTimeMs,
   ): Promise<void> {
+    if (this.fatalEncoderError) {
+      throw this.fatalEncoderError;
+    }
+
     const timestamp = frameIndexToTimestampUs(frameIndex, this.config.frameRate);
     const duration = frameDurationUs(frameIndex, this.config.frameRate);
 
-    await this.renderer!.renderFrame(videoElement, Math.round(sampledFrameTimeMs * 1000), {
+    await this.renderer!.renderFrame(videoSource, Math.round(sampledFrameTimeMs * 1000), {
       effectTimeMs,
     });
 
@@ -932,8 +1293,21 @@ export class VideoExporter {
       });
     }
 
-    while (this.encodeQueue >= this.MAX_ENCODE_QUEUE && !this.cancelled) {
-      await new Promise<void>((resolve) => queueMicrotask(resolve));
+    try {
+      await waitForEncoderQueueSpace({
+        getQueueSize: () => this.encodeQueue,
+        maxEncodeQueue: this.maxEncodeQueue,
+        isCancelled: () => this.cancelled || this.fatalEncoderError !== null,
+        encoderPreference: this.encoderPreference,
+      });
+    } catch (error) {
+      exportFrame.close();
+      throw new ExportEncoderError(error instanceof Error ? error.message : String(error), error);
+    }
+
+    if (this.fatalEncoderError) {
+      exportFrame.close();
+      throw this.fatalEncoderError;
     }
 
     if (this.encoder && this.encoder.state === 'configured') {
@@ -1094,11 +1468,16 @@ export class VideoExporter {
     }
   }
 
-  private async initializeEncoder(): Promise<void> {
+  private async initializeEncoder(hardwareAcceleration: HardwareAcceleration): Promise<void> {
     this.encodeQueue = 0;
     this.muxingChain = Promise.resolve();
     this.muxingError = null;
     this.chunkCount = 0;
+    this.fatalEncoderError = null;
+    this.encoderPreference = hardwareAcceleration;
+    this.maxEncodeQueue = hardwareAcceleration === 'prefer-software'
+      ? Math.min(this.MAX_ENCODE_QUEUE, SOFTWARE_ENCODER_MAX_QUEUE)
+      : this.MAX_ENCODE_QUEUE;
     let videoDescription: Uint8Array | undefined;
 
     this.encoder = new VideoEncoder({
@@ -1146,11 +1525,17 @@ export class VideoExporter {
       },
       error: (error) => {
         console.error('[VideoExporter] Encoder error:', error);
-        const normalized = error instanceof Error ? error : new Error(String(error));
-        if (!this.muxingError) {
-          this.muxingError = normalized;
+        // Do not mark the export as cancelled: the failure surfaces at the next
+        // frame / flush as an ExportEncoderError so export() can retry with the
+        // next encoder preference. The decoder is stopped so it does not keep
+        // producing frames for a dead encoder.
+        if (!this.fatalEncoderError) {
+          this.fatalEncoderError = new ExportEncoderError(
+            `Video encoder error: ${error instanceof Error ? error.message : String(error)}`,
+            error,
+          );
         }
-        this.cancelled = true;
+        this.streamingDecoder?.cancel();
       },
     });
 
@@ -1167,29 +1552,27 @@ export class VideoExporter {
       // (5-25 Mbps VBR) and avoids the encoder becoming a bottleneck.
       latencyMode: 'realtime',
       bitrateMode: 'variable',
-      hardwareAcceleration: 'prefer-hardware',
+      hardwareAcceleration,
     };
 
-    const hardwareSupport = await VideoEncoder.isConfigSupported(encoderConfig);
-
-    if (hardwareSupport.supported) {
-      console.log('[VideoExporter] Using hardware acceleration');
-      this.encoder.configure(encoderConfig);
-    } else {
-      console.log('[VideoExporter] Hardware not supported, using software encoding');
-      encoderConfig.hardwareAcceleration = 'prefer-software';
-
-      const softwareSupport = await VideoEncoder.isConfigSupported(encoderConfig);
-      if (!softwareSupport.supported) {
-        throw new Error('Video encoding not supported on this system');
-      }
-
-      this.encoder.configure(encoderConfig);
+    const support = await VideoEncoder.isConfigSupported(encoderConfig);
+    if (!support.supported) {
+      throw new ExportEncoderError(
+        hardwareAcceleration === 'prefer-hardware'
+          ? 'Hardware video encoding is not supported on this system.'
+          : 'Software video encoding is not supported on this system.',
+      );
     }
+
+    console.log(
+      `[VideoExporter] Using ${hardwareAcceleration === 'prefer-hardware' ? 'hardware' : 'software'} encoding (queue ${this.maxEncodeQueue})`,
+    );
+    this.encoder.configure(encoderConfig);
   }
 
   cancel(): void {
     this.cancelled = true;
+    this.streamingDecoder?.cancel();
     this.cleanup();
   }
 
@@ -1243,6 +1626,15 @@ export class VideoExporter {
       this.decoder = null;
     }
 
+    if (this.streamingDecoder) {
+      try {
+        this.streamingDecoder.destroy();
+      } catch (e) {
+        console.warn('Error destroying streaming decoder:', e);
+      }
+      this.streamingDecoder = null;
+    }
+
     if (this.renderer) {
       try {
         this.renderer.destroy();
@@ -1254,6 +1646,8 @@ export class VideoExporter {
 
     this.muxer = null;
     this.encodeQueue = 0;
+    this.maxEncodeQueue = this.MAX_ENCODE_QUEUE;
+    this.fatalEncoderError = null;
     this.muxingChain = Promise.resolve();
     this.muxingError = null;
     this.chunkCount = 0;

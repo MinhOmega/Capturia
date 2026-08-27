@@ -1,5 +1,38 @@
-export { VideoExporter } from './videoExporter';
+export {
+  VideoExporter,
+  ExportEncoderError,
+  SOFTWARE_FIRST_ENCODER_PLATFORMS,
+  getEncoderPreferences,
+  readExportDecodePathOverride,
+  waitForEncoderQueueSpace,
+  type VideoExporterConfig,
+} from './videoExporter';
 export { VideoFileDecoder } from './videoDecoder';
+export {
+  StreamingVideoDecoder,
+  computeExportMetrics,
+  loadFileAsArrayBuffer,
+  shouldFailDecodeEndedEarly,
+  validateDuration,
+  type DecodedVideoInfo,
+  type ExportMetrics,
+} from './streamingDecoder';
+export {
+  buildSpeedSegments,
+  computeKeepSegments,
+  maxTimelineSpeed,
+  splitBySpeed,
+  type SpeedRegion,
+  type SpeedTimelineSegment,
+  type TimelineSegment,
+} from './timelineSegments';
+export {
+  buildDecodeTimelinePlan,
+  getSpeedTimelineDurationSec,
+  segmentsToSpeedTimeline,
+  type DecodeTimelineInput,
+  type DecodeTimelinePlan,
+} from './segmentAdapter';
 export { FrameRenderer } from './frameRenderer';
 export { VideoMuxer } from './muxer';
 export { GifExporter, calculateOutputDimensions } from './gifExporter';
@@ -27,9 +60,10 @@ export {
   type ExportAudioCodec,
 } from './audioCodecSelection';
 export { calculateEffectiveSourceDimensions, calculateMp4ExportPlan, resolveExportFrameRate, normalizeExportSourceFrameRate } from './mp4ExportPlan';
-export type { 
-  ExportConfig, 
-  ExportProgress, 
+export type {
+  ExportConfig,
+  ExportDecodePath,
+  ExportProgress,
   ExportResult, 
   VideoFrameData, 
   ExportQuality,
@@ -40,8 +74,13 @@ export type {
   GifExportConfig,
   ExportSettings,
 } from './types';
-export { 
-  GIF_SIZE_PRESETS, 
+export {
+  DEFAULT_EXPORT_DECODE_PATH,
+  EXPORT_DECODE_PATH_STORAGE_KEY,
+  isExportDecodePath,
+} from './types';
+export {
+  GIF_SIZE_PRESETS,
   GIF_FRAME_RATES, 
   VALID_GIF_FRAME_RATES, 
   isValidGifFrameRate 

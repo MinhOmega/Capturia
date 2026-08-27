@@ -11,6 +11,8 @@
 	"exportWarningAudioTrackUnavailable": "Source audio track could not be read, so the export was generated without audio.",
 	"exportWarningAudioCodecUnsupported": "AAC audio encoding is not supported on this system. The video was exported without audio.",
 	"exportWarningSpeedAudioUnavailable": "Audio is not available when exporting at non-1x playback speed.",
+	"exportWarningDecoderFallback": "The fast WebCodecs decoder could not read this recording, so the export used the slower compatibility decoder.",
+	"exportWarningDecodeEndedEarly": "The source stopped decoding before its reported end, so the export may be slightly shorter than expected.",
 	"saveGifFailed": "Failed to save GIF",
 	"saveVideoFailed": "Failed to save video",
 	"gifExportFailed": "GIF export failed",
