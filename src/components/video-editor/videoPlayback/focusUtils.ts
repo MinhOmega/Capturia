@@ -5,29 +5,44 @@ interface StageSize {
   height: number;
 }
 
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
+/**
+ * Allowed focus range for a zoom scale: the zoom window (stage / zoomScale)
+ * must stay inside the stage, so the centre can't get closer than half a
+ * window to any edge. Stage-normalised, so it's independent of stage size.
+ */
+export function getFocusBoundsForScale(zoomScale: number) {
+  const safeScale = Number.isFinite(zoomScale) && zoomScale > 0 ? zoomScale : 1;
+  const margin = Math.min(0.5, 1 / (2 * safeScale));
+
+  return {
+    minX: margin,
+    maxX: 1 - margin,
+    minY: margin,
+    maxY: 1 - margin,
+  };
+}
+
 /**
  * Clamp a focus point so the zoom window (stage / zoomScale) stays inside the
- * stage. Takes the effective scale so custom zoom scales are honoured.
+ * stage. Takes the effective scale so custom zoom scales are honoured. The
+ * stage size argument is kept for call-site compatibility; the bounds are
+ * stage-normalised so it does not change the result.
  */
 export function clampFocusToScale(
   focus: ZoomFocus,
   zoomScale: number,
-  stageSize: StageSize
+  _stageSize?: StageSize
 ): ZoomFocus {
   const baseFocus = clampFocus(focus);
-  if (!stageSize.width || !stageSize.height) {
-    return baseFocus;
-  }
-
-  const windowWidth = stageSize.width / zoomScale;
-  const windowHeight = stageSize.height / zoomScale;
-
-  const marginX = windowWidth / (2 * stageSize.width);
-  const marginY = windowHeight / (2 * stageSize.height);
+  const bounds = getFocusBoundsForScale(zoomScale);
 
   return {
-    cx: Math.max(marginX, Math.min(1 - marginX, baseFocus.cx)),
-    cy: Math.max(marginY, Math.min(1 - marginY, baseFocus.cy)),
+    cx: clamp(baseFocus.cx, bounds.minX, bounds.maxX),
+    cy: clamp(baseFocus.cy, bounds.minY, bounds.maxY),
   };
 }
 

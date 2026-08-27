@@ -13,6 +13,8 @@ interface ItemProps {
   isSelected?: boolean;
   onSelect?: () => void;
   zoomDepth?: number;
+  /** Effective zoom scale (customScale-aware); when set it replaces the depth label, e.g. "2.35×". */
+  zoomScale?: number;
   variant?: 'zoom' | 'trim' | 'annotation' | 'subtitle' | 'audio-edit';
   editable?: boolean;
 }
@@ -34,6 +36,7 @@ export default function Item({
   isSelected = false, 
   onSelect, 
   zoomDepth = 1,
+  zoomScale,
   variant = 'zoom',
   editable = true,
   children
@@ -121,7 +124,7 @@ export default function Item({
               <>
                 <ZoomIn className="w-3.5 h-3.5" />
                 <span className="text-[11px] font-semibold tracking-tight">
-                  {ZOOM_LABELS[zoomDepth] || `${zoomDepth}×`}
+                  {zoomScale != null ? `${zoomScale.toFixed(2).replace(/\.?0+$/, '')}×` : (ZOOM_LABELS[zoomDepth] || `${zoomDepth}×`)}
                 </span>
               </>
             ) : isTrim ? (

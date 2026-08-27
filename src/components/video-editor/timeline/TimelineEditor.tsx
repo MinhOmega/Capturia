@@ -11,6 +11,7 @@ import Item from "./Item";
 import KeyframeMarkers from "./KeyframeMarkers";
 import type { Range, Span } from "dnd-timeline";
 import type { ZoomRegion, TrimRegion, VideoSegment, AnnotationRegion, AudioEditRegion } from "../types";
+import { getZoomScale } from "../types";
 import type { SubtitleCue } from "@/lib/analysis/types";
 import { sourceToEffectiveMsWithSegments } from "@/lib/trim/timeMapping";
 import { v4 as uuidv4 } from 'uuid';
@@ -85,6 +86,7 @@ interface TimelineRenderItem {
   span: Span;
   label: string;
   zoomDepth?: number;
+  zoomScale?: number;
   variant: 'zoom' | 'trim' | 'annotation' | 'subtitle' | 'audio-edit';
 }
 
@@ -682,6 +684,7 @@ function Timeline({
             isSelected={item.id === selectedZoomId}
             onSelect={() => onSelectZoom?.(item.id)}
             zoomDepth={item.zoomDepth}
+            zoomScale={item.zoomScale}
             variant="zoom"
           >
             {item.label}
@@ -1301,6 +1304,7 @@ export default function TimelineEditor({
       span: { start: region.startMs, end: region.endMs },
       label: `${t("timeline.zoom")} ${index + 1}`,
       zoomDepth: region.depth,
+      zoomScale: getZoomScale(region),
       variant: 'zoom',
     }));
 

@@ -9,7 +9,9 @@ import { useState } from "react";
 import Block from '@uiw/react-color-block';
 import { Trash2, Download, Crop, X, Bug, Upload, Star, Film, Image, Sparkles, Palette, Captions, Scissors, ScanSearch } from "lucide-react";
 import { toast } from "sonner";
+import * as SliderPrimitive from "@radix-ui/react-slider";
 import type { ZoomDepth, CropRegion, AnnotationRegion, AnnotationType, FigureData } from "./types";
+import { MAX_ZOOM_SCALE, MIN_ZOOM_SCALE, ZOOM_DEPTH_SCALES } from "./types";
 import { CropControl } from "./CropControl";
 import { KeyboardShortcutsHelp } from "./KeyboardShortcutsHelp";
 import { AnnotationSettingsPanel } from "./AnnotationSettingsPanel";
@@ -33,6 +35,11 @@ interface SettingsPanelProps {
   onWallpaperChange: (path: string) => void;
   selectedZoomDepth?: ZoomDepth | null;
   onZoomDepthChange?: (depth: ZoomDepth) => void;
+  /** Continuous zoom scale of the selected region (customScale, or null when it follows the depth preset). */
+  selectedZoomCustomScale?: number | null;
+  onZoomCustomScaleChange?: (scale: number) => void;
+  /** Fired when a slider drag / keyboard adjustment ends (one history entry per gesture). */
+  onZoomCustomScaleCommit?: () => void;
   selectedZoomId?: string | null;
   onZoomDelete?: (id: string) => void;
   selectedSegment?: import('./types').VideoSegment | null;
@@ -127,10 +134,13 @@ const CURSOR_MOVEMENT_PRESETS: Array<{
 export function SettingsPanel({ 
   selected, 
   onWallpaperChange, 
-  selectedZoomDepth, 
-  onZoomDepthChange, 
-  selectedZoomId, 
-  onZoomDelete, 
+  selectedZoomDepth,
+  onZoomDepthChange,
+  selectedZoomCustomScale = null,
+  onZoomCustomScaleChange,
+  onZoomCustomScaleCommit,
+  selectedZoomId,
+  onZoomDelete,
   selectedSegment = null,
   onDeleteSegment,
   onSegmentSpeedChange,
@@ -243,6 +253,13 @@ export function SettingsPanel({
   const activeExportAspectRatios = exportAspectRatios;
 
   const zoomEnabled = Boolean(selectedZoomDepth);
+  // Effective scale of the selected zoom: customScale wins over the depth preset
+  // (mirrors getZoomScale). Drives the badge, the active preset and the slider.
+  const effectiveZoomScale = selectedZoomCustomScale
+    ?? (selectedZoomDepth ? ZOOM_DEPTH_SCALES[selectedZoomDepth] : MIN_ZOOM_SCALE);
+  const effectiveZoomScaleLabel = `${Number.isInteger(effectiveZoomScale)
+    ? effectiveZoomScale.toFixed(0)
+    : effectiveZoomScale.toFixed(2).replace(/0$/, '')}×`;
   const segmentSelected = Boolean(selectedSegment);
 
   const handleDeleteClick = () => {
@@ -368,7 +385,7 @@ export function SettingsPanel({
             <div className="flex items-center gap-2">
               {zoomEnabled && selectedZoomDepth && (
                 <span className="text-[10px] uppercase tracking-wider font-medium text-[#34B27B] bg-[#34B27B]/10 px-2 py-0.5 rounded-full">
-                  {ZOOM_DEPTH_OPTIONS.find(o => o.depth === selectedZoomDepth)?.label}
+                  {effectiveZoomScaleLabel}
                 </span>
               )}
               <KeyboardShortcutsHelp />
@@ -376,7 +393,10 @@ export function SettingsPanel({
           </div>
           <div className="grid grid-cols-6 gap-1.5">
             {ZOOM_DEPTH_OPTIONS.map((option) => {
-              const isActive = selectedZoomDepth === option.depth;
+              // A preset is "active" when the effective scale equals it, so a custom
+              // scale that lands exactly on a preset lights that preset up.
+              const isActive = zoomEnabled
+                && Math.abs(effectiveZoomScale - ZOOM_DEPTH_SCALES[option.depth]) < 0.005;
               return (
                 <Button
                   key={option.depth}
@@ -399,6 +419,48 @@ export function SettingsPanel({
           </div>
           {!zoomEnabled && (
             <p className="text-[10px] text-slate-500 mt-2 text-center">{t("settings.selectZoomToAdjust")}</p>
+          )}
+          {zoomEnabled && onZoomCustomScaleChange && (
+            <div className="mt-3">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[11px] font-medium text-slate-400">{t("settings.zoomCustomScale")}</span>
+                <span className="text-[11px] font-semibold text-slate-300 tabular-nums">{effectiveZoomScale.toFixed(2)}×</span>
+              </div>
+              <SliderPrimitive.Root
+                min={MIN_ZOOM_SCALE}
+                max={MAX_ZOOM_SCALE}
+                step={0.01}
+                value={[effectiveZoomScale]}
+                onValueChange={(values) => onZoomCustomScaleChange(values[0])}
+                onValueCommit={() => onZoomCustomScaleCommit?.()}
+                disabled={!zoomEnabled}
+                aria-label={t("settings.zoomCustomScale")}
+                className="relative flex w-full touch-none select-none items-center py-1"
+              >
+                <SliderPrimitive.Track className="relative h-1.5 w-full grow overflow-hidden rounded-full border border-white/10 bg-white/5">
+                  <SliderPrimitive.Range
+                    className={cn(
+                      "absolute h-full transition-colors duration-150",
+                      selectedZoomCustomScale != null ? "bg-[#34B27B]" : "bg-white/20",
+                    )}
+                  />
+                </SliderPrimitive.Track>
+                <SliderPrimitive.Thumb
+                  className={cn(
+                    "block h-3.5 w-3.5 rounded-full border-2 shadow transition-all duration-150",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#34B27B]/50",
+                    "disabled:pointer-events-none disabled:opacity-50 cursor-grab active:cursor-grabbing",
+                    selectedZoomCustomScale != null
+                      ? "border-[#34B27B] bg-[#34B27B] shadow-[0_0_6px_rgba(52,178,123,0.4)]"
+                      : "border-white/20 bg-[#2a2a30] hover:border-white/40",
+                  )}
+                />
+              </SliderPrimitive.Root>
+              <div className="flex justify-between text-[10px] text-slate-600 mt-1">
+                <span>{MIN_ZOOM_SCALE.toFixed(1)}×</span>
+                <span>{MAX_ZOOM_SCALE.toFixed(1)}×</span>
+              </div>
+            </div>
           )}
           {zoomEnabled && (
             <Button

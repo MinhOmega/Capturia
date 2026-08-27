@@ -17,6 +17,7 @@ import { ExportProgressFloat } from "./ExportProgressFloat";
 import type { Span } from "dnd-timeline";
 import {
   DEFAULT_ZOOM_DEPTH,
+  ZOOM_DEPTH_SCALES,
   clampFocusToDepth,
   DEFAULT_CROP_REGION,
   DEFAULT_ANNOTATION_POSITION,
@@ -466,6 +467,10 @@ export default function VideoEditor() {
     () => getSelectedZoomIdForAspect(selectedZoomIdByAspect, aspectRatio),
     [selectedZoomIdByAspect, aspectRatio],
   );
+  const selectedZoomRegion = useMemo(
+    () => (selectedZoomId ? zoomRegions.find((region) => region.id === selectedZoomId) ?? null : null),
+    [zoomRegions, selectedZoomId],
+  );
   const showAspectCropOverlay = exportFormat === "mp4" && normalizedExportAspectRatios.includes(aspectRatio);
 
   // --- Segment-derived values ---
@@ -901,6 +906,29 @@ export default function VideoEditor() {
   const isRestoringHistoryRef = useRef(false);
   const prevEditableRef = useRef<EditorSnapshot | null>(null);
   const historyReadyRef = useRef(false);
+  // History batching: while a batch is active only the first change pushes an
+  // undo entry, so a slider drag or a typed number commits as ONE entry.
+  // `endHistoryBatch` deactivates on a macrotask so the passive effect of the
+  // final change (flushed synchronously after the discrete event) is still
+  // inside the batch.
+  const historyBatchRef = useRef<{ active: boolean; pushed: boolean }>({ active: false, pushed: false });
+  const historyBatchEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const beginHistoryBatch = useCallback(() => {
+    if (historyBatchEndTimerRef.current) {
+      clearTimeout(historyBatchEndTimerRef.current);
+      historyBatchEndTimerRef.current = null;
+    }
+    if (!historyBatchRef.current.active) {
+      historyBatchRef.current = { active: true, pushed: false };
+    }
+  }, []);
+  const endHistoryBatch = useCallback(() => {
+    if (historyBatchEndTimerRef.current) clearTimeout(historyBatchEndTimerRef.current);
+    historyBatchEndTimerRef.current = setTimeout(() => {
+      historyBatchEndTimerRef.current = null;
+      historyBatchRef.current = { active: false, pushed: false };
+    }, 0);
+  }, []);
 
   // Track state changes and push to undo stack
   useEffect(() => {
@@ -920,11 +948,13 @@ export default function VideoEditor() {
       return;
     }
 
-    // Push previous state to undo stack
-    if (prevEditableRef.current) {
+    // Push previous state to undo stack (once per history batch)
+    const batch = historyBatchRef.current;
+    if (prevEditableRef.current && !(batch.active && batch.pushed)) {
       undoStackRef.current.push(prevEditableRef.current);
       if (undoStackRef.current.length > MAX_UNDO_HISTORY) undoStackRef.current.shift();
       redoStackRef.current = []; // New user action clears redo
+      if (batch.active) batch.pushed = true;
     }
     prevEditableRef.current = current;
   }, [segments, zoomRegionsByAspect, annotationRegions, audioEditRegions]);
@@ -1255,12 +1285,31 @@ export default function VideoEditor() {
           ? {
               ...region,
               depth,
+              // Presets also set customScale so the slider and the preset agree
+              // (getZoomScale prefers customScale).
+              customScale: ZOOM_DEPTH_SCALES[depth],
               focus: clampFocusToDepth(region.focus, depth),
             }
           : region,
       ),
     );
   }, [selectedZoomId, setZoomRegionsForActiveAspect]);
+
+  // Slider drags call this per pixel; the drag is one history entry (see
+  // beginHistoryBatch / onZoomCustomScaleCommit).
+  const handleZoomCustomScaleChange = useCallback((scale: number) => {
+    if (!selectedZoomId) return;
+    const rounded = Math.round(scale * 100) / 100;
+    if (!Number.isFinite(rounded)) return;
+    beginHistoryBatch();
+    setZoomRegionsForActiveAspect((prev) =>
+      prev.map((region) =>
+        region.id === selectedZoomId
+          ? { ...region, customScale: rounded }
+          : region,
+      ),
+    );
+  }, [beginHistoryBatch, selectedZoomId, setZoomRegionsForActiveAspect]);
 
   const handleZoomDelete = useCallback((id: string) => {
     setZoomRegionsForActiveAspect((prev) => prev.filter((region) => region.id !== id));
@@ -2668,8 +2717,11 @@ export default function VideoEditor() {
               <SettingsPanel
                 selected={wallpaper}
                 onWallpaperChange={setWallpaper}
-                selectedZoomDepth={selectedZoomId ? zoomRegions.find(z => z.id === selectedZoomId)?.depth : null}
+                selectedZoomDepth={selectedZoomRegion?.depth ?? null}
                 onZoomDepthChange={(depth) => selectedZoomId && handleZoomDepthChange(depth)}
+                selectedZoomCustomScale={selectedZoomRegion?.customScale ?? null}
+                onZoomCustomScaleChange={handleZoomCustomScaleChange}
+                onZoomCustomScaleCommit={endHistoryBatch}
                 selectedZoomId={selectedZoomId}
                 onZoomDelete={handleZoomDelete}
                 selectedSegment={segments.find((s) => s.id === selectedSegmentId) ?? null}
