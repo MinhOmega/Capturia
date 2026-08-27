@@ -69,7 +69,13 @@ export function SourceSelector() {
           appIcon: source.appIcon
         }))
       );
+      // Drop a selection that no longer exists after a reload (window closed).
+      setSelectedSource((current) =>
+        current && rawSources.some((source) => source.id === current.id) ? current : null,
+      );
     } catch (error) {
+      setSources([]);
+      setSelectedSource(null);
       setLoadFailed(true);
       const fallbackDetail = isScreenCaptureAccessBlocked(accessStatus) ? t("launch.source.screenPermissionHint") : "";
       const errorDetail = error instanceof Error ? error.message : String(error);
@@ -97,6 +103,10 @@ export function SourceSelector() {
 
   const screenSources = sources.filter(s => s.id.startsWith('screen:'));
   const windowSources = sources.filter(s => s.id.startsWith('window:'));
+  // Enumeration succeeded but returned nothing: typically right after granting
+  // screen recording on macOS, or a display/window race. Distinct from
+  // `loadFailed`, which keeps Capturia's permission UI.
+  const hasNoSources = !loading && !loadFailed && sources.length === 0;
 
   const handleSourceSelect = (source: DesktopSource) => setSelectedSource(source);
   const handleOpenSystemSettings = async () => {
@@ -160,8 +170,11 @@ export function SourceSelector() {
     return (
       <div className={`h-full flex items-center justify-center ${styles.glassContainer}`} style={{ minHeight: '100vh' }}>
         <div className="text-center">
-          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-zinc-600 mx-auto mb-2" />
-          <p className="text-xs text-zinc-300">{t("launch.source.loading")}</p>
+          <div
+            data-testid="source-selector-spinner"
+            className="animate-spin duration-500 rounded-[50%] h-6 w-6 border-2 border-b-transparent border-[#34B27B] mx-auto mb-2"
+          />
+          <p className="text-xs text-zinc-400">{t("launch.source.loading")}</p>
         </div>
       </div>
     );
@@ -202,82 +215,99 @@ export function SourceSelector() {
     );
   }
 
+  if (hasNoSources) {
+    return (
+      <div className={`h-full flex items-center justify-center ${styles.glassContainer}`} style={{ minHeight: '100vh' }}>
+        <div className="max-w-[320px] px-6 text-center">
+          <h2 className="text-sm font-semibold text-white">{t("launch.source.emptyTitle")}</h2>
+          <p className="mt-2 text-xs leading-5 text-zinc-400">{t("launch.source.emptyDescription")}</p>
+          <div className="mt-4 flex items-center justify-center gap-2">
+            <Button
+              onClick={() => void handleOpenPermissionChecker()}
+              className="h-8 rounded-lg bg-zinc-700 px-4 text-[11px] text-white hover:bg-zinc-600"
+            >
+              {t("launch.source.checkPermissions")}
+            </Button>
+            <Button
+              data-testid="source-selector-reload-button"
+              onClick={() => void fetchSources()}
+              className="h-8 rounded-lg bg-[#34B27B] px-5 text-[11px] font-semibold text-white transition-transform duration-150 hover:bg-[#34B27B]/85 active:scale-95"
+            >
+              {t("launch.source.reload")}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const renderSourceCard = (source: DesktopSource) => {
+    const isSelected = selectedSource?.id === source.id;
+    const sourceKind = source.id.startsWith('screen:') ? 'screen' : 'window';
+    return (
+      <Card
+        key={source.id}
+        data-testid="source-selector-card"
+        data-source-kind={sourceKind}
+        className={`${styles.sourceCard} ${isSelected ? styles.selected : ''} cursor-pointer h-fit p-2 scale-95`}
+        style={{ margin: 8, width: '90%', maxWidth: 220 }}
+        onClick={() => handleSourceSelect(source)}
+      >
+        <div className="p-1">
+          <div className="relative mb-1 overflow-hidden rounded-lg border border-white/[0.06] bg-black/30">
+            <img
+              src={source.thumbnail || ''}
+              alt={source.name}
+              className="w-full aspect-video object-cover"
+            />
+            {isSelected && (
+              <div className="absolute right-1.5 top-1.5">
+                <div className={styles.checkBadge}>
+                  <MdCheck size={11} className="text-white" />
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            {source.appIcon && (
+              <img
+                src={source.appIcon}
+                alt={t("launch.source.appIcon")}
+                className={styles.icon + " flex-shrink-0"}
+              />
+            )}
+            <div className={styles.name + " truncate"}>{source.name}</div>
+          </div>
+        </div>
+      </Card>
+    );
+  };
+
+  const tabTriggerClassName =
+    "data-[state=active]:bg-[#34B27B] data-[state=active]:text-white text-zinc-200 rounded-full text-xs py-1";
+
   return (
     <div className={`min-h-screen flex flex-col items-center justify-center ${styles.glassContainer}`}>
       <div className="flex-1 flex flex-col w-full max-w-xl" style={{ padding: 0 }}>
-        <Tabs defaultValue="screens">
+        {/* A window-only enumeration (no screen sources) lands on the Windows tab. */}
+        <Tabs defaultValue={screenSources.length === 0 ? "windows" : "screens"}>
           <TabsList className="grid grid-cols-2 mb-3 bg-zinc-900/40 rounded-full">
-            <TabsTrigger value="screens" className="data-[state=active]:bg-[#34B27B] data-[state=active]:text-white text-zinc-200 rounded-full text-xs py-1">{t("launch.source.screens")}</TabsTrigger>
-            <TabsTrigger value="windows" className="data-[state=active]:bg-[#34B27B] data-[state=active]:text-white text-zinc-200 rounded-full text-xs py-1">{t("launch.source.windows")}</TabsTrigger>
+            <TabsTrigger value="screens" data-testid="source-selector-screens-tab" className={tabTriggerClassName}>
+              {t("launch.source.screensCount", { count: screenSources.length })}
+            </TabsTrigger>
+            <TabsTrigger value="windows" data-testid="source-selector-windows-tab" className={tabTriggerClassName}>
+              {t("launch.source.windowsCount", { count: windowSources.length })}
+            </TabsTrigger>
           </TabsList>
-            <div className="h-72 flex flex-col justify-stretch">
+          <div className="h-72 flex flex-col justify-stretch">
             <TabsContent value="screens" className="h-full">
-              <div className="grid grid-cols-2 gap-2 h-full overflow-y-auto pr-1 relative">
-                {screenSources.map(source => (
-                  <Card
-                    key={source.id}
-                    className={`${styles.sourceCard} ${selectedSource?.id === source.id ? styles.selected : ''} cursor-pointer h-fit p-2 scale-95`}
-                    style={{ margin: 8, width: '90%', maxWidth: 220 }}
-                    onClick={() => handleSourceSelect(source)}
-                  >
-                    <div className="p-1">
-                      <div className="relative mb-1">
-                        <img
-                          src={source.thumbnail || ''}
-                          alt={source.name}
-                          className="w-full aspect-video object-cover rounded border border-zinc-800"
-                        />
-                        {selectedSource?.id === source.id && (
-                          <div className="absolute -top-1 -right-1">
-                            <div className="w-4 h-4 bg-[#34B27B] rounded-full flex items-center justify-center shadow-md">
-                              <MdCheck className={styles.icon} />
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                      <div className={styles.name + " truncate"}>{source.name}</div>
-                    </div>
-                  </Card>
-                ))}
+              <div className={`grid grid-cols-2 gap-2 h-full overflow-y-auto pr-1 relative ${styles.sourceGridScroll}`}>
+                {screenSources.map(renderSourceCard)}
               </div>
             </TabsContent>
             <TabsContent value="windows" className="h-full">
-              <div className="grid grid-cols-2 gap-2 h-full overflow-y-auto pr-1 relative">
-                {windowSources.map(source => (
-                  <Card
-                    key={source.id}
-                    className={`${styles.sourceCard} ${selectedSource?.id === source.id ? styles.selected : ''} cursor-pointer h-fit p-2 scale-95`}
-                    style={{ margin: 8, width: '90%', maxWidth: 220 }}
-                    onClick={() => handleSourceSelect(source)}
-                  >
-                    <div className="p-1">
-                      <div className="relative mb-1">
-                        <img
-                          src={source.thumbnail || ''}
-                          alt={source.name}
-                          className="w-full aspect-video object-cover rounded border border-gray-700"
-                        />
-                        {selectedSource?.id === source.id && (
-                          <div className="absolute -top-1 -right-1">
-                            <div className="w-4 h-4 bg-blue-600 rounded-full flex items-center justify-center shadow-md">
-                              <MdCheck className={styles.icon} />
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1">
-                        {source.appIcon && (
-                          <img
-                            src={source.appIcon}
-                            alt={t("launch.source.appIcon")}
-                            className={styles.icon + " flex-shrink-0"}
-                          />
-                        )}
-                        <div className={styles.name + " truncate"}>{source.name}</div>
-                      </div>
-                    </div>
-                  </Card>
-                ))}
+              <div className={`grid grid-cols-2 gap-2 h-full overflow-y-auto pr-1 relative ${styles.sourceGridScroll}`}>
+                {windowSources.map(renderSourceCard)}
               </div>
             </TabsContent>
           </div>
@@ -285,8 +315,22 @@ export function SourceSelector() {
       </div>
       <div className="border-t border-zinc-800 p-2 w-full max-w-xl">
         <div className="flex justify-center gap-2">
-          <Button variant="outline" onClick={() => window.close()} className="px-4 py-1 text-xs bg-zinc-800 border-zinc-700 text-zinc-200 hover:bg-zinc-700">{t("launch.source.cancel")}</Button>
-          <Button onClick={handleShare} disabled={!selectedSource} className="px-4 py-1 text-xs bg-[#34B27B] text-white hover:bg-[#34B27B]/80 disabled:opacity-50 disabled:bg-zinc-700">{t("launch.source.share")}</Button>
+          <Button
+            data-testid="source-selector-cancel-button"
+            variant="outline"
+            onClick={() => window.close()}
+            className="px-4 py-1 text-xs bg-zinc-800 border-zinc-700 text-zinc-200 hover:bg-zinc-700"
+          >
+            {t("launch.source.cancel")}
+          </Button>
+          <Button
+            data-testid="source-selector-share-button"
+            onClick={handleShare}
+            disabled={!selectedSource}
+            className="px-4 py-1 text-xs bg-[#34B27B] text-white hover:bg-[#34B27B]/80 disabled:opacity-50 disabled:bg-zinc-700"
+          >
+            {t("launch.source.share")}
+          </Button>
         </div>
       </div>
     </div>

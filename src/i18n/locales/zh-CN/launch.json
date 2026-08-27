@@ -82,7 +82,12 @@
 		"openSystemSettings": "打开系统设置",
 		"openSystemSettingsFailed": "打开系统设置失败。",
 		"checkPermissions": "检查权限",
-		"retry": "重试"
+		"retry": "重试",
+		"emptyTitle": "未找到屏幕或窗口",
+		"emptyDescription": "如果你刚刚授予了屏幕录制权限，请重新加载此选择器。在 macOS 上可能需要重新打开 Capturia。",
+		"reload": "重新加载",
+		"screensCount": "屏幕 ({{count}})",
+		"windowsCount": "窗口 ({{count}})"
 	},
 	"permission": {
 		"loading": "正在检查权限状态...",
