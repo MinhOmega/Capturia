@@ -18,7 +18,7 @@ import { MdMonitor } from "react-icons/md";
 import { RxDragHandleDots2 } from "react-icons/rx";
 import { FaFolderMinus } from "react-icons/fa6";
 import { FiCamera, FiMinus, FiMousePointer, FiX } from "react-icons/fi";
-import { EyeOff, Keyboard, Mic, MicOff, Pause, Play, RotateCcw, Settings2, Shield, SlidersHorizontal, Timer, Trash2 } from "lucide-react";
+import { EyeOff, Keyboard, Mic, MicOff, NotebookPen, Pause, Play, RotateCcw, Settings2, Shield, SlidersHorizontal, Timer, Trash2 } from "lucide-react";
 import { getAvailableLocales, getLocaleName, useI18n } from "@/i18n";
 import { toast } from "sonner";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -284,6 +284,13 @@ export function LaunchWindow() {
     if (typeof navigator === "undefined") return false;
     return /Mac|iPhone|iPad|iPod/.test(navigator.platform);
   });
+  // Notes window (A14): content protection does not exist on Linux, so the button
+  // is hidden there rather than shipping a window that lands in the recording.
+  const [isLinuxPlatform, setIsLinuxPlatform] = useState(() => {
+    if (typeof navigator === "undefined") return false;
+    return /Linux/.test(navigator.platform) && !/Android/.test(navigator.userAgent);
+  });
+  const [notesWindowOpen, setNotesWindowOpen] = useState(false);
   const [recordCountdownSeconds, setRecordCountdownSeconds] = useState<RecordCountdownSeconds>(() => {
     try {
       const value = Number(window.localStorage.getItem("capturia.recordCountdownSeconds"));
@@ -501,6 +508,7 @@ export function LaunchWindow() {
         const platform = await window.electronAPI.getPlatform();
         if (!cancelled) {
           setIsMacPlatform(platform === "darwin");
+          setIsLinuxPlatform(platform === "linux");
         }
       } catch {
         // ignore platform probe failures
@@ -726,6 +734,34 @@ export function LaunchWindow() {
           error,
           context: "launch-window.open-permission-checker",
           dedupeKey: "launch-window.open-permission-checker",
+        });
+      }
+    })();
+  }, [t]);
+
+  useEffect(() => {
+    const subscribe = window.electronAPI?.onNotesWindowClosed;
+    if (!subscribe) return;
+    return subscribe(() => setNotesWindowOpen(false));
+  }, []);
+
+  const openNotes = useCallback(() => {
+    if (!window.electronAPI?.openNotes) return;
+    void (async () => {
+      try {
+        const result = await window.electronAPI.openNotes();
+        if (result?.success) {
+          setNotesWindowOpen(true);
+          return;
+        }
+        toast.error(result?.message || t("launch.openNotesFailed"));
+      } catch (error) {
+        reportUserActionError({
+          t,
+          userMessage: t("launch.openNotesFailed"),
+          error,
+          context: "launch-window.open-notes",
+          dedupeKey: "launch-window.open-notes",
         });
       }
     })();
@@ -1149,6 +1185,20 @@ export function LaunchWindow() {
           <Shield size={13} className="text-white/80" />
           <span className="text-white/90">{t("launch.permissions")}</span>
         </Button>
+
+        {!isLinuxPlatform ? (
+          <Button
+            variant="link"
+            size="sm"
+            className={`gap-1 shrink-0 min-w-[70px] text-white bg-transparent hover:bg-transparent px-1 text-center text-xs ${styles.electronNoDrag}`}
+            onClick={openNotes}
+            title={t("launch.tooltips.openNotes")}
+            data-testid="launch-notes-button"
+          >
+            <NotebookPen size={13} className={notesWindowOpen ? "text-cyan-300" : "text-white/80"} />
+            <span className={notesWindowOpen ? "text-cyan-300" : "text-white/90"}>{t("launch.notes")}</span>
+          </Button>
+        ) : null}
 
         <Popover>
           <PopoverTrigger asChild>

@@ -8,6 +8,8 @@ export type HudWindowsContext = {
   ipcMain: IpcMain
   createCountdownOverlayWindow: () => BrowserWindow
   getCountdownOverlayWindow: () => BrowserWindow | null
+  createNotesWindow: () => BrowserWindow
+  getNotesWindow: () => BrowserWindow | null
 }
 
 /**
@@ -58,5 +60,22 @@ export function registerHudWindowsHandlers(ctx: HudWindowsContext): void {
     if (!overlayWindow) return
     overlayWindow.webContents.send('countdown-overlay-value', null, runId)
     overlayWindow.hide()
+  })
+
+  // One Notes window at a time: a second request focuses the existing one.
+  ipcMain.handle('open-notes', () => {
+    if (process.platform === 'linux') {
+      // No content protection on Linux: the window would end up in the recording.
+      return { success: false, message: 'Notes window is not supported on Linux.' }
+    }
+    const existing = liveWindow(ctx.getNotesWindow())
+    if (existing) {
+      if (existing.isMinimized()) existing.restore()
+      existing.show()
+      existing.focus()
+      return { success: true, focused: true }
+    }
+    ctx.createNotesWindow()
+    return { success: true, focused: false }
   })
 }

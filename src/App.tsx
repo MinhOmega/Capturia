@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { CountdownOverlay } from "./components/launch/CountdownOverlay";
 import { LaunchWindow } from "./components/launch/LaunchWindow";
+import { NotesWindow } from "./components/launch/NotesWindow";
 import { PermissionCheckerWindow } from "./components/launch/PermissionCheckerWindow";
 import { SourceSelector } from "./components/launch/SourceSelector";
 import VideoEditor from "./components/video-editor/VideoEditor";
@@ -14,6 +15,8 @@ import { ShortcutsConfigDialog } from "./components/video-editor/ShortcutsConfig
 export default function App() {
   const { t } = useI18n();
   const [windowType, setWindowType] = useState('');
+  // The Notes window is addressed by its own query flag (`createNotesWindow`).
+  const showNotes = new URLSearchParams(window.location.search).get('showNotes') === 'true';
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -68,7 +71,7 @@ export default function App() {
   return (
     <>
       <GlobalErrorObserver />
-      {content}
+      {showNotes ? <NotesWindow /> : content}
       <Toaster theme="dark" className="pointer-events-auto" />
     </>
   );
