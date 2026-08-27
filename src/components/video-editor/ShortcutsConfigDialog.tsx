@@ -69,7 +69,7 @@ export function ShortcutsConfigDialog() {
       setCaptureFor(null);
 
       if (found?.type === 'fixed') {
-        toast.error(t('shortcut.conflictFixed', { label: t(found.labelKey) }));
+        toast.error(t('shortcuts.conflictFixed', { label: t(found.labelKey) }));
         return;
       }
 
@@ -101,13 +101,13 @@ export function ShortcutsConfigDialog() {
   const handleSave = useCallback(async () => {
     setShortcuts(draft);
     await persistShortcuts(draft);
-    toast.success(t('shortcut.saved'));
+    toast.success(t('shortcuts.saved'));
     closeConfig();
   }, [draft, setShortcuts, persistShortcuts, closeConfig, t]);
 
   const handleReset = useCallback(() => {
     setDraft({ ...DEFAULT_SHORTCUTS });
-    toast.info(t('shortcut.resetHint'));
+    toast.info(t('shortcuts.resetHint'));
   }, [t]);
 
   const handleClose = useCallback(() => {
@@ -123,10 +123,10 @@ export function ShortcutsConfigDialog() {
         <DialogHeader className="px-5 pt-5 pb-3 shrink-0">
           <DialogTitle className="flex items-center gap-2 text-sm">
             <Keyboard className="w-4 h-4 text-[#34B27B]" />
-            {t('shortcut.configTitle')}
+            {t('shortcuts.configTitle')}
           </DialogTitle>
           <p className="text-[10px] text-slate-500 mt-1.5">
-            {t('shortcut.instructions')}
+            {t('shortcuts.instructions')}
           </p>
         </DialogHeader>
 
@@ -135,7 +135,7 @@ export function ShortcutsConfigDialog() {
           {/* Configurable shortcuts */}
           <div className="space-y-0.5">
             <p className="text-[10px] text-slate-500 mb-2 uppercase tracking-wide font-semibold">
-              {t('shortcut.configurable')}
+              {t('shortcuts.configurable')}
             </p>
             {SHORTCUT_ACTIONS.map((action) => {
               const isCapturing = captureFor === action;
@@ -150,7 +150,7 @@ export function ShortcutsConfigDialog() {
                         setConflict(null);
                         setCaptureFor(isCapturing ? null : action);
                       }}
-                      title={isCapturing ? t('shortcut.pressKey') : undefined}
+                      title={isCapturing ? t('shortcuts.pressKey') : undefined}
                       className={[
                         'px-2 py-1 rounded text-xs font-mono border transition-all min-w-[90px] text-center select-none',
                         isCapturing
@@ -160,13 +160,13 @@ export function ShortcutsConfigDialog() {
                             : 'bg-white/5 border-white/10 text-slate-200 hover:border-[#34B27B]/50 hover:text-[#34B27B] cursor-pointer',
                       ].join(' ')}
                     >
-                      {isCapturing ? t('shortcut.pressKey') : formatBinding(draft[action], isMac)}
+                      {isCapturing ? t('shortcuts.pressKey') : formatBinding(draft[action], isMac)}
                     </button>
                   </div>
                   {hasConflict && conflict?.conflictWith.type === 'configurable' && (
                     <div className="flex items-center justify-between px-1 py-1.5 mb-0.5 bg-amber-500/10 border border-amber-500/20 rounded text-xs animate-in slide-in-from-top-1 duration-150">
                       <span className="text-amber-400">
-                        {t('shortcut.conflictWith', {
+                        {t('shortcuts.conflictWith', {
                           label: t(SHORTCUT_LABEL_KEYS[conflict.conflictWith.action]),
                         })}
                       </span>
@@ -176,7 +176,7 @@ export function ShortcutsConfigDialog() {
                           onClick={handleSwap}
                           className="px-2 py-0.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 rounded text-amber-300 font-medium transition-colors"
                         >
-                          {t('shortcut.swap')}
+                          {t('shortcuts.swap')}
                         </button>
                         <button
                           type="button"
@@ -196,7 +196,7 @@ export function ShortcutsConfigDialog() {
           {/* Fixed shortcuts */}
           <div className="space-y-0.5 mt-4 mb-4">
             <p className="text-[10px] text-slate-500 mb-2 uppercase tracking-wide font-semibold">
-              {t('shortcut.fixed')}
+              {t('shortcuts.fixed')}
             </p>
             {FIXED_SHORTCUTS.map(({ labelKey, display, bindings }) => (
               <div
@@ -221,7 +221,7 @@ export function ShortcutsConfigDialog() {
             onClick={handleReset}
           >
             <RotateCcw className="w-3 h-3" />
-            {t('shortcut.resetDefaults')}
+            {t('shortcuts.resetDefaults')}
           </Button>
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={handleClose}>

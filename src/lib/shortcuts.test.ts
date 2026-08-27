@@ -85,7 +85,7 @@ describe('findConflict', () => {
 
   it('detects fixed arrow key conflict', () => {
     const result = findConflict({ key: 'arrowright' }, 'playPause', config);
-    expect(result).toEqual({ type: 'fixed', labelKey: 'shortcut.seekForward' });
+    expect(result).toEqual({ type: 'fixed', labelKey: 'shortcuts.seekForward' });
   });
 });
 
@@ -292,7 +292,7 @@ describe('DEFAULT_SHORTCUTS', () => {
 
   it('has a label key for every action', () => {
     for (const action of SHORTCUT_ACTIONS) {
-      expect(SHORTCUT_LABEL_KEYS[action]).toMatch(/^shortcut\./);
+      expect(SHORTCUT_LABEL_KEYS[action]).toMatch(/^shortcuts\./);
     }
   });
 

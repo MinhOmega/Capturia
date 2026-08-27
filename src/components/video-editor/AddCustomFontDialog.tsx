@@ -47,17 +47,17 @@ export function AddCustomFontDialog({ onFontAdded }: AddCustomFontDialogProps) {
   const handleAdd = async () => {
     // Validate inputs
     if (!importUrl.trim()) {
-      toast.error(t('font.error.enterUrl'));
+      toast.error(t('settings.font.error.enterUrl'));
       return;
     }
 
     if (!isValidGoogleFontsUrl(importUrl)) {
-      toast.error(t('font.error.invalidUrl'));
+      toast.error(t('settings.font.error.invalidUrl'));
       return;
     }
 
     if (!fontName.trim()) {
-      toast.error(t('font.error.enterName'));
+      toast.error(t('settings.font.error.enterName'));
       return;
     }
 
@@ -67,7 +67,7 @@ export function AddCustomFontDialog({ onFontAdded }: AddCustomFontDialogProps) {
       // Extract font family from URL
       const fontFamily = parseFontFamilyFromImport(importUrl);
       if (!fontFamily) {
-        toast.error(t('font.error.extract'));
+        toast.error(t('settings.font.error.extract'));
         setLoading(false);
         return;
       }
@@ -88,7 +88,7 @@ export function AddCustomFontDialog({ onFontAdded }: AddCustomFontDialogProps) {
         onFontAdded(newFont);
       }
 
-      toast.success(t('font.added', { name: fontName }));
+      toast.success(t('settings.font.added', { name: fontName }));
 
       // Reset and close
       setImportUrl('');
@@ -97,10 +97,10 @@ export function AddCustomFontDialog({ onFontAdded }: AddCustomFontDialogProps) {
     } catch (error) {
       console.error('Failed to add custom font:', error);
       const errorMessage = error instanceof Error ? error.message : 'Failed to load font';
-      toast.error(t('font.failed'), {
+      toast.error(t('settings.font.failed'), {
         description: errorMessage.includes('timeout')
-          ? t('font.failed.timeout')
-          : t('font.failed.generic'),
+          ? t('settings.font.failed.timeout')
+          : t('settings.font.failed.generic'),
       });
     } finally {
       setLoading(false);
@@ -116,47 +116,47 @@ export function AddCustomFontDialog({ onFontAdded }: AddCustomFontDialogProps) {
           className="w-full bg-white/5 border-white/10 text-slate-200 hover:bg-white/10 h-9 text-xs"
         >
           <Plus className="w-3 h-3 mr-1" />
-          {t('font.addGoogle')}
+          {t('settings.font.addGoogle')}
         </Button>
       </DialogTrigger>
       <DialogContent className="bg-[#1a1a1c] border-white/10 text-slate-200">
         <DialogHeader>
-          <DialogTitle>{t('font.dialogTitle')}</DialogTitle>
+          <DialogTitle>{t('settings.font.dialogTitle')}</DialogTitle>
           <DialogDescription className="text-slate-400">
-            {t('font.dialogDesc')}
+            {t('settings.font.dialogDesc')}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 mt-4">
           <div className="space-y-2">
             <Label htmlFor="import-url" className="text-slate-200">
-              {t('font.importUrl')}
+              {t('settings.font.importUrl')}
             </Label>
             <Input
               id="import-url"
-              placeholder={t('font.importPlaceholder')}
+              placeholder={t('settings.font.importPlaceholder')}
               value={importUrl}
               onChange={(e) => handleImportUrlChange(e.target.value)}
               className="bg-white/5 border-white/10 text-slate-200"
             />
             <p className="text-xs text-slate-400">
-              {t('font.importHint')}
+              {t('settings.font.importHint')}
             </p>
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="font-name" className="text-slate-200">
-              {t('font.displayName')}
+              {t('settings.font.displayName')}
             </Label>
             <Input
               id="font-name"
-              placeholder={t('font.namePlaceholder')}
+              placeholder={t('settings.font.namePlaceholder')}
               value={fontName}
               onChange={(e) => setFontName(e.target.value)}
               className="bg-white/5 border-white/10 text-slate-200"
             />
             <p className="text-xs text-slate-400">
-              {t('font.displayHint')}
+              {t('settings.font.displayHint')}
             </p>
           </div>
 
@@ -173,7 +173,7 @@ export function AddCustomFontDialog({ onFontAdded }: AddCustomFontDialogProps) {
               disabled={loading}
               className="bg-blue-600 hover:bg-blue-700 text-white"
             >
-              {loading ? t('font.adding') : t('font.add')}
+              {loading ? t('settings.font.adding') : t('settings.font.add')}
             </Button>
           </div>
         </div>

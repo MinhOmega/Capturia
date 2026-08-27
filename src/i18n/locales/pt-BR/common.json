@@ -1,0 +1,38 @@
+{
+	"cancel": "Cancelar",
+	"close": "Fechar",
+	"done": "Concluir",
+	"loading": "Carregando…",
+	"processing": "Processando...",
+	"status": "Status",
+	"format": "Formato",
+	"frames": "Quadros",
+	"loop": "Repetir",
+	"language": "Idioma",
+	"playback": {
+		"play": "Play",
+		"pause": "Pause",
+		"fullscreen": "Tela Cheia",
+		"exitFullscreen": "Sair da Tela Cheia"
+	},
+	"apply": "Aplicar",
+	"electron": {
+		"tray": {
+			"recording": "Gravando: {{source}}",
+			"stopRecording": "Parar Gravação",
+			"open": "Abrir",
+			"quit": "Sair"
+		},
+		"saveGif": "Salvar GIF Exportado",
+		"saveVideo": "Salvar Vídeo Exportado",
+		"exportCancelled": "Exportação cancelada",
+		"exportSaveFailed": "Falha ao salvar vídeo exportado",
+		"selectVideoFile": "Selecionar Arquivo de Vídeo",
+		"videoFiles": "Arquivos de Vídeo",
+		"allFiles": "Todos os Arquivos"
+	},
+	"locale": {
+		"name": "Português Brasileiro",
+		"short": "PT-BR"
+	}
+}

@@ -1,0 +1,19 @@
+{
+	"noVideoLoaded": "불러온 비디오 없음",
+	"dragDropToStart": "비디오를 드래그 앤 드롭해서 편집을 시작하세요",
+	"cannotPlaceZoom": "이 위치에 줌을 추가할 수 없습니다",
+	"cannotPlaceZoomDesc": "이 위치에 이미 줌이 있거나 공간이 부족합니다.",
+	"cannotPlaceTrim": "이 위치에 트림을 추가할 수 없습니다",
+	"cannotPlaceTrimDesc": "이 위치에 이미 트림이 있거나 공간이 부족합니다.",
+	"zoom": "줌",
+	"trim": "트림",
+	"annotation": "주석",
+	"audio": "오디오",
+	"image": "이미지",
+	"emptyText": "빈 텍스트",
+	"pan": "이동",
+	"zoomAction": "줌",
+	"addZoom": "줌 추가 (Z)",
+	"addTrim": "트림 추가 (T)",
+	"addAnnotation": "주석 추가 (A)"
+}

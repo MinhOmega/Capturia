@@ -1,0 +1,27 @@
+{
+	"sourceFallback": "画面",
+	"stopRecording": "録画を停止",
+	"pauseRecording": "録画を一時停止",
+	"resumeRecording": "録画を再開",
+	"open": "開く",
+	"camera": "カメラ",
+	"shape": {
+		"rounded": "角丸",
+		"square": "正方形",
+		"circle": "円"
+	},
+	"captureFrameRate": "フレームレート",
+	"stopShortcutReset": "リセット",
+	"hideHud": "HUDを隠す",
+	"closeApp": "アプリを閉じる",
+	"source": {
+		"loading": "ソースを読み込み中...",
+		"cancel": "キャンセル",
+		"share": "共有"
+	},
+	"permission": {
+		"rowScreenCaptureTitle": "画面録画",
+		"rowCameraTitle": "カメラ",
+		"rowMicrophoneTitle": "マイク"
+	}
+}

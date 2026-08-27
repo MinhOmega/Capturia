@@ -1,0 +1,45 @@
+{
+	"export": {
+		"title": "Esportazione {{format}}",
+		"titleCompilingGif": "Compilazione GIF",
+		"titleFinalizingVideo": "Finalizzazione video",
+		"titleFailed": "Esportazione fallita",
+		"statusTryAgain": "Riprova",
+		"statusMoment": "Ci potrebbe impiegare un momento...",
+		"statusCompiling": "Compilazione GIF... Potrebbe richiedere del tempo",
+		"statusCompilingPct": "Compilazione GIF... {{progress}}%",
+		"phaseCompiling": "Compilazione",
+		"phaseFinalizing": "Finalizzazione...",
+		"phaseRendering": "Rendering fotogrammi",
+		"complete": "Esportazione completata",
+		"ready": "Il tuo {{format}} è pronto",
+		"cancelExport": "Annulla esportazione",
+		"saved": "{{format}} salvato con successo!",
+		"showInFolder": "Mostra nella cartella"
+	},
+	"format": {
+		"mp4": {
+			"label": "Video MP4",
+			"desc": "File video di alta qualità"
+		},
+		"gif": {
+			"label": "Animazione GIF",
+			"desc": "Immagine animata per la condivisione"
+		}
+	},
+	"gif": {
+		"frameRate": "Frame rate"
+	},
+	"tutorial": {
+		"trigger": "Come funziona il taglio",
+		"title": "Come funziona il taglio",
+		"desc": "Capire come eliminare le parti indesiderate del tuo video.",
+		"visualExample": "Esempio visivo",
+		"removed": "RIMOSSO",
+		"kept": "Mantenuto",
+		"finalVideo": "Video finale",
+		"step1": "1. Aggiungi taglio",
+		"step2": "2. Regolazione",
+		"step2desc": "Trascina i bordi della regione rossa per coprire esattamente ciò che vuoi eliminare."
+	}
+}

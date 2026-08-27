@@ -1,0 +1,11 @@
+{
+	"loadingVideo": "Video yükleniyor...",
+	"videoNotReady": "Video hazır değil",
+	"noVideoLoaded": "Video yüklenmedi",
+	"exportCancelled": "Dışa aktarım iptal edildi",
+	"saveGifFailed": "GIF kaydedilemedi",
+	"saveVideoFailed": "Video kaydedilemedi",
+	"gifExportFailed": "GIF dışa aktarımı başarısız oldu",
+	"exportFailed": "Dışa aktarım başarısız oldu",
+	"exportError": "Dışa aktarım başarısız: {{message}}"
+}

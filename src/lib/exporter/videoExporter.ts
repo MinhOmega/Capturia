@@ -732,7 +732,7 @@ export class VideoExporter {
         return { success: false, error: 'Export cancelled' };
       }
 
-      this.startFinalizingHeartbeat(totalFrames, totalFrames, 'export.finalize.flush');
+      this.startFinalizingHeartbeat(totalFrames, totalFrames, 'dialogs.export.finalize.flush');
 
       // Run encoder flush and audio extraction in parallel — they're independent.
       // Audio extraction reads the source file while encoder flushes its queue.
@@ -742,22 +742,22 @@ export class VideoExporter {
 
       if (this.encoder && this.encoder.state === 'configured') {
         await this.runFinalizingStep(
-          'export.finalize.flush',
+          'dialogs.export.finalize.flush',
           withTimeout(this.encoder.flush(), this.FINALIZE_TIMEOUT_MS, 'encoder flush'),
         );
       }
 
       await this.runFinalizingStep(
-        'export.finalize.mux',
+        'dialogs.export.finalize.mux',
         withTimeout(this.waitForMuxDrain(), this.FINALIZE_TIMEOUT_MS, 'mux drain'),
       );
 
       if (hasSourceAudio) {
-        await this.runFinalizingStep('export.finalize.audio', audioPromise);
+        await this.runFinalizingStep('dialogs.export.finalize.audio', audioPromise);
       }
 
       const blob = await this.runFinalizingStep(
-        'export.finalize.package',
+        'dialogs.export.finalize.package',
         withTimeout(this.muxer!.finalize(), this.FINALIZE_TIMEOUT_MS, 'mux finalize'),
       );
       this.stopFinalizingHeartbeat();

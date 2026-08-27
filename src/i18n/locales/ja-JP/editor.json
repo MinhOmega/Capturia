@@ -1,0 +1,11 @@
+{
+	"loadingVideo": "動画を読み込み中...",
+	"videoNotReady": "動画の準備ができていません",
+	"noVideoLoaded": "動画が読み込まれていません",
+	"exportCancelled": "エクスポートがキャンセルされました",
+	"saveGifFailed": "GIFの保存に失敗しました",
+	"saveVideoFailed": "動画の保存に失敗しました",
+	"gifExportFailed": "GIFのエクスポートに失敗しました",
+	"exportFailed": "エクスポートに失敗しました",
+	"exportError": "エクスポートに失敗しました: {{message}}"
+}

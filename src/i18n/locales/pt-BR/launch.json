@@ -1,0 +1,27 @@
+{
+	"sourceFallback": "Tela",
+	"stopRecording": "Parar Gravação",
+	"pauseRecording": "Pausar gravação",
+	"resumeRecording": "Retomar gravação",
+	"open": "Abrir",
+	"camera": "Câmera",
+	"shape": {
+		"rounded": "Arredondado",
+		"square": "Quadrado",
+		"circle": "Círculo"
+	},
+	"captureFrameRate": "Taxa de quadros",
+	"stopShortcutReset": "Redefinir",
+	"hideHud": "Ocultar HUD",
+	"closeApp": "Fechar App",
+	"source": {
+		"loading": "Carregando fontes...",
+		"cancel": "Cancelar",
+		"share": "Compartilhar"
+	},
+	"permission": {
+		"rowScreenCaptureTitle": "Gravação de tela",
+		"rowCameraTitle": "Câmera",
+		"rowMicrophoneTitle": "Microfone"
+	}
+}

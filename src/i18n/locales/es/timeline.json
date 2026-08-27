@@ -1,0 +1,19 @@
+{
+	"noVideoLoaded": "No hay video cargado",
+	"dragDropToStart": "Arrastra y suelta un video para comenzar a editar",
+	"cannotPlaceZoom": "No se puede colocar el zoom aquí",
+	"cannotPlaceZoomDesc": "Ya existe un zoom en esta ubicación o no hay suficiente espacio disponible.",
+	"cannotPlaceTrim": "No se puede colocar el recorte aquí",
+	"cannotPlaceTrimDesc": "Ya existe un recorte en esta ubicación o no hay suficiente espacio disponible.",
+	"zoom": "Zoom",
+	"trim": "Recortar",
+	"annotation": "Anotación",
+	"audio": "Audio",
+	"image": "Imagen",
+	"emptyText": "Texto vacío",
+	"pan": "Desplazar",
+	"zoomAction": "Zoom",
+	"addZoom": "Agregar zoom (Z)",
+	"addTrim": "Agregar recorte (T)",
+	"addAnnotation": "Agregar anotación (A)"
+}

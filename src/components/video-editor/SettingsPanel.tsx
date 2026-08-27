@@ -210,7 +210,7 @@ export function SettingsPanel({
     } catch (error) {
       reportUserActionError({
         t,
-        userMessage: t("error.reportOpenFailed"),
+        userMessage: t("common.error.reportOpenFailed"),
         error,
         context,
         details: { url },

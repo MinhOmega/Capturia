@@ -1,0 +1,45 @@
+{
+	"export": {
+		"title": "{{format}}をエクスポート中",
+		"titleCompilingGif": "GIFを生成中",
+		"titleFinalizingVideo": "動画の仕上げ",
+		"titleFailed": "エクスポートに失敗しました",
+		"statusTryAgain": "もう一度お試しください",
+		"statusMoment": "少々お待ちください...",
+		"statusCompiling": "GIFを生成中... しばらくお待ちください",
+		"statusCompilingPct": "GIFを生成中... {{progress}}%",
+		"phaseCompiling": "生成中",
+		"phaseFinalizing": "最終処理中...",
+		"phaseRendering": "フレームをレンダリング中",
+		"complete": "エクスポート完了",
+		"ready": "{{format}}の準備ができました",
+		"cancelExport": "エクスポートをキャンセル",
+		"saved": "{{format}}を正常に保存しました！",
+		"showInFolder": "フォルダで表示"
+	},
+	"format": {
+		"mp4": {
+			"label": "MP4 動画",
+			"desc": "高品質の動画ファイル"
+		},
+		"gif": {
+			"label": "GIF アニメーション",
+			"desc": "共有用のアニメーション画像"
+		}
+	},
+	"gif": {
+		"frameRate": "フレームレート"
+	},
+	"tutorial": {
+		"trigger": "トリミングの仕組み",
+		"title": "トリミングの仕組み",
+		"desc": "動画の不要な部分を削除する方法について解説します。",
+		"visualExample": "視覚的な例",
+		"removed": "削除",
+		"kept": "保持",
+		"finalVideo": "完成動画",
+		"step1": "1. 削除範囲を追加",
+		"step2": "2. 範囲を調整",
+		"step2desc": "赤い領域の両端をドラッグして、削除したい範囲を正確に調整します。"
+	}
+}

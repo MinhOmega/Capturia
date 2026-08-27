@@ -15,6 +15,7 @@ import { isReadablePathAllowed, localMediaUrlToPath } from './ipc/paths'
 import { shouldSwallowMainProcessError } from './main-process-errors'
 import { scheduleRecordingsCleanup } from './recordingsCleanup'
 import { buildIssueReportUrl } from '../src/lib/supportLinks'
+import { getMainLocale, mainT, setMainLocale } from './i18n'
 
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -152,27 +153,17 @@ function getTrayIcon(filename: string, size: number) {
   });
 }
 
-function currentLocale(): 'en' | 'zh-CN' {
-  return app.getLocale().toLowerCase().startsWith('zh') ? 'zh-CN' : 'en'
+// Main follows the renderer's language via the `set-locale` IPC; until the
+// renderer announces one, fall back to the OS locale.
+function currentLocale(): string {
+  return getMainLocale()
 }
 
 function runtimeErrorText(
-  locale: 'en' | 'zh-CN',
+  locale: string,
   key: 'message' | 'detailPrefix' | 'report' | 'close',
 ): string {
-  const zh: Record<'message' | 'detailPrefix' | 'report' | 'close', string> = {
-    message: '程序发生了内部错误，建议反馈问题以便排查。',
-    detailPrefix: '错误编号',
-    report: '反馈问题',
-    close: '关闭',
-  }
-  const en: Record<'message' | 'detailPrefix' | 'report' | 'close', string> = {
-    message: 'Capturia hit an internal error. Please report this issue so we can fix it.',
-    detailPrefix: 'Reference',
-    report: 'Report Bug',
-    close: 'Close',
-  }
-  return (locale === 'zh-CN' ? zh : en)[key]
+  return mainT(locale, `common.electron.runtimeError.${key}`)
 }
 
 function normalizeRuntimeErrorMessage(error: unknown): string {
@@ -274,23 +265,15 @@ function reportRuntimeError(context: string, error: unknown): void {
   void showRuntimeErrorDialog(context, error)
 }
 
-function trayText(locale: 'en' | 'zh-CN', key: 'app' | 'recording' | 'stop' | 'open' | 'quit', source?: string): string {
-  const dict = locale === 'zh-CN'
-    ? {
-        app: 'Capturia',
-        recording: `录制中：${source ?? ''}`,
-        stop: '停止录制',
-        open: '打开',
-        quit: '退出',
-      }
-    : {
-        app: 'Capturia',
-        recording: `Recording: ${source ?? ''}`,
-        stop: 'Stop Recording',
-        open: 'Open',
-        quit: 'Quit',
-      }
-  return dict[key]
+function trayText(locale: string, key: 'app' | 'recording' | 'stop' | 'open' | 'quit', source?: string): string {
+  const keys = {
+    app: 'common.electron.tray.openScreen',
+    recording: 'common.electron.tray.recording',
+    stop: 'common.electron.tray.stopRecording',
+    open: 'common.electron.tray.open',
+    quit: 'common.electron.tray.quit',
+  } as const
+  return mainT(locale, keys[key], { source: source ?? '' })
 }
 
 
@@ -633,6 +616,12 @@ appReady?.then(async () => {
   ipcMain.handle('get-stop-recording-shortcut', () => {
     return { success: true, accelerator: stopRecordingShortcut }
   })
+  // Renderer announces the user's language; rebuild the tray so its labels follow.
+  ipcMain.handle('set-locale', (_, locale: string) => {
+    setMainLocale(locale)
+    updateTrayMenu(recordingActive)
+  })
+  setMainLocale(app.getLocale())
   createTray()
   updateTrayMenu()
   registerStopRecordingShortcut(stopRecordingShortcut)

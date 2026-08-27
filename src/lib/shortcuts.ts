@@ -40,16 +40,16 @@ export type ShortcutConflict =
 // ---------------------------------------------------------------------------
 
 export const SHORTCUT_LABEL_KEYS: Record<ShortcutAction, string> = {
-  addZoom: 'shortcut.addZoom',
-  addAnnotation: 'shortcut.addAnnotation',
-  addKeyframe: 'shortcut.addKeyframe',
-  toggleScissors: 'shortcut.toggleScissors',
-  deleteSelected: 'shortcut.deleteSelected',
-  playPause: 'shortcut.playPause',
-  speedUp: 'shortcut.speedUp',
-  speedDown: 'shortcut.speedDown',
-  copySelected: 'shortcut.copySelected',
-  paste: 'shortcut.paste',
+  addZoom: 'shortcuts.addZoom',
+  addAnnotation: 'shortcuts.addAnnotation',
+  addKeyframe: 'shortcuts.addKeyframe',
+  toggleScissors: 'shortcuts.toggleScissors',
+  deleteSelected: 'shortcuts.deleteSelected',
+  playPause: 'shortcuts.playPause',
+  speedUp: 'shortcuts.speedUp',
+  speedDown: 'shortcuts.speedDown',
+  copySelected: 'shortcuts.copySelected',
+  paste: 'shortcuts.paste',
 };
 
 // ---------------------------------------------------------------------------
@@ -74,16 +74,16 @@ export const DEFAULT_SHORTCUTS: ShortcutsConfig = {
 // ---------------------------------------------------------------------------
 
 export const FIXED_SHORTCUTS: FixedShortcut[] = [
-  { labelKey: 'shortcut.seekForward', display: '→', bindings: [{ key: 'arrowright' }] },
-  { labelKey: 'shortcut.seekBackward', display: '←', bindings: [{ key: 'arrowleft' }] },
-  { labelKey: 'shortcut.seekFine', display: 'Shift + ←/→', bindings: [] },
-  { labelKey: 'shortcut.zoomIn', display: '=', bindings: [{ key: '=' }] },
-  { labelKey: 'shortcut.zoomOut', display: '-', bindings: [{ key: '-' }] },
-  { labelKey: 'shortcut.fullscreen', display: 'F11', bindings: [{ key: 'f11' }] },
-  { labelKey: 'shortcut.undo', display: 'Ctrl+Z', bindings: [{ key: 'z', ctrl: true }] },
-  { labelKey: 'shortcut.redo', display: 'Ctrl+Shift+Z', bindings: [{ key: 'z', ctrl: true, shift: true }] },
-  { labelKey: 'shortcut.panTimeline', display: 'Shift+Ctrl+Scroll', bindings: [] },
-  { labelKey: 'shortcut.zoomTimeline', display: 'Ctrl+Scroll', bindings: [] },
+  { labelKey: 'shortcuts.seekForward', display: '→', bindings: [{ key: 'arrowright' }] },
+  { labelKey: 'shortcuts.seekBackward', display: '←', bindings: [{ key: 'arrowleft' }] },
+  { labelKey: 'shortcuts.seekFine', display: 'Shift + ←/→', bindings: [] },
+  { labelKey: 'shortcuts.zoomIn', display: '=', bindings: [{ key: '=' }] },
+  { labelKey: 'shortcuts.zoomOut', display: '-', bindings: [{ key: '-' }] },
+  { labelKey: 'shortcuts.fullscreen', display: 'F11', bindings: [{ key: 'f11' }] },
+  { labelKey: 'shortcuts.undo', display: 'Ctrl+Z', bindings: [{ key: 'z', ctrl: true }] },
+  { labelKey: 'shortcuts.redo', display: 'Ctrl+Shift+Z', bindings: [{ key: 'z', ctrl: true, shift: true }] },
+  { labelKey: 'shortcuts.panTimeline', display: 'Shift+Ctrl+Scroll', bindings: [] },
+  { labelKey: 'shortcuts.zoomTimeline', display: 'Ctrl+Scroll', bindings: [] },
 ];
 
 // ---------------------------------------------------------------------------

@@ -1,0 +1,27 @@
+{
+	"sourceFallback": "Экран",
+	"stopRecording": "Остановить запись",
+	"pauseRecording": "Приостановить запись",
+	"resumeRecording": "Возобновить запись",
+	"open": "Открыть",
+	"camera": "Камера",
+	"shape": {
+		"rounded": "Скруглённый",
+		"square": "Квадрат",
+		"circle": "Круг"
+	},
+	"captureFrameRate": "Частота кадров",
+	"stopShortcutReset": "Сбросить",
+	"hideHud": "Скрыть HUD",
+	"closeApp": "Закрыть приложение",
+	"source": {
+		"loading": "Загрузка источников...",
+		"cancel": "Отмена",
+		"share": "Поделиться"
+	},
+	"permission": {
+		"rowScreenCaptureTitle": "Запись экрана",
+		"rowCameraTitle": "Камера",
+		"rowMicrophoneTitle": "Микрофон"
+	}
+}
