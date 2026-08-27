@@ -33,7 +33,23 @@
 		"saved": "{{format}} saved successfully!",
 		"showInFolder": "Show in Folder",
 		"exportedTo": "Exported to {{path}}",
-		"revealFailed": "Failed to reveal file in folder"
+		"revealFailed": "Failed to reveal file in folder",
+		"phasePreparing": "Preparing",
+		"statusPreparing": "Preparing source video...",
+		"saveAgain": "Save again",
+		"unsavedExportHint": "The export finished but could not be saved. Choose another location to keep it.",
+		"diag": {
+			"exportFailed": "{{format}} export failed",
+			"saveFailed": "{{format}} export save failed",
+			"reason": "Reason",
+			"source": "Source",
+			"output": "Output",
+			"codec": "Codec",
+			"bitrate": "Bitrate",
+			"videoEncoder": "VideoEncoder",
+			"available": "available",
+			"unavailable": "unavailable"
+		}
 	},
 	"format": {
 		"mp4": {

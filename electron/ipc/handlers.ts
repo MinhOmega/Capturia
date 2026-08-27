@@ -34,6 +34,7 @@ import {
   stopNativeMouseButtonMonitor,
 } from '../native/mouseButtonMonitor'
 import { getWindowBoundsById, parseWindowIdFromSourceId } from './windowBounds'
+import { registerFileReadHandlers } from './fileReadHandlers'
 import {
   isPointInsideBounds,
   normalizePointToBounds,
@@ -1177,6 +1178,7 @@ export function registerIpcHandlers(
   let currentVideoMetadata: CurrentVideoMetadata | null = null
   let cursorTracker: CursorTrackerRuntime | null = null
   const analysisService = new VideoAnalysisService()
+  registerFileReadHandlers({ ipcMain, recordingsDir: RECORDINGS_DIR })
 
   // On-disk write streams for in-progress MediaRecorder recordings, keyed by output
   // file name. Chunks append as they arrive so the renderer never buffers the full video.
@@ -1956,17 +1958,35 @@ export function registerIpcHandlers(
     }
   })
 
-  ipcMain.handle('pick-save-file-path', async (_, fileName: string, localeInput?: string) => {
+  // Prefer the user's last export folder if it still exists, else ~/Downloads.
+  // Validated here because the renderer cannot stat the filesystem.
+  const resolveDefaultExportDir = async (exportFolder?: unknown): Promise<string> => {
+    if (typeof exportFolder !== 'string' || exportFolder.trim().length === 0) {
+      return app.getPath('downloads')
+    }
+    try {
+      const stats = await fs.stat(exportFolder)
+      if (stats.isDirectory()) {
+        return exportFolder
+      }
+    } catch (err) {
+      console.warn(`Could not access remembered export folder "${exportFolder}", falling back to Downloads:`, err)
+    }
+    return app.getPath('downloads')
+  }
+
+  ipcMain.handle('pick-save-file-path', async (_, fileName: string, localeInput?: string, exportFolder?: string) => {
     try {
       const locale = normalizeLocale(localeInput)
       const isGif = fileName.toLowerCase().endsWith('.gif')
       const filters = isGif
         ? [{ name: 'GIF', extensions: ['gif'] }]
         : [{ name: 'MP4', extensions: ['mp4'] }]
+      const defaultDir = await resolveDefaultExportDir(exportFolder)
 
       const result = await dialog.showSaveDialog(buildDialogOptions({
         title: isGif ? tt(locale, 'saveGif') : tt(locale, 'saveVideo'),
-        defaultPath: path.join(app.getPath('downloads'), fileName),
+        defaultPath: path.join(defaultDir, fileName),
         filters,
         properties: ['createDirectory', 'showOverwriteConfirmation'],
       }, getMainWindow()))
@@ -1984,12 +2004,12 @@ export function registerIpcHandlers(
     }
   })
 
-  ipcMain.handle('pick-export-directory', async (_, localeInput?: string) => {
+  ipcMain.handle('pick-export-directory', async (_, localeInput?: string, exportFolder?: string) => {
     try {
       const locale = normalizeLocale(localeInput)
       const result = await dialog.showOpenDialog(buildDialogOptions({
         title: tt(locale, 'chooseExportFolder'),
-        defaultPath: app.getPath('downloads'),
+        defaultPath: await resolveDefaultExportDir(exportFolder),
         properties: ['openDirectory', 'createDirectory'],
       }, getMainWindow()))
 

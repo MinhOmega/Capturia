@@ -33,7 +33,23 @@
 		"saved": "{{format}} 已保存成功！",
 		"showInFolder": "在文件夹中显示",
 		"exportedTo": "已导出到 {{path}}",
-		"revealFailed": "无法在文件夹中显示文件"
+		"revealFailed": "无法在文件夹中显示文件",
+		"phasePreparing": "准备中",
+		"statusPreparing": "正在准备源视频...",
+		"saveAgain": "重新保存",
+		"unsavedExportHint": "导出已完成但无法保存。请选择其他位置保存。",
+		"diag": {
+			"exportFailed": "{{format}} 导出失败",
+			"saveFailed": "{{format}} 导出保存失败",
+			"reason": "原因",
+			"source": "来源",
+			"output": "输出",
+			"codec": "编码",
+			"bitrate": "码率",
+			"videoEncoder": "VideoEncoder",
+			"available": "可用",
+			"unavailable": "不可用"
+		}
 	},
 	"format": {
 		"mp4": {
