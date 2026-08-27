@@ -55,6 +55,8 @@
 	"background": "Background",
 	"backgroundImage": "Image",
 	"backgroundColor": "Color",
+	"colorWheel": "Color Wheel",
+	"colorPalette": "Color Palette",
 	"backgroundGradient": "Gradient",
 	"uploadCustom": "Upload Custom",
 	"cropDialogTitle": "Crop Video",
