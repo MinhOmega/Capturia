@@ -72,6 +72,7 @@ import {
   type GifSizePreset,
   GIF_SIZE_PRESETS,
   calculateOutputDimensions,
+  calculateEffectiveSourceDimensions,
   calculateMp4ExportPlan,
   clearStaleSourceCache,
   buildExportDiagnosticMessage,
@@ -79,7 +80,7 @@ import {
   type ExportDiagnosticLabels,
 } from "@/lib/exporter";
 import { getExportFolder, loadUserPreferences, parentDirectoryOf, saveUserPreferences } from "@/lib/userPreferences";
-import { ASPECT_RATIOS, type AspectRatio, getAspectRatioValue } from "@/utils/aspectRatioUtils";
+import { ASPECT_RATIOS, type AspectRatio, getAspectRatioValue, isAspectRatio, resolveAspectRatioValue } from "@/utils/aspectRatioUtils";
 import { useShortcuts } from "@/contexts/ShortcutsContext";
 import { isArrowKeyOwningTarget, isTextEditingTarget, matchesShortcut } from "@/lib/shortcuts";
 import { computeFrameStepTime, FRAME_DURATION_SEC } from "@/lib/frameStep";
@@ -87,7 +88,7 @@ import { GITHUB_ISSUES_URL } from "@/lib/supportLinks";
 import { reportUserActionError } from "@/lib/userErrorFeedback";
 import { useI18n } from "@/i18n";
 import { DEFAULT_CURSOR_STYLE, type CursorStyleConfig, type CursorTrack, type CursorTrackEvent } from "@/lib/cursor";
-import { cropRegionEquals, getCenteredAspectCropRegion, normalizeAspectCropRegion } from "@/lib/crop/aspectCrop";
+import { cropRegionEquals, getCenteredAspectCropRegion, normalizeAspectCropRegion, sanitizeCropRegion } from "@/lib/crop/aspectCrop";
 import { generateAutoZoomDrafts } from "@/lib/autoEdit/screenStudioAutoZoom";
 import type { RoughCutSuggestion, SubtitleCue } from "@/lib/analysis/types";
 import { normalizeSubtitleCues } from "@/lib/analysis/subtitleTrack";
@@ -134,8 +135,13 @@ function resolveAspectCropRegion(
   ratio: AspectRatio,
   sourceAspectRatio: number,
 ): CropRegion {
-  const targetAspectRatio = getAspectRatioValue(ratio);
   const region = regionsByAspect[ratio];
+  // 'native' has no fixed ratio: the crop is free-form (full source by default)
+  // and the output ratio follows it.
+  if (ratio === 'native') {
+    return region ? sanitizeCropRegion(region) : DEFAULT_CROP_REGION;
+  }
+  const targetAspectRatio = getAspectRatioValue(ratio);
   if (!region) {
     return getCenteredAspectCropRegion(sourceAspectRatio, targetAspectRatio);
   }
@@ -498,6 +504,26 @@ export default function VideoEditor() {
     () => resolveAspectCropRegion(cropRegionsByAspect, aspectRatio, sourceAspectRatio),
     [aspectRatio, cropRegionsByAspect, sourceAspectRatio],
   );
+  // Numeric ratio of the active aspect; 'native' follows the cropped source
+  // (16:9 fallback until the source dimensions are known).
+  const activeAspectRatioValue = useMemo(
+    () => resolveAspectRatioValue(
+      aspectRatio,
+      sourceVideoDimensions?.width ?? 0,
+      sourceVideoDimensions?.height ?? 0,
+      activeCropRegion,
+    ),
+    [aspectRatio, sourceVideoDimensions, activeCropRegion],
+  );
+  // 'native' fills the frame edge to edge, so padding is forced to 0 there;
+  // the stored value is kept for the fixed ratios.
+  const effectivePadding = aspectRatio === 'native' ? 0 : padding;
+  const gifOutputDimensions = useMemo(() => {
+    const width = sourceVideoDimensions?.width || 1920;
+    const height = sourceVideoDimensions?.height || 1080;
+    const effective = calculateEffectiveSourceDimensions(width, height, activeCropRegion);
+    return calculateOutputDimensions(effective.width, effective.height, gifSizePreset, GIF_SIZE_PRESETS, activeAspectRatioValue);
+  }, [sourceVideoDimensions, activeCropRegion, gifSizePreset, activeAspectRatioValue]);
   const zoomRegions = useMemo(
     () => getZoomRegionsForAspect(zoomRegionsByAspect, aspectRatio),
     [zoomRegionsByAspect, aspectRatio],
@@ -669,7 +695,9 @@ export default function VideoEditor() {
 
   const setCropRegionForAspect = useCallback((ratio: AspectRatio, region: CropRegion) => {
     setCropRegionsByAspect((previous) => {
-      const normalized = normalizeAspectCropRegion(region, sourceAspectRatio, getAspectRatioValue(ratio));
+      const normalized = ratio === 'native'
+        ? sanitizeCropRegion(region)
+        : normalizeAspectCropRegion(region, sourceAspectRatio, getAspectRatioValue(ratio));
       const existing = previous[ratio];
       if (existing && cropRegionEquals(existing, normalized)) {
         return previous;
@@ -812,7 +840,7 @@ export default function VideoEditor() {
               if (s.cropRegionsByAspect && typeof s.cropRegionsByAspect === 'object') {
                 setCropRegionsByAspect(s.cropRegionsByAspect as Partial<Record<AspectRatio, CropRegion>>);
               }
-              if (typeof s.aspectRatio === 'string') setAspectRatio(s.aspectRatio as AspectRatio);
+              if (isAspectRatio(s.aspectRatio)) setAspectRatio(s.aspectRatio);
               // Older saves stored the resolved file:// URL; normalise to canonical.
               if (typeof s.wallpaper === 'string') setWallpaper(normalizeWallpaperValue(s.wallpaper));
               if (typeof s.shadowIntensity === 'number') setShadowIntensity(s.shadowIntensity);
@@ -2400,8 +2428,8 @@ export default function VideoEditor() {
           showBlur,
           motionBlurAmount,
           borderRadius,
-          padding,
-          videoPadding: padding,
+          padding: effectivePadding,
+          videoPadding: effectivePadding,
           cropRegion: activeCropRegion,
           annotationRegions,
           subtitleCues,
@@ -2490,11 +2518,18 @@ export default function VideoEditor() {
             aspectRatio: currentRatio,
           });
 
+          const cropRegionForRatio = resolveAspectCropRegion(cropRegionsByAspect, currentRatio, sourceAspectRatio);
+          const isNativeRatio = currentRatio === 'native';
+          // 'native' exports at the cropped source size with no padding; fixed
+          // ratios keep the full source as the bound. mp4ExportPlan never upscales.
+          const planSource = isNativeRatio
+            ? calculateEffectiveSourceDimensions(sourceWidth, sourceHeight, cropRegionForRatio)
+            : { width: sourceWidth, height: sourceHeight };
           const exportPlan = calculateMp4ExportPlan({
             quality,
-            aspectRatio: getAspectRatioValue(currentRatio),
-            sourceWidth,
-            sourceHeight,
+            aspectRatio: resolveAspectRatioValue(currentRatio, sourceWidth, sourceHeight, cropRegionForRatio),
+            sourceWidth: planSource.width,
+            sourceHeight: planSource.height,
             sourceFrameRate,
           });
           const {
@@ -2525,8 +2560,8 @@ export default function VideoEditor() {
             showBlur,
             motionBlurAmount,
             borderRadius,
-            padding,
-            cropRegion: resolveAspectCropRegion(cropRegionsByAspect, currentRatio, sourceAspectRatio),
+            padding: isNativeRatio ? 0 : padding,
+            cropRegion: cropRegionForRatio,
             annotationRegions,
             subtitleCues,
             previewWidth,
@@ -2639,7 +2674,7 @@ export default function VideoEditor() {
       exportCancelledRef.current = false;
       setActiveBatchExport(null);
     }
-  }, [videoPath, wallpaper, zoomRegions, zoomRegionsByAspect, trimRegions, shadowIntensity, showBlur, motionBlurAmount, borderRadius, padding, activeCropRegion, cropRegionsByAspect, sourceAspectRatio, annotationRegions, subtitleCues, isPlaying, normalizedExportAspectRatios, exportQuality, locale, sourceFrameRate, sourceHasAudio, audioEnabled, audioGain, audioNormalizeLoudness, audioTargetLufs, audioLimiterDb, audioEditRegions, cursorTrack, cursorStyle, t, diagnosticLabels, saveAgainToastAction, showExportSuccessToast, stashUnsavedExport, probedSourceDurationMs]);
+  }, [videoPath, wallpaper, zoomRegions, zoomRegionsByAspect, trimRegions, shadowIntensity, showBlur, motionBlurAmount, borderRadius, padding, effectivePadding, activeCropRegion, cropRegionsByAspect, sourceAspectRatio, annotationRegions, subtitleCues, isPlaying, normalizedExportAspectRatios, exportQuality, locale, sourceFrameRate, sourceHasAudio, audioEnabled, audioGain, audioNormalizeLoudness, audioTargetLufs, audioLimiterDb, audioEditRegions, cursorTrack, cursorStyle, t, diagnosticLabels, saveAgainToastAction, showExportSuccessToast, stashUnsavedExport, probedSourceDurationMs]);
 
   const handleOpenExportDialog = useCallback(async () => {
     if (!videoPath) {
@@ -2660,7 +2695,14 @@ export default function VideoEditor() {
     // Build export settings from current state
     const sourceWidth = video.videoWidth || 1920;
     const sourceHeight = video.videoHeight || 1080;
-    const gifDimensions = calculateOutputDimensions(sourceWidth, sourceHeight, gifSizePreset, GIF_SIZE_PRESETS);
+    const effectiveSource = calculateEffectiveSourceDimensions(sourceWidth, sourceHeight, activeCropRegion);
+    const gifDimensions = calculateOutputDimensions(
+      effectiveSource.width,
+      effectiveSource.height,
+      gifSizePreset,
+      GIF_SIZE_PRESETS,
+      resolveAspectRatioValue(aspectRatio, sourceWidth, sourceHeight, activeCropRegion),
+    );
 
     const settings: ExportSettings = {
       format: exportFormat,
@@ -2693,7 +2735,7 @@ export default function VideoEditor() {
     setExportError(null);
 
     handleExport(settings, preSelectedSavePath);
-  }, [videoPath, exportFormat, exportQuality, gifFrameRate, gifLoop, gifSizePreset, handleExport, normalizedExportAspectRatios.length, locale, t]);
+  }, [videoPath, exportFormat, exportQuality, gifFrameRate, gifLoop, gifSizePreset, handleExport, normalizedExportAspectRatios.length, locale, t, activeCropRegion, aspectRatio]);
 
   // Fullscreen preview mode
   const toggleFullscreen = useCallback(() => {
@@ -3086,7 +3128,7 @@ export default function VideoEditor() {
               >
                 {/* Video preview */}
                 <div className="w-full flex justify-center items-center" style={{ flex: '1 1 auto', margin: '6px 0 0' }}>
-                  <div className="relative" style={{ width: 'auto', height: '100%', aspectRatio: getAspectRatioValue(aspectRatio), maxWidth: '100%', margin: '0 auto', boxSizing: 'border-box' }}>
+                  <div className="relative" style={{ width: 'auto', height: '100%', aspectRatio: activeAspectRatioValue, maxWidth: '100%', margin: '0 auto', boxSizing: 'border-box' }}>
                     <VideoPlayback
                       aspectRatio={aspectRatio}
                       preferredFps={resolvePreviewFrameRate(sourceFrameRate)}
@@ -3110,7 +3152,7 @@ export default function VideoEditor() {
                       showBlur={showBlur}
                       motionBlurAmount={motionBlurAmount}
                       borderRadius={borderRadius}
-                      padding={padding}
+                      padding={effectivePadding}
                       cropRegion={DEFAULT_CROP_REGION}
                       trimRegions={trimRegions}
                       annotationRegions={annotationRegions}
@@ -3135,7 +3177,7 @@ export default function VideoEditor() {
                         cropRegion={activeCropRegion}
                         onCropChange={handleActiveCropRegionChange}
                         sourceAspectRatio={sourceAspectRatio}
-                        targetAspectRatio={getAspectRatioValue(aspectRatio)}
+                        targetAspectRatio={activeAspectRatioValue}
                         positionHint={t("editor.cropOverlayDragHint")}
                       />
                     ) : null}
@@ -3277,7 +3319,8 @@ export default function VideoEditor() {
                 onMotionBlurChange={setMotionBlurAmount}
                 borderRadius={borderRadius}
                 onBorderRadiusChange={setBorderRadius}
-                padding={padding}
+                padding={effectivePadding}
+                paddingDisabled={aspectRatio === 'native'}
                 onPaddingChange={setPadding}
                 cropRegion={activeCropRegion}
                 onCropChange={handleActiveCropRegionChange}
@@ -3296,12 +3339,7 @@ export default function VideoEditor() {
                 onGifLoopChange={setGifLoop}
                 gifSizePreset={gifSizePreset}
                 onGifSizePresetChange={setGifSizePreset}
-                gifOutputDimensions={calculateOutputDimensions(
-                  videoPlaybackRef.current?.video?.videoWidth || 1920,
-                  videoPlaybackRef.current?.video?.videoHeight || 1080,
-                  gifSizePreset,
-                  GIF_SIZE_PRESETS
-                )}
+                gifOutputDimensions={gifOutputDimensions}
                 onExport={handleOpenExportDialog}
                 selectedAnnotationId={selectedAnnotationId}
                 annotationRegions={annotationRegions}

@@ -26,7 +26,7 @@ export {
   isAudioCodecEncodingSupported,
   type ExportAudioCodec,
 } from './audioCodecSelection';
-export { calculateMp4ExportPlan, resolveExportFrameRate, normalizeExportSourceFrameRate } from './mp4ExportPlan';
+export { calculateEffectiveSourceDimensions, calculateMp4ExportPlan, resolveExportFrameRate, normalizeExportSourceFrameRate } from './mp4ExportPlan';
 export type { 
   ExportConfig, 
   ExportProgress, 

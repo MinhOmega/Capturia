@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cropRegionEquals, getCenteredAspectCropRegion, normalizeAspectCropRegion } from './aspectCrop'
+import { cropRegionEquals, getCenteredAspectCropRegion, normalizeAspectCropRegion, sanitizeCropRegion } from './aspectCrop'
 
 describe('getCenteredAspectCropRegion', () => {
   it('returns centered square for 16:9 source', () => {
@@ -53,3 +53,14 @@ describe('normalizeAspectCropRegion', () => {
   })
 })
 
+
+describe('sanitizeCropRegion (native aspect)', () => {
+  it('keeps a free-form crop as is when it fits inside the source', () => {
+    expect(sanitizeCropRegion({ x: 0.1, y: 0.2, width: 0.3, height: 0.7 })).toEqual({ x: 0.1, y: 0.2, width: 0.3, height: 0.7 })
+  })
+
+  it('clamps size and position into the source and replaces non-finite values', () => {
+    expect(sanitizeCropRegion({ x: 0.9, y: -1, width: 0.5, height: 2 })).toEqual({ x: 0.5, y: 0, width: 0.5, height: 1 })
+    expect(sanitizeCropRegion({ x: Number.NaN, y: 0, width: Number.NaN, height: 0.01 })).toEqual({ x: 0, y: 0, width: 1, height: 0.06 })
+  })
+})

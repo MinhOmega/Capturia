@@ -46,6 +46,24 @@ function normalizeDimension(value: number, fallback: number): number {
   return Math.max(2, Math.floor(value / 2) * 2);
 }
 
+/**
+ * Source dimensions after the (normalised 0..1) crop, rounded to even. This is
+ * the "source" the 'native' aspect exports at: no padding, no rescale beyond
+ * what the quality preset caps.
+ */
+export function calculateEffectiveSourceDimensions(
+  sourceWidth: number,
+  sourceHeight: number,
+  cropRegion?: { width: number; height: number },
+): Dimensions {
+  const cropWidth = Number.isFinite(cropRegion?.width) && (cropRegion?.width ?? 0) > 0 ? cropRegion!.width : 1;
+  const cropHeight = Number.isFinite(cropRegion?.height) && (cropRegion?.height ?? 0) > 0 ? cropRegion!.height : 1;
+  return {
+    width: normalizeDimension(Math.round(sourceWidth * cropWidth), 1920),
+    height: normalizeDimension(Math.round(sourceHeight * cropHeight), 1080),
+  };
+}
+
 function normalizeAspectRatio(value: number): number {
   if (!Number.isFinite(value) || value <= 0) return DEFAULT_ASPECT_RATIO;
   return value;
