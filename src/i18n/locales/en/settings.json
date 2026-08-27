@@ -112,7 +112,8 @@
 		"allowedTypes": "Please upload a JPG, PNG, GIF, or WebP image file.",
 		"imageUploadOk": "Image uploaded successfully!",
 		"textAnimation": "Text Animation",
-		"selectAnimation": "Select animation"
+		"selectAnimation": "Select animation",
+		"duplicate": "Duplicate"
 	},
 	"font": {
 		"addGoogle": "Add Google Font",

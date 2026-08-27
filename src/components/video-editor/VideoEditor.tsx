@@ -20,10 +20,9 @@ import {
   ZOOM_DEPTH_SCALES,
   clampFocusToDepth,
   DEFAULT_CROP_REGION,
-  DEFAULT_ANNOTATION_POSITION,
-  DEFAULT_ANNOTATION_SIZE,
-  DEFAULT_ANNOTATION_STYLE,
   DEFAULT_FIGURE_DATA,
+  createTextAnnotationRegion,
+  resolveTextAnnotationContent,
   type ZoomDepth,
   type ZoomFocus,
   type ZoomRegion,
@@ -37,6 +36,7 @@ import {
 } from "./types";
 import { DEFAULT_TIMELINE_SETTINGS } from "./editorDefaults";
 import { ANNOTATION_ID_PREFIX, maxIdNum } from "./idCounters";
+import { duplicateAnnotationRegion } from "@/lib/annotations/duplicate";
 import {
   VideoExporter,
   GifExporter,
@@ -1431,17 +1431,12 @@ export default function VideoEditor() {
       : trims.length > 0 ? effectiveToSourceMs(span.end, trims) : span.end;
     const id = `${ANNOTATION_ID_PREFIX}${nextAnnotationIdRef.current++}`;
     const zIndex = nextAnnotationZIndexRef.current++; // Assign z-index based on creation order
-    const newRegion: AnnotationRegion = {
+    const newRegion = createTextAnnotationRegion({
       id,
       startMs: Math.round(startMs),
       endMs: Math.round(endMs),
-      type: 'text',
-      content: 'Enter text...',
-      position: { ...DEFAULT_ANNOTATION_POSITION },
-      size: { ...DEFAULT_ANNOTATION_SIZE },
-      style: { ...DEFAULT_ANNOTATION_STYLE },
       zIndex,
-    };
+    });
     setAnnotationRegions((prev) => [...prev, newRegion]);
     setSelectedAnnotationId(id);
     setSelectedZoomIdForActiveAspect(null);
@@ -1475,6 +1470,19 @@ export default function VideoEditor() {
     }
   }, [selectedAnnotationId]);
 
+  const handleAnnotationDuplicate = useCallback((id: string) => {
+    const source = annotationRegions.find((region) => region.id === id);
+    if (!source) return;
+    const duplicate = duplicateAnnotationRegion(source, {
+      id: `${ANNOTATION_ID_PREFIX}${nextAnnotationIdRef.current++}`,
+      zIndex: nextAnnotationZIndexRef.current++,
+    });
+    setAnnotationRegions((prev) => [...prev, duplicate]);
+    setSelectedAnnotationId(duplicate.id);
+    setSelectedZoomIdForActiveAspect(null);
+    setSelectedSegmentId(null);
+  }, [annotationRegions, setSelectedZoomIdForActiveAspect]);
+
   const handleAnnotationContentChange = useCallback((id: string, content: string) => {
     setAnnotationRegions((prev) => {
       const updated = prev.map((region) => {
@@ -1502,7 +1510,7 @@ export default function VideoEditor() {
         
         // Restore content from type-specific storage
         if (type === 'text') {
-          updatedRegion.content = region.textContent || 'Enter text...';
+          updatedRegion.content = resolveTextAnnotationContent(region.textContent);
         } else if (type === 'image') {
           updatedRegion.content = region.imageContent || '';
         } else if (type === 'figure') {
@@ -2837,6 +2845,7 @@ export default function VideoEditor() {
                 onAnnotationTypeChange={handleAnnotationTypeChange}
                 onAnnotationStyleChange={handleAnnotationStyleChange}
                 onAnnotationFigureDataChange={handleAnnotationFigureDataChange}
+                onAnnotationDuplicate={handleAnnotationDuplicate}
                 onAnnotationDelete={handleAnnotationDelete}
                 hasAudioTrack={sourceHasAudio}
                 audioEnabled={audioEnabled}

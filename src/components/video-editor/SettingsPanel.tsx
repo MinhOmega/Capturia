@@ -91,6 +91,7 @@ interface SettingsPanelProps {
   onAnnotationTypeChange?: (id: string, type: AnnotationType) => void;
   onAnnotationStyleChange?: (id: string, style: Partial<AnnotationRegion['style']>) => void;
   onAnnotationFigureDataChange?: (id: string, figureData: FigureData) => void;
+  onAnnotationDuplicate?: (id: string) => void;
   onAnnotationDelete?: (id: string) => void;
   hasAudioTrack?: boolean;
   audioEnabled?: boolean;
@@ -251,6 +252,7 @@ export function SettingsPanel({
   onAnnotationTypeChange,
   onAnnotationStyleChange,
   onAnnotationFigureDataChange,
+  onAnnotationDuplicate,
   onAnnotationDelete,
   hasAudioTrack = true,
   audioEnabled = true,
@@ -446,6 +448,7 @@ export function SettingsPanel({
         onTypeChange={(type) => onAnnotationTypeChange(selectedAnnotation.id, type)}
         onStyleChange={(style) => onAnnotationStyleChange(selectedAnnotation.id, style)}
         onFigureDataChange={onAnnotationFigureDataChange ? (figureData) => onAnnotationFigureDataChange(selectedAnnotation.id, figureData) : undefined}
+        onDuplicate={onAnnotationDuplicate ? () => onAnnotationDuplicate(selectedAnnotation.id) : undefined}
         onDelete={() => onAnnotationDelete(selectedAnnotation.id)}
       />
     );

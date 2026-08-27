@@ -112,7 +112,8 @@
 		"allowedTypes": "请上传 JPG、PNG、GIF 或 WebP 图片文件。",
 		"imageUploadOk": "图片上传成功！",
 		"textAnimation": "文本动画",
-		"selectAnimation": "选择动画"
+		"selectAnimation": "选择动画",
+		"duplicate": "复制"
 	},
 	"font": {
 		"addGoogle": "添加 Google 字体",
