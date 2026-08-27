@@ -1,5 +1,10 @@
 import type { AnnotationRegion, ArrowDirection } from '@/components/video-editor/types';
 import { getRenderableAnnotations } from '@/lib/annotations/renderOrder';
+import {
+  applyTextAnimationToCanvas,
+  getRevealedText,
+  getTextAnimationState,
+} from '@/lib/annotationTextAnimation';
 import { wrapTextLines } from './textWrap';
 
 // SVG path data for each arrow direction
@@ -177,11 +182,16 @@ function renderText(
   y: number,
   width: number,
   height: number,
-  scaleFactor: number
+  scaleFactor: number,
+  currentTimeMs: number
 ) {
   const style = annotation.style;
+  const animationState = getTextAnimationState(annotation, currentTimeMs);
 
   ctx.save();
+
+  // Entrance animation about the box centre (preview: transform-origin center)
+  applyTextAnimationToCanvas(ctx, animationState, x + width / 2, y + height / 2, scaleFactor);
 
   // Clip to the box, matching the preview's overflow: hidden
   ctx.beginPath();
@@ -203,13 +213,10 @@ function renderText(
 
   if (style.textAlign === 'center') {
     textX = x + width / 2;
-    ctx.textAlign = 'center';
   } else if (style.textAlign === 'right') {
     textX = x + width - containerPadding - horizontalPadding;
-    ctx.textAlign = 'right';
   } else {
     textX = x + containerPadding + horizontalPadding;
-    ctx.textAlign = 'left';
   }
 
   // Same available width as the preview span: the box minus the container
@@ -220,24 +227,33 @@ function renderText(
 
   const startY = textY - ((lines.length - 1) * lineHeight) / 2;
 
-  lines.forEach((line, index) => {
+  // Lines are drawn left-aligned from their own start x so the typewriter
+  // reveal keeps the full line's alignment origin (the preview clips the span
+  // from the right instead of re-centring the visible part).
+  ctx.textAlign = 'left';
+
+  lines.forEach((fullLine, index) => {
     const currentY = startY + index * lineHeight;
+    const line = getRevealedText(fullLine, animationState.revealProgress);
+    if (!line && animationState.revealProgress < 1) return;
+
+    const fullWidth = ctx.measureText(fullLine).width;
+    const lineStartX =
+      style.textAlign === 'center'
+        ? textX - fullWidth / 2
+        : style.textAlign === 'right'
+          ? textX - fullWidth
+          : textX;
 
     if (style.backgroundColor && style.backgroundColor !== 'transparent') {
       const metrics = ctx.measureText(line);
       const borderRadius = 4 * scaleFactor;
 
-      let bgX = textX - horizontalPadding;
+      const bgX = lineStartX - horizontalPadding;
       const bgWidth = metrics.width + horizontalPadding * 2;
 
       const bgHeight = lineHeight + verticalPadding * 2;
       const bgY = currentY - bgHeight / 2;
-
-      if (style.textAlign === 'center') {
-        bgX = textX - bgWidth / 2;
-      } else if (style.textAlign === 'right') {
-        bgX = textX - metrics.width - horizontalPadding;
-      }
 
       ctx.fillStyle = style.backgroundColor;
       ctx.beginPath();
@@ -246,18 +262,13 @@ function renderText(
     }
 
     ctx.fillStyle = style.color;
-    ctx.fillText(line, textX, currentY);
+    ctx.fillText(line, lineStartX, currentY);
     
     if (style.textDecoration === 'underline') {
       const metrics = ctx.measureText(line);
-      let underlineX = textX;
+      const underlineX = lineStartX;
       const underlineY = currentY + scaledFontSize * 0.15;
       
-      if (style.textAlign === 'center') {
-        underlineX = textX - metrics.width / 2;
-      } else if (style.textAlign === 'right') {
-        underlineX = textX - metrics.width;
-      }
       
       ctx.strokeStyle = style.color;
       ctx.lineWidth = Math.max(1, scaledFontSize / 16);
@@ -335,7 +346,7 @@ export async function renderAnnotations(
     
     switch (annotation.type) {
       case 'text':
-        renderText(ctx, annotation, x, y, width, height, scaleFactor);
+        renderText(ctx, annotation, x, y, width, height, scaleFactor, currentTimeMs);
         break;
         
       case 'image':

@@ -2,6 +2,7 @@ import { useRef } from "react";
 import { Rnd } from "react-rnd";
 import type { AnnotationRegion } from "./types";
 import { cn } from "@/lib/utils";
+import { getTextAnimationState, textAnimationToCss } from "@/lib/annotationTextAnimation";
 import { getArrowComponent } from "./ArrowSvgs";
 
 interface AnnotationOverlayProps {
@@ -9,6 +10,8 @@ interface AnnotationOverlayProps {
   isSelected: boolean;
   containerWidth: number;
   containerHeight: number;
+  /** Source-time playhead in ms; drives the text entrance animation. */
+  currentTimeMs?: number;
   onPositionChange: (id: string, position: { x: number; y: number }) => void;
   onSizeChange: (id: string, size: { width: number; height: number }) => void;
   onClick: (id: string) => void;
@@ -20,6 +23,7 @@ export function AnnotationOverlay({
   isSelected,
   containerWidth,
   containerHeight,
+  currentTimeMs,
   onPositionChange,
   onSizeChange,
   onClick,
@@ -43,12 +47,17 @@ export function AnnotationOverlay({
 
   const renderContent = () => {
     switch (annotation.type) {
-      case 'text':
+      case 'text': {
+        // When no playhead is supplied (static previews) the animation is
+        // evaluated at its end state.
+        const animationCss = textAnimationToCss(
+          getTextAnimationState(annotation, currentTimeMs ?? Number.POSITIVE_INFINITY),
+        );
         return (
           <div
             className="w-full h-full flex items-center p-2 overflow-hidden"
             style={{
-              justifyContent: annotation.style.textAlign === 'left' ? 'flex-start' : 
+              justifyContent: annotation.style.textAlign === 'left' ? 'flex-start' :
                             annotation.style.textAlign === 'right' ? 'flex-end' : 'center',
               alignItems: 'center',
             }}
@@ -63,6 +72,11 @@ export function AnnotationOverlay({
                 fontStyle: annotation.style.fontStyle,
                 textDecoration: annotation.style.textDecoration,
                 textAlign: annotation.style.textAlign,
+                opacity: animationCss.opacity,
+                transform: animationCss.transform,
+                transformOrigin: animationCss.transformOrigin,
+                clipPath: animationCss.clipPath,
+                WebkitClipPath: animationCss.clipPath,
                 wordBreak: 'break-word',
                 whiteSpace: 'pre-wrap',
                 boxDecorationBreak: 'clone',
@@ -76,6 +90,7 @@ export function AnnotationOverlay({
             </span>
           </div>
         );
+      }
 
       case 'image':
         if (annotation.content && annotation.content.startsWith('data:image')) {

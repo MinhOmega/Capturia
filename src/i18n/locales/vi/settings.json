@@ -110,7 +110,9 @@
 		"tip3": "Sử dụng Shift+Tab để chuyển ngược lại.",
 		"invalidType": "Loại tệp không hợp lệ",
 		"allowedTypes": "Vui lòng tải lên tệp hình ảnh JPG, PNG, GIF hoặc WebP.",
-		"imageUploadOk": "Tải lên hình ảnh thành công!"
+		"imageUploadOk": "Tải lên hình ảnh thành công!",
+		"textAnimation": "Hiệu ứng chữ",
+		"selectAnimation": "Chọn hiệu ứng"
 	},
 	"font": {
 		"addGoogle": "Thêm Google Font",
@@ -140,5 +142,14 @@
 		"title": "Dòng thời gian",
 		"waveform": "Hiển thị dạng sóng âm thanh",
 		"waveformDesc": "Vẽ dạng sóng của bản ghi phía sau rãnh âm thanh."
+	},
+	"textAnimation": {
+		"none": "Không",
+		"fade": "Mờ dần",
+		"rise": "Trồi lên",
+		"pop": "Bật lên",
+		"slideLeft": "Trượt sang trái",
+		"typewriter": "Máy đánh chữ",
+		"pulse": "Nhịp đập"
 	}
 }

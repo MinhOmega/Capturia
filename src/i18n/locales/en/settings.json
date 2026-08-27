@@ -110,7 +110,9 @@
 		"tip3": "Use Shift+Tab to cycle backwards.",
 		"invalidType": "Invalid file type",
 		"allowedTypes": "Please upload a JPG, PNG, GIF, or WebP image file.",
-		"imageUploadOk": "Image uploaded successfully!"
+		"imageUploadOk": "Image uploaded successfully!",
+		"textAnimation": "Text Animation",
+		"selectAnimation": "Select animation"
 	},
 	"font": {
 		"addGoogle": "Add Google Font",
@@ -140,5 +142,14 @@
 		"title": "Timeline",
 		"waveform": "Show audio waveform",
 		"waveformDesc": "Draw the recording's waveform behind the audio track."
+	},
+	"textAnimation": {
+		"none": "None",
+		"fade": "Fade",
+		"rise": "Rise",
+		"pop": "Pop",
+		"slideLeft": "Slide Left",
+		"typewriter": "Typewriter",
+		"pulse": "Pulse"
 	}
 }

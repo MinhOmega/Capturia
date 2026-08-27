@@ -1287,6 +1287,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
                 isSelected={annotation.id === selectedAnnotationId}
                 containerWidth={overlaySize.width}
                 containerHeight={overlaySize.height}
+                currentTimeMs={timeMs}
                 onPositionChange={(id, position) => onAnnotationPositionChange?.(id, position)}
                 onSizeChange={(id, size) => onAnnotationSizeChange?.(id, size)}
                 onClick={handleAnnotationClick}

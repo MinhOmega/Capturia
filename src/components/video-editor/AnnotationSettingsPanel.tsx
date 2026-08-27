@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { getArrowComponent } from "./ArrowSvgs";
 import { AddCustomFontDialog } from "./AddCustomFontDialog";
 import { getCustomFonts, type CustomFont } from "@/lib/customFonts";
+import { normalizeTextAnimation, TEXT_ANIMATION_OPTIONS } from "@/lib/annotationTextAnimation";
 import { useI18n } from "@/i18n";
 
 interface AnnotationSettingsPanelProps {
@@ -183,6 +184,25 @@ export function AnnotationSettingsPanel({
                     onStyleChange({ fontFamily: font.fontFamily });
                   }}
                 />
+              </div>
+
+              <div>
+                <label className="text-xs font-medium text-slate-200 mb-2 block">{t("settings.annotation.textAnimation")}</label>
+                <Select
+                  value={normalizeTextAnimation(annotation.style.textAnimation)}
+                  onValueChange={(value) => onStyleChange({ textAnimation: normalizeTextAnimation(value) })}
+                >
+                  <SelectTrigger className="w-full bg-white/5 border-white/10 text-slate-200 h-9 text-xs">
+                    <SelectValue placeholder={t("settings.annotation.selectAnimation")} />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#1a1a1c] border-white/10 text-slate-200 max-h-[240px]">
+                    {TEXT_ANIMATION_OPTIONS.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {t(`settings.${option.translationKey}`)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
 
               <div className="flex items-center justify-between gap-2">

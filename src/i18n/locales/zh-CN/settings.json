@@ -110,7 +110,9 @@
 		"tip3": "使用 Shift+Tab 反向循环。",
 		"invalidType": "文件类型无效",
 		"allowedTypes": "请上传 JPG、PNG、GIF 或 WebP 图片文件。",
-		"imageUploadOk": "图片上传成功！"
+		"imageUploadOk": "图片上传成功！",
+		"textAnimation": "文本动画",
+		"selectAnimation": "选择动画"
 	},
 	"font": {
 		"addGoogle": "添加 Google 字体",
@@ -140,5 +142,14 @@
 		"title": "时间轴",
 		"waveform": "显示音频波形",
 		"waveformDesc": "在音轨后方绘制录音的波形。"
+	},
+	"textAnimation": {
+		"none": "无",
+		"fade": "淡入",
+		"rise": "上升",
+		"pop": "弹出",
+		"slideLeft": "向左滑入",
+		"typewriter": "打字机",
+		"pulse": "脉冲"
 	}
 }
