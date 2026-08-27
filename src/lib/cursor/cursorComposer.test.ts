@@ -212,6 +212,91 @@ describe('cursor clip to bounds', () => {
   });
 });
 
+// Ported from upstream cursorRenderer.test.ts (mapCursorToCroppedViewport) against
+// projectCursorToViewport with an identity camera: viewport = baseOffset + maskRect.
+describe('projectCursorToViewport crop handling', () => {
+  const FULL_CROP = { x: 0, y: 0, width: 1, height: 1 };
+  const VIEWPORT = { x: 100, y: 50, width: 800, height: 400 };
+
+  const project = (normX: number, normY: number, cropRegion = FULL_CROP) =>
+    projectCursorToViewport({
+      normalizedX: normX,
+      normalizedY: normY,
+      cropRegion,
+      baseOffset: { x: VIEWPORT.x, y: VIEWPORT.y },
+      maskRect: { width: VIEWPORT.width, height: VIEWPORT.height },
+      cameraScale: { x: 1, y: 1 },
+      cameraPosition: { x: 0, y: 0 },
+      stageSize: { width: 1000, height: 500 },
+    });
+
+  it('maps positions directly onto the viewport when there is no crop', () => {
+    expect(project(0.5, 0.5)).toMatchObject({ x: 500, y: 250, inViewport: true, inCrop: true });
+    expect(project(0, 0)).toMatchObject({ x: 100, y: 50, inViewport: true });
+    expect(project(1, 1)).toMatchObject({ x: 900, y: 450, inViewport: true });
+  });
+
+  it('re-normalizes a full-frame position into the cropped viewport', () => {
+    // Crop the right-bottom half of the frame. A point at the frame centre
+    // (0.5, 0.5) sits at the top-left corner of this crop.
+    const crop = { x: 0.5, y: 0.5, width: 0.5, height: 0.5 };
+    expect(project(0.5, 0.5, crop)).toMatchObject({ x: 100, y: 50, inViewport: true });
+    // The centre of the crop (0.75, 0.75) maps to the viewport centre.
+    expect(project(0.75, 0.75, crop)).toMatchObject({ x: 500, y: 250, inViewport: true });
+  });
+
+  it('does not drift: a point on the visible cropped content keeps its relative offset', () => {
+    const crop = { x: 0.2, y: 0.1, width: 0.6, height: 0.6 };
+    const normX = 0.6;
+    const normY = 0.4;
+    const mapped = project(normX, normY, crop);
+
+    const expectedPx = VIEWPORT.x + ((normX - crop.x) / crop.width) * VIEWPORT.width;
+    const expectedPy = VIEWPORT.y + ((normY - crop.y) / crop.height) * VIEWPORT.height;
+    expect(mapped.x).toBeCloseTo(expectedPx, 6);
+    expect(mapped.y).toBeCloseTo(expectedPy, 6);
+    expect(mapped.inViewport).toBe(true);
+
+    // The naive projection (full-frame coordinate straight onto the crop
+    // viewport) would land somewhere else.
+    const buggyPx = VIEWPORT.x + normX * VIEWPORT.width;
+    expect(Math.abs(mapped.x - buggyPx)).toBeGreaterThan(1);
+  });
+
+  it('hides the cursor when the position falls outside the visible crop', () => {
+    const crop = { x: 0.5, y: 0.5, width: 0.5, height: 0.5 };
+    // (0.1, 0.1) is in the top-left of the frame, outside the bottom-right
+    // crop, even though it projects to a point that is still on the stage.
+    const outside = project(0.1, 0.1, crop);
+    expect(outside.inCrop).toBe(false);
+    expect(outside.inViewport).toBe(false);
+    // Just past the crop edge is hidden too.
+    expect(project(1.0001, 0.75, crop).inViewport).toBe(false);
+    expect(project(0.75, 0.4999, crop).inViewport).toBe(false);
+  });
+
+  it('hides the cursor for a degenerate crop', () => {
+    const projected = project(0.5, 0.5, { x: 0, y: 0, width: 0, height: 0 });
+    expect(projected.inCrop).toBe(false);
+    expect(projected.inViewport).toBe(false);
+  });
+
+  it('still hides the cursor when the camera pushes it far off the stage', () => {
+    const projected = projectCursorToViewport({
+      normalizedX: 1,
+      normalizedY: 1,
+      cropRegion: FULL_CROP,
+      baseOffset: { x: VIEWPORT.x, y: VIEWPORT.y },
+      maskRect: { width: VIEWPORT.width, height: VIEWPORT.height },
+      cameraScale: { x: 3, y: 3 },
+      cameraPosition: { x: 0, y: 0 },
+      stageSize: { width: 1000, height: 500 },
+    });
+    expect(projected.inCrop).toBe(true);
+    expect(projected.inViewport).toBe(false);
+  });
+});
+
 describe('cursorComposer', () => {
   it('interpolates and smooths recorded cursor track', () => {
     const track: CursorTrack = {

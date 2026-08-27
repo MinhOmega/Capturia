@@ -595,8 +595,15 @@ export function projectCursorToViewport(args: {
 }): ProjectedCursorPoint {
   const { normalizedX, normalizedY, cropRegion, baseOffset, maskRect, cameraScale, cameraPosition, stageSize } = args;
 
+  // Samples are normalised against the full frame; re-normalise against the
+  // crop before projecting onto the mask (which shows only the cropped area).
+  // A degenerate crop or a position outside it means the cursor is over
+  // content that is not visible, so it must be hidden rather than drawn
+  // beside the video.
+  const cropValid = cropRegion.width > 0 && cropRegion.height > 0;
   const inCropX = (normalizedX - cropRegion.x) / Math.max(0.0001, cropRegion.width);
   const inCropY = (normalizedY - cropRegion.y) / Math.max(0.0001, cropRegion.height);
+  const inCrop = cropValid && inCropX >= 0 && inCropX <= 1 && inCropY >= 0 && inCropY <= 1;
 
   const localX = baseOffset.x + inCropX * maskRect.width;
   const localY = baseOffset.y + inCropY * maskRect.height;
@@ -604,9 +611,10 @@ export function projectCursorToViewport(args: {
   const x = localX * cameraScale.x + cameraPosition.x;
   const y = localY * cameraScale.y + cameraPosition.y;
 
-  const inViewport = x >= -32 && y >= -32 && x <= stageSize.width + 32 && y <= stageSize.height + 32;
+  const inStage = x >= -32 && y >= -32 && x <= stageSize.width + 32 && y <= stageSize.height + 32;
+  const inViewport = inCrop && inStage;
 
-  return { x, y, inViewport };
+  return { x, y, inViewport, inCrop };
 }
 
 /**
