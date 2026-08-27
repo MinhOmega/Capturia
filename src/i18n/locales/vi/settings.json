@@ -13,6 +13,8 @@
 	"generateSubtitles": "Tạo phụ đề",
 	"applyRoughCut": "Áp dụng cắt thô",
 	"deleteTrim": "Xóa vùng cắt",
+	"customPlaybackSpeed": "Tốc độ tùy chỉnh",
+	"maxSpeedError": "Tốc độ không thể cao hơn {{max}}×",
 	"videoEffects": "Hiệu ứng video",
 	"motionBlur": "Làm mờ chuyển động",
 	"blurBg": "Làm mờ nền",
