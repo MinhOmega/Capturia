@@ -146,7 +146,7 @@ interface Window {
     storeRecordedVideo: (
       videoData: ArrayBuffer,
       fileName: string,
-      metadata?: { frameRate?: number; width?: number; height?: number; mimeType?: string; capturedAt?: number; systemCursorMode?: 'always' | 'never'; hasMicrophoneAudio?: boolean; cursorTrack?: CursorTrackMetadata }
+      metadata?: { frameRate?: number; width?: number; height?: number; mimeType?: string; capturedAt?: number; systemCursorMode?: 'always' | 'never'; hasMicrophoneAudio?: boolean; durationMs?: number; cursorTrack?: CursorTrackMetadata }
     ) => Promise<{
       success: boolean
       path?: string
@@ -154,6 +154,9 @@ interface Window {
       error?: string
       metadata?: { frameRate?: number; width?: number; height?: number; mimeType?: string; capturedAt?: number; systemCursorMode?: 'always' | 'never'; hasMicrophoneAudio?: boolean; cursorTrack?: CursorTrackMetadata }
     }>
+    openRecordingStream: (fileName: string) => Promise<{ success: boolean; error?: string }>
+    appendRecordingChunk: (fileName: string, chunk: ArrayBuffer) => Promise<{ success: boolean; error?: string }>
+    closeRecordingStream: (fileName: string) => Promise<{ success: boolean; error?: string }>
     getRecordedVideoPath: () => Promise<{
       success: boolean
       path?: string
@@ -185,10 +188,11 @@ interface Window {
       sourceKind?: 'display' | 'window' | 'unknown'
       hasMicrophoneAudio?: boolean
     }>
-    stopNativeScreenRecording: () => Promise<{
+    stopNativeScreenRecording: (options?: { discard?: boolean }) => Promise<{
       success: boolean
       path?: string
       message?: string
+      discarded?: boolean
       metadata?: {
         frameRate?: number
         width?: number
