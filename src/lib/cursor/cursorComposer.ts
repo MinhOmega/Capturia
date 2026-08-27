@@ -14,6 +14,13 @@ import {
 } from './types';
 
 const CLICK_PULSE_MS = 420;
+/**
+ * Output width the cursor glyph units are authored against. The glyph is
+ * `28 * style.size` px on a canvas whose (uncropped) video spans this many px,
+ * so preview stage, 1080p export and 4K export all show the same cursor
+ * relative to the video.
+ */
+export const CURSOR_REFERENCE_WIDTH = 1920;
 const CURSOR_GLYPH_HOTSPOT: Record<CursorKind, { x: number; y: number }> = {
   arrow: { x: 0, y: 0 },
   ibeam: { x: 0, y: 0 },
@@ -597,6 +604,41 @@ export function projectCursorToViewport(args: {
   const inViewport = x >= -32 && y >= -32 && x <= stageSize.width + 32 && y <= stageSize.height + 32;
 
   return { x, y, inViewport };
+}
+
+/**
+ * Cursor size as a fraction of the video, independent of the canvas the
+ * cursor is drawn on: `displayedFullVideoWidth / CURSOR_REFERENCE_WIDTH`,
+ * where the displayed full-video width is the mask (cropped display) width
+ * divided by the crop width. Cropping therefore enlarges the cursor together
+ * with the content, and the factor is the same for preview and export.
+ */
+export function resolveCursorSizeNorm(args: {
+  maskRect: { width: number };
+  cropRegion?: Pick<CropRegion, 'width'> | null;
+}): number {
+  const maskWidth = Number.isFinite(args.maskRect.width) ? Math.max(0, args.maskRect.width) : 0;
+  const cropWidth = Number.isFinite(args.cropRegion?.width)
+    ? Math.min(1, Math.max(0.0001, Number(args.cropRegion?.width)))
+    : 1;
+  if (maskWidth <= 0) return 1;
+  return (maskWidth / cropWidth) / CURSOR_REFERENCE_WIDTH;
+}
+
+/**
+ * `contentScale` for `drawCompositedCursor`: camera zoom multiplied by the
+ * output-size normalisation. Both the preview overlay and the exporter must
+ * call this so the cursor is the same size relative to the video.
+ */
+export function resolveCursorContentScale(args: {
+  cameraScale: { x: number; y: number };
+  maskRect: { width: number };
+  cropRegion?: Pick<CropRegion, 'width'> | null;
+}): number {
+  const cameraX = Number.isFinite(args.cameraScale.x) ? Math.abs(args.cameraScale.x) : 1;
+  const cameraY = Number.isFinite(args.cameraScale.y) ? Math.abs(args.cameraScale.y) : 1;
+  const camera = (cameraX + cameraY) / 2;
+  return Math.max(0.1, camera * resolveCursorSizeNorm(args));
 }
 
 // macOS-style cursor using Path2D (synchronous, no async image loading).

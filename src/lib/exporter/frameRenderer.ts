@@ -21,6 +21,7 @@ import { buildSubtitleLines } from '@/lib/rendering/subtitleLayout';
 import {
   drawCompositedCursor,
   projectCursorToViewport,
+  resolveCursorContentScale,
   resolveCursorState,
   type CursorStyleConfig,
   type CursorTrack,
@@ -599,7 +600,11 @@ export class FrameRenderer {
       { x: drawProjected.x, y: drawProjected.y },
       drawCursorState,
       this.config.cursorStyle,
-      Math.max(0.1, (Math.abs(this.cameraContainer.scale.x) + Math.abs(this.cameraContainer.scale.y)) / 2),
+      resolveCursorContentScale({
+        cameraScale: { x: this.cameraContainer.scale.x, y: this.cameraContainer.scale.y },
+        maskRect: this.layoutCache.maskRect,
+        cropRegion: this.config.cropRegion,
+      }),
     );
   }
 
