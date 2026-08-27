@@ -198,10 +198,8 @@ function renderText(
   ctx.rect(x, y, width, height);
   ctx.clip();
 
-  const fontWeight = style.fontWeight === 'bold' ? 'bold' : 'normal';
-  const fontStyle = style.fontStyle === 'italic' ? 'italic' : 'normal';
   const scaledFontSize = style.fontSize * scaleFactor;
-  ctx.font = `${fontStyle} ${fontWeight} ${scaledFontSize}px ${style.fontFamily}`;
+  ctx.font = getAnnotationFontShorthand(style, scaleFactor);
   ctx.textBaseline = 'middle';
 
   const containerPadding = TEXT_BOX_PADDING_PX * scaleFactor;
@@ -317,6 +315,54 @@ async function renderImage(
   }
 
   ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+}
+
+const FONT_LOAD_TIMEOUT_MS = 5000;
+
+/** The CSS font shorthand used both to load a family and to draw with it. */
+export function getAnnotationFontShorthand(style: AnnotationRegion['style'], scaleFactor = 1): string {
+  const fontWeight = style.fontWeight === 'bold' ? 'bold' : 'normal';
+  const fontStyle = style.fontStyle === 'italic' ? 'italic' : 'normal';
+  return `${fontStyle} ${fontWeight} ${style.fontSize * scaleFactor}px ${style.fontFamily}`;
+}
+
+/**
+ * Wait for the web fonts used by text annotations to be loaded. Canvas
+ * `fillText` falls back silently when a `@font-face` family has not been
+ * fetched yet (they load lazily, on first use in the DOM), so the exporter
+ * awaits `document.fonts.load` for every distinct face before rendering.
+ * Failures and timeouts are logged, never thrown: a fallback font is better
+ * than a failed export.
+ */
+export async function preloadAnnotationFonts(
+  annotations: AnnotationRegion[],
+  fontFaceSet: Pick<FontFaceSet, 'load'> | undefined = typeof document !== 'undefined' ? document.fonts : undefined,
+): Promise<void> {
+  if (!fontFaceSet || typeof fontFaceSet.load !== 'function') return;
+  const shorthands = new Set<string>();
+  for (const annotation of annotations) {
+    if (annotation.type !== 'text' || !annotation.content) continue;
+    shorthands.add(getAnnotationFontShorthand(annotation.style));
+  }
+  if (shorthands.size === 0) return;
+
+  await Promise.all(
+    Array.from(shorthands, async (shorthand) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          fontFaceSet.load(shorthand),
+          new Promise<void>((_, reject) => {
+            timer = setTimeout(() => reject(new Error('Font load timeout')), FONT_LOAD_TIMEOUT_MS);
+          }),
+        ]);
+      } catch (err) {
+        console.warn('[AnnotationRenderer] Font not ready for export, falling back:', shorthand, err);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    }),
+  );
 }
 
 /** Pre-load all image annotations so renderAnnotations never blocks on I/O. */

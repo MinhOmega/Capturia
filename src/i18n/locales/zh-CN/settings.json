@@ -152,5 +152,15 @@
 		"slideLeft": "向左滑入",
 		"typewriter": "打字机",
 		"pulse": "脉冲"
+	},
+	"fontStyles": {
+		"classic": "经典",
+		"editor": "编辑器",
+		"strong": "粗体",
+		"typewriter": "打字机",
+		"deco": "装饰",
+		"simple": "简约",
+		"modern": "现代",
+		"clean": "简洁"
 	}
 }
