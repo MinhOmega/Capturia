@@ -59,6 +59,15 @@ export interface AnnotationSize {
   height: number;
 }
 
+export type AnnotationTextAnimation =
+  | 'none'
+  | 'fade'
+  | 'rise'
+  | 'pop'
+  | 'slide-left'
+  | 'typewriter'
+  | 'pulse';
+
 export interface AnnotationTextStyle {
   color: string;
   backgroundColor: string;
@@ -68,6 +77,8 @@ export interface AnnotationTextStyle {
   fontStyle: 'normal' | 'italic';
   textDecoration: 'none' | 'underline';
   textAlign: 'left' | 'center' | 'right';
+  /** Entrance animation (see lib/annotationTextAnimation). Optional for older saves. */
+  textAnimation?: AnnotationTextAnimation;
 }
 
 export interface AnnotationRegion {
@@ -104,6 +115,7 @@ export const DEFAULT_ANNOTATION_STYLE: AnnotationTextStyle = {
   fontStyle: 'normal',
   textDecoration: 'none',
   textAlign: 'center',
+  textAnimation: 'none',
 };
 
 export const DEFAULT_FIGURE_DATA: FigureData = {
