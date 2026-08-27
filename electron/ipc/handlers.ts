@@ -17,8 +17,11 @@ import {
   resolveOutputPathInDir,
   resolveRecordingOutputPath,
 } from './paths'
+import { RecordingStreamRegistry, registerRecordingStreamHandlers } from './recordingStream'
+import { patchWebmDurationOnDisk } from '../recording/webm-duration'
 import {
   forceTerminateNativeMacRecorder,
+  getNativeMacRecorderOutputPath,
   isNativeMacRecorderActive,
   startNativeMacRecorder,
   stopNativeMacRecorder,
@@ -60,6 +63,11 @@ type CurrentVideoMetadata = {
   capturedAt?: number
   systemCursorMode?: 'always' | 'never'
   hasMicrophoneAudio?: boolean
+  /**
+   * Wall-clock length of the capture, minus pauses. Only used to patch the WebM
+   * Duration header of a streamed recording; never persisted in the metadata.
+   */
+  durationMs?: number
   cursorTrack?: {
     source?: 'recorded' | 'synthetic'
     samples: Array<{
@@ -1154,6 +1162,32 @@ function sanitizeVideoMetadata(metadata?: CurrentVideoMetadata | null): CurrentV
   return Object.keys(normalized).length > 0 ? normalized : null
 }
 
+function isValidDurationMs(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+}
+
+/**
+ * Finalize one recording file: flush/close the stream if it was streamed, else write
+ * the buffered bytes (short recording, or the stream failed to open and the renderer
+ * fell back to memory). Returns whether it was streamed, so the caller knows if the
+ * WebM duration still needs patching on disk.
+ */
+async function finalizeRecordingFile(
+  registry: RecordingStreamRegistry,
+  fileName: string,
+  filePath: string,
+  videoData?: ArrayBuffer,
+): Promise<boolean> {
+  const streamed = await registry.finalize(fileName)
+  if (!streamed) {
+    if (!videoData || videoData.byteLength === 0) {
+      throw new Error('Recording was not streamed and no video data was provided')
+    }
+    await fs.writeFile(filePath, Buffer.from(videoData))
+  }
+  return streamed
+}
+
 export function registerIpcHandlers(
   createEditorWindow: () => void,
   createSourceSelectorWindow: () => BrowserWindow,
@@ -1168,6 +1202,13 @@ export function registerIpcHandlers(
   let currentVideoMetadata: CurrentVideoMetadata | null = null
   let cursorTracker: CursorTrackerRuntime | null = null
   const analysisService = new VideoAnalysisService()
+
+  // On-disk write streams for in-progress MediaRecorder recordings, keyed by output
+  // file name. Chunks append as they arrive so the renderer never buffers the full video.
+  const recordingStreams = new RecordingStreamRegistry()
+  registerRecordingStreamHandlers(ipcMain, recordingStreams, (fileName) =>
+    resolveRecordingOutputPath(RECORDINGS_DIR, fileName),
+  )
 
   const stopCursorTracker = (): CursorTrackPayload | undefined => {
     if (!cursorTracker) return undefined
@@ -1625,7 +1666,22 @@ export function registerIpcHandlers(
       // The renderer only ever sends `recording-<timestamp>.webm`; refuse anything
       // that could escape the recordings dir.
       const videoPath = resolveRecordingOutputPath(RECORDINGS_DIR, fileName)
-      await fs.writeFile(videoPath, Buffer.from(videoData))
+      // Streamed recordings are already on disk: close the stream. Otherwise (short
+      // recording, or the stream failed to open) write the renderer's buffer.
+      const streamed = await finalizeRecordingFile(recordingStreams, fileName, videoPath, videoData)
+      if (streamed) {
+        // The renderer never held the whole blob, so it could not fix the WebM
+        // Duration header itself. Best-effort: the file plays either way, the
+        // editor just needs the duration for seeking.
+        if (isValidDurationMs(metadata?.durationMs)) {
+          const patch = await patchWebmDurationOnDisk(videoPath, metadata.durationMs)
+          if (!patch.patched) {
+            console.warn(`[store-recorded-video] duration patch skipped for ${fileName}: ${patch.reason}`)
+          }
+        } else {
+          console.warn(`[store-recorded-video] streamed recording ${fileName} has no durationMs; header left unpatched`)
+        }
+      }
       currentVideoPath = videoPath
       currentVideoMetadata = sanitizeVideoMetadata(metadata)
       if (currentVideoMetadata?.cursorTrack) {
@@ -1760,11 +1816,29 @@ export function registerIpcHandlers(
     }
   })
 
-  ipcMain.handle('native-screen-recorder-stop', async () => {
+  ipcMain.handle('native-screen-recorder-stop', async (_, options?: { discard?: boolean }) => {
     try {
+      const discard = options?.discard === true
+      // Grab the path before stopping: a discarded helper that produced an empty
+      // file reports no path, but the file still has to go.
+      const activeOutputPath = getNativeMacRecorderOutputPath()
       const result = await stopNativeMacRecorder()
+      // Tray + main-window restore run for a discard too: the recording has ended
+      // either way. Only the editor switch (renderer side) is skipped.
       const sourceName = selectedSource?.name || 'Screen'
       onRecordingStateChange?.(false, sourceName)
+
+      if (discard) {
+        const outputPath = result.path ?? activeOutputPath
+        if (outputPath) {
+          await fs.rm(outputPath, { force: true }).catch((error) => {
+            console.warn('[native-screen-recorder-stop] failed to delete discarded recording:', error)
+          })
+          await fs.rm(resolveCursorSidecarPath(outputPath), { force: true }).catch(() => undefined)
+        }
+        return { success: true, discarded: true }
+      }
+
       if (result.success && result.path) {
         scheduleRecordingsCleanup({
           recordingsDir: RECORDINGS_DIR,

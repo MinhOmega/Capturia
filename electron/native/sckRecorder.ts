@@ -237,6 +237,14 @@ export function isNativeMacRecorderActive(): boolean {
   return Boolean(activeSession)
 }
 
+/**
+ * Output file of the in-progress native recording, if any. Lets a discard delete
+ * the file even when `stopNativeMacRecorder` reports it as missing or empty.
+ */
+export function getNativeMacRecorderOutputPath(): string | null {
+  return activeSession?.outputPath ?? null
+}
+
 export function forceTerminateNativeMacRecorder(): void {
   const session = activeSession
   activeSession = null

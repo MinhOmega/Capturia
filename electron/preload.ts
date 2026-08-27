@@ -65,6 +65,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       capturedAt?: number;
       systemCursorMode?: 'always' | 'never';
       hasMicrophoneAudio?: boolean;
+      durationMs?: number;
       cursorTrack?: {
         source?: 'recorded' | 'synthetic';
         samples: Array<{ timeMs: number; x: number; y: number; click?: boolean; visible?: boolean; cursorKind?: 'arrow' | 'ibeam' }>;
@@ -89,6 +90,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   ) => {
     return ipcRenderer.invoke('store-recorded-video', videoData, fileName, metadata)
   },
+  // Streaming recordings: chunks are appended to the recordings dir as they arrive so
+  // the renderer never has to hold a long recording in memory.
+  openRecordingStream: (fileName: string) => {
+    return ipcRenderer.invoke('open-recording-stream', fileName)
+  },
+  appendRecordingChunk: (fileName: string, chunk: ArrayBuffer) => {
+    return ipcRenderer.invoke('append-recording-chunk', fileName, chunk)
+  },
+  closeRecordingStream: (fileName: string) => {
+    return ipcRenderer.invoke('close-recording-stream', fileName)
+  },
 
   getRecordedVideoPath: () => {
     return ipcRenderer.invoke('get-recorded-video-path')
@@ -112,8 +124,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   }) => {
     return ipcRenderer.invoke('native-screen-recorder-start', options)
   },
-  stopNativeScreenRecording: () => {
-    return ipcRenderer.invoke('native-screen-recorder-stop')
+  stopNativeScreenRecording: (options?: { discard?: boolean }) => {
+    return ipcRenderer.invoke('native-screen-recorder-stop', options)
   },
   startCursorTracking: (options?: {
     source?: { id?: string; display_id?: string | number | null }
