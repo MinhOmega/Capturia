@@ -156,6 +156,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('source-selector-closed', listener)
     return () => ipcRenderer.removeListener('source-selector-closed', listener)
   },
+  // Countdown overlay window (W3-e): driven by the HUD's countdown timer. `runId`
+  // identifies one countdown so stale ticks after a cancel are ignored.
+  showCountdownOverlay: (value: number, runId: number) => {
+    return ipcRenderer.invoke('countdown-overlay-show', value, runId)
+  },
+  setCountdownOverlayValue: (value: number, runId: number) => {
+    return ipcRenderer.invoke('countdown-overlay-set-value', value, runId)
+  },
+  hideCountdownOverlay: (runId: number) => {
+    return ipcRenderer.invoke('countdown-overlay-hide', runId)
+  },
+  onCountdownOverlayValue: (callback: (value: number | null, runId: number) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, value: number | null, runId: number) =>
+      callback(value, runId)
+    ipcRenderer.on('countdown-overlay-value', listener)
+    return () => ipcRenderer.removeListener('countdown-overlay-value', listener)
+  },
   setStopRecordingShortcut: (accelerator: string) => {
     return ipcRenderer.invoke('set-stop-recording-shortcut', accelerator)
   },

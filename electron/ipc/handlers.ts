@@ -35,6 +35,7 @@ import {
 } from '../native/mouseButtonMonitor'
 import { getWindowBoundsById, parseWindowIdFromSourceId } from './windowBounds'
 import { registerFileReadHandlers } from './fileReadHandlers'
+import { type HudWindowsContext, registerHudWindowsHandlers } from './hudWindowsHandlers'
 import {
   isPointInsideBounds,
   normalizePointToBounds,
@@ -1173,12 +1174,14 @@ export function registerIpcHandlers(
   getPermissionCheckerWindow: () => BrowserWindow | null,
   onRecordingStateChange?: (recording: boolean, sourceName: string) => void,
   onSourceSelectionChange?: (source: SelectedSource | null) => void,
+  hudWindows?: Omit<HudWindowsContext, 'ipcMain'>,
 ) {
   let currentVideoPath: string | null = null
   let currentVideoMetadata: CurrentVideoMetadata | null = null
   let cursorTracker: CursorTrackerRuntime | null = null
   const analysisService = new VideoAnalysisService()
   registerFileReadHandlers({ ipcMain, recordingsDir: RECORDINGS_DIR })
+  if (hudWindows) registerHudWindowsHandlers({ ipcMain, ...hudWindows })
 
   // On-disk write streams for in-progress MediaRecorder recordings, keyed by output
   // file name. Chunks append as they arrive so the renderer never buffers the full video.

@@ -9,6 +9,7 @@ import {
   createSourceSelectorWindow,
   createPermissionCheckerWindow,
   getPermissionCheckerWindow,
+  createCountdownOverlayWindow,
 } from './windows'
 import { registerIpcHandlers } from './ipc/handlers'
 import { isReadablePathAllowed, localMediaUrlToPath } from './ipc/paths'
@@ -65,6 +66,7 @@ process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 
 let mainWindow: BrowserWindow | null = null
 let sourceSelectorWindow: BrowserWindow | null = null
 let permissionCheckerWindow: BrowserWindow | null = null
+let countdownOverlayWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let selectedSourceName = ''
 let selectedDesktopSourceId: string | null = null
@@ -383,6 +385,17 @@ function createPermissionCheckerWindowWrapper() {
   return permissionCheckerWindow
 }
 
+function createCountdownOverlayWindowWrapper() {
+  if (countdownOverlayWindow && !countdownOverlayWindow.isDestroyed()) {
+    return countdownOverlayWindow
+  }
+  countdownOverlayWindow = createCountdownOverlayWindow()
+  countdownOverlayWindow.on('closed', () => {
+    countdownOverlayWindow = null
+  })
+  return countdownOverlayWindow
+}
+
 // On macOS, applications and their menu bar stay active until the user quits
 // explicitly with Cmd + Q.
 app.on('window-all-closed', () => {
@@ -394,8 +407,9 @@ app.on('activate', () => {
   // window is visible. While recording the HUD is minimized on purpose
   // (`hud-overlay-hide`), so leave it alone until the recording ends.
   if (recordingActive) return
+  // The countdown overlay is decoration, not a window the user can interact with.
   const hasVisibleWindow = BrowserWindow.getAllWindows().some(
-    (window) => !window.isDestroyed() && window.isVisible(),
+    (window) => !window.isDestroyed() && window.isVisible() && window !== countdownOverlayWindow,
   )
   if (!hasVisibleWindow) {
     showMainWindow()
@@ -655,7 +669,11 @@ appReady?.then(async () => {
     },
     (source) => {
       selectedDesktopSourceId = source?.id ?? null
-    }
+    },
+    {
+      createCountdownOverlayWindow: createCountdownOverlayWindowWrapper,
+      getCountdownOverlayWindow: () => countdownOverlayWindow,
+    },
   )
   createWindow()
 })
