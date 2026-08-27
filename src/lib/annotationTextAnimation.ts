@@ -1,4 +1,5 @@
 import type { AnnotationTextAnimation } from '@/components/video-editor/types';
+import { splitGraphemes } from '@/lib/exporter/textWrap';
 
 export const TEXT_ANIMATION_DURATION_MS = 700;
 
@@ -132,4 +133,56 @@ export function getTextAnimationState(
         revealProgress: 1,
       };
   }
+}
+
+/**
+ * CSS applied by the preview overlay for a given animation state. Kept as a
+ * pure function so the exporter parity test can compare it with the canvas
+ * transform below at fixed times.
+ */
+export function textAnimationToCss(state: TextAnimationState): {
+  opacity: number;
+  transform: string;
+  transformOrigin: 'center';
+  clipPath: string | undefined;
+} {
+  return {
+    opacity: state.opacity,
+    transform: `translate(${state.translateX}px, ${state.translateY}px) scale(${state.scale})`,
+    transformOrigin: 'center',
+    clipPath:
+      state.revealProgress < 1
+        ? `inset(0 ${100 - state.revealProgress * 100}% 0 0)`
+        : undefined,
+  };
+}
+
+/**
+ * Canvas equivalent of `textAnimationToCss`: translate/scale about the box
+ * centre (CSS `transform-origin: center`) and multiply the alpha. Translation
+ * is in preview pixels, so it is scaled by `scaleFactor` for the export size.
+ */
+export function applyTextAnimationToCanvas(
+  ctx: Pick<CanvasRenderingContext2D, 'translate' | 'scale' | 'globalAlpha'>,
+  state: TextAnimationState,
+  originX: number,
+  originY: number,
+  scaleFactor: number,
+): void {
+  ctx.translate(originX, originY);
+  ctx.translate(state.translateX * scaleFactor, state.translateY * scaleFactor);
+  ctx.scale(state.scale, state.scale);
+  ctx.translate(-originX, -originY);
+  ctx.globalAlpha *= state.opacity;
+}
+
+/**
+ * Typewriter reveal for the exporter: the preview clips the span from the
+ * right with `clip-path: inset(...)`; the exporter slices graphemes instead.
+ */
+export function getRevealedText(line: string, revealProgress: number): string {
+  if (revealProgress >= 1) return line;
+  const graphemes = splitGraphemes(line);
+  const visibleCount = Math.ceil(graphemes.length * Math.max(0, revealProgress));
+  return graphemes.slice(0, visibleCount).join('');
 }
