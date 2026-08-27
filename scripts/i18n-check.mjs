@@ -3,8 +3,8 @@
  * Translation health check (ported from OpenScreen v1.7.0, extended).
  *
  * 1. Key parity against `en` for every locale folder and namespace.
- *    - Locales listed in STRICT_LOCALES (the "complete" ones) fail the check
- *      on any missing or extra key.
+ *    - Complete locales (COMPLETE_LOCALES, parsed from src/i18n/config.ts so
+ *      the two lists cannot drift) fail the check on any missing or extra key.
  *    - Every other locale is *partial* on purpose: only keys with an upstream
  *      translation exist, the rest fall back to en at runtime. For those,
  *      missing keys are reported as warnings; extra keys (not in en) are still
@@ -27,8 +27,16 @@ import path from "node:path";
 const LOCALES_DIR = path.resolve("src/i18n/locales");
 const SRC_DIR = path.resolve("src");
 const BASE_LOCALE = "en";
-/** Locales with a complete translation. Keep in sync with COMPLETE_LOCALES in src/i18n/config.ts. */
-const STRICT_LOCALES = ["zh-CN", "vi"];
+const CONFIG_FILE = path.resolve("src/i18n/config.ts");
+
+/** Locales with a complete translation: COMPLETE_LOCALES from src/i18n/config.ts (parsed, not duplicated). */
+function readCompleteLocales() {
+	const source = fs.readFileSync(CONFIG_FILE, "utf-8");
+	const match = source.match(/COMPLETE_LOCALES\s*=\s*\[([^\]]*)\]/);
+	if (!match) throw new Error(`COMPLETE_LOCALES not found in ${CONFIG_FILE}`);
+	return [...match[1].matchAll(/["']([^"']+)["']/g)].map((m) => m[1]);
+}
+const STRICT_LOCALES = readCompleteLocales().filter((locale) => locale !== BASE_LOCALE);
 
 const argv = process.argv.slice(2);
 const quiet = argv.includes("--quiet");
