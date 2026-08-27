@@ -39,10 +39,10 @@ export function ExportProgressFloat({
     : progress?.percentage ?? 0;
 
   const getPhaseLabel = () => {
-    if (error) return t('export.titleFailed');
-    if (isCompiling) return t('export.titleCompilingGif');
-    if (isFinalizing) return exportFormat === 'gif' ? t('export.titleCompilingGif') : t('export.titleFinalizingVideo');
-    return t('export.phaseRendering');
+    if (error) return t('dialogs.export.titleFailed');
+    if (isCompiling) return t('dialogs.export.titleCompilingGif');
+    if (isFinalizing) return exportFormat === 'gif' ? t('dialogs.export.titleCompilingGif') : t('dialogs.export.titleFinalizingVideo');
+    return t('dialogs.export.phaseRendering');
   };
 
   const formatEta = (seconds: number) => {
@@ -81,15 +81,15 @@ export function ExportProgressFloat({
           )}
           <div className="flex-1 min-w-0">
             <div className="text-sm font-medium text-slate-200 truncate">
-              {isDone ? t('export.complete') : getPhaseLabel()}
+              {isDone ? t('dialogs.export.complete') : getPhaseLabel()}
             </div>
             <div className="text-[11px] text-slate-500">
               {error
-                ? t('export.statusTryAgain')
+                ? t('dialogs.export.statusTryAgain')
                 : isDone
-                  ? t('export.ready', { format: exportFormat === 'gif' ? 'gif' : 'video' })
+                  ? t('dialogs.export.ready', { format: exportFormat === 'gif' ? 'gif' : 'video' })
                   : batchProgress && batchProgress.total > 1
-                    ? t('export.batchProgress', { current: batchProgress.current, total: batchProgress.total })
+                    ? t('dialogs.export.batchProgress', { current: batchProgress.current, total: batchProgress.total })
                     : progress?.estimatedTimeRemaining != null && progress.estimatedTimeRemaining > 0
                       ? `ETA ${formatEta(progress.estimatedTimeRemaining)}`
                       : progress

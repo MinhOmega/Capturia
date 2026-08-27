@@ -41,7 +41,7 @@ export function GifOptionsPanel({
       {/* Frame Rate */}
       <div className="space-y-2">
         <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-          {t("gif.frameRate")}
+          {t("dialogs.gif.frameRate")}
         </label>
         <Select
           value={String(frameRate)}
@@ -68,7 +68,7 @@ export function GifOptionsPanel({
       {/* Size Preset */}
       <div className="space-y-2">
         <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-          {t("gif.outputSize")}
+          {t("dialogs.gif.outputSize")}
         </label>
         <Select
           value={sizePreset}
@@ -98,8 +98,8 @@ export function GifOptionsPanel({
       {/* Loop Toggle */}
       <div className="flex items-center justify-between py-2">
         <div>
-          <label className="text-sm font-medium text-slate-200">{t("gif.loopAnimation")}</label>
-          <p className="text-xs text-slate-500">{t("gif.loopDesc")}</p>
+          <label className="text-sm font-medium text-slate-200">{t("dialogs.gif.loopAnimation")}</label>
+          <p className="text-xs text-slate-500">{t("dialogs.gif.loopDesc")}</p>
         </div>
         <Switch
           checked={loop}

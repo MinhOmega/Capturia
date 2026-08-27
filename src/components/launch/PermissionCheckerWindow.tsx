@@ -72,7 +72,7 @@ export function PermissionCheckerWindow() {
       } catch (error) {
         reportUserActionError({
           t,
-          userMessage: t("permission.refreshFailed"),
+          userMessage: t("launch.permission.refreshFailed"),
           error,
           context: "permission-checker.load-snapshot",
           dedupeKey: "permission-checker.load-snapshot",
@@ -118,7 +118,7 @@ export function PermissionCheckerWindow() {
         if (!result.success) {
           reportUserActionError({
             t,
-            userMessage: t("permission.permissionActionFailed"),
+            userMessage: t("launch.permission.permissionActionFailed"),
             error: result.message || "requestCapturePermissionAccess returned unsuccessful result",
             context: "permission-checker.permission-action",
             details: { key: item.key },
@@ -132,7 +132,7 @@ export function PermissionCheckerWindow() {
       } catch (error) {
         reportUserActionError({
           t,
-          userMessage: t("permission.permissionActionFailed"),
+          userMessage: t("launch.permission.permissionActionFailed"),
           error,
           context: "permission-checker.permission-action",
           details: { key: item.key },
@@ -155,7 +155,7 @@ export function PermissionCheckerWindow() {
       >
         <div className="flex items-center gap-3 text-zinc-300">
           <RefreshCw className="h-4 w-4 animate-spin" />
-          <span>{t("permission.loading")}</span>
+          <span>{t("launch.permission.loading")}</span>
         </div>
       </div>
     );
@@ -174,8 +174,8 @@ export function PermissionCheckerWindow() {
       <div className="max-w-5xl mx-auto flex flex-col gap-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold tracking-tight">{t("permission.title")}</h1>
-            <p className="text-sm text-zinc-300 mt-2 max-w-4xl leading-relaxed">{t("permission.intro")}</p>
+            <h1 className="text-xl font-semibold tracking-tight">{t("launch.permission.title")}</h1>
+            <p className="text-sm text-zinc-300 mt-2 max-w-4xl leading-relaxed">{t("launch.permission.intro")}</p>
           </div>
           <Button
             onClick={() => void loadSnapshot(true)}
@@ -183,7 +183,7 @@ export function PermissionCheckerWindow() {
             className="bg-white/5 hover:bg-white/10 text-white border border-white/10 gap-2"
           >
             <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-            {t("permission.refresh")}
+            {t("launch.permission.refresh")}
           </Button>
         </div>
 
@@ -196,20 +196,20 @@ export function PermissionCheckerWindow() {
           }}
         >
           {orderedItems.map((item) => {
-            const statusText = t(`permission.status${item.status.replace(/(^|-)([a-z])/g, (_s, _dash, letter: string) => letter.toUpperCase())}`);
+            const statusText = t(`launch.permission.status${item.status.replace(/(^|-)([a-z])/g, (_s, _dash, letter: string) => letter.toUpperCase())}`);
             const labelKey = keyLabelSuffix(item.key);
-            const title = t(`permission.row${labelKey}Title`);
-            const description = t(`permission.row${labelKey}Description`);
+            const title = t(`launch.permission.row${labelKey}Title`);
+            const description = t(`launch.permission.row${labelKey}Description`);
             const isGranted = isPermissionGranted(item.status);
             const isBlocked = isPermissionBlocked(item.status);
             const actionMode = resolvePermissionActionMode(item);
             const actionText = actionMode === "granted"
-              ? t("permission.actionGranted")
+              ? t("launch.permission.actionGranted")
               : actionMode === "request"
-              ? t("permission.actionRequestAccess")
+              ? t("launch.permission.actionRequestAccess")
               : actionMode === "open-settings"
-              ? t("permission.actionOpenSettings")
-              : t("permission.actionManualCheck");
+              ? t("launch.permission.actionOpenSettings")
+              : t("launch.permission.actionManualCheck");
 
             return (
               <div
@@ -222,11 +222,11 @@ export function PermissionCheckerWindow() {
                     <h2 className="text-base font-semibold text-white">{title}</h2>
                     {item.requiredForRecording ? (
                       <span className="text-[11px] px-2 py-0.5 rounded-full border border-amber-300/40 bg-amber-300/15 text-amber-200">
-                        {t("permission.required")}
+                        {t("launch.permission.required")}
                       </span>
                     ) : (
                       <span className="text-[11px] px-2 py-0.5 rounded-full border border-zinc-400/30 bg-zinc-500/10 text-zinc-300">
-                        {t("permission.optional")}
+                        {t("launch.permission.optional")}
                       </span>
                     )}
                   </div>
@@ -267,15 +267,15 @@ export function PermissionCheckerWindow() {
           {readiness.ready ? (
             <div className="flex items-start gap-2 text-emerald-200">
               <ShieldCheck className="h-5 w-5 mt-0.5" />
-              <p className="text-sm leading-relaxed">{t("permission.readyHint")}</p>
+              <p className="text-sm leading-relaxed">{t("launch.permission.readyHint")}</p>
             </div>
           ) : (
             <div className="flex items-start gap-2 text-amber-200">
               <ShieldAlert className="h-5 w-5 mt-0.5" />
-              <p className="text-sm leading-relaxed">{t("permission.missingRequiredHint")}</p>
+              <p className="text-sm leading-relaxed">{t("launch.permission.missingRequiredHint")}</p>
             </div>
           )}
-          <p className="text-xs text-zinc-400 mt-2">{t("permission.relaunchHint")}</p>
+          <p className="text-xs text-zinc-400 mt-2">{t("launch.permission.relaunchHint")}</p>
         </div>
 
         <div className="flex justify-end gap-2">
@@ -283,7 +283,7 @@ export function PermissionCheckerWindow() {
             className="bg-[#34B27B] hover:bg-[#34B27B]/85 text-white min-w-[140px]"
             onClick={() => window.close()}
           >
-            {t("permission.continue")}
+            {t("launch.permission.continue")}
           </Button>
         </div>
       </div>

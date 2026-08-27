@@ -1730,7 +1730,7 @@ export default function VideoEditor() {
       setAnalysisInProgress(false);
       setAnalysisJobId(null);
       toast.error(t('editor.analysisStartFailed'), {
-        description: message || t('error.unexpected'),
+        description: message || t('common.error.unexpected'),
       });
     };
 
@@ -2219,14 +2219,14 @@ export default function VideoEditor() {
   }, []);
 
   const showExportSuccessToast = useCallback((filePath: string) => {
-    toast.success(t('export.exportedTo', { path: filePath }), {
+    toast.success(t('dialogs.export.exportedTo', { path: filePath }), {
       action: {
-        label: t('export.showInFolder'),
+        label: t('dialogs.export.showInFolder'),
         onClick: async () => {
           try {
             const result = await window.electronAPI.revealInFolder(filePath);
             if (!result.success) {
-              toast.error(result.error || result.message || t('export.revealFailed'));
+              toast.error(result.error || result.message || t('dialogs.export.revealFailed'));
             }
           } catch (err) {
             toast.error(String(err));
