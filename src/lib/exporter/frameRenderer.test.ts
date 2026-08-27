@@ -52,15 +52,12 @@ vi.mock("pixi.js", () => {
 import { FrameRenderer } from "./frameRenderer";
 
 describe("frameRenderer video texture setup", () => {
-  let originalHtmlVideoElement: unknown;
-
   beforeAll(() => {
-    originalHtmlVideoElement = (globalThis as typeof globalThis & { HTMLVideoElement?: unknown }).HTMLVideoElement;
-    (globalThis as typeof globalThis & { HTMLVideoElement?: unknown }).HTMLVideoElement = class MockHTMLVideoElement {};
+    vi.stubGlobal("HTMLVideoElement", class MockHTMLVideoElement {});
   });
 
   afterAll(() => {
-    (globalThis as typeof globalThis & { HTMLVideoElement?: unknown }).HTMLVideoElement = originalHtmlVideoElement;
+    vi.unstubAllGlobals();
   });
 
   beforeEach(() => {
