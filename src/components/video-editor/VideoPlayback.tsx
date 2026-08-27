@@ -1,13 +1,13 @@
 import type React from "react";
 import { useEffect, useRef, useImperativeHandle, forwardRef, useState, useMemo, useCallback } from "react";
 import { classifyWallpaper, DEFAULT_WALLPAPER, resolveImageWallpaperUrl } from "@/lib/wallpaper";
-import { Application, Container, Sprite, Graphics, BlurFilter, Texture, VideoSource } from 'pixi.js';
+import { Application, Container, Sprite, Graphics, Texture, VideoSource } from 'pixi.js';
+import { MotionBlurFilter } from 'pixi-filters/motion-blur';
 import { getZoomScale, type ZoomRegion, type ZoomFocus, type TrimRegion, type AnnotationRegion, type AudioEditRegion } from "./types";
 import { DEFAULT_FOCUS } from "./videoPlayback/constants";
 import { clamp01 } from "./videoPlayback/mathUtils";
 import {
   createZoomCameraState,
-  measureZoomMotionIntensity,
   resetZoomCameraState,
   stepZoomCamera,
 } from "./videoPlayback/zoomCamera";
@@ -15,7 +15,7 @@ import { buildCursorTelemetry, type CursorTelemetryPoint } from "./videoPlayback
 import { clampFocusToScale } from "./videoPlayback/focusUtils";
 import { updateOverlayIndicator } from "./videoPlayback/overlayUtils";
 import { layoutVideoContent as layoutVideoContentUtil } from "./videoPlayback/layoutUtils";
-import { applyZoomTransform } from "./videoPlayback/zoomTransform";
+import { applyZoomTransform, createMotionBlurState, resetMotionBlurState } from "./videoPlayback/zoomTransform";
 import { createVideoEventHandlers } from "./videoPlayback/videoEventHandlers";
 import { type AspectRatio, formatAspectRatioForCSS } from "@/utils/aspectRatioUtils";
 import { AnnotationOverlay } from "./AnnotationOverlay";
@@ -68,7 +68,8 @@ interface VideoPlaybackProps {
   showShadow?: boolean;
   shadowIntensity?: number;
   showBlur?: boolean;
-  motionBlurEnabled?: boolean;
+  /** Zoom motion blur amount 0..1 (0 = off). */
+  motionBlurAmount?: number;
   borderRadius?: number;
   padding?: number;
   cropRegion?: import('./types').CropRegion;
@@ -121,7 +122,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
   showShadow,
   shadowIntensity = 0,
   showBlur,
-  motionBlurEnabled = false,
+  motionBlurAmount = 0,
   borderRadius = 0,
   padding = 50,
   cropRegion,
@@ -163,7 +164,8 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
   const animationStateRef = useRef({ scale: 1, focusX: DEFAULT_FOCUS.cx, focusY: DEFAULT_FOCUS.cy, progress: 0 });
   // Spring state + applied transform; the same step drives the exporter (zoomCamera.ts).
   const zoomCameraRef = useRef(createZoomCameraState());
-  const blurFilterRef = useRef<BlurFilter | null>(null);
+  const motionBlurFilterRef = useRef<MotionBlurFilter | null>(null);
+  const motionBlurStateRef = useRef(createMotionBlurState());
   const isScrubbingRef = useRef(false);
   const scrubEndTimerRef = useRef<number | null>(null);
   const [isScrubbing, setIsScrubbing] = useState(false);
@@ -187,7 +189,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
   const lockedVideoDimensionsRef = useRef<{ width: number; height: number } | null>(null);
   const layoutVideoContentRef = useRef<(() => void) | null>(null);
   const trimRegionsRef = useRef<TrimRegion[]>([]);
-  const motionBlurEnabledRef = useRef(motionBlurEnabled);
+  const motionBlurAmountRef = useRef(motionBlurAmount);
   const videoReadyRafRef = useRef<number | null>(null);
   const preferredFpsRef = useRef(preferredFps);
   const cursorCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -508,8 +510,8 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
   }, [trimRegions]);
 
   useEffect(() => {
-    motionBlurEnabledRef.current = motionBlurEnabled;
-  }, [motionBlurEnabled]);
+    motionBlurAmountRef.current = motionBlurAmount;
+  }, [motionBlurAmount]);
 
   useEffect(() => {
     cursorTrackRef.current = cursorTrack;
@@ -622,9 +624,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
     };
     resetZoomCameraState(zoomCameraRef.current);
 
-    if (blurFilterRef.current) {
-      blurFilterRef.current.strength = 0;
-    }
+    resetMotionBlurState(motionBlurStateRef.current);
 
     requestAnimationFrame(() => {
       const container = cameraContainerRef.current;
@@ -646,15 +646,15 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
 
       applyZoomTransform({
         cameraContainer: container,
-        blurFilter: blurFilterRef.current,
+        motionBlurFilter: motionBlurFilterRef.current,
+        motionBlurState: motionBlurStateRef.current,
         stageSize: stageSizeRef.current,
         baseMask: baseMaskRef.current,
         zoomScale: 1,
         focusX: DEFAULT_FOCUS.cx,
         focusY: DEFAULT_FOCUS.cy,
-        motionIntensity: 0,
         isPlaying: false,
-        motionBlurEnabled: motionBlurEnabledRef.current,
+        motionBlurAmount: 0,
       });
 
       requestAnimationFrame(() => {
@@ -923,14 +923,14 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
     };
     resetZoomCameraState(zoomCameraRef.current);
 
-    const blurFilter = new BlurFilter();
-    blurFilter.quality = 3;
-    blurFilter.resolution = app.renderer.resolution;
-    blurFilter.strength = 0;
+    // Directional blur along the camera velocity (zoomTransform.ts drives it).
     // Not attached here: the ticker only assigns videoContainer.filters while
     // motion blur is active. A permanently attached filter routes every frame
     // through a filter render-texture and softens the idle preview.
-    blurFilterRef.current = blurFilter;
+    const motionBlurFilter = new MotionBlurFilter({ velocity: { x: 0, y: 0 }, kernelSize: 5, offset: 0 });
+    motionBlurFilter.resolution = app.renderer.resolution;
+    motionBlurFilterRef.current = motionBlurFilter;
+    resetMotionBlurState(motionBlurStateRef.current);
     
     layoutVideoContent();
     console.warn('[VideoPlayback] pixi-texture setup pausing video');
@@ -983,9 +983,9 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
       videoContainer.mask = null;
       maskGraphicsRef.current = null;
       videoContainer.filters = null;
-      if (blurFilterRef.current) {
-        blurFilterRef.current.destroy();
-        blurFilterRef.current = null;
+      if (motionBlurFilterRef.current) {
+        motionBlurFilterRef.current.destroy();
+        motionBlurFilterRef.current = null;
       }
       videoTexture.destroy(true);
       
@@ -1026,7 +1026,6 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
       // to the exact target when paused / seeking / scrubbing so a paused frame
       // is crisp and matches the authored target. Same step as the exporter.
       const animating = isPlayingRef.current && !isSeekingRef.current && !isScrubbingRef.current;
-      const previous = zoomCameraRef.current.applied;
       const { target, applied } = stepZoomCamera(
         zoomCameraRef.current,
         zoomRegionsRef.current,
@@ -1045,30 +1044,31 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
       state.focusY = target.focus.cy;
       state.progress = target.progress;
 
-      const motionIntensity = measureZoomMotionIntensity(previous, applied, stageSizeRef.current);
+      // Blur only while playing (not scrubbing): the velocity estimate needs a
+      // monotonic content clock, and a paused/scrubbed frame must stay crisp.
+      const isMotionBlurActive =
+        (motionBlurAmountRef.current || 0) > 0 && isPlayingRef.current && !isScrubbingRef.current;
 
       applyZoomTransform({
         cameraContainer,
-        blurFilter: blurFilterRef.current,
+        motionBlurFilter: motionBlurFilterRef.current,
+        motionBlurState: motionBlurStateRef.current,
         stageSize: stageSizeRef.current,
         baseMask: baseMaskRef.current,
         zoomScale: state.scale,
         zoomProgress: state.progress,
         focusX: state.focusX,
         focusY: state.focusY,
-        motionIntensity,
-        isPlaying: isPlayingRef.current && !isScrubbingRef.current,
-        motionBlurEnabled: motionBlurEnabledRef.current,
+        isPlaying: isMotionBlurActive,
+        motionBlurAmount: motionBlurAmountRef.current,
         transformOverride: applied,
         frameTimeMs: timeMs,
       });
 
-      const isMotionBlurActive =
-        motionBlurEnabledRef.current && isPlayingRef.current && !isScrubbingRef.current;
       if (isMotionBlurActive !== lastMotionBlurActive) {
         if (isMotionBlurActive) {
-          if (blurFilterRef.current) {
-            videoContainer.filters = [blurFilterRef.current];
+          if (motionBlurFilterRef.current) {
+            videoContainer.filters = [motionBlurFilterRef.current];
             lastMotionBlurActive = true;
           }
         } else {
@@ -1119,8 +1119,8 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
 
     app.renderer.resolution = targetResolution;
     app.renderer.resize(container.clientWidth, container.clientHeight);
-    if (blurFilterRef.current) {
-      blurFilterRef.current.resolution = targetResolution;
+    if (motionBlurFilterRef.current) {
+      motionBlurFilterRef.current.resolution = targetResolution;
     }
     layoutVideoContentRef.current?.();
   }, [isScrubbing, pixiReady]);

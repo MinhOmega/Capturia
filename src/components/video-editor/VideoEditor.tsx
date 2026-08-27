@@ -35,6 +35,7 @@ import {
   type CropRegion,
   type FigureData,
   type ProjectState,
+  resolveProjectMotionBlurAmount,
 } from "./types";
 import {
   DEFAULT_AUDIO_SETTINGS,
@@ -358,7 +359,7 @@ export default function VideoEditor() {
   const [wallpaper, setWallpaper] = useState<string>(DEFAULT_WALLPAPER);
   const [shadowIntensity, setShadowIntensity] = useState(DEFAULT_EDITOR_APPEARANCE_SETTINGS.shadowIntensity);
   const [showBlur, setShowBlur] = useState(DEFAULT_EDITOR_APPEARANCE_SETTINGS.showBlur);
-  const [motionBlurEnabled, setMotionBlurEnabled] = useState(DEFAULT_EDITOR_APPEARANCE_SETTINGS.motionBlurEnabled);
+  const [motionBlurAmount, setMotionBlurAmount] = useState(DEFAULT_EDITOR_APPEARANCE_SETTINGS.motionBlurAmount);
   const [seekStepSeconds, setSeekStepSeconds] = useState(DEFAULT_PLAYBACK_SETTINGS.seekStepSeconds);
   const [previewPlaybackRate, setPreviewPlaybackRate] = useState(DEFAULT_PLAYBACK_SETTINGS.previewPlaybackRate);
   // View setting (not edit state): persisted with the project, never undone
@@ -816,7 +817,10 @@ export default function VideoEditor() {
               if (typeof s.wallpaper === 'string') setWallpaper(normalizeWallpaperValue(s.wallpaper));
               if (typeof s.shadowIntensity === 'number') setShadowIntensity(s.shadowIntensity);
               if (typeof s.showBlur === 'boolean') setShowBlur(s.showBlur);
-              if (typeof s.motionBlurEnabled === 'boolean') setMotionBlurEnabled(s.motionBlurEnabled);
+              // Schema migration: number wins, else the legacy boolean maps to 0.35 / 0.
+              if (typeof s.motionBlurAmount === 'number' || typeof s.motionBlurEnabled === 'boolean') {
+                setMotionBlurAmount(resolveProjectMotionBlurAmount(s));
+              }
               if (typeof s.borderRadius === 'number') setBorderRadius(s.borderRadius);
               if (typeof s.padding === 'number') setPadding(s.padding);
               if (typeof s.audioEnabled === 'boolean') setAudioEnabled(s.audioEnabled);
@@ -921,7 +925,9 @@ export default function VideoEditor() {
         wallpaper,
         shadowIntensity,
         showBlur,
-        motionBlurEnabled,
+        // Legacy toggle kept for one release (downgrade safety); the amount is canonical.
+        motionBlurEnabled: motionBlurAmount > 0,
+        motionBlurAmount,
         borderRadius,
         padding,
         audioEnabled,
@@ -954,7 +960,7 @@ export default function VideoEditor() {
   }, [
     videoFilePath, segments, zoomRegionsByAspect, annotationRegions,
     audioEditRegions, cropRegionsByAspect, aspectRatio, wallpaper,
-    shadowIntensity, showBlur, motionBlurEnabled, borderRadius, padding,
+    shadowIntensity, showBlur, motionBlurAmount, borderRadius, padding,
     audioEnabled, audioGain, audioNormalizeLoudness, audioTargetLufs,
     audioLimiterDb, exportQuality, exportFormat, seekStepSeconds,
     previewPlaybackRate, cursorStyle, subtitleCues, gifFrameRate,
@@ -2392,7 +2398,7 @@ export default function VideoEditor() {
           showShadow: shadowIntensity > 0,
           shadowIntensity,
           showBlur,
-          motionBlurEnabled,
+          motionBlurAmount,
           borderRadius,
           padding,
           videoPadding: padding,
@@ -2517,7 +2523,7 @@ export default function VideoEditor() {
             showShadow: shadowIntensity > 0,
             shadowIntensity,
             showBlur,
-            motionBlurEnabled,
+            motionBlurAmount,
             borderRadius,
             padding,
             cropRegion: resolveAspectCropRegion(cropRegionsByAspect, currentRatio, sourceAspectRatio),
@@ -2633,7 +2639,7 @@ export default function VideoEditor() {
       exportCancelledRef.current = false;
       setActiveBatchExport(null);
     }
-  }, [videoPath, wallpaper, zoomRegions, zoomRegionsByAspect, trimRegions, shadowIntensity, showBlur, motionBlurEnabled, borderRadius, padding, activeCropRegion, cropRegionsByAspect, sourceAspectRatio, annotationRegions, subtitleCues, isPlaying, normalizedExportAspectRatios, exportQuality, locale, sourceFrameRate, sourceHasAudio, audioEnabled, audioGain, audioNormalizeLoudness, audioTargetLufs, audioLimiterDb, audioEditRegions, cursorTrack, cursorStyle, t, diagnosticLabels, saveAgainToastAction, showExportSuccessToast, stashUnsavedExport, probedSourceDurationMs]);
+  }, [videoPath, wallpaper, zoomRegions, zoomRegionsByAspect, trimRegions, shadowIntensity, showBlur, motionBlurAmount, borderRadius, padding, activeCropRegion, cropRegionsByAspect, sourceAspectRatio, annotationRegions, subtitleCues, isPlaying, normalizedExportAspectRatios, exportQuality, locale, sourceFrameRate, sourceHasAudio, audioEnabled, audioGain, audioNormalizeLoudness, audioTargetLufs, audioLimiterDb, audioEditRegions, cursorTrack, cursorStyle, t, diagnosticLabels, saveAgainToastAction, showExportSuccessToast, stashUnsavedExport, probedSourceDurationMs]);
 
   const handleOpenExportDialog = useCallback(async () => {
     if (!videoPath) {
@@ -2803,7 +2809,9 @@ export default function VideoEditor() {
         wallpaper,
         shadowIntensity,
         showBlur,
-        motionBlurEnabled,
+        // Legacy toggle kept for one release (downgrade safety); the amount is canonical.
+        motionBlurEnabled: motionBlurAmount > 0,
+        motionBlurAmount,
         borderRadius,
         padding,
         audioEnabled,
@@ -2833,7 +2841,7 @@ export default function VideoEditor() {
   }, [
     videoFilePath, segments, zoomRegionsByAspect, annotationRegions,
     audioEditRegions, cropRegionsByAspect, aspectRatio, wallpaper,
-    shadowIntensity, showBlur, motionBlurEnabled, borderRadius, padding,
+    shadowIntensity, showBlur, motionBlurAmount, borderRadius, padding,
     audioEnabled, audioGain, audioNormalizeLoudness, audioTargetLufs,
     audioLimiterDb, exportQuality, exportFormat, seekStepSeconds,
     previewPlaybackRate, cursorStyle, subtitleCues, gifFrameRate,
@@ -3100,7 +3108,7 @@ export default function VideoEditor() {
                       showShadow={shadowIntensity > 0}
                       shadowIntensity={shadowIntensity}
                       showBlur={showBlur}
-                      motionBlurEnabled={motionBlurEnabled}
+                      motionBlurAmount={motionBlurAmount}
                       borderRadius={borderRadius}
                       padding={padding}
                       cropRegion={DEFAULT_CROP_REGION}
@@ -3265,8 +3273,8 @@ export default function VideoEditor() {
                 onShadowChange={setShadowIntensity}
                 showBlur={showBlur}
                 onBlurChange={setShowBlur}
-                motionBlurEnabled={motionBlurEnabled}
-                onMotionBlurChange={setMotionBlurEnabled}
+                motionBlurAmount={motionBlurAmount}
+                onMotionBlurChange={setMotionBlurAmount}
                 borderRadius={borderRadius}
                 onBorderRadiusChange={setBorderRadius}
                 padding={padding}

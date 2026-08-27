@@ -25,6 +25,7 @@
 	"maxSpeedError": "Speed can't go higher than {{max}}×",
 	"videoEffects": "Video Effects",
 	"motionBlur": "Motion Blur",
+	"motionBlurOff": "Off",
 	"blurBg": "Blur BG",
 	"cursorComposer": "Cursor Composer",
 	"cursorTrackUnavailable": "Cursor tracking data is not available for this recording. The cursor embedded in the video will be used instead.",

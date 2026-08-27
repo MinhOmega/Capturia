@@ -8,6 +8,8 @@ import {
   ZOOM_DEPTH_SCALES,
   type ZoomDepth,
   type ZoomRegion,
+  DEFAULT_ZOOM_MOTION_BLUR,
+  resolveProjectMotionBlurAmount,
 } from './types';
 
 function zoomRegion(overrides: Partial<ZoomRegion> = {}): ZoomRegion {
@@ -86,5 +88,27 @@ describe('resolveTextAnnotationContent', () => {
 
   it('preserves existing text content when converting an existing region to text', () => {
     expect(resolveTextAnnotationContent('hello world')).toBe('hello world');
+  });
+});
+
+describe('resolveProjectMotionBlurAmount (schema migration)', () => {
+  it('maps the legacy boolean to the default amount or off', () => {
+    expect(resolveProjectMotionBlurAmount({ motionBlurEnabled: true })).toBe(DEFAULT_ZOOM_MOTION_BLUR);
+    expect(DEFAULT_ZOOM_MOTION_BLUR).toBe(0.35);
+    expect(resolveProjectMotionBlurAmount({ motionBlurEnabled: false })).toBe(0);
+  });
+
+  it('prefers a numeric amount over the legacy boolean and clamps it to 0..1', () => {
+    expect(resolveProjectMotionBlurAmount({ motionBlurAmount: 0.6, motionBlurEnabled: false })).toBe(0.6);
+    expect(resolveProjectMotionBlurAmount({ motionBlurAmount: 0, motionBlurEnabled: true })).toBe(0);
+    expect(resolveProjectMotionBlurAmount({ motionBlurAmount: 4 })).toBe(1);
+    expect(resolveProjectMotionBlurAmount({ motionBlurAmount: -1 })).toBe(0);
+  });
+
+  it('ignores non-finite amounts and defaults to off when both fields are missing', () => {
+    expect(resolveProjectMotionBlurAmount({ motionBlurAmount: Number.NaN, motionBlurEnabled: true })).toBe(
+      DEFAULT_ZOOM_MOTION_BLUR,
+    );
+    expect(resolveProjectMotionBlurAmount({})).toBe(0);
   });
 });
