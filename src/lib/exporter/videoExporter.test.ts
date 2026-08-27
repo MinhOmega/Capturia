@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildAudioGainSegments,
   buildKeptRanges,
@@ -7,9 +7,76 @@ import {
   estimateRemainingSeconds,
   getSeekToleranceSeconds,
   normalizeTrimRanges,
+  readExportDecodePathOverride,
   shouldSeekToTime,
   withTimeout,
+  type VideoExporterConfig,
 } from "./videoExporter";
+import type { OnFrameCallback } from "./streamingDecoder";
+import type { ExportResult } from "./types";
+
+const BASE_EXPORTER_CONFIG = {
+  videoUrl: "file:///tmp/mock.webm",
+  width: 1920,
+  height: 1080,
+  frameRate: 60,
+  bitrate: 20_000_000,
+  wallpaper: "#000",
+  zoomRegions: [],
+  cropRegion: { x: 0, y: 0, width: 1, height: 1 },
+  showShadow: false,
+  shadowIntensity: 0,
+  showBlur: false,
+};
+
+/** Private surface of VideoExporter exercised by the tests below. */
+type ExporterInternals = {
+  cancelled: boolean;
+  decoderFallbackActive: boolean;
+  resolveDecodePath(): string;
+  getWarnings(): string[] | undefined;
+  renderAndEncodeFrame: (
+    source: unknown,
+    frameIndex: number,
+    totalFrames: number,
+    sourceTimeMs: number,
+  ) => Promise<void>;
+  exportFramesByDecoding: (decoder: FakeDecoder, plan: unknown, totalFrames: number) => Promise<number>;
+  runExportAttempt: () => Promise<ExportResult>;
+  export: () => Promise<ExportResult>;
+};
+
+type FakeDecoder = {
+  cancel: () => void;
+  decodeAll: (
+    frameRate: number,
+    trims: unknown,
+    speeds: unknown,
+    onFrame: OnFrameCallback,
+    onWarning?: (message: string) => void,
+  ) => Promise<void>;
+};
+
+type FakeVideoFrame = { closed: number; close(): void };
+
+const globalScope = globalThis as Record<string, unknown>;
+
+function createTestExporter(overrides: Partial<VideoExporterConfig> = {}): ExporterInternals {
+  return new VideoExporter({ ...BASE_EXPORTER_CONFIG, ...overrides }) as unknown as ExporterInternals;
+}
+
+function fakeVideoFrame(): FakeVideoFrame {
+  return {
+    closed: 0,
+    close() {
+      this.closed += 1;
+    },
+  };
+}
+
+function asVideoFrame(frame: FakeVideoFrame): VideoFrame {
+  return frame as unknown as VideoFrame;
+}
 
 describe("videoExporter seek helpers", () => {
   it("normalizes and merges overlapping trim ranges", () => {
@@ -251,5 +318,205 @@ describe("videoExporter seek helpers", () => {
     // Seek count includes initial seek + pipelined prefetch seeks
     expect(seekCalls).toBeGreaterThanOrEqual(90);
     expect(playCalls).toBe(0);
+  });
+});
+
+describe("decode path selection", () => {
+  it("defaults to the seek path", () => {
+    expect(createTestExporter().resolveDecodePath()).toBe("seek");
+  });
+
+  it("honours an explicit webcodecs request only when VideoDecoder exists", () => {
+    const exporter = createTestExporter({ decodePath: "webcodecs" });
+    const original = globalScope.VideoDecoder;
+    globalScope.VideoDecoder = class {};
+    try {
+      expect(exporter.resolveDecodePath()).toBe("webcodecs");
+    } finally {
+      if (original === undefined) delete globalScope.VideoDecoder;
+      else globalScope.VideoDecoder = original;
+    }
+    expect(exporter.resolveDecodePath()).toBe("seek");
+  });
+
+  it("forces the seek path once the decoder fallback is active", () => {
+    const exporter = createTestExporter({ decodePath: "webcodecs" });
+    exporter.decoderFallbackActive = true;
+    expect(exporter.resolveDecodePath()).toBe("seek");
+  });
+
+  it("reads the support override from localStorage", () => {
+    const original = globalScope.localStorage;
+    const store = new Map<string, string>();
+    globalScope.localStorage = { getItem: (key: string) => store.get(key) ?? null };
+    try {
+      expect(readExportDecodePathOverride()).toBeUndefined();
+      store.set("capturia.exportDecodePath", "webcodecs");
+      expect(readExportDecodePathOverride()).toBe("webcodecs");
+      store.set("capturia.exportDecodePath", "seek");
+      expect(readExportDecodePathOverride()).toBe("seek");
+      store.set("capturia.exportDecodePath", "bogus");
+      expect(readExportDecodePathOverride()).toBeUndefined();
+    } finally {
+      if (original === undefined) delete globalScope.localStorage;
+      else globalScope.localStorage = original;
+    }
+  });
+});
+
+describe("exportFramesByDecoding", () => {
+  const plan = { segments: [{ startSec: 0, endSec: 1, speed: 1 }], trimRegions: [], speedRegions: [] };
+
+  it("renders every delivered frame through renderAndEncodeFrame and closes it", async () => {
+    const exporter = createTestExporter();
+    const rendered: number[] = [];
+    exporter.renderAndEncodeFrame = async (_source: unknown, frameIndex: number, _total: number, sourceMs: number) => {
+      rendered.push(sourceMs);
+      expect(frameIndex).toBe(rendered.length - 1);
+    };
+    const frames = [fakeVideoFrame(), fakeVideoFrame(), fakeVideoFrame()];
+    const decoder: FakeDecoder = {
+      cancel: vi.fn(),
+      async decodeAll(_fps, _trims, _speeds, onFrame) {
+        for (let i = 0; i < frames.length; i += 1) {
+          await onFrame(asVideoFrame(frames[i]), i * 16_667, i * 16.667);
+        }
+      },
+    };
+
+    await expect(exporter.exportFramesByDecoding(decoder, plan, 3)).resolves.toBe(3);
+    expect(rendered).toHaveLength(3);
+    expect(frames.every((frame) => frame.closed === 1)).toBe(true);
+  });
+
+  it("converts a decoder failure before the first frame into a fallback request", async () => {
+    const exporter = createTestExporter();
+    exporter.renderAndEncodeFrame = vi.fn();
+    const decoder: FakeDecoder = {
+      cancel: vi.fn(),
+      async decodeAll() {
+        throw new Error("Unsupported codec: vp9");
+      },
+    };
+
+    await expect(exporter.exportFramesByDecoding(decoder, plan, 10)).rejects.toMatchObject({
+      name: "DecoderFallbackError",
+      message: expect.stringContaining("Unsupported codec: vp9"),
+    });
+  });
+
+  it("treats a decoder that delivers nothing as a fallback request", async () => {
+    const exporter = createTestExporter();
+    exporter.renderAndEncodeFrame = vi.fn();
+    const decoder: FakeDecoder = { cancel: vi.fn(), decodeAll: async () => undefined };
+
+    await expect(exporter.exportFramesByDecoding(decoder, plan, 10)).rejects.toMatchObject({
+      name: "DecoderFallbackError",
+    });
+  });
+
+  it("does not fall back once frames were delivered", async () => {
+    const exporter = createTestExporter();
+    exporter.renderAndEncodeFrame = vi.fn();
+    const decoder: FakeDecoder = {
+      cancel: vi.fn(),
+      async decodeAll(_fps, _trims, _speeds, onFrame) {
+        await onFrame(asVideoFrame(fakeVideoFrame()), 0, 0);
+        throw new Error("VideoDecoder error: mid-stream");
+      },
+    };
+
+    await expect(exporter.exportFramesByDecoding(decoder, plan, 10)).rejects.toThrow(
+      "VideoDecoder error: mid-stream",
+    );
+  });
+
+  it("propagates render/encode errors untouched and cancels the decoder", async () => {
+    const exporter = createTestExporter();
+    exporter.renderAndEncodeFrame = async () => {
+      throw new Error("encoder exploded");
+    };
+    const decoder: FakeDecoder = {
+      cancel: vi.fn(),
+      async decodeAll(_fps, _trims, _speeds, onFrame) {
+        await onFrame(asVideoFrame(fakeVideoFrame()), 0, 0);
+      },
+    };
+
+    await expect(exporter.exportFramesByDecoding(decoder, plan, 10)).rejects.toThrow("encoder exploded");
+    expect(decoder.cancel).toHaveBeenCalled();
+  });
+
+  it("records the decode-ended-early warning from the decoder", async () => {
+    const exporter = createTestExporter();
+    exporter.renderAndEncodeFrame = vi.fn();
+    const decoder: FakeDecoder = {
+      cancel: vi.fn(),
+      async decodeAll(_fps, _trims, _speeds, onFrame, onWarning) {
+        await onFrame(asVideoFrame(fakeVideoFrame()), 0, 0);
+        onWarning?.("Decode ended early at 0.500s (needed 1.000s)");
+      },
+    };
+
+    await expect(exporter.exportFramesByDecoding(decoder, plan, 10)).resolves.toBe(1);
+    expect(exporter.getWarnings()).toEqual(["editor.exportWarningDecodeEndedEarly"]);
+  });
+});
+
+describe("export() decoder fallback", () => {
+  const failingDecoder: FakeDecoder = {
+    cancel: () => undefined,
+    async decodeAll() {
+      throw new Error("Unsupported codec: av01");
+    },
+  };
+  const emptyPlan = { segments: [], trimRegions: [], speedRegions: [] };
+
+  it("re-runs on the seek path and reports the fallback warning", async () => {
+    const exporter = createTestExporter({ decodePath: "webcodecs" });
+    const attempts: string[] = [];
+    exporter.runExportAttempt = async () => {
+      attempts.push(exporter.decoderFallbackActive ? "seek" : "webcodecs");
+      if (attempts.length === 1) {
+        // Simulate the streaming decoder rejecting the codec before any frame.
+        await exporter.exportFramesByDecoding(failingDecoder, emptyPlan, 10);
+      }
+      return { success: true, blob: new Blob(), warnings: exporter.getWarnings() };
+    };
+
+    const result = await exporter.export();
+    expect(attempts).toEqual(["webcodecs", "seek"]);
+    expect(result.success).toBe(true);
+    expect(result.warnings).toEqual(["editor.exportWarningDecoderFallback"]);
+  });
+
+  it("reports a plain failure when the seek path also fails", async () => {
+    const exporter = createTestExporter({ decodePath: "webcodecs" });
+    let calls = 0;
+    exporter.runExportAttempt = async () => {
+      calls += 1;
+      if (calls === 1) {
+        await exporter.exportFramesByDecoding(failingDecoder, emptyPlan, 10);
+      }
+      throw new Error("Video element not available");
+    };
+
+    const result = await exporter.export();
+    expect(calls).toBe(2);
+    expect(result).toEqual({ success: false, error: "Video element not available" });
+  });
+
+  it("does not fall back when the export was cancelled", async () => {
+    const exporter = createTestExporter({ decodePath: "webcodecs" });
+    let calls = 0;
+    exporter.runExportAttempt = async () => {
+      calls += 1;
+      exporter.cancelled = true;
+      return { success: false, error: "Export cancelled" };
+    };
+
+    const result = await exporter.export();
+    expect(calls).toBe(1);
+    expect(result).toEqual({ success: false, error: "Export cancelled" });
   });
 });
