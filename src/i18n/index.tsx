@@ -450,7 +450,9 @@ const messages: Record<Locale, Record<string, string>> = {
     "electron.selectVideoFile": "Select Video File",
     "electron.videoFiles": "Video Files",
     "electron.allFiles": "All Files",
-    "electron.filePickerFailed": "Failed to open file picker"
+    "electron.filePickerFailed": "Failed to open file picker",
+    // W1-b keys
+    "launch.cameraFallback": "Camera unavailable. Recording screen only."
   },
   "zh-CN": {
     "app.name": "Capturia",
@@ -889,7 +891,9 @@ const messages: Record<Locale, Record<string, string>> = {
     "electron.selectVideoFile": "选择视频文件",
     "electron.videoFiles": "视频文件",
     "electron.allFiles": "所有文件",
-    "electron.filePickerFailed": "打开文件选择器失败"
+    "electron.filePickerFailed": "打开文件选择器失败",
+    // W1-b keys
+    "launch.cameraFallback": "摄像头不可用，仅录制屏幕。"
   }
 };
 
