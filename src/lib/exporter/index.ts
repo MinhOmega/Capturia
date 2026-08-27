@@ -1,4 +1,12 @@
-export { VideoExporter, readExportDecodePathOverride, type VideoExporterConfig } from './videoExporter';
+export {
+  VideoExporter,
+  ExportEncoderError,
+  SOFTWARE_FIRST_ENCODER_PLATFORMS,
+  getEncoderPreferences,
+  readExportDecodePathOverride,
+  waitForEncoderQueueSpace,
+  type VideoExporterConfig,
+} from './videoExporter';
 export { VideoFileDecoder } from './videoDecoder';
 export {
   StreamingVideoDecoder,

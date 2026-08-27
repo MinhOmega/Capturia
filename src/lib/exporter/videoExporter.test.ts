@@ -7,8 +7,12 @@ import {
   estimateRemainingSeconds,
   getSeekToleranceSeconds,
   normalizeTrimRanges,
+  ExportEncoderError,
+  SOFTWARE_FIRST_ENCODER_PLATFORMS,
+  getEncoderPreferences,
   readExportDecodePathOverride,
   shouldSeekToTime,
+  waitForEncoderQueueSpace,
   withTimeout,
   type VideoExporterConfig,
 } from "./videoExporter";
@@ -33,6 +37,7 @@ const BASE_EXPORTER_CONFIG = {
 type ExporterInternals = {
   cancelled: boolean;
   decoderFallbackActive: boolean;
+  fatalEncoderError: Error | null;
   resolveDecodePath(): string;
   getWarnings(): string[] | undefined;
   renderAndEncodeFrame: (
@@ -42,7 +47,7 @@ type ExporterInternals = {
     sourceTimeMs: number,
   ) => Promise<void>;
   exportFramesByDecoding: (decoder: FakeDecoder, plan: unknown, totalFrames: number) => Promise<number>;
-  runExportAttempt: () => Promise<ExportResult>;
+  runExportAttempt: (encoderPreference: string) => Promise<ExportResult>;
   export: () => Promise<ExportResult>;
 };
 
@@ -518,5 +523,174 @@ describe("export() decoder fallback", () => {
     const result = await exporter.export();
     expect(calls).toBe(1);
     expect(result).toEqual({ success: false, error: "Export cancelled" });
+  });
+});
+
+// The original bug measured the timeout from the encoder's last *output* event
+// (lastEncoderOutputAt), which went stale while the decoder discarded frames inside
+// a trim region. waitForEncoderQueueSpace fixes this by starting the clock fresh on
+// each call instead of accepting any such external timestamp — by construction, there
+// is no "last output" state to go stale, so that regression can't be reintroduced
+// without changing this function's signature.
+describe("waitForEncoderQueueSpace", () => {
+  function fakeClock(start = 0) {
+    let elapsedMs = start;
+    return {
+      now: () => elapsedMs,
+      sleep: async (ms: number) => {
+        elapsedMs += ms;
+      },
+    };
+  }
+
+  it("resolves immediately when the queue already has space", async () => {
+    const clock = fakeClock();
+    const sleep = vi.fn(clock.sleep);
+
+    await waitForEncoderQueueSpace({
+      getQueueSize: () => 0,
+      maxEncodeQueue: 8,
+      isCancelled: () => false,
+      encoderPreference: "prefer-hardware",
+      now: clock.now,
+      sleep,
+    });
+
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it("waits for the queue to drain and then resolves", async () => {
+    const clock = fakeClock();
+    let queueSize = 8;
+    // Queue drains well within the timeout.
+    const sleep = vi.fn(async (ms: number) => {
+      await clock.sleep(ms);
+      queueSize = 0;
+    });
+
+    await waitForEncoderQueueSpace({
+      getQueueSize: () => queueSize,
+      maxEncodeQueue: 8,
+      isCancelled: () => false,
+      encoderPreference: "prefer-hardware",
+      now: clock.now,
+      sleep,
+    });
+
+    expect(sleep).toHaveBeenCalledTimes(1);
+  });
+
+  it("throws a hardware-specific error once the queue stays full past the timeout", async () => {
+    const clock = fakeClock();
+
+    await expect(
+      waitForEncoderQueueSpace({
+        getQueueSize: () => 8,
+        maxEncodeQueue: 8,
+        isCancelled: () => false,
+        encoderPreference: "prefer-hardware",
+        now: clock.now,
+        sleep: clock.sleep,
+      }),
+    ).rejects.toThrow("The hardware video encoder stopped responding. Retrying with a safer encoder.");
+  });
+
+  it("throws a generic error for the software encoder once the queue stays full past the timeout", async () => {
+    const clock = fakeClock();
+
+    await expect(
+      waitForEncoderQueueSpace({
+        getQueueSize: () => 8,
+        maxEncodeQueue: 8,
+        isCancelled: () => false,
+        encoderPreference: "prefer-software",
+        now: clock.now,
+        sleep: clock.sleep,
+      }),
+    ).rejects.toThrow("The video encoder stopped responding during export.");
+  });
+
+  it("stops waiting without throwing once cancelled", async () => {
+    const clock = fakeClock();
+    let cancelled = false;
+    const sleep = vi.fn(async (ms: number) => {
+      await clock.sleep(ms);
+      cancelled = true;
+    });
+
+    await expect(
+      waitForEncoderQueueSpace({
+        getQueueSize: () => 8,
+        maxEncodeQueue: 8,
+        isCancelled: () => cancelled,
+        encoderPreference: "prefer-hardware",
+        now: clock.now,
+        sleep,
+      }),
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe("getEncoderPreferences", () => {
+  it("prefers the software encoder first on Windows", () => {
+    expect(getEncoderPreferences("win32")).toEqual(["prefer-software", "prefer-hardware"]);
+    expect(SOFTWARE_FIRST_ENCODER_PLATFORMS.has("win32")).toBe(true);
+  });
+
+  it("prefers the hardware encoder first elsewhere", () => {
+    expect(getEncoderPreferences("darwin")).toEqual(["prefer-hardware", "prefer-software"]);
+    expect(getEncoderPreferences("linux")).toEqual(["prefer-hardware", "prefer-software"]);
+    expect(getEncoderPreferences(undefined)).toEqual(["prefer-hardware", "prefer-software"]);
+  });
+});
+
+describe("export() encoder retry", () => {
+  it("retries with the next encoder preference after an encoder failure", async () => {
+    const exporter = createTestExporter();
+    const attempts: string[] = [];
+    exporter.runExportAttempt = async (preference: string) => {
+      attempts.push(preference);
+      if (attempts.length === 1) {
+        throw new ExportEncoderError("The hardware video encoder stopped responding. Retrying with a safer encoder.");
+      }
+      return { success: true, blob: new Blob() };
+    };
+
+    const result = await exporter.export();
+    expect(result.success).toBe(true);
+    expect(attempts).toHaveLength(2);
+    expect(new Set(attempts)).toEqual(new Set(["prefer-hardware", "prefer-software"]));
+  });
+
+  it("reports the last encoder error when every preference fails", async () => {
+    const exporter = createTestExporter();
+    let calls = 0;
+    exporter.runExportAttempt = async () => {
+      calls += 1;
+      throw new ExportEncoderError(`encoder attempt ${calls} failed`);
+    };
+
+    const result = await exporter.export();
+    expect(calls).toBe(2);
+    expect(result).toEqual({ success: false, error: "encoder attempt 2 failed" });
+  });
+
+  it("does not retry non-encoder failures", async () => {
+    const exporter = createTestExporter();
+    let calls = 0;
+    exporter.runExportAttempt = async () => {
+      calls += 1;
+      throw new Error("Failed to load video");
+    };
+
+    const result = await exporter.export();
+    expect(calls).toBe(1);
+    expect(result).toEqual({ success: false, error: "Failed to load video" });
+  });
+
+  it("surfaces a fatal encoder error at the next frame instead of rendering it", async () => {
+    const exporter = createTestExporter();
+    exporter.fatalEncoderError = new ExportEncoderError("Video encoder error: boom");
+    await expect(exporter.renderAndEncodeFrame({}, 0, 10, 0)).rejects.toThrow("Video encoder error: boom");
   });
 });
