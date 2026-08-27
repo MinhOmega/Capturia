@@ -276,6 +276,7 @@ interface Window {
     hudOverlayClose: () => void;
     hudOverlayResize: (width?: number, height?: number) => void;
     hudOverlayRestore: () => void;
+    setLocale: (locale: string) => Promise<void>;
   }
 }
 
