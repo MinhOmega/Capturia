@@ -126,5 +126,10 @@
 		"failed": "添加字体失败",
 		"failed.timeout": "字体加载超时，请检查链接后重试。",
 		"failed.generic": "字体加载失败，请确认 Google Fonts 链接是否正确。"
+	},
+	"timeline": {
+		"title": "时间轴",
+		"waveform": "显示音频波形",
+		"waveformDesc": "在音轨后方绘制录音的波形。"
 	}
 }

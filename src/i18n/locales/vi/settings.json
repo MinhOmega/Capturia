@@ -126,5 +126,10 @@
 		"failed": "Thêm phông chữ thất bại",
 		"failed.timeout": "Tải phông chữ mất quá nhiều thời gian. Vui lòng kiểm tra URL và thử lại.",
 		"failed.generic": "Không thể tải phông chữ. Vui lòng xác minh URL Google Fonts là chính xác."
+	},
+	"timeline": {
+		"title": "Dòng thời gian",
+		"waveform": "Hiển thị dạng sóng âm thanh",
+		"waveformDesc": "Vẽ dạng sóng của bản ghi phía sau rãnh âm thanh."
 	}
 }

@@ -251,6 +251,8 @@ export interface ProjectState {
   gifSizePreset?: string;
   exportAspectRatios?: string[];
   timelineZoomVisibleMs?: number;
+  /** W2-b: draw the audio waveform behind the AUDIO row (view setting, not edit state). */
+  showTimelineWaveform?: boolean;
 }
 
 export const DEFAULT_ZOOM_DEPTH: ZoomDepth = 3;
