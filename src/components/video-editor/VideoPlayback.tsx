@@ -3,9 +3,15 @@ import { useEffect, useRef, useImperativeHandle, forwardRef, useState, useMemo, 
 import { getAssetPath } from "@/lib/assetPath";
 import { Application, Container, Sprite, Graphics, BlurFilter, Texture, VideoSource } from 'pixi.js';
 import { getZoomScale, type ZoomRegion, type ZoomFocus, type TrimRegion, type AnnotationRegion, type AudioEditRegion } from "./types";
-import { DEFAULT_FOCUS, MIN_DELTA, resolveAdaptiveSmoothingAlpha } from "./videoPlayback/constants";
+import { DEFAULT_FOCUS } from "./videoPlayback/constants";
 import { clamp01 } from "./videoPlayback/mathUtils";
-import { findDominantRegion } from "./videoPlayback/zoomRegionUtils";
+import {
+  advanceZoomCamera,
+  createZoomCameraState,
+  measureZoomMotionIntensity,
+  resetZoomCameraState,
+  resolveZoomCameraTarget,
+} from "./videoPlayback/zoomCamera";
 import { clampFocusToScale } from "./videoPlayback/focusUtils";
 import { updateOverlayIndicator } from "./videoPlayback/overlayUtils";
 import { layoutVideoContent as layoutVideoContentUtil } from "./videoPlayback/layoutUtils";
@@ -148,8 +154,18 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
   const currentTimeRef = useRef(0);
   const zoomRegionsRef = useRef<ZoomRegion[]>([]);
   const selectedZoomIdRef = useRef<string | null>(null);
-  const animationStateRef = useRef({ scale: 1, focusX: DEFAULT_FOCUS.cx, focusY: DEFAULT_FOCUS.cy, lastTimeMs: null as number | null });
+  // Target the camera is heading to this frame (focus is read by the cursor overlay fallback).
+  const animationStateRef = useRef({ scale: 1, focusX: DEFAULT_FOCUS.cx, focusY: DEFAULT_FOCUS.cy, progress: 0 });
+  // Spring state + applied transform; the same step drives the exporter (zoomCamera.ts).
+  const zoomCameraRef = useRef(createZoomCameraState());
   const blurFilterRef = useRef<BlurFilter | null>(null);
+  const isScrubbingRef = useRef(false);
+  const scrubEndTimerRef = useRef<number | null>(null);
+  const [isScrubbing, setIsScrubbing] = useState(false);
+  // Overlay size for annotation overlays; fed by a ResizeObserver so the first
+  // paint never falls back to a placeholder size.
+  const [overlaySize, setOverlaySize] = useState({ width: 800, height: 600 });
+  const idleResolutionRef = useRef(1);
   const isDraggingFocusRef = useRef(false);
   const stageSizeRef = useRef({ width: 0, height: 0 });
   const videoSizeRef = useRef({ width: 0, height: 0 });
@@ -588,8 +604,9 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
       scale: 1,
       focusX: DEFAULT_FOCUS.cx,
       focusY: DEFAULT_FOCUS.cy,
-      lastTimeMs: null,
+      progress: 0,
     };
+    resetZoomCameraState(zoomCameraRef.current);
 
     if (blurFilterRef.current) {
       blurFilterRef.current.strength = 0;
@@ -775,6 +792,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
       });
 
       app.ticker.maxFPS = normalizeTickerFps(preferredFpsRef.current);
+      idleResolutionRef.current = app.renderer.resolution;
 
       if (!mounted) {
         app.destroy(true, { children: true, texture: true, textureSource: true });
@@ -859,8 +877,9 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
       scale: 1,
       focusX: DEFAULT_FOCUS.cx,
       focusY: DEFAULT_FOCUS.cy,
-      lastTimeMs: null,
+      progress: 0,
     };
+    resetZoomCameraState(zoomCameraRef.current);
 
     const blurFilter = new BlurFilter();
     blurFilter.quality = 3;
@@ -873,7 +892,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
     console.warn('[VideoPlayback] pixi-texture setup pausing video');
     video.pause();
 
-    const { handlePlay, handlePause, handleSeeked, handleSeeking } = createVideoEventHandlers({
+    const { handlePlay, handlePause, handleSeeked, handleSeeking, dispose } = createVideoEventHandlers({
       video,
       isSeekingRef,
       isPlayingRef,
@@ -885,21 +904,26 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
       trimRegionsRef,
       segmentsRef: segmentsRef ?? { current: [] },
       previewPlaybackRateRef: previewPlaybackRateRef ?? { current: 1 },
+      isScrubbingRef,
+      scrubEndTimerRef,
+      onScrubChange: (scrubbing) => setIsScrubbing(scrubbing),
     });
-    
+
     video.addEventListener('play', handlePlay);
     video.addEventListener('pause', handlePause);
     video.addEventListener('ended', handlePause);
     video.addEventListener('seeked', handleSeeked);
     video.addEventListener('seeking', handleSeeking);
-    
+
     return () => {
       video.removeEventListener('play', handlePlay);
       video.removeEventListener('pause', handlePause);
       video.removeEventListener('ended', handlePause);
       video.removeEventListener('seeked', handleSeeked);
       video.removeEventListener('seeking', handleSeeking);
-      
+      dispose();
+      isScrubbingRef.current = false;
+
       if (timeUpdateAnimationRef.current) {
         cancelAnimationFrame(timeUpdateAnimationRef.current);
       }
@@ -933,11 +957,41 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
     const videoContainer = videoContainerRef.current;
     if (!app || !videoSprite || !videoContainer) return;
 
-    const applyTransform = (motionIntensity: number) => {
+    const ticker = () => {
       const cameraContainer = cameraContainerRef.current;
       if (!cameraContainer) return;
 
+      // Content time (segment / speed mapped upstream of currentTimeRef), so the
+      // camera and the exporter step through the same clock.
+      const timeMs = currentTimeRef.current;
+
+      // If a zoom is selected but video is not playing, show default unzoomed view
+      // (the overlay will show where the zoom will be) unless the user is holding
+      // the preview button, which shows the dominant region at the playhead.
+      const hasSelectedZoom = selectedZoomIdRef.current !== null;
+      const shouldShowUnzoomedView = hasSelectedZoom && !isPlayingRef.current && !isPreviewingZoomRef.current;
+
+      const target = resolveZoomCameraTarget(
+        zoomRegionsRef.current,
+        timeMs,
+        { stageSize: stageSizeRef.current, baseMask: baseMaskRef.current },
+        { forceUnzoomed: shouldShowUnzoomedView },
+      );
+
       const state = animationStateRef.current;
+      state.scale = target.scale;
+      state.focusX = target.focus.cx;
+      state.focusY = target.focus.cy;
+      state.progress = target.progress;
+
+      // Chase the eased target with a spring so the camera glides (no jerk at the
+      // steep start of the ease, no snap at close-region seams). Step by content
+      // time while playing; snap to the exact target when paused / seeking /
+      // scrubbing so a paused frame is crisp and matches the authored target.
+      const animating = isPlayingRef.current && !isSeekingRef.current && !isScrubbingRef.current;
+      const previous = zoomCameraRef.current.applied;
+      const applied = advanceZoomCamera(zoomCameraRef.current, target.transform, timeMs, animating);
+      const motionIntensity = measureZoomMotionIntensity(previous, applied, stageSizeRef.current);
 
       applyZoomTransform({
         cameraContainer,
@@ -945,88 +999,16 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
         stageSize: stageSizeRef.current,
         baseMask: baseMaskRef.current,
         zoomScale: state.scale,
+        zoomProgress: state.progress,
         focusX: state.focusX,
         focusY: state.focusY,
         motionIntensity,
-        isPlaying: isPlayingRef.current,
+        isPlaying: isPlayingRef.current && !isScrubbingRef.current,
         motionBlurEnabled: motionBlurEnabledRef.current,
+        transformOverride: applied,
+        frameTimeMs: timeMs,
       });
-    };
-
-    const ticker = () => {
-      const { region, strength } = findDominantRegion(zoomRegionsRef.current, currentTimeRef.current);
-      
-      const defaultFocus = DEFAULT_FOCUS;
-      let targetScaleFactor = 1;
-      let targetFocus = defaultFocus;
-
-      // If a zoom is selected but video is not playing, show default unzoomed view
-      // (the overlay will show where the zoom will be) unless the user is holding
-      // the preview button, which shows the dominant region at the playhead.
-      const selectedId = selectedZoomIdRef.current;
-      const hasSelectedZoom = selectedId !== null;
-      const shouldShowUnzoomedView = hasSelectedZoom && !isPlayingRef.current && !isPreviewingZoomRef.current;
-
-      if (region && strength > 0 && !shouldShowUnzoomedView) {
-        const zoomScale = getZoomScale(region);
-        const regionFocus = clampFocusToStage(region.focus, zoomScale);
-        
-        // Interpolate scale and focus based on region strength
-        targetScaleFactor = 1 + (zoomScale - 1) * strength;
-        targetFocus = {
-          cx: defaultFocus.cx + (regionFocus.cx - defaultFocus.cx) * strength,
-          cy: defaultFocus.cy + (regionFocus.cy - defaultFocus.cy) * strength,
-        };
-      }
-
-      const state = animationStateRef.current;
-      const previousTimeMs = state.lastTimeMs;
-      const deltaMs = previousTimeMs === null ? 0 : currentTimeRef.current - previousTimeMs;
-      const smoothingAlpha = resolveAdaptiveSmoothingAlpha(deltaMs);
-      state.lastTimeMs = currentTimeRef.current;
-
-      const prevScale = state.scale;
-      const prevFocusX = state.focusX;
-      const prevFocusY = state.focusY;
-
-      const scaleDelta = targetScaleFactor - state.scale;
-      const focusXDelta = targetFocus.cx - state.focusX;
-      const focusYDelta = targetFocus.cy - state.focusY;
-
-      let nextScale = prevScale;
-      let nextFocusX = prevFocusX;
-      let nextFocusY = prevFocusY;
-
-      if (Math.abs(scaleDelta) > MIN_DELTA) {
-        nextScale = prevScale + scaleDelta * smoothingAlpha;
-      } else {
-        nextScale = targetScaleFactor;
-      }
-
-      if (Math.abs(focusXDelta) > MIN_DELTA) {
-        nextFocusX = prevFocusX + focusXDelta * smoothingAlpha;
-      } else {
-        nextFocusX = targetFocus.cx;
-      }
-
-      if (Math.abs(focusYDelta) > MIN_DELTA) {
-        nextFocusY = prevFocusY + focusYDelta * smoothingAlpha;
-      } else {
-        nextFocusY = targetFocus.cy;
-      }
-
-      state.scale = nextScale;
-      state.focusX = nextFocusX;
-      state.focusY = nextFocusY;
-
-      const motionIntensity = Math.max(
-        Math.abs(nextScale - prevScale),
-        Math.abs(nextFocusX - prevFocusX),
-        Math.abs(nextFocusY - prevFocusY)
-      );
-
-      applyTransform(motionIntensity);
-      renderCursorOverlay(currentTimeRef.current);
+      renderCursorOverlay(timeMs);
     };
 
     app.ticker.add(ticker);
@@ -1035,7 +1017,45 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
         app.ticker.remove(ticker);
       }
     };
-  }, [pixiReady, videoReady, clampFocusToStage, renderCursorOverlay]);
+  }, [pixiReady, videoReady, renderCursorOverlay]);
+
+  // Overlay size for annotation overlays: seed from the element and follow resizes.
+  useEffect(() => {
+    if (!pixiReady || !videoReady) return;
+    const el = overlayRef.current;
+    if (!el) return;
+
+    setOverlaySize({ width: el.clientWidth, height: el.clientHeight });
+    if (typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver((entries) => {
+      if (!entries[0]) return;
+      const { width, height } = entries[0].contentRect;
+      setOverlaySize((prev) => (prev.width === width && prev.height === height ? prev : { width, height }));
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [pixiReady, videoReady]);
+
+  // Drop canvas resolution to 1.0 while scrubbing and restore the idle resolution
+  // afterwards. Only on scrub-state transitions; mutating renderer.resolution
+  // per frame thrashes texture uploads.
+  useEffect(() => {
+    if (!pixiReady) return;
+    const app = appRef.current;
+    const container = containerRef.current;
+    if (!app || !container) return;
+
+    const targetResolution = isScrubbing ? 1 : idleResolutionRef.current;
+    if (app.renderer.resolution === targetResolution) return;
+
+    app.renderer.resolution = targetResolution;
+    app.renderer.resize(container.clientWidth, container.clientHeight);
+    if (blurFilterRef.current) {
+      blurFilterRef.current.resolution = targetResolution;
+    }
+    layoutVideoContentRef.current?.();
+  }, [isScrubbing, pixiReady]);
 
   const handleLoadedMetadata = (e: React.SyntheticEvent<HTMLVideoElement, Event>) => {
     const video = e.currentTarget;
@@ -1229,8 +1249,8 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
                 key={annotation.id}
                 annotation={annotation}
                 isSelected={annotation.id === selectedAnnotationId}
-                containerWidth={overlayRef.current?.clientWidth || 800}
-                containerHeight={overlayRef.current?.clientHeight || 600}
+                containerWidth={overlaySize.width}
+                containerHeight={overlaySize.height}
                 onPositionChange={(id, position) => onAnnotationPositionChange?.(id, position)}
                 onSizeChange={(id, size) => onAnnotationSizeChange?.(id, size)}
                 onClick={handleAnnotationClick}
