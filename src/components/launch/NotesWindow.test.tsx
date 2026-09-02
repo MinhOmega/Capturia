@@ -134,7 +134,7 @@ describe('NotesWindow stylesheet', () => {
   it('is imported as plain CSS, never as a CSS module', () => {
     const source = read('NotesWindow.tsx')
 
-    expect(source).toContain('import "./NotesWindow.css"')
+    expect(source).toMatch(/^import ['"]\.\/NotesWindow\.css['"]$/m)
     expect(source).not.toContain('.module.css')
   })
 
