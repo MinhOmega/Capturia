@@ -224,3 +224,12 @@ Verified: lint 0 errors / 116 warnings; tsc + test types clean; i18n PASS; vites
 under xvfb (1 passed). **Unverified**: signing/notarization on a macOS runner, Electron 41 on
 X11/Wayland/macOS desktops, the four installer legs on CI. Review note:
 `reviews/W4-F8-F9-deps-signing.md`.
+
+## 2026-08-27 — wave 4: F8+F9 merged (`68bd174`) — lead note
+
+Electron 41.10.7, Vite 7.3.6 (lockfile deduped), vitest 4.1.11, electron-builder 26.15.3,
+TypeScript 5.9.3; gated macOS sign/notarize/staple + version==tag guard in `release.yml`.
+Review: `reviews/W4-F8-F9-deps-signing.md`. Gate after merge on the new stack: lint 0 errors /
+116 warnings; tsc + test types clean; i18n 621; vitest **115 files / 1195 tests**; `vite build` OK.
+
+In flight: Swift batch A-3 + B2-5 (`w4-swift`). Then T-last Biome format and the final report.
