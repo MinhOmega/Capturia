@@ -107,6 +107,19 @@ describe("recordingPhase", () => {
     expect(canPauseRecording({ phase: "recording", nativeRecordingActive: true })).toBe(false);
     expect(canPauseRecording({ phase: "idle", nativeRecordingActive: false })).toBe(false);
   });
+
+  it("native pause is offered only when the helper announced support", () => {
+    // Old helper (no caps line) or unknown: hidden.
+    expect(canPauseRecording({ phase: "recording", nativeRecordingActive: true, nativePauseSupported: false })).toBe(false);
+    expect(canPauseRecording({ phase: "recording", nativeRecordingActive: true, nativePauseSupported: undefined })).toBe(false);
+    // Rebuilt helper: shown while recording or paused, never while idle/starting/stopping.
+    expect(canPauseRecording({ phase: "recording", nativeRecordingActive: true, nativePauseSupported: true })).toBe(true);
+    expect(canPauseRecording({ phase: "paused", nativeRecordingActive: true, nativePauseSupported: true })).toBe(true);
+    expect(canPauseRecording({ phase: "starting", nativeRecordingActive: true, nativePauseSupported: true })).toBe(false);
+    expect(canPauseRecording({ phase: "stopping", nativeRecordingActive: true, nativePauseSupported: true })).toBe(false);
+    // The flag is irrelevant on the MediaRecorder path.
+    expect(canPauseRecording({ phase: "recording", nativeRecordingActive: false, nativePauseSupported: false })).toBe(true);
+  });
 });
 
 describe("recordingPhase restart", () => {
