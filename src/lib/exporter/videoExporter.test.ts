@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   buildAudioGainSegments,
   buildKeptRanges,
@@ -17,7 +17,8 @@ import {
   type VideoExporterConfig,
 } from './videoExporter'
 import type { OnFrameCallback } from './streamingDecoder'
-import type { ExportResult } from './types'
+import type { ExportProgress, ExportResult } from './types'
+import type { SourceCopyProbe } from './sourceCopyFastPath'
 
 const BASE_EXPORTER_CONFIG = {
   videoUrl: 'file:///tmp/mock.webm',
@@ -53,6 +54,8 @@ type ExporterInternals = {
   ) => Promise<number>
   runExportAttempt: (encoderPreference: string) => Promise<ExportResult>
   export: () => Promise<ExportResult>
+  trySourceCopyFastPath: () => Promise<ExportResult | null>
+  probeSourceForCopy: () => Promise<{ probe: SourceCopyProbe; blob: Blob | null }>
 }
 
 type FakeDecoder = {
@@ -705,5 +708,153 @@ describe('export() encoder retry', () => {
     await expect(exporter.renderAndEncodeFrame({}, 0, 10, 0)).rejects.toThrow(
       'Video encoder error: boom',
     )
+  })
+})
+
+describe('export() source-copy fast path', () => {
+  const MP4_PROBE: SourceCopyProbe = {
+    isMp4: true,
+    videoTrackCount: 1,
+    audioTrackCount: 1,
+    videoCodec: 'avc',
+    audioCodec: 'aac',
+    width: 1920,
+    height: 1080,
+  }
+  const CLEAN_CONFIG: Partial<VideoExporterConfig> = {
+    videoUrl: 'local-media:///tmp/clean.mp4',
+    aspectRatio: 'native',
+    quality: 'source',
+    padding: 0,
+    borderRadius: 0,
+  }
+  const sourceBytes = new Uint8Array([0, 0, 0, 24, 0x66, 0x74, 0x79, 0x70])
+
+  function stubLocalFileApi(size = sourceBytes.byteLength) {
+    const api = {
+      getReadableFileInfo: vi
+        .fn()
+        .mockResolvedValue({ success: true, size, mtimeMs: 1, path: '/tmp/clean.mp4' }),
+      readBinaryFile: vi
+        .fn()
+        .mockResolvedValue({ success: true, data: sourceBytes.buffer, path: '/tmp/clean.mp4' }),
+    }
+    vi.stubGlobal('window', { ...globalThis.window, electronAPI: api } as unknown)
+    return api
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('renders when the configuration has blockers (base config lacks aspect/quality)', async () => {
+    stubLocalFileApi()
+    const exporter = createTestExporter()
+    exporter.probeSourceForCopy = vi.fn()
+    exporter.runExportAttempt = async () => ({ success: true, blob: new Blob() })
+
+    const result = await exporter.export()
+    expect(result.sourceCopy).toBeUndefined()
+    expect(exporter.probeSourceForCopy).not.toHaveBeenCalled()
+  })
+
+  it('copies the source verbatim and never runs the render pipeline', async () => {
+    const api = stubLocalFileApi()
+    const phases: Array<ExportProgress['phase']> = []
+    const exporter = createTestExporter({
+      ...CLEAN_CONFIG,
+      onProgress: (progress) => phases.push(progress.phase),
+    })
+    exporter.probeSourceForCopy = async () => ({ probe: MP4_PROBE, blob: null })
+    exporter.runExportAttempt = vi.fn(async () => ({ success: true, blob: new Blob() }))
+
+    const result = await exporter.export()
+    expect(result.success).toBe(true)
+    expect(result.sourceCopy).toBe(true)
+    expect(result.warnings).toBeUndefined()
+    expect(result.blob?.type).toBe('video/mp4')
+    expect(new Uint8Array(await result.blob!.arrayBuffer())).toEqual(sourceBytes)
+    expect(phases).toEqual(['copying', 'copying'])
+    expect(api.readBinaryFile).toHaveBeenCalledWith('local-media:///tmp/clean.mp4')
+    expect(exporter.runExportAttempt).not.toHaveBeenCalled()
+  })
+
+  it('reuses the blob the probe already read instead of reading twice', async () => {
+    const api = stubLocalFileApi()
+    const exporter = createTestExporter(CLEAN_CONFIG)
+    const probed = new Blob([sourceBytes], { type: 'video/mp4' })
+    exporter.probeSourceForCopy = async () => ({ probe: MP4_PROBE, blob: probed })
+    exporter.runExportAttempt = vi.fn()
+
+    const result = await exporter.export()
+    expect(result.blob).toBe(probed)
+    expect(api.readBinaryFile).not.toHaveBeenCalled()
+  })
+
+  it('falls back to rendering when the file probe blocks (size mismatch, WebM, multi-track)', async () => {
+    stubLocalFileApi()
+    const probes: SourceCopyProbe[] = [
+      { ...MP4_PROBE, width: 1446 },
+      { ...MP4_PROBE, isMp4: false },
+      { ...MP4_PROBE, audioTrackCount: 2 },
+    ]
+    for (const probe of probes) {
+      const exporter = createTestExporter(CLEAN_CONFIG)
+      exporter.probeSourceForCopy = async () => ({ probe, blob: null })
+      exporter.runExportAttempt = vi.fn(async () => ({ success: true, blob: new Blob() }))
+      const result = await exporter.export()
+      expect(result.sourceCopy).toBeUndefined()
+      expect(exporter.runExportAttempt).toHaveBeenCalledTimes(1)
+    }
+  })
+
+  it('falls back to rendering when the source is too large to read in memory', async () => {
+    stubLocalFileApi(1024 * 1024 * 1024)
+    const exporter = createTestExporter(CLEAN_CONFIG)
+    exporter.probeSourceForCopy = async () => ({ probe: MP4_PROBE, blob: null })
+    exporter.runExportAttempt = vi.fn(async () => ({ success: true, blob: new Blob() }))
+
+    const result = await exporter.export()
+    expect(result.sourceCopy).toBeUndefined()
+    expect(exporter.runExportAttempt).toHaveBeenCalledTimes(1)
+  })
+
+  it('falls back to rendering when the probe itself fails', async () => {
+    stubLocalFileApi()
+    const exporter = createTestExporter(CLEAN_CONFIG)
+    exporter.probeSourceForCopy = async () => {
+      throw new Error('demux failed')
+    }
+    exporter.runExportAttempt = vi.fn(async () => ({ success: true, blob: new Blob() }))
+
+    await exporter.export()
+    expect(exporter.runExportAttempt).toHaveBeenCalledTimes(1)
+  })
+
+  it('skips the fast path outside the desktop app (no local file bridge)', async () => {
+    vi.stubGlobal('window', { ...globalThis.window, electronAPI: undefined } as unknown)
+    const exporter = createTestExporter(CLEAN_CONFIG)
+    exporter.probeSourceForCopy = vi.fn()
+    exporter.runExportAttempt = vi.fn(async () => ({ success: true, blob: new Blob() }))
+
+    await exporter.export()
+    expect(exporter.probeSourceForCopy).not.toHaveBeenCalled()
+    expect(exporter.runExportAttempt).toHaveBeenCalledTimes(1)
+  })
+
+  it('reports a cancellation raised during the copy', async () => {
+    stubLocalFileApi()
+    const exporter = createTestExporter(CLEAN_CONFIG)
+    exporter.probeSourceForCopy = async () => {
+      exporter.cancelled = true
+      return { probe: MP4_PROBE, blob: null }
+    }
+    exporter.runExportAttempt = vi.fn()
+
+    await expect(exporter.export()).resolves.toEqual({
+      success: false,
+      error: 'Export cancelled',
+    })
+    expect(exporter.runExportAttempt).not.toHaveBeenCalled()
   })
 })

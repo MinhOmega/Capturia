@@ -74,7 +74,14 @@
 			"available": "Đã có Capturia {{latestVersion}}. Bạn đang dùng {{currentVersion}}.",
 			"current": "Capturia đã là phiên bản mới nhất ({{currentVersion}}).",
 			"failed": "Không thể kiểm tra cập nhật.",
-			"openRelease": "Mở trang phát hành"
+			"openRelease": "Mở trang phát hành",
+			"downloadPrompt": "Đã có Capturia {{latestVersion}}. Bạn đang dùng {{currentVersion}}. Tải về ngay?",
+			"downloadNow": "Tải về ngay",
+			"later": "Để sau",
+			"downloaded": "Đã tải xong Capturia {{latestVersion}}. Khởi động lại ngay để cài đặt, hoặc bản cập nhật sẽ được cài khi bạn thoát ứng dụng lần tới.",
+			"restartNow": "Khởi động lại ngay",
+			"onNextQuit": "Khi thoát lần tới",
+			"offline": "Không thể kết nối máy chủ cập nhật. Hãy kiểm tra kết nối mạng rồi thử lại."
 		}
 	},
 	"actions": {

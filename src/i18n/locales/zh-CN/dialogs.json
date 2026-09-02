@@ -36,6 +36,8 @@
 		"revealFailed": "无法在文件夹中显示文件",
 		"phasePreparing": "准备中",
 		"statusPreparing": "正在准备源视频...",
+		"phaseCopying": "复制中",
+		"statusCopying": "没有改动视频内容的编辑，正在原样复制源文件...",
 		"saveAgain": "重新保存",
 		"unsavedExportHint": "导出已完成但无法保存。请选择其他位置保存。",
 		"diag": {

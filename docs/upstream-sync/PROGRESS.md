@@ -293,3 +293,28 @@ stacked tray. New IPC: `hud-overlay-ignore-mouse-events`, `hud-overlay-move-by`,
 Gate on the batch branch: lint 0 errors / 116 warnings; tsc + test types clean; i18n 626 en
 keys (zh-CN, vi in parity); vitest **120 files / 1269 tests**. Nothing exercised in a live
 Electron (no display on the lead box): the review note lists the manual smoke.
+
+## 2026-09-03 — wave 5 round 1: M12 electron-updater + D13 source-copy fast path (agent branch, pending review)
+
+Six commits on `29d0ff3`; note in `reviews/W5-M12-D13-updater-fastpath.md`.
+
+- **M12/B8** `electron/auto-updater.ts` (pure controller, injected electron-updater; dmg/nsis/
+  AppImage only, packaged only; `autoDownload` off, `autoInstallOnAppQuit` on, no prereleases;
+  Download Now/Later → progress to renderer → Restart Now/On Next Quit; offline / no-release /
+  unsigned classification with release-page fallback). `main.ts` launch check after 10 s gated on
+  `userData/update-preferences.json` (`autoUpdateCheck`, default true) and the menu item; IPC +
+  preload + `.d.ts` for the renderer (no UI consumer yet). `electron-builder.json5` `publish`
+  block for `MinhOmega/Capturia` + mac `zip` target; `release.yml` uploads `latest*.yml`,
+  `.blockmap`, `.zsync`, mac zips and merges the two `latest-mac.yml` feeds
+  (`scripts/merge-update-feeds.mjs`). Dep `electron-updater@6.8.9`.
+- **D13** `src/lib/exporter/sourceCopyFastPath.ts`: pure blockers + mediabunny file probe;
+  `VideoExporter.export()` copies the source verbatim (phase `'copying'`, `sourceCopy: true`)
+  when the export is native/source with no edit, an MP4 (H.264/HEVC/AV1 + ≤1 AAC/Opus track) at
+  the planned size and ≤ 256 MiB; everything else renders as before. `VideoEditor` passes
+  `aspectRatio`/`quality`; `ExportDialog` shows "Copying".
+- Gate: lint 0 errors / 116 warnings; tsc + test types clean; i18n 632 en keys; vitest
+  **121 files / 1306 tests** (was 118 / 1228); `vite build` OK; `biome format .` clean.
+- Open: no live Electron run (dialogs, `quitAndInstall` vs `before-quit`); unsigned mac builds
+  cannot auto-update (falls back to the release page); fast path unverified against a real SCK
+  file; renderer toggle/progress UI for the updater belongs to the settings/HUD owners.
+

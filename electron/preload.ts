@@ -41,6 +41,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setLocale: (locale: string) => {
     return ipcRenderer.invoke('set-locale', locale)
   },
+  // Auto-update (main-owned electron-updater flow; see electron/auto-updater.ts)
+  getAutoUpdateCheck: () => {
+    return ipcRenderer.invoke('get-auto-update-check')
+  },
+  setAutoUpdateCheck: (enabled: boolean) => {
+    return ipcRenderer.invoke('set-auto-update-check', enabled)
+  },
+  checkForUpdates: () => {
+    return ipcRenderer.invoke('check-for-updates')
+  },
+  onUpdateProgress: (callback: (event: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload)
+    ipcRenderer.on('update-progress', listener)
+    return () => {
+      ipcRenderer.removeListener('update-progress', listener)
+    }
+  },
   getAssetBasePath: async () => {
     // ask main process for the correct base path (production vs dev)
     return await ipcRenderer.invoke('get-asset-base-path')
