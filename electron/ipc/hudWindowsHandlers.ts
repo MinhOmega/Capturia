@@ -1,8 +1,20 @@
-import type { BrowserWindow, IpcMain } from 'electron'
+import type { BrowserWindow, IpcMain, IpcMainInvokeEvent } from 'electron'
+import { screen } from 'electron'
+import {
+  anchorPreservingResize,
+  clampToWorkArea,
+  type HudOverlayResult,
+  type HudRect,
+  pointInHudRects,
+  sanitizeHudRects,
+  translateBounds,
+} from '../../src/hooks/useHudLayout'
 
 /**
- * IPC for the auxiliary HUD windows (countdown overlay, Notes). Kept out of
- * `handlers.ts` so the window plumbing stays small and readable in isolation.
+ * IPC for the HUD window family: the launch HUD's own geometry channels
+ * (click-through, drag, content-fit resize) and the auxiliary windows
+ * (countdown overlay, Notes). Kept out of `handlers.ts` so the window plumbing
+ * stays small and readable in isolation.
  */
 export type HudWindowsContext = {
   ipcMain: IpcMain
@@ -10,6 +22,36 @@ export type HudWindowsContext = {
   getCountdownOverlayWindow: () => BrowserWindow | null
   createNotesWindow: () => BrowserWindow
   getNotesWindow: () => BrowserWindow | null
+  /**
+   * The launch HUD itself. Optional so the geometry channels degrade to a
+   * no-op (`reason: 'no-window'`) when the composition root does not wire it.
+   */
+  getHudOverlayWindow?: () => BrowserWindow | null
+}
+
+/** How often the main process checks whether the cursor re-entered the HUD while it ignores mouse input. */
+export const HUD_CURSOR_POLL_MS = 80
+
+/** Wayland compositors ignore client-side positioning and input-shape changes. */
+export function isWaylandSession(): boolean {
+  return (
+    process.platform === 'linux' &&
+    (process.env['XDG_SESSION_TYPE'] || '').toLowerCase() === 'wayland'
+  )
+}
+
+/**
+ * `setIgnoreMouseEvents(true, { forward: true })` keeps mouse-move events
+ * flowing to the renderer while clicks fall through, so the page can re-enable
+ * input the moment the pointer is back over a control. Only macOS honours the
+ * option reliably; elsewhere the cursor poll below does that job.
+ */
+function supportsForwardedMouseMove(): boolean {
+  return process.platform === 'darwin'
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value)
 }
 
 /**
@@ -24,6 +66,136 @@ export function registerHudWindowsHandlers(ctx: HudWindowsContext): void {
 
   const liveWindow = (win: BrowserWindow | null): BrowserWindow | null =>
     win && !win.isDestroyed() ? win : null
+
+  /**
+   * The geometry channels act on the HUD window only, and only for the HUD's
+   * own renderer: any other window asking to move or resize the HUD is refused.
+   */
+  const hudForSender = (
+    event: IpcMainInvokeEvent,
+  ): { win: BrowserWindow; result?: undefined } | { win?: undefined; result: HudOverlayResult } => {
+    const win = liveWindow(ctx.getHudOverlayWindow?.() ?? null)
+    if (!win) return { result: { applied: false, reason: 'no-window' } }
+    if (event.sender !== win.webContents) {
+      return { result: { applied: false, reason: 'wrong-sender' } }
+    }
+    return { win }
+  }
+
+  // While the HUD ignores mouse input, the renderer may never see the pointer
+  // come back (no forwarded moves outside macOS), so main watches the cursor
+  // against the interactive boxes the renderer reported and re-enables input
+  // when it enters one. The renderer then takes over again on its next
+  // pointer event.
+  let interactiveRects: HudRect[] = []
+  let cursorPoll: NodeJS.Timeout | null = null
+  const stopCursorPoll = () => {
+    if (cursorPoll) {
+      clearInterval(cursorPoll)
+      cursorPoll = null
+    }
+  }
+  const startCursorPoll = (win: BrowserWindow) => {
+    stopCursorPoll()
+    cursorPoll = setInterval(() => {
+      if (win.isDestroyed()) {
+        stopCursorPoll()
+        return
+      }
+      const cursor = screen.getCursorScreenPoint()
+      if (pointInHudRects(cursor, interactiveRects, win.getBounds())) {
+        win.setIgnoreMouseEvents(false)
+        stopCursorPoll()
+      }
+    }, HUD_CURSOR_POLL_MS)
+    cursorPoll.unref?.()
+  }
+
+  ipcMain.handle(
+    'hud-overlay-ignore-mouse-events',
+    (event, ignore: unknown, rects?: unknown): HudOverlayResult => {
+      const target = hudForSender(event)
+      if (target.result) return target.result
+      const { win } = target
+      if (typeof ignore !== 'boolean') return { applied: false, reason: 'bad-args' }
+
+      if (!ignore) {
+        stopCursorPoll()
+        win.setIgnoreMouseEvents(false)
+        return { applied: true }
+      }
+      if (isWaylandSession()) return { applied: false, reason: 'wayland' }
+
+      interactiveRects = sanitizeHudRects(rects)
+      const forward = supportsForwardedMouseMove()
+      // Without forwarded moves and without boxes to poll, nothing could ever
+      // bring input back: refuse rather than strand the window.
+      if (!forward && interactiveRects.length === 0) {
+        return { applied: false, reason: 'no-rects' }
+      }
+      if (forward) {
+        win.setIgnoreMouseEvents(true, { forward: true })
+      } else {
+        win.setIgnoreMouseEvents(true)
+      }
+      if (interactiveRects.length > 0) startCursorPoll(win)
+      return { applied: true }
+    },
+  )
+
+  ipcMain.handle(
+    'hud-overlay-move-by',
+    (event, deltaX: unknown, deltaY: unknown): HudOverlayResult => {
+      const target = hudForSender(event)
+      if (target.result) return target.result
+      const { win } = target
+      if (!isFiniteNumber(deltaX) || !isFiniteNumber(deltaY)) {
+        return { applied: false, reason: 'bad-args' }
+      }
+      if (isWaylandSession()) return { applied: false, reason: 'wayland' }
+
+      const bounds = win.getBounds()
+      const moved = translateBounds(bounds, deltaX, deltaY)
+      // Clamp to the display under the cursor (the hand doing the dragging), so
+      // the HUD can cross into another display and still never leave a screen.
+      const { workArea } = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
+      const next = clampToWorkArea(moved, workArea)
+      if (next.x !== bounds.x || next.y !== bounds.y) {
+        win.setPosition(next.x, next.y, false)
+      }
+      return { applied: true, bounds: next }
+    },
+  )
+
+  ipcMain.handle(
+    'hud-overlay-set-size',
+    (event, width: unknown, height: unknown): HudOverlayResult => {
+      const target = hudForSender(event)
+      if (target.result) return target.result
+      const { win } = target
+      if (!isFiniteNumber(width) || !isFiniteNumber(height)) {
+        return { applied: false, reason: 'bad-args' }
+      }
+      // The countdown overlay is centred on the display and the HUD is about to
+      // switch to its compact bar; resizing mid-countdown only makes the bar hop.
+      if (activeCountdownRunId !== null) return { applied: false, reason: 'countdown' }
+      if (isWaylandSession()) return { applied: false, reason: 'wayland' }
+
+      const bounds = win.getBounds()
+      const { workArea } = screen.getDisplayMatching(bounds)
+      const next = anchorPreservingResize(bounds, { width, height }, workArea)
+      if (
+        next.x === bounds.x &&
+        next.y === bounds.y &&
+        next.width === bounds.width &&
+        next.height === bounds.height
+      ) {
+        return { applied: true, bounds }
+      }
+      win.setBounds(next, false)
+      return { applied: true, bounds: next }
+    },
+  )
 
   ipcMain.handle('countdown-overlay-show', async (_, value: number, runId: number) => {
     activeCountdownRunId = runId

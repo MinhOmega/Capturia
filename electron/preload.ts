@@ -23,6 +23,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
   hudOverlayRestore: () => {
     ipcRenderer.send('hud-overlay-restore')
   },
+  // HUD window geometry (A24): clicks over the transparent reserve fall through
+  // to the desktop, the drag handle moves the window from JS, and the window
+  // follows its content size. Main clamps everything to the display work area.
+  setHudOverlayIgnoreMouseEvents: (
+    ignore: boolean,
+    interactiveRects?: Array<{ x: number; y: number; width: number; height: number }>,
+  ) => {
+    return ipcRenderer.invoke('hud-overlay-ignore-mouse-events', ignore, interactiveRects)
+  },
+  moveHudOverlayBy: (deltaX: number, deltaY: number) => {
+    return ipcRenderer.invoke('hud-overlay-move-by', deltaX, deltaY)
+  },
+  setHudOverlaySize: (width: number, height: number) => {
+    return ipcRenderer.invoke('hud-overlay-set-size', width, height)
+  },
   setLocale: (locale: string) => {
     return ipcRenderer.invoke('set-locale', locale)
   },

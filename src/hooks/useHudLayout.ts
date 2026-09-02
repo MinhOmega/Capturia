@@ -29,6 +29,8 @@ export const HUD_MIN_WINDOW_SIZE: HudSize = { width: 120, height: 80 }
 export type HudOverlayResult = {
   applied: boolean
   reason?: 'no-window' | 'wrong-sender' | 'bad-args' | 'wayland' | 'countdown' | 'no-rects'
+  /** Window bounds after a successful move/resize. */
+  bounds?: HudRect
 }
 
 export function isHudOrientation(value: unknown): value is HudOrientation {
