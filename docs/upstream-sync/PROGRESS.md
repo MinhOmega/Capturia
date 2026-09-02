@@ -142,3 +142,14 @@ Gate: lint 0 errors / 116 warnings; tsc + test types clean; i18n 613 en keys; vi
 **100 files / 1054 tests**; `vite build` OK.
 
 In flight: B1-e 3D iso/tilt (`w4-threed`), D-5 WSOLA audio (`w4-audio`).
+
+## 2026-08-27 — wave 4: B1-e merged (`2b350ac`)
+
+3D iso/left/right presets on zoom regions: shared camera step carries `rotation3D` (preview CSS
+transform + export WebGL2 `threeDPass.ts`), cursor tilts with the video, subtitles/annotations
+stay flat. Review: `reviews/W4-B1e-3d-tilt.md`.
+
+Gate: lint 0 errors / 116 warnings; tsc + test types clean; i18n 618 en keys; vitest
+**101 files / 1084 tests**.
+
+In flight: D-5 WSOLA audio (`w4-audio`), F11+F10+F7 electron infra (`w4-infra`).
