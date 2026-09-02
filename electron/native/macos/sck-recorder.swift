@@ -1321,6 +1321,18 @@ final class SCKRecorder {
 
 @main
 struct NativeRecorderMain {
+    /// This helper is a plain command-line process, so nothing has connected it to
+    /// the window server when it starts. `SCContentFilter(desktopIndependentWindow:)`
+    /// asks the window server which display a window sits on, and on recent macOS
+    /// releases that call aborts the process (`CGS_REQUIRE_INIT`) when CoreGraphics
+    /// was never initialised first. Display capture never resolves a rect and was
+    /// unaffected, which is why only window recordings crashed. Touching any
+    /// CoreGraphics display API performs the initialisation; it must run before
+    /// anything else, including argument parsing errors that never reach a filter.
+    private static func initializeCoreGraphicsWindowServerConnection() {
+        _ = CGMainDisplayID()
+    }
+
     @MainActor
     private static func initializeWindowCaptureRuntime() {
         // Window-targeted SCContentFilter paths depend on an initialized CGS/AppKit runtime.
@@ -1329,6 +1341,8 @@ struct NativeRecorderMain {
     }
 
     static func main() async {
+        initializeCoreGraphicsWindowServerConnection()
+
         do {
             let args = try RecorderArguments.parse(from: CommandLine.arguments)
             guard #available(macOS 13.0, *) else {
