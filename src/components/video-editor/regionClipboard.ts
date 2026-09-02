@@ -6,6 +6,7 @@ import type {
   AnnotationType,
   FigureData,
   PlaybackSpeed,
+  Rotation3DPreset,
   VideoSegment,
   ZoomDepth,
   ZoomFocus,
@@ -22,6 +23,7 @@ export type CopiedZoom = {
   depth: ZoomDepth;
   customScale?: number;
   focus: ZoomFocus;
+  rotationPreset?: Rotation3DPreset;
 };
 
 export type CopiedSegmentSpeed = { kind: 'segmentSpeed'; speed: PlaybackSpeed };
@@ -70,6 +72,7 @@ export function extractZoomAttributes(region: ZoomRegion): CopiedZoom {
     focus: { ...region.focus },
   };
   if (region.customScale !== undefined) copied.customScale = region.customScale;
+  if (region.rotationPreset !== undefined) copied.rotationPreset = region.rotationPreset;
   return copied;
 }
 
@@ -113,6 +116,7 @@ export function buildZoomRegion(
     source: 'manual',
   };
   if (attrs.customScale !== undefined) region.customScale = attrs.customScale;
+  if (attrs.rotationPreset !== undefined) region.rotationPreset = attrs.rotationPreset;
   return region;
 }
 

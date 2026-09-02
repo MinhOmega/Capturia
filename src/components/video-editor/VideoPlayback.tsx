@@ -3,7 +3,17 @@ import { useEffect, useRef, useImperativeHandle, forwardRef, useState, useMemo, 
 import { classifyWallpaper, DEFAULT_WALLPAPER, resolveImageWallpaperUrl } from "@/lib/wallpaper";
 import { Application, Container, Sprite, Graphics, Texture, VideoSource } from 'pixi.js';
 import { MotionBlurFilter } from 'pixi-filters/motion-blur';
-import { getZoomScale, type ZoomRegion, type ZoomFocus, type TrimRegion, type AnnotationRegion, type AudioEditRegion } from "./types";
+import {
+  computeRotation3DContainScale,
+  getZoomScale,
+  isRotation3DIdentity,
+  rotation3DPerspective,
+  type ZoomRegion,
+  type ZoomFocus,
+  type TrimRegion,
+  type AnnotationRegion,
+  type AudioEditRegion,
+} from "./types";
 import { DEFAULT_FOCUS } from "./videoPlayback/constants";
 import { clamp01 } from "./videoPlayback/mathUtils";
 import {
@@ -148,6 +158,11 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
 }, ref) => {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  // 3D tilt (rotationPreset): the root gets `perspective`, composite3D gets the
+  // scale/rotate transform. Video + composited cursor sit inside composite3D
+  // and tilt together; annotations / subtitles live outside and stay flat.
+  const outerWrapperRef = useRef<HTMLDivElement | null>(null);
+  const composite3DRef = useRef<HTMLDivElement | null>(null);
   const appRef = useRef<Application | null>(null);
   const videoSpriteRef = useRef<Sprite | null>(null);
   const videoContainerRef = useRef<Container | null>(null);
@@ -1004,6 +1019,9 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
     // Cached so videoContainer.filters is only touched on transitions; assigning
     // it per frame rebuilds the filter pipeline.
     let lastMotionBlurActive: boolean | null = null;
+    // Cached so the 3D wrapper styles are only written when they change.
+    let lastTransformIsIdentity = true;
+    let lastPerspectiveValue = 0;
 
     const ticker = () => {
       const cameraContainer = cameraContainerRef.current;
@@ -1076,6 +1094,39 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
           lastMotionBlurActive = false;
         }
       }
+
+      // 3D tilt: the shared camera step already ramped the preset by the eased
+      // progress (identity when unzoomed / forced unzoomed), so preview and
+      // export read the same rotation for the same content time.
+      const composite3D = composite3DRef.current;
+      const outerWrapper = outerWrapperRef.current;
+      if (composite3D && outerWrapper) {
+        const effectiveRotation = target.rotation3D;
+        if (isRotation3DIdentity(effectiveRotation)) {
+          if (!lastTransformIsIdentity) {
+            composite3D.style.transform = '';
+            composite3D.style.willChange = 'auto';
+            lastTransformIsIdentity = true;
+          }
+          if (lastPerspectiveValue !== 0) {
+            outerWrapper.style.perspective = '';
+            lastPerspectiveValue = 0;
+          }
+        } else {
+          const wrapperW = outerWrapper.clientWidth || 1;
+          const wrapperH = outerWrapper.clientHeight || 1;
+          const persp = rotation3DPerspective(wrapperW, wrapperH);
+          const containScale = computeRotation3DContainScale(effectiveRotation, wrapperW, wrapperH, persp);
+          composite3D.style.transform = `scale(${containScale}) rotateX(${effectiveRotation.rotationX}deg) rotateY(${effectiveRotation.rotationY}deg) rotateZ(${effectiveRotation.rotationZ}deg)`;
+          composite3D.style.willChange = 'transform';
+          lastTransformIsIdentity = false;
+          if (persp !== lastPerspectiveValue) {
+            outerWrapper.style.perspective = `${persp}px`;
+            lastPerspectiveValue = persp;
+          }
+        }
+      }
+
       renderCursorOverlay(timeMs);
     };
 
@@ -1236,6 +1287,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
 
   return (
     <div
+      ref={outerWrapperRef}
       className="relative rounded-sm overflow-hidden"
       style={{
         width: '100%',
@@ -1259,15 +1311,30 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
           filter: getPreviewBackgroundFilter(Boolean(showBlur)),
         }}
       />
+      {/* 3D tilt group (rotationPreset): the Pixi canvas and the composited
+          cursor rotate together; the wallpaper below and the annotation /
+          subtitle overlay above stay flat. Driven per ticker frame. */}
       <div
-        ref={containerRef}
+        ref={composite3DRef}
         className="absolute inset-0"
-        style={{
-          filter: (showShadow && shadowIntensity > 0)
-            ? `drop-shadow(0 ${shadowIntensity * 12}px ${shadowIntensity * 48}px rgba(0,0,0,${shadowIntensity * 0.7})) drop-shadow(0 ${shadowIntensity * 4}px ${shadowIntensity * 16}px rgba(0,0,0,${shadowIntensity * 0.5})) drop-shadow(0 ${shadowIntensity * 2}px ${shadowIntensity * 8}px rgba(0,0,0,${shadowIntensity * 0.3}))`
-            : 'none',
-        }}
-      />
+        style={{ transformStyle: 'preserve-3d', transformOrigin: 'center center' }}
+      >
+        <div
+          ref={containerRef}
+          className="absolute inset-0"
+          style={{
+            filter: (showShadow && shadowIntensity > 0)
+              ? `drop-shadow(0 ${shadowIntensity * 12}px ${shadowIntensity * 48}px rgba(0,0,0,${shadowIntensity * 0.7})) drop-shadow(0 ${shadowIntensity * 4}px ${shadowIntensity * 16}px rgba(0,0,0,${shadowIntensity * 0.5})) drop-shadow(0 ${shadowIntensity * 2}px ${shadowIntensity * 8}px rgba(0,0,0,${shadowIntensity * 0.3}))`
+              : 'none',
+          }}
+        />
+        {pixiReady && videoReady && (
+          <canvas
+            ref={cursorCanvasRef}
+            className="absolute inset-0 pointer-events-none"
+          />
+        )}
+      </div>
       {/* Only render overlay after PIXI and video are fully initialized */}
       {pixiReady && videoReady && (
         <div
@@ -1279,10 +1346,6 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(({
           onPointerUp={handleOverlayPointerUp}
           onPointerLeave={handleOverlayPointerLeave}
         >
-          <canvas
-            ref={cursorCanvasRef}
-            className="absolute inset-0 pointer-events-none"
-          />
           <div
             ref={focusIndicatorRef}
             className="absolute rounded-md border border-[#34B27B]/80 bg-[#34B27B]/20 shadow-[0_0_0_1px_rgba(52,178,123,0.35)]"

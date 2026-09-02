@@ -1,5 +1,5 @@
-import type { ZoomFocus, ZoomRegion } from "../types";
-import { getZoomScale } from "../types";
+import type { Rotation3D, ZoomFocus, ZoomRegion } from "../types";
+import { DEFAULT_ROTATION_3D, getRotation3D, getZoomScale, lerpRotation3D } from "../types";
 import {
   CONNECTED_ZOOM_GAP_MS,
   CONNECTED_ZOOM_PAN_DURATION_MS,
@@ -49,6 +49,13 @@ export interface DominantRegionResult {
   strength: number;
   /** Scale to use instead of getZoomScale(region) during a connected pan. */
   blendedScale: number | null;
+  /**
+   * Full 3D tilt of the region the camera is heading to (identity when flat
+   * or unzoomed); mid-pan it is already lerped between the two regions.
+   * Consumers ramp it in/out with `strength`, the same eased progress the
+   * scale uses (zoomCamera.resolveZoomCameraTarget does this).
+   */
+  rotation3D: Rotation3D;
   transition: ConnectedPanTransition | null;
 }
 
@@ -56,6 +63,7 @@ const EMPTY_RESULT: DominantRegionResult = {
   region: null,
   strength: 0,
   blendedScale: null,
+  rotation3D: DEFAULT_ROTATION_3D,
   transition: null,
 };
 
@@ -204,6 +212,7 @@ function getActiveRegion(
     region: { ...bestRegion, focus: getResolvedFocus(bestRegion, activeScale, timeMs, cursorTelemetry) },
     strength: bestStrength,
     blendedScale: null,
+    rotation3D: getRotation3D(bestRegion),
     transition: null,
   };
 }
@@ -223,6 +232,7 @@ function getConnectedRegionHold(
         },
         strength: 1,
         blendedScale: null,
+        rotation3D: getRotation3D(pair.nextRegion),
         transition: null,
       };
     }
@@ -257,11 +267,18 @@ function getConnectedRegionTransition(
     const currentFocus = getResolvedFocus(currentRegion, currentScale, timeMs, cursorTelemetry, sharedCursorFocus);
     const nextFocus = getResolvedFocus(nextRegion, nextScale, timeMs, cursorTelemetry, sharedCursorFocus);
     const transitionFocus = getLinearFocus(currentFocus, nextFocus, transitionProgress);
+    // The tilt pans with the same eased progress as the scale / focus.
+    const transitionRotation = lerpRotation3D(
+      getRotation3D(currentRegion),
+      getRotation3D(nextRegion),
+      transitionProgress,
+    );
 
     return {
       region: { ...nextRegion, focus: transitionFocus },
       strength: 1,
       blendedScale: transitionScale,
+      rotation3D: transitionRotation,
       transition: {
         progress: transitionProgress,
         startFocus: currentFocus,

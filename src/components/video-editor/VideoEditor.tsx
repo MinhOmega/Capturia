@@ -20,10 +20,12 @@ import {
   ZOOM_DEPTH_SCALES,
   clampFocusToDepth,
   getZoomFocusMode,
+  normalizeRotationPreset,
   DEFAULT_CROP_REGION,
   DEFAULT_FIGURE_DATA,
   createTextAnnotationRegion,
   resolveTextAnnotationContent,
+  type Rotation3DPreset,
   type ZoomDepth,
   type ZoomFocus,
   type ZoomFocusMode,
@@ -812,19 +814,29 @@ export default function VideoEditor() {
                   // Remove exact content duplicates (same id + startMs + endMs + depth)
                   const contentKeys = new Set<string>();
                   const deduped = regions.filter(r => {
-                    const key = `${r.id}|${r.startMs}|${r.endMs}|${r.depth}|${r.customScale ?? ''}|${r.focus?.cx}|${r.focus?.cy}|${r.focusMode ?? ''}`;
+                    const key = `${r.id}|${r.startMs}|${r.endMs}|${r.depth}|${r.customScale ?? ''}|${r.focus?.cx}|${r.focus?.cy}|${r.focusMode ?? ''}|${r.rotationPreset ?? ''}`;
                     if (contentKeys.has(key)) return false;
                     contentKeys.add(key);
                     return true;
                   });
-                  // Re-ID any remaining ID collisions; drop unknown focusMode
-                  // values (older / hand-edited saves) so they read as manual.
+                  // Re-ID any remaining ID collisions; drop unknown focusMode /
+                  // rotationPreset values (older / hand-edited saves) so they
+                  // read as manual / flat.
                   let maxZ = maxIdNum(deduped, 'zoom-');
                   const seenIds = new Set<string>();
                   const fixed = deduped.map(r => {
                     const focusMode: ZoomFocusMode | undefined =
                       r.focusMode === 'auto' || r.focusMode === 'manual' ? r.focusMode : undefined;
-                    const normalized = focusMode === r.focusMode ? r : { ...r, focusMode };
+                    const rotationPreset = normalizeRotationPreset(r.rotationPreset);
+                    let normalized = r;
+                    if (focusMode !== r.focusMode || rotationPreset !== r.rotationPreset) {
+                      const { focusMode: _fm, rotationPreset: _rp, ...rest } = r;
+                      normalized = {
+                        ...rest,
+                        ...(focusMode ? { focusMode } : {}),
+                        ...(rotationPreset ? { rotationPreset } : {}),
+                      };
+                    }
                     if (seenIds.has(normalized.id)) {
                       return { ...normalized, id: `zoom-${++maxZ}` };
                     }
@@ -1451,6 +1463,24 @@ export default function VideoEditor() {
           ? { ...region, focusMode, source: 'manual' }
           : region,
       ),
+    );
+  }, [selectedZoomId, setZoomRegionsForActiveAspect]);
+
+  // Per-zoom 3D tilt preset (None / Iso / Left / Right). null removes the
+  // field so the saved project stays identical to a flat region. One region
+  // update = one undo entry.
+  const handleZoomRotationPresetChange = useCallback((preset: Rotation3DPreset | null) => {
+    if (!selectedZoomId) return;
+    setZoomRegionsForActiveAspect((prev) =>
+      prev.map((region) => {
+        if (region.id !== selectedZoomId) return region;
+        if ((region.rotationPreset ?? null) === preset) return region;
+        if (preset === null) {
+          const { rotationPreset: _removed, ...rest } = region;
+          return { ...rest, source: 'manual' };
+        }
+        return { ...region, rotationPreset: preset, source: 'manual' };
+      }),
     );
   }, [selectedZoomId, setZoomRegionsForActiveAspect]);
 
@@ -3366,6 +3396,8 @@ export default function VideoEditor() {
                 onZoomFocusCoordinateCommit={endHistoryBatch}
                 selectedZoomFocusMode={selectedZoomRegion ? getZoomFocusMode(selectedZoomRegion) : null}
                 onZoomFocusModeChange={handleZoomFocusModeChange}
+                selectedZoomRotationPreset={selectedZoomRegion?.rotationPreset ?? null}
+                onZoomRotationPresetChange={handleZoomRotationPresetChange}
                 autoFocusAll={autoFocusAll}
                 onToggleAutoFocusAll={handleToggleAutoFocusAll}
                 onZoomPreviewStart={() => setIsPreviewingZoom(true)}
