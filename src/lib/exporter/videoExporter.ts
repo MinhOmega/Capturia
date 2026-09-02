@@ -55,8 +55,17 @@ import {
   type InputAudioTrack,
 } from 'mediabunny'
 import { getPlatform } from '@/utils/platformUtils'
+import type { AspectRatio } from '@/utils/aspectRatioUtils'
 import { selectExportAudioCodec, type ExportAudioCodec } from './audioCodecSelection'
 import { resolveSourceDurationMs } from './sourceDuration'
+import { loadLocalSourceBlob } from './localSourceFile'
+import {
+  getSourceCopyFastPathBlockers,
+  getSourceCopyProbeBlockers,
+  probeSourceCopyCandidate,
+  type SourceCopyProbe,
+} from './sourceCopyFastPath'
+import type { ExportQuality } from './types'
 
 export interface VideoExporterConfig extends ExportConfig {
   videoUrl: string
@@ -93,6 +102,13 @@ export interface VideoExporterConfig extends ExportConfig {
    * `DEFAULT_EXPORT_DECODE_PATH`; see `readExportDecodePathOverride`.
    */
   decodePath?: ExportDecodePath
+  /**
+   * Editor aspect ratio and quality preset behind `width`/`height`/`bitrate`.
+   * Only read by the source-copy fast path (`sourceCopyFastPath.ts`): when
+   * either is absent the fast path is disabled and the export renders.
+   */
+  aspectRatio?: AspectRatio
+  quality?: ExportQuality
 }
 
 type TimeRangeMs = {
@@ -1151,6 +1167,11 @@ export class VideoExporter {
   async export(): Promise<ExportResult> {
     this.decoderFallbackActive = false
     this.platform = await getPlatform()
+
+    // No edit touches pixels or audio: hand the source file over as-is.
+    const sourceCopy = await this.trySourceCopyFastPath()
+    if (sourceCopy) return sourceCopy
+
     const encoderPreferences = getEncoderPreferences(this.platform)
     let lastError: unknown = null
 
@@ -1175,6 +1196,117 @@ export class VideoExporter {
     }
 
     return this.toFailureResult(lastError ?? new Error('Export failed'))
+  }
+
+  private reportCopyingProgress(percentage: number): void {
+    if (!this.config.onProgress) return
+    this.progressTick += 1
+    const now = Date.now()
+    this.config.onProgress({
+      currentFrame: percentage >= 100 ? 1 : 0,
+      totalFrames: 1,
+      percentage: Math.max(0, Math.min(100, percentage)),
+      estimatedTimeRemaining: 0,
+      phase: 'copying',
+      updatedAtMs: now,
+      elapsedMs: this.exportStartedAtMs > 0 ? Math.max(0, now - this.exportStartedAtMs) : 0,
+      activityTick: this.progressTick,
+      isHeartbeat: false,
+    })
+  }
+
+  /**
+   * Opens the source with mediabunny for the container/track probe. The
+   * `UrlSource` reads only the bytes the demuxer asks for; when it cannot be
+   * used the whole file is read (bounded by the in-memory limit) and reused as
+   * the copy result.
+   */
+  private async probeSourceForCopy(): Promise<{ probe: SourceCopyProbe; blob: Blob | null }> {
+    let input: Input | null = null
+    try {
+      input = await this.openSourceInputFromUrl()
+      return { probe: await probeSourceCopyCandidate(input), blob: null }
+    } catch (urlError) {
+      input?.dispose()
+      input = null
+      console.warn(
+        '[VideoExporter] Unable to probe the source via UrlSource for the fast path. Retrying with BlobSource.',
+        urlError,
+      )
+      const blob = await loadLocalSourceBlob(this.config.videoUrl)
+      if (!blob) throw new Error('source is too large to read in memory')
+      input = new Input({ formats: ALL_FORMATS, source: new BlobSource(blob) })
+      return { probe: await probeSourceCopyCandidate(input), blob }
+    } finally {
+      input?.dispose()
+    }
+  }
+
+  /**
+   * Source-copy fast path. Returns the finished export when the configuration
+   * has no blockers, the file is a plain MP4 (H.264/HEVC/AV1 + at most one
+   * AAC/Opus track) at exactly the planned output size, and it fits the
+   * in-memory read limit; `null` otherwise, in which case the caller renders.
+   */
+  private async trySourceCopyFastPath(): Promise<ExportResult | null> {
+    const blockers = getSourceCopyFastPathBlockers(this.config)
+    if (blockers.length > 0) {
+      console.info('[VideoExporter] source-copy fast path disabled', { blockers })
+      return null
+    }
+    if (typeof window === 'undefined' || !window.electronAPI?.readBinaryFile) {
+      console.info('[VideoExporter] source-copy fast path disabled', {
+        blockers: ['local file access is unavailable'],
+      })
+      return null
+    }
+
+    this.exportStartedAtMs = Date.now()
+    this.progressTick = 0
+    try {
+      const { probe, blob: probedBlob } = await this.probeSourceForCopy()
+      const probeBlockers = getSourceCopyProbeBlockers(probe, {
+        width: this.config.width,
+        height: this.config.height,
+      })
+      if (probeBlockers.length > 0) {
+        console.info('[VideoExporter] source-copy fast path disabled', {
+          blockers: probeBlockers,
+          source: probe,
+        })
+        return null
+      }
+      if (this.cancelled) return { success: false, error: 'Export cancelled' }
+
+      this.reportCopyingProgress(0)
+      const blob = probedBlob ?? (await loadLocalSourceBlob(this.config.videoUrl))
+      if (!blob) {
+        console.info('[VideoExporter] source-copy fast path disabled', {
+          blockers: ['source is too large to read in memory'],
+        })
+        return null
+      }
+      if (this.cancelled) return { success: false, error: 'Export cancelled' }
+      this.reportCopyingProgress(100)
+
+      console.info('[VideoExporter] source-copy fast path used: source copied verbatim', {
+        source: probe,
+        bytes: blob.size,
+        elapsedMs: Date.now() - this.exportStartedAtMs,
+      })
+      return {
+        success: true,
+        blob: blob.type ? blob : new Blob([blob], { type: 'video/mp4' }),
+        sourceCopy: true,
+      }
+    } catch (error) {
+      if (this.cancelled) return { success: false, error: 'Export cancelled' }
+      console.warn(
+        '[VideoExporter] source-copy fast path probe failed; using the render pipeline.',
+        error,
+      )
+      return null
+    }
   }
 
   private async runExportAttemptWithDecoderFallback(

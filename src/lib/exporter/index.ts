@@ -37,7 +37,16 @@ export { FrameRenderer } from './frameRenderer'
 export { VideoMuxer } from './muxer'
 export { GifExporter, calculateOutputDimensions } from './gifExporter'
 export {
+  getSourceCopyFastPathBlockers,
+  getSourceCopyProbeBlockers,
+  isSourceCopyFastPathEligible,
+  probeSourceCopyCandidate,
+  type SourceCopyFastPathInput,
+  type SourceCopyProbe,
+} from './sourceCopyFastPath'
+export {
   materializeLocalSourceFile,
+  loadLocalSourceBlob,
   releaseLocalSourceFile,
   clearStaleSourceCache,
   type MaterializeOptions,
