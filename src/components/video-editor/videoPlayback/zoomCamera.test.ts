@@ -313,13 +313,22 @@ describe('resolveZoomCameraTarget - 3D tilt ramps with the eased zoom progress (
     const ramp = resolveZoomCameraTarget(tilted, 1500 - 400, geometry)
     expect(ramp.progress).toBeGreaterThan(0)
     expect(ramp.progress).toBeLessThan(1)
-    expect(ramp.rotation3D.rotationX).toBeCloseTo(-10 * ramp.progress, 9)
-    expect(ramp.rotation3D.rotationY).toBeCloseTo(-16 * ramp.progress, 9)
+    expect(ramp.rotation3D.rotationX).toBeCloseTo(
+      ROTATION_3D_PRESETS.iso.rotationX * ramp.progress,
+      9,
+    )
+    expect(ramp.rotation3D.rotationY).toBeCloseTo(
+      ROTATION_3D_PRESETS.iso.rotationY * ramp.progress,
+      9,
+    )
 
     const rampOut = resolveZoomCameraTarget([tilted[0]], 4000 + 500, geometry)
     expect(rampOut.progress).toBeGreaterThan(0)
     expect(rampOut.progress).toBeLessThan(1)
-    expect(rampOut.rotation3D.rotationY).toBeCloseTo(-16 * rampOut.progress, 9)
+    expect(rampOut.rotation3D.rotationY).toBeCloseTo(
+      ROTATION_3D_PRESETS.iso.rotationY * rampOut.progress,
+      9,
+    )
   })
 
   it('pans the tilt between two presets during a connected transition', () => {
