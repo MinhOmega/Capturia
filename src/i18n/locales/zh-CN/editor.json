@@ -10,7 +10,6 @@
 	"batchVideoExportSuccess": "已导出 {{count}} 个视频到：{{path}}",
 	"exportWarningAudioTrackUnavailable": "无法读取源音轨，本次导出已自动改为无音频。",
 	"exportWarningAudioCodecUnsupported": "此系统不支持 AAC 音频编码，视频已导出但不含音频。",
-	"exportWarningSpeedAudioUnavailable": "以非1x速度导出时不支持音频。",
 	"exportWarningDecoderFallback": "快速 WebCodecs 解码器无法读取此录像，本次导出已改用较慢的兼容解码器。",
 	"exportWarningDecodeEndedEarly": "源视频在报告的结尾之前停止解码，导出结果可能比预期略短。",
 	"saveGifFailed": "保存 GIF 失败",
