@@ -49,7 +49,12 @@ export async function readAnalysisSidecar(videoPath: string): Promise<VideoAnaly
   }
 }
 
-async function writeAnalysisSidecar(videoPath: string, analysis: VideoAnalysisResult): Promise<void> {
+/**
+ * Writes `<video>.analysis.json`. Exported for the renderer-side Whisper engine
+ * (`analysis-save-sidecar`), which builds the analysis itself and must persist it
+ * in the same format so `analysis-get-current` keeps working across sessions.
+ */
+export async function saveSidecar(videoPath: string, analysis: VideoAnalysisResult): Promise<string> {
   const sidecarPath = resolveAnalysisSidecarPath(videoPath);
   const payload = JSON.stringify(
     {
@@ -60,7 +65,36 @@ async function writeAnalysisSidecar(videoPath: string, analysis: VideoAnalysisRe
     2,
   );
   await fs.writeFile(sidecarPath, payload, 'utf-8');
+  return sidecarPath;
 }
+
+/** Minimal shape check so a malformed renderer payload never lands on disk. */
+export function isVideoAnalysisResultLike(value: unknown): value is VideoAnalysisResult {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<VideoAnalysisResult>;
+  return Boolean(candidate.transcript)
+    && typeof candidate.transcript === 'object'
+    && Array.isArray(candidate.transcript.words)
+    && Array.isArray(candidate.subtitleCues)
+    && Array.isArray(candidate.roughCutSuggestions);
+}
+
+/**
+ * Thrown by the analysis job so the failure *code* survives the queue: the renderer
+ * decides on the Whisper fallback from `code` (see `transcriptionEngine.ts`), not
+ * from the human-readable message.
+ */
+export class TranscriptionFailureError extends Error {
+  readonly code: string;
+
+  constructor(code: string | undefined, message: string) {
+    super(message);
+    this.name = 'TranscriptionFailureError';
+    this.code = code || 'transcription_failed';
+  }
+}
+
+export type VideoAnalysisJobStatus = AnalysisJobStatus & { code?: string };
 
 function formatTranscriptionFailure(args: {
   code?: string;
@@ -88,6 +122,7 @@ function formatTranscriptionFailure(args: {
 
 export class VideoAnalysisService {
   private queue = new AnalysisJobQueue<StartVideoAnalysisInput, VideoAnalysisResult>();
+  private failureCodes = new Map<string, string>();
 
   start(input: StartVideoAnalysisInput): { jobId: string } {
     const normalizedInput: StartVideoAnalysisInput = {
@@ -107,8 +142,9 @@ export class VideoAnalysisService {
       });
 
       if (!transcription.success || !transcription.words?.length) {
-        throw new Error(formatTranscriptionFailure({
-          code: transcription.code,
+        const code = transcription.success ? 'no_speech_detected' : transcription.code;
+        throw new TranscriptionFailureError(code, formatTranscriptionFailure({
+          code,
           message: transcription.message,
         }));
       }
@@ -122,19 +158,26 @@ export class VideoAnalysisService {
         locale: jobInput.locale,
       };
       const analysis = buildVideoAnalysisResult(transcription.words, pipelineConfig);
-      await writeAnalysisSidecar(jobInput.videoPath, analysis);
+      await saveSidecar(jobInput.videoPath, analysis);
       return analysis;
     });
 
-    void promise.catch(() => {
-      // Job failure is tracked in queue status and consumed through IPC polling.
+    void promise.catch((error: unknown) => {
+      // Job failure is tracked in queue status and consumed through IPC polling;
+      // only the machine-readable code needs to be kept alongside.
+      if (error instanceof TranscriptionFailureError) {
+        this.failureCodes.set(id, error.code);
+      }
     });
 
     return { jobId: id };
   }
 
-  getStatus(jobId: string): AnalysisJobStatus | null {
-    return this.queue.getStatus(jobId) ?? null;
+  getStatus(jobId: string): VideoAnalysisJobStatus | null {
+    const status = this.queue.getStatus(jobId);
+    if (!status) return null;
+    const code = this.failureCodes.get(jobId);
+    return code ? { ...status, code } : status;
   }
 
   getResult(jobId: string): VideoAnalysisResult | null {

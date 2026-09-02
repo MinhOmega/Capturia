@@ -1,7 +1,7 @@
-import { BrowserWindow, screen } from 'electron'
+import { app, BrowserWindow, screen } from 'electron'
 import { ipcMain } from 'electron'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -14,6 +14,25 @@ const HEADLESS = process.env['HEADLESS'] === 'true'
 
 let hudOverlayWindow: BrowserWindow | null = null;
 let permissionCheckerWindow: BrowserWindow | null = null;
+
+/**
+ * C-1: the editor's caption worker loads the Whisper model over file:// and a
+ * Web Worker cannot call IPC, so the model root (and the resources dir, for
+ * future bundled assets) travel to the preload as `additionalArguments`.
+ * Trailing separator so `new URL(relative, base)` resolves inside the directory.
+ */
+function fileUrlArg(prefix: string, dir: string): string {
+  return `${prefix}${pathToFileURL(`${dir}${path.sep}`).toString()}`
+}
+
+function editorAdditionalArguments(): string[] {
+  const assetBaseDir = app.isPackaged ? process.resourcesPath : path.join(APP_ROOT, 'public')
+  const captionModelsDir = path.join(app.getPath('userData'), 'caption-models')
+  return [
+    fileUrlArg('--asset-base-url=', assetBaseDir),
+    fileUrlArg('--caption-model-dir=', captionModelsDir),
+  ]
+}
 
 // macOS 26 (Darwin 25) never paints a content-protected window: the Notes window
 // would exist but stay invisible. Skip protection there unless forced back on.
@@ -325,6 +344,7 @@ export function createEditorWindow(): BrowserWindow {
       contextIsolation: true,
       webSecurity: false,
       backgroundThrottling: false,
+      additionalArguments: editorAdditionalArguments(),
     },
   })
 

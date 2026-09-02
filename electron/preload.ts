@@ -1,5 +1,15 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
+// C-1: the caption worker cannot call IPC, so the main process hands the editor
+// window two file:// URLs through webPreferences.additionalArguments (see
+// electron/windows.ts). Absent in the other windows -> empty string.
+function readArgUrl(prefix: string): string {
+  const arg = process.argv.find((entry) => entry.startsWith(prefix))
+  return arg ? arg.slice(prefix.length) : ''
+}
+const assetBaseUrl = readArgUrl('--asset-base-url=')
+const captionModelDirUrl = readArgUrl('--caption-model-dir=')
+
 contextBridge.exposeInMainWorld('electronAPI', {
     hudOverlayHide: () => {
       ipcRenderer.send('hud-overlay-hide');
@@ -292,6 +302,31 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   readFileChunk: (filePath: string, offset: number, length: number) => {
     return ipcRenderer.invoke('read-file-chunk', filePath, offset, length)
+  },
+  // C-1: in-browser Whisper caption fallback (model cache + sidecar write)
+  assetBaseUrl,
+  captionModelDirUrl,
+  getCaptionModelDir: () => {
+    return ipcRenderer.invoke('caption-model-dir')
+  },
+  getCaptionModelStatus: (modelId?: string) => {
+    return ipcRenderer.invoke('caption-model-status', modelId)
+  },
+  downloadCaptionModel: (modelId?: string) => {
+    return ipcRenderer.invoke('caption-model-download', modelId)
+  },
+  cancelCaptionModelDownload: () => {
+    return ipcRenderer.invoke('caption-model-download-cancel')
+  },
+  onCaptionModelProgress: (callback: (progress: unknown) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, progress: unknown) => callback(progress)
+    ipcRenderer.on('caption-model-progress', listener)
+    return () => {
+      ipcRenderer.removeListener('caption-model-progress', listener)
+    }
+  },
+  saveVideoAnalysisSidecar: (videoPath: string, analysis: unknown) => {
+    return ipcRenderer.invoke('analysis-save-sidecar', videoPath, analysis)
   },
 
   // W3-c: global shortcuts, application menu, lifecycle flush, diagnostics
