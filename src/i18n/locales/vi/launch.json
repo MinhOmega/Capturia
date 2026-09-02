@@ -136,6 +136,7 @@
 	"microphone": "Micro",
 	"microphoneFallback": "Không dùng được micro. Ghi hình không có âm thanh.",
 	"microphoneDeviceNotFound": "Không tìm thấy micro đã chọn. Ghi âm bằng micro mặc định.",
+	"systemAudioUnavailable": "Bản ghi hình native này chưa hỗ trợ âm thanh hệ thống. Ghi hình không có âm thanh hệ thống.",
 	"audio": {
 		"enableMicrophone": "Bật micro",
 		"disableMicrophone": "Tắt micro",

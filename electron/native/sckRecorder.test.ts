@@ -5,6 +5,7 @@ import {
   getNativeMacRecorderCapabilities,
   parseCapsLine,
   parsePauseAckLine,
+  parseReadyLine,
   parseWarnLine,
   pauseNativeMacRecorder,
   resumeNativeMacRecorder,
@@ -87,11 +88,45 @@ describe('pause / resume without a helper', () => {
 
 describe('sck-recorder warnings and capabilities added with mic device selection', () => {
   it('parses the mic-device capability next to pause', () => {
-    expect(parseCapsLine('SCK_RECORDER_CAPS pause mic-device')).toEqual({
+    expect(parseCapsLine('SCK_RECORDER_CAPS pause mic-device')).toMatchObject({
       pause: true,
       microphoneDevice: true,
     })
     expect(parseCapsLine('SCK_RECORDER_CAPS pause')).toMatchObject({ microphoneDevice: false })
+  })
+
+  it('parses the system-audio capability and the ready line flags', () => {
+    expect(parseCapsLine('SCK_RECORDER_CAPS pause mic-device system-audio')).toEqual({
+      pause: true,
+      microphoneDevice: true,
+      systemAudio: true,
+    })
+    expect(parseCapsLine('SCK_RECORDER_CAPS pause')).toMatchObject({ systemAudio: false })
+
+    expect(
+      parseReadyLine(
+        'SCK_RECORDER_READY width=1920 height=1080 fps=60 source=display mic=1 system_audio=1',
+      ),
+    ).toEqual({
+      width: 1920,
+      height: 1080,
+      frameRate: 60,
+      sourceKind: 'display',
+      hasMicrophoneAudio: true,
+      hasSystemAudio: true,
+    })
+    // Old helper: no trailing flags.
+    expect(parseReadyLine('SCK_RECORDER_READY width=1280 height=720 fps=30 source=window')).toEqual(
+      {
+        width: 1280,
+        height: 720,
+        frameRate: 30,
+        sourceKind: 'window',
+        hasMicrophoneAudio: false,
+        hasSystemAudio: false,
+      },
+    )
+    expect(parseReadyLine('SCK_RECORDER_CAPS pause')).toBeNull()
   })
 
   it('parses warning lines with and without details', () => {

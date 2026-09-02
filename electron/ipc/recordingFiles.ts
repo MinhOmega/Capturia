@@ -42,6 +42,7 @@ type NativeRecorderStartOptions = {
   cameraDeviceName?: string
   microphoneDeviceId?: string
   microphoneDeviceName?: string
+  systemAudio?: boolean
   frameRate?: number
   maxLongEdge?: number
   bitrateScale?: number
@@ -260,6 +261,7 @@ export function registerRecordingFilesHandlers(ctx: IpcContext): RecordingFilesR
         const cameraDeviceName = normalizeDeviceArgument(options?.cameraDeviceName)
         const microphoneDeviceId = normalizeDeviceArgument(options?.microphoneDeviceId)
         const microphoneDeviceName = normalizeDeviceArgument(options?.microphoneDeviceName)
+        const systemAudio = options?.systemAudio === true
         const frameRate = Number.isFinite(options?.frameRate) ? Number(options?.frameRate) : 60
         const maxLongEdge = Number.isFinite(options?.maxLongEdge)
           ? Math.max(2, Math.round(Number(options?.maxLongEdge)))
@@ -308,6 +310,7 @@ export function registerRecordingFilesHandlers(ctx: IpcContext): RecordingFilesR
           cameraDeviceName,
           microphoneDeviceId,
           microphoneDeviceName,
+          systemAudio,
           frameRate,
           bitrateScale,
           width,
@@ -332,8 +335,11 @@ export function registerRecordingFilesHandlers(ctx: IpcContext): RecordingFilesR
           frameRate: result.ready.frameRate,
           sourceKind: result.ready.sourceKind,
           hasMicrophoneAudio: result.ready.hasMicrophoneAudio,
+          hasSystemAudio: result.ready.hasSystemAudio,
           // False for a helper built before the stdin protocol: the HUD hides Pause.
           canPause: result.capabilities?.pause === true,
+          // False for a helper built before system audio: the HUD hides the toggle.
+          canCaptureSystemAudio: result.capabilities?.systemAudio === true,
           // Non-fatal helper warnings (snake_case codes), e.g. `mic_device_not_found`.
           warnings: (result.warnings ?? []).map((warning) => warning.code),
         }
