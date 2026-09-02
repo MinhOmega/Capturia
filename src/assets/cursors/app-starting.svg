@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+<!-- Capturia original cursor glyph (MIT, same licence as the repository). Hotspot 5,4 (arrow tip). -->
+<path d="M5 4V24L10 19.5L13.5 27L17 25.5L13.5 18H20Z" fill="#f2f2f2" stroke="#212121" stroke-width="1.6" stroke-linejoin="round"/>
+<path d="M20 20H29V22.5L25.5 25.5L29 28.5V31H20V28.5L23.5 25.5L20 22.5Z" fill="#f2f2f2" stroke="#212121" stroke-width="1.4" stroke-linejoin="round"/>
+</svg>
