@@ -69,6 +69,12 @@
 			"savedMessage": "Saved to {{path}}",
 			"failedTitle": "Could not save diagnostics",
 			"reveal": "Show in Folder"
+		},
+		"updates": {
+			"available": "Capturia {{latestVersion}} is available. You are using {{currentVersion}}.",
+			"current": "Capturia is up to date ({{currentVersion}}).",
+			"failed": "Could not check for updates.",
+			"openRelease": "Open Release Page"
 		}
 	},
 	"actions": {

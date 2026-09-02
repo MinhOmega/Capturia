@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Tray, Menu, nativeImage, session, desktopCapturer, globalShortcut, ipcMain, dialog, shell, protocol, clipboard } from 'electron'
+import { app, BrowserWindow, Tray, Menu, nativeImage, session, desktopCapturer, globalShortcut, ipcMain, dialog, shell, protocol, clipboard, net } from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import os from 'node:os'
@@ -12,10 +12,13 @@ import {
   getPermissionCheckerWindow,
   createCountdownOverlayWindow,
   createNotesWindow,
+  HEADLESS,
 } from './windows'
 import { registerIpcHandlers } from './ipc/handlers'
-import { isReadablePathAllowed, localMediaUrlToPath } from './ipc/paths'
+import { getRecordingsDir } from './paths'
+import { isReadablePathAllowed, localMediaUrlToPath, normalizeExternalUrl } from './ipc/paths'
 import { shouldSwallowMainProcessError } from './main-process-errors'
+import { checkLatestRelease } from './update-checker'
 import { scheduleRecordingsCleanup } from './recordingsCleanup'
 import { buildIssueReportUrl, GITHUB_ISSUES_URL } from '../src/lib/supportLinks'
 import { getMainLocale, mainT, setMainLocale } from './i18n'
@@ -51,7 +54,8 @@ if (IS_LINUX_WAYLAND) {
   app.commandLine.appendSwitch('disable-gpu-compositing')
 }
 
-export const RECORDINGS_DIR = path.join(app.getPath('userData'), 'recordings')
+// Resolved once at startup; `electron/paths.ts` owns the layout (lazy, testable).
+const RECORDINGS_DIR = getRecordingsDir()
 
 
 async function ensureRecordingsDir() {
@@ -136,8 +140,10 @@ function showMainWindow() {
     if (mainWindow.isMinimized()) {
       mainWindow.restore()
     }
-    mainWindow.show()
-    mainWindow.focus()
+    if (!HEADLESS) {
+      mainWindow.show()
+      mainWindow.focus()
+    }
     return
   }
   createWindow()
@@ -482,6 +488,12 @@ function setupApplicationMenu(): void {
       label: app.name,
       submenu: [
         { role: 'about', label: menuLabel('actions.about', 'About Capturia') },
+        {
+          label: menuLabel('actions.checkForUpdates', 'Check for Updates…'),
+          click: () => {
+            void checkForUpdates()
+          },
+        },
         { type: 'separator' },
         { role: 'services', label: menuLabel('actions.services', 'Services') },
         { type: 'separator' },
@@ -586,6 +598,12 @@ function setupApplicationMenu(): void {
             void runSaveDiagnostics()
           },
         },
+        {
+          label: menuLabel('actions.checkForUpdates', 'Check for Updates…'),
+          click: () => {
+            void checkForUpdates()
+          },
+        },
         // macOS keeps About in the app menu; Windows/Linux look for it under Help.
         ...(isMac
           ? []
@@ -603,6 +621,73 @@ function setupApplicationMenu(): void {
   )
 
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}
+
+// ── Check for updates (F10 / M12) ──────────────────────────────────────────
+// Menu-driven only: one GitHub API call, a verdict dialog, and at most an
+// "open release page" through the external-URL allowlist. No download, no
+// electron-updater (that needs a `publish` block + signed installers, B7/B8).
+let updateCheckInFlight = false
+const UPDATE_CHECK_TIMEOUT_MS = 10_000
+
+function updatesText(key: 'available' | 'current' | 'failed' | 'openRelease', vars?: Record<string, string>): string {
+  return mainT(currentLocale(), `common.electron.updates.${key}`, vars)
+}
+
+async function checkForUpdates(): Promise<void> {
+  if (updateCheckInFlight) return
+  updateCheckInFlight = true
+  try {
+    const result = await checkLatestRelease({
+      currentVersion: app.getVersion(),
+      fetchLatest: (url, init) => net.fetch(url, init),
+      signal: AbortSignal.timeout(UPDATE_CHECK_TIMEOUT_MS),
+    })
+
+    if (result.kind === 'current') {
+      await showMessageBox({
+        type: 'info',
+        title: PRODUCT_NAME,
+        message: updatesText('current', { currentVersion: result.currentVersion }),
+        buttons: [menuLabel('actions.close', 'Close')],
+        noLink: true,
+      })
+      return
+    }
+
+    const choice = await showMessageBox({
+      type: 'info',
+      title: PRODUCT_NAME,
+      message: updatesText('available', {
+        latestVersion: result.latestVersion,
+        currentVersion: result.currentVersion,
+      }),
+      buttons: [updatesText('openRelease'), menuLabel('actions.close', 'Close')],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+    })
+    if (choice.response !== 0) return
+    // Same policy as the `open-external-url` IPC: http(s)/mailto only.
+    const releaseUrl = normalizeExternalUrl(result.releaseUrl)
+    if (!releaseUrl) {
+      console.warn('[updates] refused to open release URL:', result.releaseUrl)
+      return
+    }
+    await shell.openExternal(releaseUrl)
+  } catch (error) {
+    console.warn('[updates] check failed:', error)
+    await showMessageBox({
+      type: 'warning',
+      title: PRODUCT_NAME,
+      message: updatesText('failed'),
+      detail: error instanceof Error ? error.message : String(error),
+      buttons: [menuLabel('actions.close', 'Close')],
+      noLink: true,
+    })
+  } finally {
+    updateCheckInFlight = false
+  }
 }
 
 // ── About (M11) ────────────────────────────────────────────────────────────
@@ -933,7 +1018,8 @@ appReady?.then(async () => {
   // Force "regular" activation policy so the Dock icon appears. The HUD overlay
   // (transparent, frameless, skipTaskbar) is the first window, and AppKit would
   // otherwise classify us as an accessory app.
-  if (isMac) {
+  // HEADLESS (e2e): no Dock icon either, so nothing bounces or steals focus.
+  if (isMac && !HEADLESS) {
     app.dock?.show()
   }
 
