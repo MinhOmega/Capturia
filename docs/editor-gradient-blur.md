@@ -80,3 +80,9 @@ Blur
 9. Open a project saved before this batch: loads unchanged, no blur row items.
 10. Set `BLUR_REGIONS_ENABLED = false`: row, button, shortcut, panel and overlay disappear;
     exports ignore blur regions; the project still loads.
+
+## Verification note
+
+Merged into the integration branch with the full gate green (lint 0 errors, tsc, test types,
+i18n, format, vitest). Nothing here was exercised in a live window; the smoke list above is
+the acceptance test.
