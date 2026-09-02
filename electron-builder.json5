@@ -76,6 +76,10 @@
       {
         "from": "electron/native/bin/speech-transcriber",
         "to": "native/speech-transcriber"
+      },
+      {
+        "from": "electron/native/bin/window-bounds-helper",
+        "to": "native/window-bounds-helper"
       }
     ],
     "icon": "icons/icons/mac/icon.icns",

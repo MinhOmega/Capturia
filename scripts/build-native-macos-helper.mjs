@@ -51,6 +51,14 @@ const helpers = [
     entitlements: helperEntitlementsAV,
     frameworks: ['Foundation', 'AVFoundation', 'Speech'],
   },
+  {
+    // Prebuilt so the cursor tracker never compiles Swift at runtime (windowBounds.ts).
+    label: 'window bounds helper',
+    sourcePath: path.join(projectRoot, 'electron/native/macos/window-bounds-helper.swift'),
+    outputPath: path.join(projectRoot, 'electron/native/bin/window-bounds-helper'),
+    entitlements: helperEntitlements,
+    frameworks: ['Foundation', 'CoreGraphics'],
+  },
 ]
 
 for (const helper of helpers) {
