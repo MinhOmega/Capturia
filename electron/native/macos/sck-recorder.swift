@@ -379,7 +379,7 @@ final class CameraCaptureProvider: NSObject, AVCaptureVideoDataOutputSampleBuffe
         if let preferredDeviceId, let match = devices.first(where: { $0.uniqueID == preferredDeviceId }) {
             return match
         }
-        if let preferredDeviceName, let match = Self.matchDevice(byName: preferredDeviceName, in: devices) {
+        if let preferredDeviceName, let match = DeviceNameMatching.pickDevice(named: preferredDeviceName, from: devices) {
             return match
         }
 
@@ -392,32 +392,124 @@ final class CameraCaptureProvider: NSObject, AVCaptureVideoDataOutputSampleBuffe
 
         return nonVirtual.first ?? devices.first
     }
+}
 
-    /// Chromium labels a camera with its localized name, sometimes suffixed by the
-    /// USB vendor:product pair, e.g. "Logitech StreamCam (046d:0893)".
-    private static func matchDevice(byName name: String, in devices: [AVCaptureDevice]) -> AVCaptureDevice? {
-        let normalize: (String) -> String = { value in
-            value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+/// Matching a device the renderer picked (Chromium label) against an AVCaptureDevice.
+///
+/// Twin of `electron/recording/deviceNameMatching.ts`; keep the two in step. Chromium
+/// reports the driver name, often suffixed with the USB vendor:product pair
+/// ("Logitech StreamCam (046d:0893)"), AVFoundation reports `localizedName`, so the
+/// match cannot be plain equality. It is still decisive: exact, exact without the USB
+/// suffix, or one name containing the other as whole words. Plain substring matching
+/// is deliberately absent: "Logi Capture" is not "Logitech StreamCam" and "Micro
+/// Studio" is not "Microphone (Logitech PRO X)", yet both used to match, and opening
+/// the wrong device is worse than falling back to the default.
+enum DeviceNameMatching {
+    static let exactScore = 1000
+    static let exactWithoutUsbIdsScore = 950
+    static let wordsScore = 900
+    static let identifierScore = 800
+    static let noMatch = 0
+
+    /// Lowercase, letters/marks/digits only, single-spaced. Unicode-aware on purpose
+    /// so non-Latin names keep their letters and are compared as they are.
+    static func normalize(_ value: String) -> String {
+        var words: [String] = []
+        var current = ""
+        for scalar in value.lowercased().unicodeScalars {
+            if CharacterSet.alphanumerics.contains(scalar) {
+                current.unicodeScalars.append(scalar)
+            } else if !current.isEmpty {
+                words.append(current)
+                current = ""
+            }
         }
-        let wanted = normalize(name)
-        guard !wanted.isEmpty else { return nil }
-
-        if let exact = devices.first(where: { normalize($0.localizedName) == wanted }) {
-            return exact
+        if !current.isEmpty {
+            words.append(current)
         }
+        return words.joined(separator: " ")
+    }
 
-        var stripped = wanted
-        if let range = stripped.range(of: #"\s*\([0-9a-f]{4}:[0-9a-f]{4}\)$"#, options: .regularExpression) {
+    /// Chromium's "Name (046d:0893)" without the USB pair; unchanged when absent.
+    static func stripUsbIdSuffix(_ value: String) -> String {
+        var stripped = value
+        if let range = stripped.range(
+            of: #"\s*\([0-9a-fA-F]{4}:[0-9a-fA-F]{4}\)\s*$"#,
+            options: .regularExpression
+        ) {
             stripped.removeSubrange(range)
         }
-        if stripped != wanted, let exact = devices.first(where: { normalize($0.localizedName) == stripped }) {
-            return exact
+        return stripped
+    }
+
+    /// Does `needle` appear in `haystack` as whole words? Both are normalized, so a
+    /// boundary is the start of the string, its end, or a space.
+    static func containsAsWords(_ haystack: String, _ needle: String) -> Bool {
+        guard !haystack.isEmpty, !needle.isEmpty else { return false }
+        let haystackScalars = Array(haystack.unicodeScalars)
+        let needleScalars = Array(needle.unicodeScalars)
+        guard needleScalars.count <= haystackScalars.count else { return false }
+        let space: Unicode.Scalar = " "
+        var at = 0
+        while at + needleScalars.count <= haystackScalars.count {
+            if haystackScalars[at..<(at + needleScalars.count)].elementsEqual(needleScalars) {
+                let startsOnBoundary = at == 0 || haystackScalars[at - 1] == space
+                let after = at + needleScalars.count
+                let endsOnBoundary = after == haystackScalars.count || haystackScalars[after] == space
+                if startsOnBoundary && endsOnBoundary {
+                    return true
+                }
+            }
+            at += 1
+        }
+        return false
+    }
+
+    /// How well a candidate answers a requested name; 0 means "not this one" and
+    /// callers must treat it as a real answer rather than a weak match.
+    static func score(candidateName: String, candidateId: String, requestedName: String) -> Int {
+        let requested = normalize(requestedName)
+        guard !requested.isEmpty else { return noMatch }
+
+        let candidate = normalize(candidateName)
+        if candidate == requested {
+            return exactScore
         }
 
-        return devices.first(where: { device in
-            let label = normalize(device.localizedName)
-            return label.contains(stripped) || stripped.contains(label)
-        })
+        let requestedWithoutUsbIds = normalize(stripUsbIdSuffix(requestedName))
+        if !requestedWithoutUsbIds.isEmpty, requestedWithoutUsbIds != requested, candidate == requestedWithoutUsbIds {
+            return exactWithoutUsbIdsScore
+        }
+
+        if containsAsWords(candidate, requested) || containsAsWords(requested, candidate) {
+            return wordsScore
+        }
+
+        let identifier = normalize(candidateId)
+        if containsAsWords(identifier, requested) || containsAsWords(requested, identifier) {
+            return identifierScore
+        }
+
+        return noMatch
+    }
+
+    /// Best-scoring device for `requestedName`, or nil when nothing scores above 0.
+    /// Ties keep the earlier device (platform order).
+    static func pickDevice(named requestedName: String, from devices: [AVCaptureDevice]) -> AVCaptureDevice? {
+        var best: AVCaptureDevice?
+        var bestScore = noMatch
+        for device in devices {
+            let deviceScore = score(
+                candidateName: device.localizedName,
+                candidateId: device.uniqueID,
+                requestedName: requestedName
+            )
+            if deviceScore > bestScore {
+                best = device
+                bestScore = deviceScore
+            }
+        }
+        return best
     }
 }
 
