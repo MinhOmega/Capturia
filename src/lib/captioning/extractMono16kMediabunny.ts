@@ -3,11 +3,9 @@ import { MAX_CAPTION_AUDIO_SEC } from './captionConstants'
 
 /**
  * Demux + WebCodecs audio decode through mediabunny (the same stack the exporter
- * uses for its audio track). Used when `decodeAudioData` can't handle the
- * container (e.g. WebM/Matroska with video, fragmented MP4).
- *
- * Upstream OpenScreen v1.7.0 used `web-demuxer` here; Capturia's tip does not
- * ship that wasm, so this is the mediabunny equivalent.
+ * uses for its audio track). Second fallback in `extractMono16k.ts`'s
+ * `demuxMonoPcm` chain: runs when `decodeAudioData` and the `web-demuxer`
+ * path (`extractMono16kWebDemuxer.ts`) both fail on a container.
  *
  * @param maxReadSec  Optional cap on how much audio to decode. The decoded PCM is
  *   held in memory, so very long recordings must be capped below
