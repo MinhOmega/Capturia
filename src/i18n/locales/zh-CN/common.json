@@ -69,6 +69,12 @@
 			"savedMessage": "已保存到 {{path}}",
 			"failedTitle": "无法保存诊断信息",
 			"reveal": "在文件夹中显示"
+		},
+		"updates": {
+			"available": "Capturia {{latestVersion}} 已发布。当前版本为 {{currentVersion}}。",
+			"current": "Capturia 已是最新版本（{{currentVersion}}）。",
+			"failed": "无法检查更新。",
+			"openRelease": "打开发布页面"
 		}
 	},
 	"actions": {
