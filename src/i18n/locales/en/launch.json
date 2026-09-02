@@ -142,8 +142,11 @@
 		"microphoneDevice": "Microphone",
 		"noneFound": "No microphone found",
 		"level": "Input level",
-		"settings": "Microphone settings"
+		"settings": "Microphone settings",
+		"enableSystemAudio": "Record system audio (what the computer plays)",
+		"disableSystemAudio": "Stop recording system audio"
 	},
+	"systemAudio": "System audio",
 	"notes": "Notes",
 	"openNotesFailed": "Failed to open the Notes window.",
 	"dragHandle": "Drag to move the launch bar",
