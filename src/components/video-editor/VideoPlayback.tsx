@@ -40,11 +40,17 @@ import {
 } from './videoPlayback/zoomTransform'
 import { createVideoEventHandlers } from './videoPlayback/videoEventHandlers'
 import {
+  type ContextLossRecovery,
+  createContextLossRecovery,
+} from './videoPlayback/webglContextLoss'
+import {
   type AspectRatio,
   formatAspectRatioForCSS,
   getNativeAspectRatioValue,
 } from '@/utils/aspectRatioUtils'
 import { AnnotationOverlay } from './AnnotationOverlay'
+import { toast } from 'sonner'
+import { useI18n } from '@/i18n'
 import { getRenderableAnnotations } from '@/lib/annotations/renderOrder'
 import { getPreviewBackgroundFilter } from '@/lib/rendering/backgroundBlur'
 import type { SubtitleCue } from '@/lib/analysis/types'
@@ -192,6 +198,9 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
     const cameraContainerRef = useRef<Container | null>(null)
     const timeUpdateAnimationRef = useRef<number | null>(null)
     const [pixiReady, setPixiReady] = useState(false)
+    // Bumped when the WebGL context is lost: the stage setup effect re-runs and
+    // rebuilds the Pixi application from scratch (see videoPlayback/webglContextLoss.ts).
+    const [pixiGeneration, setPixiGeneration] = useState(0)
     const [videoReady, setVideoReady] = useState(false)
     const overlayRef = useRef<HTMLDivElement | null>(null)
     const focusIndicatorRef = useRef<HTMLDivElement | null>(null)
@@ -261,6 +270,28 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
     }, [])
 
     const audioGraphFailedRef = useRef(false)
+
+    const { t } = useI18n()
+    const tRef = useRef(t)
+    tRef.current = t
+    const contextLossRecoveryRef = useRef<ContextLossRecovery | null>(null)
+    const getContextLossRecovery = useCallback(() => {
+      if (!contextLossRecoveryRef.current) {
+        contextLossRecoveryRef.current = createContextLossRecovery({
+          regenerate: () => setPixiGeneration((generation) => generation + 1),
+          onGiveUp: () => {
+            toast.error(tRef.current('settings.previewGpuRecoveryFailed'))
+          },
+        })
+      }
+      return contextLossRecoveryRef.current
+    }, [])
+
+    useEffect(() => {
+      return () => {
+        contextLossRecoveryRef.current?.dispose()
+      }
+    }, [])
 
     const ensurePreviewAudioGraph = useCallback(() => {
       const video = videoRef.current
@@ -801,7 +832,9 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
       }
 
       let ctx = cursorCanvasCtxRef.current
-      if (!ctx) {
+      // The canvas element is remounted whenever the stage is rebuilt (context
+      // loss, new source); a context from the previous element draws nowhere.
+      if (!ctx || ctx.canvas !== canvas) {
         ctx = canvas.getContext('2d', { alpha: true })
         cursorCanvasCtxRef.current = ctx
       }
@@ -924,19 +957,31 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 
       let mounted = true
       let app: Application | null = null
+      const recovery = getContextLossRecovery()
+      // Declared outside the async IIFE so the cleanup can detach them.
+      let handleContextLost: ((event: Event) => void) | null = null
+      let handleContextRestored: (() => void) | null = null
 
       ;(async () => {
         app = new Application()
 
-        await app.init({
-          width: container.clientWidth,
-          height: container.clientHeight,
-          backgroundAlpha: 0,
-          antialias: true,
-          // Keep high-DPI sharpness in preview while still guarding extreme render cost.
-          resolution: preferredFpsRef.current > 60 ? 1 : Math.min(window.devicePixelRatio || 1, 2),
-          autoDensity: true,
-        })
+        try {
+          await app.init({
+            width: container.clientWidth,
+            height: container.clientHeight,
+            backgroundAlpha: 0,
+            antialias: true,
+            // Keep high-DPI sharpness in preview while still guarding extreme render cost.
+            resolution:
+              preferredFpsRef.current > 60 ? 1 : Math.min(window.devicePixelRatio || 1, 2),
+            autoDensity: true,
+          })
+        } catch (error) {
+          console.error('[VideoPlayback] Pixi init failed:', error)
+          app = null
+          if (mounted) recovery.rebuildFailed(error)
+          return
+        }
 
         app.ticker.maxFPS = normalizeTickerFps(preferredFpsRef.current)
         idleResolutionRef.current = app.renderer.resolution
@@ -948,6 +993,21 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 
         appRef.current = app
         container.appendChild(app.canvas)
+        recovery.rebuildSucceeded()
+
+        // Context-loss recovery: preventDefault opts in to the browser's restore
+        // attempt, then the generation bump tears this app down and rebuilds it.
+        // The texture, filter, ticker and cursor-layer effects all key on
+        // pixiReady, which toggles with the rebuild, so they re-attach on their
+        // own; the video element is untouched, so playback resumes where it was.
+        handleContextLost = (event: Event) => {
+          recovery.handleContextLost(event)
+        }
+        handleContextRestored = () => {
+          recovery.handleContextRestored()
+        }
+        app.canvas.addEventListener('webglcontextlost', handleContextLost)
+        app.canvas.addEventListener('webglcontextrestored', handleContextRestored)
 
         // Camera container - this will be scaled/positioned for zoom
         const cameraContainer = new Container()
@@ -966,14 +1026,29 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
         mounted = false
         setPixiReady(false)
         if (app && app.renderer) {
-          app.destroy(true, { children: true, texture: true, textureSource: true })
+          const canvas = app.canvas
+          if (handleContextLost) {
+            canvas.removeEventListener('webglcontextlost', handleContextLost)
+          }
+          if (handleContextRestored) {
+            canvas.removeEventListener('webglcontextrestored', handleContextRestored)
+          }
+          try {
+            app.destroy(true, { children: true, texture: true, textureSource: true })
+          } catch (error) {
+            // Destroying a renderer whose GL context is already gone can throw
+            // from inside Pixi; the canvas must still leave the DOM so the
+            // rebuilt one is the only child.
+            console.warn('[VideoPlayback] Pixi destroy threw during teardown:', error)
+            canvas.remove()
+          }
         }
         appRef.current = null
         cameraContainerRef.current = null
         videoContainerRef.current = null
         videoSpriteRef.current = null
       }
-    }, [])
+    }, [pixiGeneration, getContextLossRecovery, normalizeTickerFps])
 
     useEffect(() => {
       const video = videoRef.current
