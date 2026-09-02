@@ -130,3 +130,15 @@ Gate: lint 0 errors / 116 warnings; tsc + test types clean; i18n 590 en keys; vi
 **95 files / 1006 tests**.
 
 In flight: C-1 Whisper fallback (`w4-captions`), B1-e 3D iso/tilt (`w4-threed`).
+
+## 2026-08-27 — wave 4: C-1 merged (`a4710c7`)
+
+In-browser Whisper caption fallback (`@xenova/transformers`, model downloaded on first use to
+`userData`, ORT wasm bundled via Vite plugin) behind a `TranscriptionEngine` seam; native macOS
+speech stays primary. New IPC `caption-model-*` + `analysis-save-sidecar` (path-gated).
+Review: `reviews/W4-C1-whisper-captions.md`.
+
+Gate: lint 0 errors / 116 warnings; tsc + test types clean; i18n 613 en keys; vitest
+**100 files / 1054 tests**; `vite build` OK.
+
+In flight: B1-e 3D iso/tilt (`w4-threed`), D-5 WSOLA audio (`w4-audio`).
