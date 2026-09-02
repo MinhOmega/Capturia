@@ -54,7 +54,9 @@ describe('project state IPC handlers', () => {
     await writeFile(videoPath, 'x')
     await writeCursorTrackSidecar(videoPath, { samples: [{ timeMs: 1, x: 0.5, y: 0.5 }] })
 
-    await expect(ipc.invoke('set-current-video-path', videoPath, { frameRate: 24 })).resolves.toEqual({ success: true })
+    await expect(
+      ipc.invoke('set-current-video-path', videoPath, { frameRate: 24 }),
+    ).resolves.toEqual({ success: true })
     expect(ctx.session.currentVideoPath).toBe(videoPath)
     expect(ctx.session.currentVideoMetadata?.frameRate).toBe(24)
     expect(ctx.session.currentVideoMetadata?.cursorTrack?.samples).toHaveLength(1)
@@ -62,7 +64,9 @@ describe('project state IPC handlers', () => {
     const current = await ipc.invoke<{ success: boolean; path: string }>('get-current-video-path')
     expect(current).toMatchObject({ success: true, path: videoPath })
 
-    await expect(ipc.invoke('set-current-video-path', '/etc/passwd.webm')).resolves.toMatchObject({ success: false })
+    await expect(ipc.invoke('set-current-video-path', '/etc/passwd.webm')).resolves.toMatchObject({
+      success: false,
+    })
     // A refused path leaves the session untouched.
     expect(ctx.session.currentVideoPath).toBe(videoPath)
 
@@ -73,9 +77,16 @@ describe('project state IPC handlers', () => {
   it('save/load project state round-trips through <userData>/projects and reports notFound', async () => {
     const { ipc } = setup()
     const videoPath = path.join(recordingsDir, 'recording-9.webm')
-    await expect(ipc.invoke('save-project-state', videoPath, { zoom: [1, 2] })).resolves.toEqual({ success: true })
-    await expect(ipc.invoke('load-project-state', videoPath)).resolves.toEqual({ success: true, state: { zoom: [1, 2] } })
-    await expect(ipc.invoke('load-project-state', path.join(recordingsDir, 'never.webm'))).resolves.toEqual({
+    await expect(ipc.invoke('save-project-state', videoPath, { zoom: [1, 2] })).resolves.toEqual({
+      success: true,
+    })
+    await expect(ipc.invoke('load-project-state', videoPath)).resolves.toEqual({
+      success: true,
+      state: { zoom: [1, 2] },
+    })
+    await expect(
+      ipc.invoke('load-project-state', path.join(recordingsDir, 'never.webm')),
+    ).resolves.toEqual({
       success: false,
       notFound: true,
     })
@@ -84,7 +95,9 @@ describe('project state IPC handlers', () => {
   it('shortcuts persist to <userData>/shortcuts.json', async () => {
     const { ipc } = setup()
     await expect(ipc.invoke('get-shortcuts')).resolves.toBeNull()
-    await expect(ipc.invoke('save-shortcuts', { play: 'Space' })).resolves.toEqual({ success: true })
+    await expect(ipc.invoke('save-shortcuts', { play: 'Space' })).resolves.toEqual({
+      success: true,
+    })
     await expect(ipc.invoke('get-shortcuts')).resolves.toEqual({ play: 'Space' })
   })
 

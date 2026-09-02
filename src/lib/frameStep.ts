@@ -1,5 +1,5 @@
 /** One frame in seconds at 60 FPS (~16.67ms). */
-export const FRAME_DURATION_SEC = 1 / 60;
+export const FRAME_DURATION_SEC = 1 / 60
 
 /**
  * New playhead time after stepping one frame, clamped to [0, duration].
@@ -12,9 +12,10 @@ export function computeFrameStepTime(
   direction: 'forward' | 'backward',
   frameDurationSec: number = FRAME_DURATION_SEC,
 ): number {
-  const frame = Number.isFinite(frameDurationSec) && frameDurationSec > 0
-    ? frameDurationSec
-    : FRAME_DURATION_SEC;
-  const delta = direction === 'forward' ? frame : -frame;
-  return Math.min(duration, Math.max(0, currentTime + delta));
+  const frame =
+    Number.isFinite(frameDurationSec) && frameDurationSec > 0
+      ? frameDurationSec
+      : FRAME_DURATION_SEC
+  const delta = direction === 'forward' ? frame : -frame
+  return Math.min(duration, Math.max(0, currentTime + delta))
 }

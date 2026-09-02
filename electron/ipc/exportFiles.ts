@@ -109,78 +109,94 @@ export function registerExportFilesHandlers(ctx: IpcContext): void {
     }
   })
 
-  ipcMain.handle('save-exported-video', async (_, videoData: ArrayBuffer, fileName: string, localeInput?: string, options?: SaveExportedVideoOptions) => {
-    try {
-      const locale = normalizeLocale(localeInput)
-      // Determine file type from extension
-      const isGif = fileName.toLowerCase().endsWith('.gif');
-      const filters = isGif 
-        ? [{ name: 'GIF', extensions: ['gif'] }]
-        : [{ name: 'MP4', extensions: ['mp4'] }];
-      const targetFilePath = typeof options?.targetFilePath === 'string' && options.targetFilePath.trim().length > 0
-        ? path.normalize(options.targetFilePath.trim())
-        : null
-      const directoryPath = typeof options?.directoryPath === 'string' && options.directoryPath.trim().length > 0
-        ? path.normalize(options.directoryPath.trim())
-        : null
+  ipcMain.handle(
+    'save-exported-video',
+    async (
+      _,
+      videoData: ArrayBuffer,
+      fileName: string,
+      localeInput?: string,
+      options?: SaveExportedVideoOptions,
+    ) => {
+      try {
+        const locale = normalizeLocale(localeInput)
+        // Determine file type from extension
+        const isGif = fileName.toLowerCase().endsWith('.gif')
+        const filters = isGif
+          ? [{ name: 'GIF', extensions: ['gif'] }]
+          : [{ name: 'MP4', extensions: ['mp4'] }]
+        const targetFilePath =
+          typeof options?.targetFilePath === 'string' && options.targetFilePath.trim().length > 0
+            ? path.normalize(options.targetFilePath.trim())
+            : null
+        const directoryPath =
+          typeof options?.directoryPath === 'string' && options.directoryPath.trim().length > 0
+            ? path.normalize(options.directoryPath.trim())
+            : null
 
-      let targetPath: string
-      if (targetFilePath) {
-        // Path was pre-selected by the user via `pick-save-file-path`; the renderer
-        // only echoes it back, so anything else is refused.
-        if (!isAllowedExportPath(targetFilePath)) {
-          console.warn('Refused export to unapproved target path:', targetFilePath)
-          return { success: false, message: tt(locale, 'exportPathRejected') }
-        }
-        await fs.mkdir(path.dirname(targetFilePath), { recursive: true })
-        targetPath = targetFilePath
-      } else if (directoryPath) {
-        // Directory came from `pick-export-directory`; fileName must be a bare name.
-        if (!approvedExportPaths.isApprovedDirectory(directoryPath)) {
-          console.warn('Refused export to unapproved directory:', directoryPath)
-          return { success: false, message: tt(locale, 'exportPathRejected') }
-        }
-        targetPath = resolveOutputPathInDir(directoryPath, fileName)
-        if (!isAllowedExportPath(targetPath)) {
-          console.warn('Refused export with unsupported file name:', fileName)
-          return { success: false, message: tt(locale, 'exportPathRejected') }
-        }
-        await fs.mkdir(directoryPath, { recursive: true })
-      } else {
-        const result = await dialog.showSaveDialog(buildDialogOptions({
-          title: isGif ? tt(locale, 'saveGif') : tt(locale, 'saveVideo'),
-          defaultPath: path.join(app.getPath('downloads'), fileName),
-          filters,
-          properties: ['createDirectory', 'showOverwriteConfirmation']
-        }, getMainWindow()));
+        let targetPath: string
+        if (targetFilePath) {
+          // Path was pre-selected by the user via `pick-save-file-path`; the renderer
+          // only echoes it back, so anything else is refused.
+          if (!isAllowedExportPath(targetFilePath)) {
+            console.warn('Refused export to unapproved target path:', targetFilePath)
+            return { success: false, message: tt(locale, 'exportPathRejected') }
+          }
+          await fs.mkdir(path.dirname(targetFilePath), { recursive: true })
+          targetPath = targetFilePath
+        } else if (directoryPath) {
+          // Directory came from `pick-export-directory`; fileName must be a bare name.
+          if (!approvedExportPaths.isApprovedDirectory(directoryPath)) {
+            console.warn('Refused export to unapproved directory:', directoryPath)
+            return { success: false, message: tt(locale, 'exportPathRejected') }
+          }
+          targetPath = resolveOutputPathInDir(directoryPath, fileName)
+          if (!isAllowedExportPath(targetPath)) {
+            console.warn('Refused export with unsupported file name:', fileName)
+            return { success: false, message: tt(locale, 'exportPathRejected') }
+          }
+          await fs.mkdir(directoryPath, { recursive: true })
+        } else {
+          const result = await dialog.showSaveDialog(
+            buildDialogOptions(
+              {
+                title: isGif ? tt(locale, 'saveGif') : tt(locale, 'saveVideo'),
+                defaultPath: path.join(app.getPath('downloads'), fileName),
+                filters,
+                properties: ['createDirectory', 'showOverwriteConfirmation'],
+              },
+              getMainWindow(),
+            ),
+          )
 
-        if (result.canceled || !result.filePath) {
-          return {
-            success: false,
-            cancelled: true,
-            message: tt(locale, 'exportCancelled')
-          };
+          if (result.canceled || !result.filePath) {
+            return {
+              success: false,
+              cancelled: true,
+              message: tt(locale, 'exportCancelled'),
+            }
+          }
+          targetPath = ensureExportExtension(path.normalize(result.filePath), isGif)
+          approvedExportPaths.approveFile(targetPath)
         }
-        targetPath = ensureExportExtension(path.normalize(result.filePath), isGif)
-        approvedExportPaths.approveFile(targetPath)
+
+        await fs.writeFile(targetPath, Buffer.from(videoData))
+
+        return {
+          success: true,
+          path: targetPath,
+          message: tt(locale, 'exportSaved'),
+        }
+      } catch (error) {
+        console.error('Failed to save exported video:', error)
+        return {
+          success: false,
+          message: tt(normalizeLocale(), 'exportSaveFailed'),
+          error: String(error),
+        }
       }
-
-      await fs.writeFile(targetPath, Buffer.from(videoData));
-
-      return {
-        success: true,
-        path: targetPath,
-        message: tt(locale, 'exportSaved')
-      };
-    } catch (error) {
-      console.error('Failed to save exported video:', error)
-      return {
-        success: false,
-        message: tt(normalizeLocale(), 'exportSaveFailed'),
-        error: String(error)
-      }
-    }
-  })
+    },
+  )
 
   // Prefer the user's last export folder if it still exists, else ~/Downloads.
   // Validated here because the renderer cannot stat the filesystem.
@@ -194,88 +210,119 @@ export function registerExportFilesHandlers(ctx: IpcContext): void {
         return exportFolder
       }
     } catch (err) {
-      console.warn(`Could not access remembered export folder "${exportFolder}", falling back to Downloads:`, err)
+      console.warn(
+        `Could not access remembered export folder "${exportFolder}", falling back to Downloads:`,
+        err,
+      )
     }
     return app.getPath('downloads')
   }
 
-  ipcMain.handle('pick-save-file-path', async (_, fileName: string, localeInput?: string, exportFolder?: string) => {
-    try {
-      const locale = normalizeLocale(localeInput)
-      const isGif = fileName.toLowerCase().endsWith('.gif')
-      const filters = isGif
-        ? [{ name: 'GIF', extensions: ['gif'] }]
-        : [{ name: 'MP4', extensions: ['mp4'] }]
-      const defaultDir = await resolveDefaultExportDir(exportFolder)
+  ipcMain.handle(
+    'pick-save-file-path',
+    async (_, fileName: string, localeInput?: string, exportFolder?: string) => {
+      try {
+        const locale = normalizeLocale(localeInput)
+        const isGif = fileName.toLowerCase().endsWith('.gif')
+        const filters = isGif
+          ? [{ name: 'GIF', extensions: ['gif'] }]
+          : [{ name: 'MP4', extensions: ['mp4'] }]
+        const defaultDir = await resolveDefaultExportDir(exportFolder)
 
-      const result = await dialog.showSaveDialog(buildDialogOptions({
-        title: isGif ? tt(locale, 'saveGif') : tt(locale, 'saveVideo'),
-        defaultPath: path.join(defaultDir, fileName),
-        filters,
-        properties: ['createDirectory', 'showOverwriteConfirmation'],
-      }, getMainWindow()))
+        const result = await dialog.showSaveDialog(
+          buildDialogOptions(
+            {
+              title: isGif ? tt(locale, 'saveGif') : tt(locale, 'saveVideo'),
+              defaultPath: path.join(defaultDir, fileName),
+              filters,
+              properties: ['createDirectory', 'showOverwriteConfirmation'],
+            },
+            getMainWindow(),
+          ),
+        )
 
-      if (result.canceled || !result.filePath) {
-        return { success: false, cancelled: true, message: tt(locale, 'exportCancelled') }
-      }
+        if (result.canceled || !result.filePath) {
+          return { success: false, cancelled: true, message: tt(locale, 'exportCancelled') }
+        }
 
-      const chosenPath = ensureExportExtension(path.normalize(result.filePath), isGif)
-      approvedExportPaths.approveFile(chosenPath)
-      return { success: true, path: chosenPath }
-    } catch (error) {
-      console.error('Failed to pick save file path:', error)
-      return { success: false, message: tt(normalizeLocale(), 'exportSaveFailed'), error: String(error) }
-    }
-  })
-
-  ipcMain.handle('pick-export-directory', async (_, localeInput?: string, exportFolder?: string) => {
-    try {
-      const locale = normalizeLocale(localeInput)
-      const result = await dialog.showOpenDialog(buildDialogOptions({
-        title: tt(locale, 'chooseExportFolder'),
-        defaultPath: await resolveDefaultExportDir(exportFolder),
-        properties: ['openDirectory', 'createDirectory'],
-      }, getMainWindow()))
-
-      if (result.canceled || result.filePaths.length === 0) {
+        const chosenPath = ensureExportExtension(path.normalize(result.filePath), isGif)
+        approvedExportPaths.approveFile(chosenPath)
+        return { success: true, path: chosenPath }
+      } catch (error) {
+        console.error('Failed to pick save file path:', error)
         return {
           success: false,
-          cancelled: true,
-          message: tt(locale, 'exportCancelled'),
+          message: tt(normalizeLocale(), 'exportSaveFailed'),
+          error: String(error),
         }
       }
+    },
+  )
 
-      const chosenDirectory = path.normalize(result.filePaths[0])
-      approvedExportPaths.approveDirectory(chosenDirectory)
-      return {
-        success: true,
-        path: chosenDirectory,
+  ipcMain.handle(
+    'pick-export-directory',
+    async (_, localeInput?: string, exportFolder?: string) => {
+      try {
+        const locale = normalizeLocale(localeInput)
+        const result = await dialog.showOpenDialog(
+          buildDialogOptions(
+            {
+              title: tt(locale, 'chooseExportFolder'),
+              defaultPath: await resolveDefaultExportDir(exportFolder),
+              properties: ['openDirectory', 'createDirectory'],
+            },
+            getMainWindow(),
+          ),
+        )
+
+        if (result.canceled || result.filePaths.length === 0) {
+          return {
+            success: false,
+            cancelled: true,
+            message: tt(locale, 'exportCancelled'),
+          }
+        }
+
+        const chosenDirectory = path.normalize(result.filePaths[0])
+        approvedExportPaths.approveDirectory(chosenDirectory)
+        return {
+          success: true,
+          path: chosenDirectory,
+        }
+      } catch (error) {
+        console.error('Failed to pick export directory:', error)
+        return {
+          success: false,
+          message: tt(normalizeLocale(), 'exportSaveFailed'),
+          error: String(error),
+        }
       }
-    } catch (error) {
-      console.error('Failed to pick export directory:', error)
-      return {
-        success: false,
-        message: tt(normalizeLocale(), 'exportSaveFailed'),
-        error: String(error),
-      }
-    }
-  })
+    },
+  )
 
   ipcMain.handle('open-video-file-picker', async (_, localeInput?: string) => {
     try {
       const locale = normalizeLocale(localeInput)
-      const result = await dialog.showOpenDialog(buildDialogOptions({
-        title: tt(locale, 'selectVideoFile'),
-        defaultPath: recordingsDir,
-        filters: [
-          { name: tt(locale, 'videoFiles'), extensions: ['webm', 'mp4', 'mov', 'avi', 'mkv', 'm4v', 'wmv', 'flv', 'ts'] },
-          { name: tt(locale, 'allFiles'), extensions: ['*'] }
-        ],
-        properties: ['openFile']
-      }, getMainWindow()));
+      const result = await dialog.showOpenDialog(
+        buildDialogOptions(
+          {
+            title: tt(locale, 'selectVideoFile'),
+            defaultPath: recordingsDir,
+            filters: [
+              {
+                name: tt(locale, 'videoFiles'),
+                extensions: ['webm', 'mp4', 'mov', 'avi', 'mkv', 'm4v', 'wmv', 'flv', 'ts'],
+              },
+              { name: tt(locale, 'allFiles'), extensions: ['*'] },
+            ],
+            properties: ['openFile'],
+          },
+          getMainWindow(),
+        ),
+      )
 
       if (result.canceled || result.filePaths.length === 0) {
-        return { success: false, cancelled: true };
+        return { success: false, cancelled: true }
       }
 
       const chosenPath = path.normalize(result.filePaths[0])
@@ -287,15 +334,15 @@ export function registerExportFilesHandlers(ctx: IpcContext): void {
 
       return {
         success: true,
-        path: chosenPath
-      };
+        path: chosenPath,
+      }
     } catch (error) {
-      console.error('Failed to open file picker:', error);
+      console.error('Failed to open file picker:', error)
       return {
         success: false,
         message: tt(normalizeLocale(), 'filePickerFailed'),
-        error: String(error)
-      };
+        error: String(error),
+      }
     }
-  });
+  })
 }

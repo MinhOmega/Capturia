@@ -122,7 +122,11 @@ export async function patchWebmDurationOnDisk(
       return { patched: false, reason: 'internal' }
     }
 
-    const patchedBytes = Buffer.from(webm.source.buffer, webm.source.byteOffset, webm.source.byteLength)
+    const patchedBytes = Buffer.from(
+      webm.source.buffer,
+      webm.source.byteOffset,
+      webm.source.byteLength,
+    )
 
     const ws = createWriteStream(tmpPath)
     const rs = createReadStream(filePath, { start: clusterOffset })
@@ -164,7 +168,9 @@ async function patchWebmDurationInMemory(
     if (!patched) {
       const reason = inferUnpatchedReason(webm)
       if (reason === 'no-section') {
-        console.warn(`[webm-duration] no Segment/Info section in ${filePath}; file may be truncated`)
+        console.warn(
+          `[webm-duration] no Segment/Info section in ${filePath}; file may be truncated`,
+        )
       }
       return { patched: false, reason }
     }
@@ -174,7 +180,11 @@ async function patchWebmDurationInMemory(
       return { patched: false, reason: 'internal' }
     }
 
-    const patchedBytes = Buffer.from(webm.source.buffer, webm.source.byteOffset, webm.source.byteLength)
+    const patchedBytes = Buffer.from(
+      webm.source.buffer,
+      webm.source.byteOffset,
+      webm.source.byteLength,
+    )
     try {
       await fs.writeFile(tmpPath, patchedBytes)
       await fs.rename(tmpPath, filePath)

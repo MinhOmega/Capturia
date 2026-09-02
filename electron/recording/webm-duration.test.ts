@@ -60,7 +60,11 @@ describe('webm-duration patching', () => {
       const body = Buffer.alloc(clusterSize, 0x42)
       cluster.setSource(new Uint8Array(Buffer.concat([header, body])))
       // Cluster is not in the parser's known-section id union.
-      segment.data.push({ id: 0xf43b675, idHex: 'f43b675', data: cluster } as unknown as WebmContainerItem)
+      segment.data.push({
+        id: 0xf43b675,
+        idHex: 'f43b675',
+        data: cluster,
+      } as unknown as WebmContainerItem)
     }
 
     segment.updateByData()

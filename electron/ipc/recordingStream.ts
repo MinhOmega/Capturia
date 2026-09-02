@@ -100,14 +100,17 @@ export function registerRecordingStreamHandlers(
   registry: RecordingStreamRegistry,
   resolveRecordingOutputPath: (fileName: string) => string,
 ): void {
-  ipcMain.handle('open-recording-stream', async (_, fileName: string): Promise<RecordingStreamIpcResult> => {
-    try {
-      await registry.open(fileName, resolveRecordingOutputPath(fileName))
-      return { success: true }
-    } catch (error) {
-      return { success: false, error: String(error) }
-    }
-  })
+  ipcMain.handle(
+    'open-recording-stream',
+    async (_, fileName: string): Promise<RecordingStreamIpcResult> => {
+      try {
+        await registry.open(fileName, resolveRecordingOutputPath(fileName))
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: String(error) }
+      }
+    },
+  )
 
   ipcMain.handle(
     'append-recording-chunk',
@@ -121,12 +124,15 @@ export function registerRecordingStreamHandlers(
     },
   )
 
-  ipcMain.handle('close-recording-stream', async (_, fileName: string): Promise<RecordingStreamIpcResult> => {
-    try {
-      await registry.discard(fileName, resolveRecordingOutputPath(fileName))
-      return { success: true }
-    } catch (error) {
-      return { success: false, error: String(error) }
-    }
-  })
+  ipcMain.handle(
+    'close-recording-stream',
+    async (_, fileName: string): Promise<RecordingStreamIpcResult> => {
+      try {
+        await registry.discard(fileName, resolveRecordingOutputPath(fileName))
+        return { success: true }
+      } catch (error) {
+        return { success: false, error: String(error) }
+      }
+    },
+  )
 }

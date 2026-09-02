@@ -12,8 +12,16 @@ vi.mock('../native/sckRecorder', () => ({
   isNativeMacRecorderActive: vi.fn(() => false),
   startNativeMacRecorder: vi.fn(async () => ({ success: false, message: 'not in test' })),
   stopNativeMacRecorder: vi.fn(async () => ({ success: true })),
-  pauseNativeMacRecorder: vi.fn(async () => ({ success: false, supported: false, message: 'Native recorder is not active.' })),
-  resumeNativeMacRecorder: vi.fn(async () => ({ success: false, supported: false, message: 'Native recorder is not active.' })),
+  pauseNativeMacRecorder: vi.fn(async () => ({
+    success: false,
+    supported: false,
+    message: 'Native recorder is not active.',
+  })),
+  resumeNativeMacRecorder: vi.fn(async () => ({
+    success: false,
+    supported: false,
+    message: 'Native recorder is not active.',
+  })),
 }))
 vi.mock('../recordingsCleanup', () => ({ scheduleRecordingsCleanup: vi.fn() }))
 vi.mock('../recording/webm-duration', () => ({
@@ -70,16 +78,34 @@ describe('recording files IPC handlers', () => {
     registerRecordingFilesHandlers(buildContext(ipc, { recordingsDir }))
 
     // Old helper (no caps line): unsupported, not an error.
-    await expect(ipc.invoke('pause-native-recording')).resolves.toMatchObject({ success: false, supported: false })
+    await expect(ipc.invoke('pause-native-recording')).resolves.toMatchObject({
+      success: false,
+      supported: false,
+    })
 
     vi.mocked(sck.pauseNativeMacRecorder).mockResolvedValueOnce({ success: true, supported: true })
-    await expect(ipc.invoke('pause-native-recording')).resolves.toEqual({ success: true, supported: true })
+    await expect(ipc.invoke('pause-native-recording')).resolves.toEqual({
+      success: true,
+      supported: true,
+    })
 
-    vi.mocked(sck.resumeNativeMacRecorder).mockResolvedValueOnce({ success: false, supported: true, message: 'timeout' })
-    await expect(ipc.invoke('resume-native-recording')).resolves.toEqual({ success: false, supported: true, message: 'timeout' })
+    vi.mocked(sck.resumeNativeMacRecorder).mockResolvedValueOnce({
+      success: false,
+      supported: true,
+      message: 'timeout',
+    })
+    await expect(ipc.invoke('resume-native-recording')).resolves.toEqual({
+      success: false,
+      supported: true,
+      message: 'timeout',
+    })
 
     vi.mocked(sck.resumeNativeMacRecorder).mockRejectedValueOnce(new Error('boom'))
-    await expect(ipc.invoke('resume-native-recording')).resolves.toEqual({ success: false, supported: false, message: 'boom' })
+    await expect(ipc.invoke('resume-native-recording')).resolves.toEqual({
+      success: false,
+      supported: false,
+      message: 'boom',
+    })
   })
 
   it('select-source stores the source, notifies the HUD and closes the picker', async () => {
@@ -134,16 +160,25 @@ describe('recording files IPC handlers', () => {
     registerRecordingFilesHandlers(ctx)
 
     const bytes = new Uint8Array([1, 2, 3]).buffer
-    const stored = await ipc.invoke<{ success: boolean; path: string }>('store-recorded-video', bytes, 'recording-1.webm', {
-      frameRate: 30,
-    })
+    const stored = await ipc.invoke<{ success: boolean; path: string }>(
+      'store-recorded-video',
+      bytes,
+      'recording-1.webm',
+      {
+        frameRate: 30,
+      },
+    )
     expect(stored.success).toBe(true)
     expect(stored.path).toBe(path.join(recordingsDir, 'recording-1.webm'))
     expect(await readFile(stored.path)).toEqual(Buffer.from([1, 2, 3]))
     expect(ctx.session.currentVideoPath).toBe(stored.path)
     expect(ctx.session.currentVideoMetadata).toEqual({ frameRate: 30 })
 
-    const refused = await ipc.invoke<{ success: boolean }>('store-recorded-video', bytes, '../escape.webm')
+    const refused = await ipc.invoke<{ success: boolean }>(
+      'store-recorded-video',
+      bytes,
+      '../escape.webm',
+    )
     expect(refused.success).toBe(false)
   })
 
@@ -175,7 +210,9 @@ describe('recording files IPC handlers', () => {
     const ipc = fakeIpcMain()
     const onRecordingStateChange = vi.fn()
     registerRecordingFilesHandlers(buildContext(ipc, { recordingsDir, onRecordingStateChange }))
-    await expect(ipc.invoke('native-screen-recorder-start', {})).resolves.toMatchObject({ success: false })
+    await expect(ipc.invoke('native-screen-recorder-start', {})).resolves.toMatchObject({
+      success: false,
+    })
     await expect(ipc.invoke('native-screen-recorder-stop', { discard: true })).resolves.toEqual({
       success: true,
       discarded: true,

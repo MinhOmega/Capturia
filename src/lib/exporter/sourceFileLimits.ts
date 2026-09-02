@@ -12,4 +12,4 @@
  * Above this size, recordings are streamed on demand instead: into OPFS in
  * fixed-size chunks for demuxing, while in-memory paths are skipped.
  */
-export const MAX_IN_MEMORY_SOURCE_BYTES = 256 * 1024 * 1024;
+export const MAX_IN_MEMORY_SOURCE_BYTES = 256 * 1024 * 1024

@@ -50,16 +50,24 @@ describe('export files IPC handlers', () => {
     const { shell } = await import('electron')
     const ipc = fakeIpcMain()
     registerExportFilesHandlers(buildContext(ipc, { recordingsDir }))
-    await expect(ipc.invoke('open-external-url', 'https://github.com/MinhOmega/Capturia')).resolves.toEqual({ success: true })
+    await expect(
+      ipc.invoke('open-external-url', 'https://github.com/MinhOmega/Capturia'),
+    ).resolves.toEqual({ success: true })
     expect(shell.openExternal).toHaveBeenCalledWith('https://github.com/MinhOmega/Capturia')
-    await expect(ipc.invoke('open-external-url', 'file:///etc/passwd')).resolves.toMatchObject({ success: false })
-    await expect(ipc.invoke('open-external-url', 'javascript:alert(1)')).resolves.toMatchObject({ success: false })
+    await expect(ipc.invoke('open-external-url', 'file:///etc/passwd')).resolves.toMatchObject({
+      success: false,
+    })
+    await expect(ipc.invoke('open-external-url', 'javascript:alert(1)')).resolves.toMatchObject({
+      success: false,
+    })
   })
 
   it('get-asset-base-path points at public/assets in dev', async () => {
     const ipc = fakeIpcMain()
     registerExportFilesHandlers(buildContext(ipc, { recordingsDir }))
-    await expect(ipc.invoke('get-asset-base-path')).resolves.toBe(path.join('/tmp/capturia-test/app', 'public', 'assets'))
+    await expect(ipc.invoke('get-asset-base-path')).resolves.toBe(
+      path.join('/tmp/capturia-test/app', 'public', 'assets'),
+    )
   })
 
   it('reveal-in-folder only reveals app-managed files', async () => {
@@ -69,7 +77,9 @@ describe('export files IPC handlers', () => {
     const inside = path.join(recordingsDir, 'recording-1.webm')
     await expect(ipc.invoke('reveal-in-folder', inside)).resolves.toEqual({ success: true })
     expect(shell.showItemInFolder).toHaveBeenCalledWith(inside)
-    await expect(ipc.invoke('reveal-in-folder', '/etc/passwd')).resolves.toMatchObject({ success: false })
+    await expect(ipc.invoke('reveal-in-folder', '/etc/passwd')).resolves.toMatchObject({
+      success: false,
+    })
   })
 
   it('save-exported-video refuses a target path that did not come from the save dialog', async () => {
@@ -92,12 +102,20 @@ describe('export files IPC handlers', () => {
     const chosen = path.join(exportDir, 'clip')
     vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({ canceled: false, filePath: chosen })
     const ipc = fakeIpcMain()
-    registerExportFilesHandlers(buildContext(ipc, { recordingsDir, getMainWindow: () => mainWindow }))
+    registerExportFilesHandlers(
+      buildContext(ipc, { recordingsDir, getMainWindow: () => mainWindow }),
+    )
 
-    const picked = await ipc.invoke<{ success: boolean; path: string }>('pick-save-file-path', 'clip.mp4', 'en')
+    const picked = await ipc.invoke<{ success: boolean; path: string }>(
+      'pick-save-file-path',
+      'clip.mp4',
+      'en',
+    )
     expect(picked).toEqual({ success: true, path: `${chosen}.mp4` })
     // Dialog parent is the main window (Wayland needs it), as W0-b set up.
-    expect(dialog.showSaveDialog).toHaveBeenCalledWith(expect.objectContaining({ parent: mainWindow }))
+    expect(dialog.showSaveDialog).toHaveBeenCalledWith(
+      expect.objectContaining({ parent: mainWindow }),
+    )
 
     const saved = await ipc.invoke<{ success: boolean; path: string }>(
       'save-exported-video',
@@ -113,7 +131,9 @@ describe('export files IPC handlers', () => {
   it('save-exported-video reports cancellation when the dialog is dismissed', async () => {
     const ipc = fakeIpcMain()
     registerExportFilesHandlers(buildContext(ipc, { recordingsDir }))
-    await expect(ipc.invoke('save-exported-video', new Uint8Array([1]).buffer, 'clip.gif', 'en')).resolves.toMatchObject({
+    await expect(
+      ipc.invoke('save-exported-video', new Uint8Array([1]).buffer, 'clip.gif', 'en'),
+    ).resolves.toMatchObject({
       success: false,
       cancelled: true,
     })
@@ -121,10 +141,16 @@ describe('export files IPC handlers', () => {
 
   it('pick-export-directory approves the chosen folder for later bare-name exports', async () => {
     const { dialog } = await import('electron')
-    vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({ canceled: false, filePaths: [exportDir] })
+    vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({
+      canceled: false,
+      filePaths: [exportDir],
+    })
     const ipc = fakeIpcMain()
     registerExportFilesHandlers(buildContext(ipc, { recordingsDir }))
-    await expect(ipc.invoke('pick-export-directory', 'en')).resolves.toEqual({ success: true, path: exportDir })
+    await expect(ipc.invoke('pick-export-directory', 'en')).resolves.toEqual({
+      success: true,
+      path: exportDir,
+    })
     const saved = await ipc.invoke<{ success: boolean; path: string }>(
       'save-exported-video',
       new Uint8Array([1]).buffer,
@@ -140,14 +166,22 @@ describe('export files IPC handlers', () => {
     const ipc = fakeIpcMain()
     registerExportFilesHandlers(buildContext(ipc, { recordingsDir }))
 
-    vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({ canceled: false, filePaths: [path.join(exportDir, 'movie.mov')] })
+    vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({
+      canceled: false,
+      filePaths: [path.join(exportDir, 'movie.mov')],
+    })
     await expect(ipc.invoke('open-video-file-picker', 'en')).resolves.toEqual({
       success: true,
       path: path.join(exportDir, 'movie.mov'),
     })
     expect(approvedReadPaths.isApprovedFile(path.join(exportDir, 'movie.mov'))).toBe(true)
 
-    vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({ canceled: false, filePaths: [path.join(exportDir, 'notes.txt')] })
-    await expect(ipc.invoke('open-video-file-picker', 'en')).resolves.toMatchObject({ success: false })
+    vi.mocked(dialog.showOpenDialog).mockResolvedValueOnce({
+      canceled: false,
+      filePaths: [path.join(exportDir, 'notes.txt')],
+    })
+    await expect(ipc.invoke('open-video-file-picker', 'en')).resolves.toMatchObject({
+      success: false,
+    })
   })
 })

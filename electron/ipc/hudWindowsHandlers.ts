@@ -27,7 +27,8 @@ export function registerHudWindowsHandlers(ctx: HudWindowsContext): void {
 
   ipcMain.handle('countdown-overlay-show', async (_, value: number, runId: number) => {
     activeCountdownRunId = runId
-    const overlayWindow = liveWindow(ctx.getCountdownOverlayWindow()) ?? ctx.createCountdownOverlayWindow()
+    const overlayWindow =
+      liveWindow(ctx.getCountdownOverlayWindow()) ?? ctx.createCountdownOverlayWindow()
     if (overlayWindow.isDestroyed()) return
 
     // Wait for the first frame before showing, else Chromium flashes a black

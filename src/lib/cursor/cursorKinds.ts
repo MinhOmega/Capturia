@@ -21,11 +21,11 @@ export const CURSOR_KINDS = [
   'app-starting',
   'help',
   'up-arrow',
-] as const;
+] as const
 
-export type CursorKind = (typeof CURSOR_KINDS)[number];
+export type CursorKind = (typeof CURSOR_KINDS)[number]
 
-const CURSOR_KIND_SET: ReadonlySet<string> = new Set(CURSOR_KINDS);
+const CURSOR_KIND_SET: ReadonlySet<string> = new Set(CURSOR_KINDS)
 
 /**
  * Legacy names written by older Capturia sidecars / helpers. `ibeam` was the
@@ -46,10 +46,10 @@ const LEGACY_CURSOR_KIND_ALIASES: Readonly<Record<string, CursorKind>> = {
   'nwse-resize': 'resize-nwse',
   busy: 'wait',
   progress: 'app-starting',
-};
+}
 
 export function isCursorKind(value: unknown): value is CursorKind {
-  return typeof value === 'string' && CURSOR_KIND_SET.has(value);
+  return typeof value === 'string' && CURSOR_KIND_SET.has(value)
 }
 
 /**
@@ -58,8 +58,8 @@ export function isCursorKind(value: unknown): value is CursorKind {
  * kind) still renders.
  */
 export function normalizeCursorKind(value: unknown): CursorKind {
-  if (typeof value !== 'string') return 'arrow';
-  const normalized = value.trim().toLowerCase();
-  if (CURSOR_KIND_SET.has(normalized)) return normalized as CursorKind;
-  return LEGACY_CURSOR_KIND_ALIASES[normalized] ?? 'arrow';
+  if (typeof value !== 'string') return 'arrow'
+  const normalized = value.trim().toLowerCase()
+  if (CURSOR_KIND_SET.has(normalized)) return normalized as CursorKind
+  return LEGACY_CURSOR_KIND_ALIASES[normalized] ?? 'arrow'
 }

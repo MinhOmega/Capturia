@@ -22,7 +22,8 @@ export function registerAnalysisHandlers(ctx: IpcContext): void {
 
   ipcMain.handle('analysis-start', async (_, options?: StartVideoAnalysisOptions) => {
     try {
-      const targetVideoPath = normalizeVideoSourcePath(options?.videoPath) ?? session.currentVideoPath
+      const targetVideoPath =
+        normalizeVideoSourcePath(options?.videoPath) ?? session.currentVideoPath
 
       if (!targetVideoPath) {
         return { success: false, message: 'No video selected for analysis.' }
@@ -35,9 +36,10 @@ export function registerAnalysisHandlers(ctx: IpcContext): void {
 
       const job = analysisService.start({
         videoPath: targetVideoPath,
-        locale: typeof options?.locale === 'string' && options.locale.trim().length > 0
-          ? options.locale.trim()
-          : app.getLocale(),
+        locale:
+          typeof options?.locale === 'string' && options.locale.trim().length > 0
+            ? options.locale.trim()
+            : app.getLocale(),
         durationMs: Number.isFinite(options?.durationMs) ? Number(options?.durationMs) : 0,
         videoWidth: Number.isFinite(options?.videoWidth) ? Number(options?.videoWidth) : 1920,
         subtitleWidthRatio: Number.isFinite(options?.subtitleWidthRatio)

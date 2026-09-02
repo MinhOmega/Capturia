@@ -58,12 +58,14 @@ if let data = try? JSONSerialization.data(withJSONObject: payload, options: []) 
 function isFiniteBounds(value: unknown): value is Bounds {
   if (!value || typeof value !== 'object') return false
   const row = value as Partial<Bounds>
-  return Number.isFinite(row.x)
-    && Number.isFinite(row.y)
-    && Number.isFinite(row.width)
-    && Number.isFinite(row.height)
-    && Number(row.width) > 0
-    && Number(row.height) > 0
+  return (
+    Number.isFinite(row.x) &&
+    Number.isFinite(row.y) &&
+    Number.isFinite(row.width) &&
+    Number.isFinite(row.height) &&
+    Number(row.width) > 0 &&
+    Number(row.height) > 0
+  )
 }
 
 async function ensureWindowBoundsHelperBinary(): Promise<string | null> {
@@ -103,7 +105,10 @@ async function ensureWindowBoundsHelperBinary(): Promise<string | null> {
       return binaryPath
     } catch (error) {
       helperUnavailable = true
-      console.warn('Failed to prepare window bounds helper, window cursor mapping falls back to heuristic.', error)
+      console.warn(
+        'Failed to prepare window bounds helper, window cursor mapping falls back to heuristic.',
+        error,
+      )
       return null
     }
   })()

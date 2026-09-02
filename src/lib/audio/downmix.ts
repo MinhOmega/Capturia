@@ -5,34 +5,37 @@
  * duplicated rather than dropped.
  */
 
-export type DownmixWeights = Array<[channel: number, weight: number]>;
+export type DownmixWeights = Array<[channel: number, weight: number]>
 
 function averageChannels(sourcePlanes: Float32Array[], frame: number) {
-  let mixed = 0;
+  let mixed = 0
   for (const plane of sourcePlanes) {
-    mixed += plane[frame] ?? 0;
+    mixed += plane[frame] ?? 0
   }
-  return mixed / Math.max(1, sourcePlanes.length);
+  return mixed / Math.max(1, sourcePlanes.length)
 }
 
 function weightedSample(sourcePlanes: Float32Array[], frame: number, weights: DownmixWeights) {
-  let mixed = 0;
-  let weightSum = 0;
+  let mixed = 0
+  let weightSum = 0
   for (const [channel, weight] of weights) {
-    const sample = sourcePlanes[channel]?.[frame];
+    const sample = sourcePlanes[channel]?.[frame]
     if (typeof sample !== 'number') {
-      continue;
+      continue
     }
-    mixed += sample * weight;
-    weightSum += weight;
+    mixed += sample * weight
+    weightSum += weight
   }
-  return weightSum > 0 ? mixed / weightSum : averageChannels(sourcePlanes, frame);
+  return weightSum > 0 ? mixed / weightSum : averageChannels(sourcePlanes, frame)
 }
 
-export function getStereoDownmixWeights(sourceChannels: number): { left: DownmixWeights; right: DownmixWeights } {
-  const centerWeight = Math.SQRT1_2;
-  const surroundWeight = Math.SQRT1_2;
-  const lfeWeight = 0.5;
+export function getStereoDownmixWeights(sourceChannels: number): {
+  left: DownmixWeights
+  right: DownmixWeights
+} {
+  const centerWeight = Math.SQRT1_2
+  const surroundWeight = Math.SQRT1_2
+  const lfeWeight = 0.5
 
   if (sourceChannels >= 8) {
     // Windows 7.1 order: FL, FR, FC, LFE, BL, BR, SL, SR.
@@ -51,7 +54,7 @@ export function getStereoDownmixWeights(sourceChannels: number): { left: Downmix
         [5, surroundWeight],
         [7, surroundWeight],
       ],
-    };
+    }
   }
 
   if (sourceChannels >= 6) {
@@ -69,7 +72,7 @@ export function getStereoDownmixWeights(sourceChannels: number): { left: Downmix
         [3, lfeWeight],
         [5, surroundWeight],
       ],
-    };
+    }
   }
 
   if (sourceChannels >= 4) {
@@ -82,7 +85,7 @@ export function getStereoDownmixWeights(sourceChannels: number): { left: Downmix
         [1, 1],
         [3, surroundWeight],
       ],
-    };
+    }
   }
 
   return {
@@ -94,7 +97,7 @@ export function getStereoDownmixWeights(sourceChannels: number): { left: Downmix
       [1, 1],
       [2, centerWeight],
     ],
-  };
+  }
 }
 
 /**
@@ -105,36 +108,36 @@ export function downmixPlanarChannelsForExport(
   sourcePlanes: Float32Array[],
   targetChannels: number,
 ): Float32Array {
-  const frameCount = sourcePlanes[0]?.length ?? 0;
-  const output = new Float32Array(frameCount * targetChannels);
+  const frameCount = sourcePlanes[0]?.length ?? 0
+  const output = new Float32Array(frameCount * targetChannels)
 
   if (targetChannels === 1) {
     for (let frame = 0; frame < frameCount; frame++) {
-      output[frame] = averageChannels(sourcePlanes, frame);
+      output[frame] = averageChannels(sourcePlanes, frame)
     }
-    return output;
+    return output
   }
 
   if (targetChannels !== 2) {
-    throw new Error(`Unsupported target channel count: ${targetChannels}`);
+    throw new Error(`Unsupported target channel count: ${targetChannels}`)
   }
 
   if (sourcePlanes.length === 1) {
-    output.set(sourcePlanes[0], 0);
-    output.set(sourcePlanes[0], frameCount);
-    return output;
+    output.set(sourcePlanes[0], 0)
+    output.set(sourcePlanes[0], frameCount)
+    return output
   }
 
   if (sourcePlanes.length === 2) {
-    output.set(sourcePlanes[0], 0);
-    output.set(sourcePlanes[1], frameCount);
-    return output;
+    output.set(sourcePlanes[0], 0)
+    output.set(sourcePlanes[1], frameCount)
+    return output
   }
 
-  const weights = getStereoDownmixWeights(sourcePlanes.length);
+  const weights = getStereoDownmixWeights(sourcePlanes.length)
   for (let frame = 0; frame < frameCount; frame++) {
-    output[frame] = weightedSample(sourcePlanes, frame, weights.left);
-    output[frameCount + frame] = weightedSample(sourcePlanes, frame, weights.right);
+    output[frame] = weightedSample(sourcePlanes, frame, weights.left)
+    output[frameCount + frame] = weightedSample(sourcePlanes, frame, weights.right)
   }
-  return output;
+  return output
 }

@@ -21,29 +21,29 @@
 // `dispatch` falls back to `webContents.undo()` when the focused window is not
 // the editor at all (HUD, permission checker).
 
-import type { MenuItemConstructorOptions } from 'electron';
+import type { MenuItemConstructorOptions } from 'electron'
 
 /** IPC channels the Edit menu forwards to the editor renderer. */
-export type EditorUndoRedoChannel = 'menu-undo' | 'menu-redo';
+export type EditorUndoRedoChannel = 'menu-undo' | 'menu-redo'
 
 export interface EditMenuOptions {
   /** Localised label for `key`, falling back to `fallback` when untranslated. */
-  label: (key: string, fallback: string) => string;
+  label: (key: string, fallback: string) => string
   /** Route an undo/redo request to whichever window should service it. */
-  dispatch: (channel: EditorUndoRedoChannel) => void;
+  dispatch: (channel: EditorUndoRedoChannel) => void
 }
 
 /** The slice of `WebContents` the routing below touches. */
 export interface UndoRedoWebContents {
-  send: (channel: EditorUndoRedoChannel) => void;
-  undo: () => void;
-  redo: () => void;
+  send: (channel: EditorUndoRedoChannel) => void
+  undo: () => void
+  redo: () => void
 }
 
 /** The slice of `BrowserWindow` the routing below touches. */
 export interface UndoRedoWindow {
-  isDestroyed: () => boolean;
-  webContents: UndoRedoWebContents;
+  isDestroyed: () => boolean
+  webContents: UndoRedoWebContents
 }
 
 /**
@@ -57,16 +57,19 @@ export function routeEditorUndoRedo(
   window: UndoRedoWindow | null | undefined,
   isEditor: () => boolean,
 ): void {
-  if (!window || window.isDestroyed()) return;
+  if (!window || window.isDestroyed()) return
   if (!isEditor()) {
-    if (channel === 'menu-undo') window.webContents.undo();
-    else window.webContents.redo();
-    return;
+    if (channel === 'menu-undo') window.webContents.undo()
+    else window.webContents.redo()
+    return
   }
-  window.webContents.send(channel);
+  window.webContents.send(channel)
 }
 
-export function buildEditMenuSubmenu({ label, dispatch }: EditMenuOptions): MenuItemConstructorOptions[] {
+export function buildEditMenuSubmenu({
+  label,
+  dispatch,
+}: EditMenuOptions): MenuItemConstructorOptions[] {
   return [
     {
       label: label('actions.undo', 'Undo'),
@@ -85,5 +88,5 @@ export function buildEditMenuSubmenu({ label, dispatch }: EditMenuOptions): Menu
     { role: 'copy', label: label('actions.copy', 'Copy') },
     { role: 'paste', label: label('actions.paste', 'Paste') },
     { role: 'selectAll', label: label('actions.selectAll', 'Select All') },
-  ];
+  ]
 }

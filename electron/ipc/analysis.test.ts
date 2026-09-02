@@ -35,29 +35,46 @@ describe('analysis IPC handlers', () => {
 
   it('registers the four analysis channels', () => {
     const { ipc } = setup()
-    expect(ipc.registered).toEqual(['analysis-start', 'analysis-status', 'analysis-result', 'analysis-get-current'])
+    expect(ipc.registered).toEqual([
+      'analysis-start',
+      'analysis-status',
+      'analysis-result',
+      'analysis-get-current',
+    ])
   })
 
   it('analysis-start needs a video and keeps the read policy', async () => {
     const { ipc, ctx } = setup()
     await expect(ipc.invoke('analysis-start', {})).resolves.toMatchObject({ success: false })
-    await expect(ipc.invoke('analysis-start', { videoPath: '/etc/passwd.webm' })).resolves.toMatchObject({ success: false })
+    await expect(
+      ipc.invoke('analysis-start', { videoPath: '/etc/passwd.webm' }),
+    ).resolves.toMatchObject({ success: false })
     expect(service.start).not.toHaveBeenCalled()
 
     ctx.session.currentVideoPath = path.join(RECORDINGS_DIR, 'recording-1.webm')
-    await expect(ipc.invoke('analysis-start', { locale: ' vi ', durationMs: 1000 })).resolves.toEqual({
+    await expect(
+      ipc.invoke('analysis-start', { locale: ' vi ', durationMs: 1000 }),
+    ).resolves.toEqual({
       success: true,
       jobId: 'job-1',
     })
     expect(service.start).toHaveBeenCalledWith(
-      expect.objectContaining({ videoPath: ctx.session.currentVideoPath, locale: 'vi', durationMs: 1000, videoWidth: 1920 }),
+      expect.objectContaining({
+        videoPath: ctx.session.currentVideoPath,
+        locale: 'vi',
+        durationMs: 1000,
+        videoWidth: 1920,
+      }),
     )
   })
 
   it('analysis-status / analysis-result resolve known jobs and reject unknown ones', async () => {
     const { ipc } = setup()
     await expect(ipc.invoke('analysis-status', 'nope')).resolves.toMatchObject({ success: false })
-    await expect(ipc.invoke('analysis-status', 'job-1')).resolves.toEqual({ success: true, status: { status: 'completed' } })
+    await expect(ipc.invoke('analysis-status', 'job-1')).resolves.toEqual({
+      success: true,
+      status: { status: 'completed' },
+    })
     await expect(ipc.invoke('analysis-result', 'job-1')).resolves.toEqual({
       success: true,
       status: { status: 'completed' },
@@ -68,7 +85,9 @@ describe('analysis IPC handlers', () => {
   it('analysis-get-current reads the sidecar only for approved paths', async () => {
     const { ipc, ctx } = setup()
     await expect(ipc.invoke('analysis-get-current')).resolves.toMatchObject({ success: false })
-    await expect(ipc.invoke('analysis-get-current', '/etc/passwd.webm')).resolves.toMatchObject({ success: false })
+    await expect(ipc.invoke('analysis-get-current', '/etc/passwd.webm')).resolves.toMatchObject({
+      success: false,
+    })
     ctx.session.currentVideoPath = path.join(RECORDINGS_DIR, 'recording-1.webm')
     await expect(ipc.invoke('analysis-get-current')).resolves.toEqual({
       success: true,

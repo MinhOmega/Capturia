@@ -8,11 +8,28 @@ import type { IpcContext } from './context'
 
 const SOURCE_PERMISSION_GUIDANCE =
   'Screen Recording permission is not granted. Open System Settings > Privacy & Security > Screen & System Audio, allow Capturia, then relaunch the app.'
-const SCREEN_CAPTURE_SETTINGS_URL = 'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture'
+const SCREEN_CAPTURE_SETTINGS_URL =
+  'x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture'
 
-export type CapturePermissionStatus = 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown' | 'manual-check'
-export type CapturePermissionKey = 'screen' | 'camera' | 'microphone' | 'accessibility' | 'input-monitoring'
-export type PermissionSettingsTarget = 'screen-capture' | 'camera' | 'microphone' | 'accessibility' | 'input-monitoring'
+export type CapturePermissionStatus =
+  | 'granted'
+  | 'denied'
+  | 'restricted'
+  | 'not-determined'
+  | 'unknown'
+  | 'manual-check'
+export type CapturePermissionKey =
+  | 'screen'
+  | 'camera'
+  | 'microphone'
+  | 'accessibility'
+  | 'input-monitoring'
+export type PermissionSettingsTarget =
+  | 'screen-capture'
+  | 'camera'
+  | 'microphone'
+  | 'accessibility'
+  | 'input-monitoring'
 
 export type CapturePermissionItem = {
   key: CapturePermissionKey
@@ -36,10 +53,14 @@ export type CapturePermissionActionResult = {
   message?: string
 }
 
-export const CAMERA_SETTINGS_URL = 'x-apple.systempreferences:com.apple.preference.security?Privacy_Camera'
-export const MICROPHONE_SETTINGS_URL = 'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone'
-export const ACCESSIBILITY_SETTINGS_URL = 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'
-export const INPUT_MONITORING_SETTINGS_URL = 'x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent'
+export const CAMERA_SETTINGS_URL =
+  'x-apple.systempreferences:com.apple.preference.security?Privacy_Camera'
+export const MICROPHONE_SETTINGS_URL =
+  'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone'
+export const ACCESSIBILITY_SETTINGS_URL =
+  'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'
+export const INPUT_MONITORING_SETTINGS_URL =
+  'x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent'
 
 const PERMISSION_SETTINGS_URLS: Record<PermissionSettingsTarget, string> = {
   'screen-capture': SCREEN_CAPTURE_SETTINGS_URL,
@@ -49,10 +70,17 @@ const PERMISSION_SETTINGS_URLS: Record<PermissionSettingsTarget, string> = {
   'input-monitoring': INPUT_MONITORING_SETTINGS_URL,
 }
 
-export type ScreenCaptureAccessStatus = 'granted' | 'denied' | 'restricted' | 'not-determined' | 'unknown'
+export type ScreenCaptureAccessStatus =
+  | 'granted'
+  | 'denied'
+  | 'restricted'
+  | 'not-determined'
+  | 'unknown'
 
 export function normalizeScreenCaptureAccessStatus(input: unknown): ScreenCaptureAccessStatus {
-  const normalized = String(input ?? '').trim().toLowerCase()
+  const normalized = String(input ?? '')
+    .trim()
+    .toLowerCase()
   switch (normalized) {
     case 'granted':
       return 'granted'
@@ -106,7 +134,9 @@ export function isScreenCaptureAccessBlocked(status: ScreenCaptureAccessStatus):
   return status === 'denied' || status === 'restricted'
 }
 
-export function getMediaPermissionStatus(mediaType: 'camera' | 'microphone'): CapturePermissionStatus {
+export function getMediaPermissionStatus(
+  mediaType: 'camera' | 'microphone',
+): CapturePermissionStatus {
   if (process.platform !== 'darwin') {
     return 'granted'
   }
@@ -224,7 +254,9 @@ export function isBlockedPermissionStatus(status: CapturePermissionStatus): bool
   return status === 'denied' || status === 'restricted'
 }
 
-export async function openPermissionSettingsByTarget(target: PermissionSettingsTarget): Promise<void> {
+export async function openPermissionSettingsByTarget(
+  target: PermissionSettingsTarget,
+): Promise<void> {
   await shell.openExternal(PERMISSION_SETTINGS_URLS[target])
 }
 
@@ -315,7 +347,9 @@ export async function requestCapturePermissionAccess(
   }
 }
 
-export function normalizeGetSourcesOptions(input?: Partial<Electron.SourcesOptions>): Electron.SourcesOptions {
+export function normalizeGetSourcesOptions(
+  input?: Partial<Electron.SourcesOptions>,
+): Electron.SourcesOptions {
   const requestedTypes = Array.isArray(input?.types) ? input?.types : []
   const types: Array<'screen' | 'window'> = []
   for (const type of requestedTypes) {
@@ -324,7 +358,8 @@ export function normalizeGetSourcesOptions(input?: Partial<Electron.SourcesOptio
     }
   }
 
-  const normalizedTypes: Array<'screen' | 'window'> = types.length > 0 ? types : ['screen', 'window']
+  const normalizedTypes: Array<'screen' | 'window'> =
+    types.length > 0 ? types : ['screen', 'window']
   const width = Number(input?.thumbnailSize?.width)
   const height = Number(input?.thumbnailSize?.height)
 
@@ -343,7 +378,10 @@ export function clampRecorderDimension(value: number): number {
   return rounded % 2 === 0 ? rounded : rounded - 1
 }
 
-export function resolveSourceDisplaySize(source: Electron.DesktopCapturerSource): { width?: number; height?: number } {
+export function resolveSourceDisplaySize(source: Electron.DesktopCapturerSource): {
+  width?: number
+  height?: number
+} {
   if (!source.id.startsWith('screen:')) {
     return {}
   }
@@ -397,20 +435,20 @@ export function applyLongEdgeLimit(
 
 export function isGetSourcesPermissionError(error: unknown): boolean {
   const message = String(
-    (error as { message?: unknown } | undefined)?.message
-    ?? error
-    ?? '',
+    (error as { message?: unknown } | undefined)?.message ?? error ?? '',
   ).toLowerCase()
   return (
-    message.includes('permission')
-    || message.includes('not authorized')
-    || message.includes('denied')
-    || message.includes('tcc')
+    message.includes('permission') ||
+    message.includes('not authorized') ||
+    message.includes('denied') ||
+    message.includes('tcc')
   )
 }
 
 export function formatGetSourcesError(error: unknown): string {
-  const raw = String((error as { message?: unknown } | undefined)?.message ?? error ?? 'Failed to get sources.')
+  const raw = String(
+    (error as { message?: unknown } | undefined)?.message ?? error ?? 'Failed to get sources.',
+  )
   if (isGetSourcesPermissionError(error)) {
     return `${raw} ${SOURCE_PERMISSION_GUIDANCE}`
   }
@@ -486,13 +524,13 @@ export function registerPermissionHandlers(ctx: IpcContext): void {
 
     try {
       const sources = await getSourcesWithFallback(normalized)
-      return sources.map(source => ({
+      return sources.map((source) => ({
         id: source.id,
         name: source.name,
         display_id: source.display_id,
         ...resolveSourceDisplaySize(source),
         thumbnail: source.thumbnail ? source.thumbnail.toDataURL() : null,
-        appIcon: source.appIcon ? source.appIcon.toDataURL() : null
+        appIcon: source.appIcon ? source.appIcon.toDataURL() : null,
       }))
     } catch (error) {
       const latestStatus = await getScreenCaptureAccessStatus()
@@ -517,57 +555,66 @@ export function registerPermissionHandlers(ctx: IpcContext): void {
     return await getCapturePermissionSnapshot()
   })
 
-  ipcMain.handle('request-capture-permission-access', async (_, target: CapturePermissionKey | string) => {
-    if (process.platform !== 'darwin') {
-      return { success: false, message: 'Permission request flow is only supported on macOS.' }
-    }
-
-    const normalizedTarget = typeof target === 'string' ? target.trim() : ''
-    if (
-      normalizedTarget !== 'screen'
-      && normalizedTarget !== 'camera'
-      && normalizedTarget !== 'microphone'
-      && normalizedTarget !== 'accessibility'
-      && normalizedTarget !== 'input-monitoring'
-    ) {
-      return { success: false, message: `Unknown permission target: ${String(target)}` }
-    }
-
-    try {
-      return await requestCapturePermissionAccess(normalizedTarget)
-    } catch (error) {
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : String(error),
+  ipcMain.handle(
+    'request-capture-permission-access',
+    async (_, target: CapturePermissionKey | string) => {
+      if (process.platform !== 'darwin') {
+        return { success: false, message: 'Permission request flow is only supported on macOS.' }
       }
-    }
-  })
 
-  ipcMain.handle('open-permission-settings', async (_, target: PermissionSettingsTarget | string) => {
-    if (process.platform !== 'darwin') {
-      return { success: false, message: 'Opening Privacy settings is only supported on macOS.' }
-    }
-
-    const normalizedTarget = typeof target === 'string' ? target.trim() : ''
-    const url = PERMISSION_SETTINGS_URLS[normalizedTarget as PermissionSettingsTarget]
-    if (!url) {
-      return { success: false, message: `Unknown permission settings target: ${String(target)}` }
-    }
-
-    try {
-      await shell.openExternal(url)
-      return { success: true }
-    } catch (error) {
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : String(error),
+      const normalizedTarget = typeof target === 'string' ? target.trim() : ''
+      if (
+        normalizedTarget !== 'screen' &&
+        normalizedTarget !== 'camera' &&
+        normalizedTarget !== 'microphone' &&
+        normalizedTarget !== 'accessibility' &&
+        normalizedTarget !== 'input-monitoring'
+      ) {
+        return { success: false, message: `Unknown permission target: ${String(target)}` }
       }
-    }
-  })
+
+      try {
+        return await requestCapturePermissionAccess(normalizedTarget)
+      } catch (error) {
+        return {
+          success: false,
+          message: error instanceof Error ? error.message : String(error),
+        }
+      }
+    },
+  )
+
+  ipcMain.handle(
+    'open-permission-settings',
+    async (_, target: PermissionSettingsTarget | string) => {
+      if (process.platform !== 'darwin') {
+        return { success: false, message: 'Opening Privacy settings is only supported on macOS.' }
+      }
+
+      const normalizedTarget = typeof target === 'string' ? target.trim() : ''
+      const url = PERMISSION_SETTINGS_URLS[normalizedTarget as PermissionSettingsTarget]
+      if (!url) {
+        return { success: false, message: `Unknown permission settings target: ${String(target)}` }
+      }
+
+      try {
+        await shell.openExternal(url)
+        return { success: true }
+      } catch (error) {
+        return {
+          success: false,
+          message: error instanceof Error ? error.message : String(error),
+        }
+      }
+    },
+  )
 
   ipcMain.handle('open-screen-capture-settings', async () => {
     if (process.platform !== 'darwin') {
-      return { success: false, message: 'Opening Screen Capture settings is only supported on macOS.' }
+      return {
+        success: false,
+        message: 'Opening Screen Capture settings is only supported on macOS.',
+      }
     }
     try {
       await shell.openExternal(PERMISSION_SETTINGS_URLS['screen-capture'])
