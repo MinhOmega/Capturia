@@ -128,6 +128,19 @@ describe('user preferences persistence', () => {
     expect(loadUserPreferences().hudOrientation).toBe('horizontal')
   })
 
+  it('defaults the notes teleprompter settings and round-trips speed and font size', () => {
+    expect(loadUserPreferences().notesTeleprompter).toEqual({ speed: 40, fontSize: 16 })
+    saveUserPreferences({ notesTeleprompter: { speed: 75, fontSize: 24 } })
+    expect(loadUserPreferences().notesTeleprompter).toEqual({ speed: 75, fontSize: 24 })
+    localStorage.setItem(
+      USER_PREFERENCES_STORAGE_KEY,
+      JSON.stringify({ notesTeleprompter: { speed: 9_999, fontSize: 'big', extra: true } }),
+    )
+    expect(loadUserPreferences().notesTeleprompter).toEqual({ speed: 150, fontSize: 16 })
+    localStorage.setItem(USER_PREFERENCES_STORAGE_KEY, JSON.stringify({ notesTeleprompter: 3 }))
+    expect(loadUserPreferences().notesTeleprompter).toEqual({ speed: 40, fontSize: 16 })
+  })
+
   it('falls back to defaults for out-of-range numbers', () => {
     localStorage.setItem(
       USER_PREFERENCES_STORAGE_KEY,
