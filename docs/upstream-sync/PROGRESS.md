@@ -193,3 +193,11 @@ through the `get-asset-base-path` IPC — consumer swap left to B1/F7 follow-up 
 
 Gate: lint 0 errors / 116 warnings; tsc + test types clean; i18n 617 en keys; vitest
 **111 files / 1136 tests**; `playwright test` 1 skipped (no display).
+
+## 2026-08-27 — wave 4: F11+F10+F7 merged (`55da281`) — lead note
+
+Review: `reviews/W4-F-infra.md`. Gate after merge: lint 0 errors / 116 warnings; tsc + test
+types clean; i18n 621 en keys; vitest **115 files / 1195 tests**.
+
+Spawned in parallel: Swift batch A-3 + B2-5 (`w4-swift`, macOS build needed), F8 + F9
+(`w4-deps`). Then T-last format and the final report.
