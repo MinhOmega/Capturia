@@ -242,3 +242,19 @@ Swift uncompiled (Linux lead box); TS side degrades to "pause unsupported" with 
 clean; i18n 623; vitest **118 files / 1228 tests**.
 
 Remaining: T-last Biome format, final report.
+
+## 2026-09-03 — T-last: Biome formatter enabled + one-shot format
+
+`biome.json` formatter on with the W0-a style untouched (2-space, lineWidth 100, single quotes,
+JSX double quotes, semicolons as needed, trailing commas all); the unset options were pinned to
+the value measured to give the smallest diff (`quoteProperties: preserve`, others at their
+defaults). Ignored by the formatter: `.claude/worktrees`, `dist*`, `public/wasm`, `dist/ort`,
+cursor SVGs, Swift sources, `package-lock.json`, `src/i18n/locales/**` (hand layout).
+`npm run format` / `format:check` added; lint-staged now runs `biome check --write`.
+
+Format commit: 328 files, +29960/-25598, listed in `.git-blame-ignore-revs`. One test read the
+source text of `NotesWindow.tsx` and expected the CSS import in double quotes; the assertion is
+now quote-agnostic. Gate unchanged: lint 0 errors / 116 warnings; tsc + test types clean;
+i18n 623; vitest **118 files / 1228 tests**; `vite build`; `biome format .` reports nothing.
+
+Remaining: final report.
