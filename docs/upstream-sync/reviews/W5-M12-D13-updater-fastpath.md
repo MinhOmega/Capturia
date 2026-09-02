@@ -120,3 +120,13 @@ recordings are WebM and always render.
 4. WebM (browser recorder / Linux) with the same settings → "source container is not MP4",
    render path.
 5. Cancel during "Copying" → "Export cancelled".
+
+## Lead verification (merged as `832f5be`)
+
+- Checked: updater eligible only for packaged dmg/nsis/AppImage, `autoDownload` off, no
+  prereleases, unsigned-mac → release page; fast path requires an MP4-brand file with a single
+  H.264/HEVC/AV1 track and no blocker; no reference to the source project in code or commits.
+- Gate on merged tree after `npm install`: lint 0 errors / 116 warnings; tsc + test types clean;
+  i18n 635 en keys; `biome format .` clean; vitest **123 files / 1347 tests**; `vite build` OK.
+- Unverified here: live updater dialogs, `quitAndInstall` vs `before-quit` flush, feeds on
+  electron-builder 26, fast path against a real SCK recording.

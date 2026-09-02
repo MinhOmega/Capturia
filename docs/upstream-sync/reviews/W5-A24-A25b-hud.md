@@ -69,3 +69,12 @@ handlers with a fake window and the renderer with jsdom (no layout: boxes are st
    the idle bar returns at the same anchor. Auto-hide on record still minimises/restores.
 7. Notes button (macOS) and the permission checker still open from both layouts.
 8. Multi-display: unplug the display the HUD was on, relaunch — it falls back to the primary.
+
+## Lead verification (merged as `9a9142a`)
+
+- Checked: all three HUD channels reject a sender that is not the HUD `webContents`; no
+  reference to the source project in code or commit messages; `main.ts` wiring isolated in its
+  own commit as agreed.
+- Gate on merged tree: lint 0 errors / 116 warnings; tsc + test types clean; i18n 626 en keys;
+  `biome format .` clean; vitest **120 files / 1269 tests**.
+- Unverified here: everything that needs a display (see the manual smoke list above).
