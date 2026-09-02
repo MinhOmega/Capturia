@@ -28,4 +28,4 @@ export const BACKGROUND_GRADIENT_PRESETS: readonly string[] = [
   'linear-gradient(to right, #f78ca0 0%, #f9748f 19%, #fd868c 60%, #fe9a8b 100%)',
   'linear-gradient(to top, #48c6ef 0%, #6f86d6 100%)',
   'linear-gradient(to right, #0acffe 0%, #495aff 100%)',
-];
+]

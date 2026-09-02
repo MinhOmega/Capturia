@@ -42,7 +42,14 @@ type CursorTrackCursorKind =
 
 type CursorTrackMetadata = {
   source?: 'recorded' | 'synthetic'
-  samples: Array<{ timeMs: number; x: number; y: number; click?: boolean; visible?: boolean; cursorKind?: CursorTrackCursorKind }>
+  samples: Array<{
+    timeMs: number
+    x: number
+    y: number
+    click?: boolean
+    visible?: boolean
+    cursorKind?: CursorTrackCursorKind
+  }>
   events?: Array<{
     type: 'click' | 'selection'
     startMs: number
@@ -182,9 +189,13 @@ interface Window {
       canOpenSystemSettings: boolean
     }>
     getCapturePermissionSnapshot: () => Promise<CapturePermissionSnapshot>
-    requestCapturePermissionAccess: (target: CapturePermissionKey) => Promise<CapturePermissionActionResult>
+    requestCapturePermissionAccess: (
+      target: CapturePermissionKey,
+    ) => Promise<CapturePermissionActionResult>
     openScreenCaptureSettings: () => Promise<{ success: boolean; message?: string }>
-    openPermissionSettings: (target: PermissionSettingsTarget) => Promise<{ success: boolean; message?: string }>
+    openPermissionSettings: (
+      target: PermissionSettingsTarget,
+    ) => Promise<{ success: boolean; message?: string }>
     openPermissionChecker: () => Promise<{ success: boolean }>
     switchToEditor: () => Promise<void>
     switchToLaunch: () => Promise<void>
@@ -194,15 +205,37 @@ interface Window {
     storeRecordedVideo: (
       videoData: ArrayBuffer,
       fileName: string,
-      metadata?: { frameRate?: number; width?: number; height?: number; mimeType?: string; capturedAt?: number; systemCursorMode?: 'always' | 'never'; hasMicrophoneAudio?: boolean; durationMs?: number; cursorTrack?: CursorTrackMetadata }
+      metadata?: {
+        frameRate?: number
+        width?: number
+        height?: number
+        mimeType?: string
+        capturedAt?: number
+        systemCursorMode?: 'always' | 'never'
+        hasMicrophoneAudio?: boolean
+        durationMs?: number
+        cursorTrack?: CursorTrackMetadata
+      },
     ) => Promise<{
       success: boolean
       path?: string
       message?: string
-      metadata?: { frameRate?: number; width?: number; height?: number; mimeType?: string; capturedAt?: number; systemCursorMode?: 'always' | 'never'; hasMicrophoneAudio?: boolean; cursorTrack?: CursorTrackMetadata }
+      metadata?: {
+        frameRate?: number
+        width?: number
+        height?: number
+        mimeType?: string
+        capturedAt?: number
+        systemCursorMode?: 'always' | 'never'
+        hasMicrophoneAudio?: boolean
+        cursorTrack?: CursorTrackMetadata
+      }
     }>
     openRecordingStream: (fileName: string) => Promise<{ success: boolean; error?: string }>
-    appendRecordingChunk: (fileName: string, chunk: ArrayBuffer) => Promise<{ success: boolean; error?: string }>
+    appendRecordingChunk: (
+      fileName: string,
+      chunk: ArrayBuffer,
+    ) => Promise<{ success: boolean; error?: string }>
     closeRecordingStream: (fileName: string) => Promise<{ success: boolean; error?: string }>
     getRecordedVideoPath: () => Promise<{ success: boolean; path?: string; message?: string }>
     setRecordingState: (recording: boolean) => Promise<void>
@@ -233,8 +266,16 @@ interface Window {
       /** The running helper accepts `pause` / `resume`; false for an old binary. */
       canPause?: boolean
     }>
-    pauseNativeScreenRecording: () => Promise<{ success: boolean; supported: boolean; message?: string }>
-    resumeNativeScreenRecording: () => Promise<{ success: boolean; supported: boolean; message?: string }>
+    pauseNativeScreenRecording: () => Promise<{
+      success: boolean
+      supported: boolean
+      message?: string
+    }>
+    resumeNativeScreenRecording: () => Promise<{
+      success: boolean
+      supported: boolean
+      message?: string
+    }>
     stopNativeScreenRecording: (options?: { discard?: boolean }) => Promise<{
       success: boolean
       path?: string
@@ -266,31 +307,71 @@ interface Window {
     onCountdownOverlayValue: (callback: (value: number | null, runId: number) => void) => () => void
     openNotes: () => Promise<{ success: boolean; focused?: boolean; message?: string }>
     onNotesWindowClosed: (callback: () => void) => () => void
-    setStopRecordingShortcut: (accelerator: string) => Promise<{ success: boolean; accelerator: string; message?: string }>
-    getStopRecordingShortcut: () => Promise<{ success: boolean; accelerator: string; message?: string }>
+    setStopRecordingShortcut: (
+      accelerator: string,
+    ) => Promise<{ success: boolean; accelerator: string; message?: string }>
+    getStopRecordingShortcut: () => Promise<{
+      success: boolean
+      accelerator: string
+      message?: string
+    }>
     openExternalUrl: (url: string) => Promise<{ success: boolean; error?: string }>
-    revealInFolder: (filePath: string) => Promise<{ success: boolean; error?: string; message?: string }>
-    pickSaveFilePath: (fileName: string, locale?: string, exportFolder?: string) => Promise<{ success: boolean; path?: string; message?: string; cancelled?: boolean }>
-    pickExportDirectory: (locale?: string, exportFolder?: string) => Promise<{ success: boolean; path?: string; message?: string; cancelled?: boolean }>
+    revealInFolder: (
+      filePath: string,
+    ) => Promise<{ success: boolean; error?: string; message?: string }>
+    pickSaveFilePath: (
+      fileName: string,
+      locale?: string,
+      exportFolder?: string,
+    ) => Promise<{ success: boolean; path?: string; message?: string; cancelled?: boolean }>
+    pickExportDirectory: (
+      locale?: string,
+      exportFolder?: string,
+    ) => Promise<{ success: boolean; path?: string; message?: string; cancelled?: boolean }>
     saveExportedVideo: (
       videoData: ArrayBuffer,
       fileName: string,
       locale?: string,
-      options?: { directoryPath?: string | null; targetFilePath?: string | null }
+      options?: { directoryPath?: string | null; targetFilePath?: string | null },
     ) => Promise<{ success: boolean; path?: string; message?: string; cancelled?: boolean }>
-    openVideoFilePicker: (locale?: string) => Promise<{ success: boolean; path?: string; cancelled?: boolean }>
+    openVideoFilePicker: (
+      locale?: string,
+    ) => Promise<{ success: boolean; path?: string; cancelled?: boolean }>
     setCurrentVideoPath: (
       path: string,
-      metadata?: { frameRate?: number; width?: number; height?: number; mimeType?: string; capturedAt?: number; systemCursorMode?: 'always' | 'never'; hasMicrophoneAudio?: boolean; cursorTrack?: CursorTrackMetadata }
+      metadata?: {
+        frameRate?: number
+        width?: number
+        height?: number
+        mimeType?: string
+        capturedAt?: number
+        systemCursorMode?: 'always' | 'never'
+        hasMicrophoneAudio?: boolean
+        cursorTrack?: CursorTrackMetadata
+      },
     ) => Promise<{ success: boolean }>
     getCurrentVideoPath: () => Promise<{
       success: boolean
       path?: string
-      metadata?: { frameRate?: number; width?: number; height?: number; mimeType?: string; capturedAt?: number; systemCursorMode?: 'always' | 'never'; hasMicrophoneAudio?: boolean; cursorTrack?: CursorTrackMetadata }
+      metadata?: {
+        frameRate?: number
+        width?: number
+        height?: number
+        mimeType?: string
+        capturedAt?: number
+        systemCursorMode?: 'always' | 'never'
+        hasMicrophoneAudio?: boolean
+        cursorTrack?: CursorTrackMetadata
+      }
     }>
     clearCurrentVideoPath: () => Promise<{ success: boolean }>
-    saveProjectState: (videoPath: string, state: unknown) => Promise<{ success: boolean; error?: string }>
-    loadProjectState: (videoPath: string) => Promise<{ success: boolean; notFound?: boolean; state?: unknown; error?: string }>
+    saveProjectState: (
+      videoPath: string,
+      state: unknown,
+    ) => Promise<{ success: boolean; error?: string }>
+    loadProjectState: (
+      videoPath: string,
+    ) => Promise<{ success: boolean; notFound?: boolean; state?: unknown; error?: string }>
     getPlatform: () => Promise<string>
     getShortcuts: () => Promise<Record<string, unknown> | null>
     saveShortcuts: (shortcuts: unknown) => Promise<{ success: boolean; error?: string }>
@@ -335,65 +416,73 @@ interface Window {
       message?: string
       analysis?: VideoAnalysisMetadata
     }>
-    hudOverlayHide: () => void;
-    hudOverlayClose: () => void;
-    hudOverlayResize: (width?: number, height?: number) => void;
-    hudOverlayRestore: () => void;
-    setLocale: (locale: string) => Promise<void>;
+    hudOverlayHide: () => void
+    hudOverlayClose: () => void
+    hudOverlayResize: (width?: number, height?: number) => void
+    hudOverlayRestore: () => void
+    setLocale: (locale: string) => Promise<void>
     // W1-c: approved-file reads for the exporter (localSourceFile.ts)
     readBinaryFile: (filePath: string) => Promise<{
-      success: boolean;
-      data?: ArrayBuffer;
-      path?: string | null;
-      message?: string;
-      error?: string;
-    }>;
+      success: boolean
+      data?: ArrayBuffer
+      path?: string | null
+      message?: string
+      error?: string
+    }>
     getReadableFileInfo: (filePath: string) => Promise<{
-      success: boolean;
-      size?: number;
-      mtimeMs?: number;
-      path?: string;
-      message?: string;
-      error?: string;
-    }>;
-    readFileChunk: (filePath: string, offset: number, length: number) => Promise<{
-      success: boolean;
-      data?: ArrayBuffer;
-      bytesRead?: number;
-      message?: string;
-      error?: string;
-    }>;
+      success: boolean
+      size?: number
+      mtimeMs?: number
+      path?: string
+      message?: string
+      error?: string
+    }>
+    readFileChunk: (
+      filePath: string,
+      offset: number,
+      length: number,
+    ) => Promise<{
+      success: boolean
+      data?: ArrayBuffer
+      bytesRead?: number
+      message?: string
+      error?: string
+    }>
     // C-1: in-browser Whisper caption fallback (model cache in userData + sidecar write)
     /** `file://` URL (trailing slash) of the resources dir, from `--asset-base-url`. Empty outside the editor window. */
-    assetBaseUrl: string;
+    assetBaseUrl: string
     /** `file://` URL (trailing slash) of `userData/caption-models/`, from `--caption-model-dir`. Empty outside the editor window. */
-    captionModelDirUrl: string;
-    getCaptionModelDir: () => Promise<{ success: boolean; dir?: string; message?: string }>;
+    captionModelDirUrl: string
+    getCaptionModelDir: () => Promise<{ success: boolean; dir?: string; message?: string }>
     getCaptionModelStatus: (modelId?: string) => Promise<{
-      success: boolean;
-      status?: CaptionModelStatusPayload;
-      message?: string;
-    }>;
-    downloadCaptionModel: (modelId?: string) => Promise<{ success: boolean; aborted?: boolean; message?: string }>;
-    cancelCaptionModelDownload: () => Promise<{ success: boolean }>;
-    onCaptionModelProgress: (callback: (progress: CaptionModelProgressPayload) => void) => () => void;
+      success: boolean
+      status?: CaptionModelStatusPayload
+      message?: string
+    }>
+    downloadCaptionModel: (
+      modelId?: string,
+    ) => Promise<{ success: boolean; aborted?: boolean; message?: string }>
+    cancelCaptionModelDownload: () => Promise<{ success: boolean }>
+    onCaptionModelProgress: (
+      callback: (progress: CaptionModelProgressPayload) => void,
+    ) => () => void
     saveVideoAnalysisSidecar: (
       videoPath: string,
       analysis: VideoAnalysisMetadata,
-    ) => Promise<{ success: boolean; path?: string; message?: string }>;
+    ) => Promise<{ success: boolean; path?: string; message?: string }>
     // W3-c: global shortcuts, application menu, lifecycle flush, diagnostics
     updateGlobalShortcut: (
       action: GlobalShortcutActionName,
       binding: { key: string; ctrl?: boolean; shift?: boolean; alt?: boolean },
-    ) => Promise<GlobalShortcutUpdateResult>;
-    getGlobalShortcuts: () => Promise<Partial<Record<GlobalShortcutActionName, string>>>;
-    appQuit: () => void;
-    showAbout: () => Promise<void>;
-    onEditorMenuAction: (callback: (action: EditorMenuActionName) => void) => () => void;
-    onRequestSaveBeforeClose: (callback: () => void) => () => void;
-    saveBeforeCloseDone: () => void;
-    saveDiagnostic: (payload?: DiagnosticPayloadInput) => Promise<SaveDiagnosticResult>;
-    getMainLogTail: (lines?: number) => Promise<string[]>;
+    ) => Promise<GlobalShortcutUpdateResult>
+    getGlobalShortcuts: () => Promise<Partial<Record<GlobalShortcutActionName, string>>>
+    appQuit: () => void
+    showAbout: () => Promise<void>
+    onEditorMenuAction: (callback: (action: EditorMenuActionName) => void) => () => void
+    onRequestSaveBeforeClose: (callback: () => void) => () => void
+    saveBeforeCloseDone: () => void
+    saveDiagnostic: (payload?: DiagnosticPayloadInput) => Promise<SaveDiagnosticResult>
+    getMainLogTail: (lines?: number) => Promise<string[]>
   }
 }
 

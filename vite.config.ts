@@ -30,7 +30,9 @@ function ortWasmPlugin(): Plugin {
       for (const name of ORT_WASM_FILES) {
         const file = path.join(ORT_WASM_SRC_DIR, name)
         if (!fs.existsSync(file)) {
-          this.warn(`[capturia-ort-wasm] missing ${file}; in-browser captions will not work in this build`)
+          this.warn(
+            `[capturia-ort-wasm] missing ${file}; in-browser captions will not work in this build`,
+          )
           continue
         }
         this.emitFile({ type: 'asset', fileName: `ort/${name}`, source: fs.readFileSync(file) })
@@ -45,7 +47,8 @@ const EMPTY_NODE_MODULE = path.resolve(__dirname, 'src/lib/vite-stubs/empty-node
 // Electron 39 could hard-crash on some Ubuntu Wayland GPU stacks at startup. Kept as-is
 // through the Electron 41 upgrade (F8) until someone re-tests on a Wayland desktop; if
 // 41 launches cleanly without it, drop both this and the main.ts block together.
-const isLinuxWayland = process.platform === 'linux' && (process.env.XDG_SESSION_TYPE || '').toLowerCase() === 'wayland'
+const isLinuxWayland =
+  process.platform === 'linux' && (process.env.XDG_SESSION_TYPE || '').toLowerCase() === 'wayland'
 const devElectronArgs = [
   '.',
   '--no-sandbox',
@@ -68,10 +71,8 @@ export default defineConfig({
           return startup(devElectronArgs)
         },
         vite: {
-          build: {
-
-          }
-        }
+          build: {},
+        },
       },
       preload: {
         // Shortcut of `build.rollupOptions.input`.
@@ -81,10 +82,11 @@ export default defineConfig({
       // Ployfill the Electron and Node.js API for Renderer process.
       // If you want use Node.js in Renderer process, the `nodeIntegration` needs to be enabled in the Main process.
       // See https://github.com/electron-vite/vite-plugin-electron-renderer
-      renderer: process.env.NODE_ENV === 'test'
-        // https://github.com/electron-vite/vite-plugin-electron-renderer/issues/78#issuecomment-2053600808
-        ? undefined
-        : {},
+      renderer:
+        process.env.NODE_ENV === 'test'
+          ? // https://github.com/electron-vite/vite-plugin-electron-renderer/issues/78#issuecomment-2053600808
+            undefined
+          : {},
     }),
   ],
   resolve: {
@@ -115,18 +117,18 @@ export default defineConfig({
       compress: {
         drop_console: true,
         drop_debugger: true,
-        pure_funcs: ['console.log', 'console.debug']
-      }
+        pure_funcs: ['console.log', 'console.debug'],
+      },
     },
     rollupOptions: {
       output: {
         manualChunks: {
           'pixi': ['pixi.js'],
           'react-vendor': ['react', 'react-dom'],
-          'video-processing': ['mediabunny', 'mp4box', '@fix-webm-duration/fix']
-        }
-      }
+          'video-processing': ['mediabunny', 'mp4box', '@fix-webm-duration/fix'],
+        },
+      },
     },
-    chunkSizeWarningLimit: 1000
-  }
+    chunkSizeWarningLimit: 1000,
+  },
 })

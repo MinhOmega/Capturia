@@ -7,34 +7,34 @@
  * player, so it is used as a fallback before giving up on audio entirely.
  */
 
-export type ExportAudioCodec = 'aac' | 'opus';
+export type ExportAudioCodec = 'aac' | 'opus'
 
 /** Preference order: AAC first for compatibility, Opus as fallback. */
-export const EXPORT_AUDIO_CODECS: readonly ExportAudioCodec[] = ['aac', 'opus'];
+export const EXPORT_AUDIO_CODECS: readonly ExportAudioCodec[] = ['aac', 'opus']
 
 /** WebCodecs codec strings for the `AudioEncoder.isConfigSupported` probe. */
 export const EXPORT_AUDIO_CODEC_STRINGS: Record<ExportAudioCodec, string> = {
   aac: 'mp4a.40.2',
   opus: 'opus',
-};
+}
 
-export const EXPORT_AUDIO_BITRATE = 128_000;
+export const EXPORT_AUDIO_BITRATE = 128_000
 
-export type AudioCodecSupportProbe = (codec: ExportAudioCodec) => Promise<boolean>;
+export type AudioCodecSupportProbe = (codec: ExportAudioCodec) => Promise<boolean>
 
 /** Probes the real `AudioEncoder` for the given codec; false when WebCodecs is unavailable. */
 export async function isAudioCodecEncodingSupported(codec: ExportAudioCodec): Promise<boolean> {
-  if (typeof AudioEncoder === 'undefined') return false;
+  if (typeof AudioEncoder === 'undefined') return false
   try {
     const result = await AudioEncoder.isConfigSupported({
       codec: EXPORT_AUDIO_CODEC_STRINGS[codec],
       sampleRate: 48000,
       numberOfChannels: 1,
       bitrate: EXPORT_AUDIO_BITRATE,
-    });
-    return result.supported === true;
+    })
+    return result.supported === true
   } catch {
-    return false;
+    return false
   }
 }
 
@@ -47,7 +47,7 @@ export async function selectExportAudioCodec(
   probe: AudioCodecSupportProbe = isAudioCodecEncodingSupported,
 ): Promise<ExportAudioCodec | null> {
   for (const codec of EXPORT_AUDIO_CODECS) {
-    if (await probe(codec)) return codec;
+    if (await probe(codec)) return codec
   }
-  return null;
+  return null
 }

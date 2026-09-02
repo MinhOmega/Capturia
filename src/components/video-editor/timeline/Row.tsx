@@ -1,13 +1,13 @@
-import { useRow } from "dnd-timeline";
-import type { RowDefinition } from "dnd-timeline";
+import { useRow } from 'dnd-timeline'
+import type { RowDefinition } from 'dnd-timeline'
 
 interface RowProps extends RowDefinition {
-  children: React.ReactNode;
+  children: React.ReactNode
   /** Empty-state hint, rendered centred when `isEmpty` is true. */
-  hint?: string;
-  isEmpty?: boolean;
+  hint?: string
+  isEmpty?: boolean
   /** Layer drawn behind the items (e.g. the audio waveform). */
-  background?: React.ReactNode;
+  background?: React.ReactNode
 }
 
 /**
@@ -15,7 +15,7 @@ interface RowProps extends RowDefinition {
  * `background` layer, an empty-state hint label, and a minimum height.
  */
 export default function Row({ id, children, hint, isEmpty, background }: RowProps) {
-  const { setNodeRef, rowWrapperStyle, rowStyle } = useRow({ id });
+  const { setNodeRef, rowWrapperStyle, rowStyle } = useRow({ id })
 
   return (
     <div
@@ -32,5 +32,5 @@ export default function Row({ id, children, hint, isEmpty, background }: RowProp
         {children}
       </div>
     </div>
-  );
+  )
 }

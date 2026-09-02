@@ -1,23 +1,28 @@
-import { Switch } from '@/components/ui/switch';
+import { Switch } from '@/components/ui/switch'
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
-import { GIF_FRAME_RATES, GIF_SIZE_PRESETS, type GifFrameRate, type GifSizePreset } from '@/lib/exporter/types';
-import { useI18n } from '@/i18n';
+} from '@/components/ui/select'
+import {
+  GIF_FRAME_RATES,
+  GIF_SIZE_PRESETS,
+  type GifFrameRate,
+  type GifSizePreset,
+} from '@/lib/exporter/types'
+import { useI18n } from '@/i18n'
 
 interface GifOptionsPanelProps {
-  frameRate: GifFrameRate;
-  onFrameRateChange: (rate: GifFrameRate) => void;
-  loop: boolean;
-  onLoopChange: (loop: boolean) => void;
-  sizePreset: GifSizePreset;
-  onSizePresetChange: (preset: GifSizePreset) => void;
-  outputDimensions: { width: number; height: number };
-  disabled?: boolean;
+  frameRate: GifFrameRate
+  onFrameRateChange: (rate: GifFrameRate) => void
+  loop: boolean
+  onLoopChange: (loop: boolean) => void
+  sizePreset: GifSizePreset
+  onSizePresetChange: (preset: GifSizePreset) => void
+  outputDimensions: { width: number; height: number }
+  disabled?: boolean
 }
 
 export function GifOptionsPanel({
@@ -30,18 +35,18 @@ export function GifOptionsPanel({
   outputDimensions,
   disabled = false,
 }: GifOptionsPanelProps) {
-  const { t } = useI18n();
+  const { t } = useI18n()
   const sizePresetOptions = Object.entries(GIF_SIZE_PRESETS).map(([key, value]) => ({
     value: key as GifSizePreset,
     label: value.label,
-  }));
+  }))
 
   return (
     <div className="space-y-4 animate-in slide-in-from-bottom-2 duration-200">
       {/* Frame Rate */}
       <div className="space-y-2">
         <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-          {t("dialogs.gif.frameRate")}
+          {t('dialogs.gif.frameRate')}
         </label>
         <Select
           value={String(frameRate)}
@@ -68,7 +73,7 @@ export function GifOptionsPanel({
       {/* Size Preset */}
       <div className="space-y-2">
         <label className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-          {t("dialogs.gif.outputSize")}
+          {t('dialogs.gif.outputSize')}
         </label>
         <Select
           value={sizePreset}
@@ -98,15 +103,13 @@ export function GifOptionsPanel({
       {/* Loop Toggle */}
       <div className="flex items-center justify-between py-2">
         <div>
-          <label className="text-sm font-medium text-slate-200">{t("dialogs.gif.loopAnimation")}</label>
-          <p className="text-xs text-slate-500">{t("dialogs.gif.loopDesc")}</p>
+          <label className="text-sm font-medium text-slate-200">
+            {t('dialogs.gif.loopAnimation')}
+          </label>
+          <p className="text-xs text-slate-500">{t('dialogs.gif.loopDesc')}</p>
         </div>
-        <Switch
-          checked={loop}
-          onCheckedChange={onLoopChange}
-          disabled={disabled}
-        />
+        <Switch checked={loop} onCheckedChange={onLoopChange} disabled={disabled} />
       </div>
     </div>
-  );
+  )
 }

@@ -1,7 +1,7 @@
-import type { AnnotationRegion } from '@/components/video-editor/types';
+import type { AnnotationRegion } from '@/components/video-editor/types'
 
 /** Offset applied to a duplicate so it does not sit exactly on the source (% of the frame). */
-export const DUPLICATE_ANNOTATION_OFFSET_PERCENT = 4;
+export const DUPLICATE_ANNOTATION_OFFSET_PERCENT = 4
 
 /**
  * Deep-copies an annotation under a new id and z-index, nudged by
@@ -12,8 +12,8 @@ export function duplicateAnnotationRegion(
   source: AnnotationRegion,
   params: { id: string; zIndex: number },
 ): AnnotationRegion {
-  const maxX = Math.max(0, 100 - source.size.width);
-  const maxY = Math.max(0, 100 - source.size.height);
+  const maxX = Math.max(0, 100 - source.size.width)
+  const maxY = Math.max(0, 100 - source.size.height)
   return {
     ...source,
     id: params.id,
@@ -25,5 +25,5 @@ export function duplicateAnnotationRegion(
     size: { ...source.size },
     style: { ...source.style },
     figureData: source.figureData ? { ...source.figureData } : undefined,
-  };
+  }
 }

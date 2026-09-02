@@ -1,6 +1,10 @@
 import fs from 'node:fs/promises'
 import type { IpcMain } from 'electron'
-import { hasAllowedImportVideoExtension, isReadablePathAllowed, normalizeVideoSourcePath } from './paths'
+import {
+  hasAllowedImportVideoExtension,
+  isReadablePathAllowed,
+  normalizeVideoSourcePath,
+} from './paths'
 
 /**
  * Cap renderer-requested chunk sizes so a buggy or compromised renderer cannot
@@ -96,38 +100,41 @@ export function registerFileReadHandlers(ctx: FileReadHandlerContext): void {
 
   // Read a byte range [offset, offset+length) from an approved video file so the
   // renderer can stream a multi-GB recording into OPFS one chunk at a time.
-  ipcMain.handle('read-file-chunk', async (_, inputPath: string, offset: number, length: number) => {
-    try {
-      const normalizedPath = resolveReadableVideoPath(inputPath, recordingsDir)
-      if (!normalizedPath) {
-        return { success: false, message: NOT_APPROVED_MESSAGE }
-      }
-      if (!Number.isFinite(offset) || offset < 0 || !Number.isFinite(length) || length <= 0) {
-        return { success: false, message: 'Invalid chunk range' }
-      }
-      if (length > MAX_IPC_CHUNK_BYTES) {
-        return { success: false, message: 'Requested chunk size exceeds limit' }
-      }
-
-      const handle = await fs.open(normalizedPath, 'r')
+  ipcMain.handle(
+    'read-file-chunk',
+    async (_, inputPath: string, offset: number, length: number) => {
       try {
-        const buffer = Buffer.allocUnsafe(length)
-        const { bytesRead } = await handle.read(buffer, 0, length, offset)
-        return {
-          success: true,
-          data: toArrayBuffer(buffer, bytesRead),
-          bytesRead,
+        const normalizedPath = resolveReadableVideoPath(inputPath, recordingsDir)
+        if (!normalizedPath) {
+          return { success: false, message: NOT_APPROVED_MESSAGE }
         }
-      } finally {
-        await handle.close()
+        if (!Number.isFinite(offset) || offset < 0 || !Number.isFinite(length) || length <= 0) {
+          return { success: false, message: 'Invalid chunk range' }
+        }
+        if (length > MAX_IPC_CHUNK_BYTES) {
+          return { success: false, message: 'Requested chunk size exceeds limit' }
+        }
+
+        const handle = await fs.open(normalizedPath, 'r')
+        try {
+          const buffer = Buffer.allocUnsafe(length)
+          const { bytesRead } = await handle.read(buffer, 0, length, offset)
+          return {
+            success: true,
+            data: toArrayBuffer(buffer, bytesRead),
+            bytesRead,
+          }
+        } finally {
+          await handle.close()
+        }
+      } catch (error) {
+        console.error('Failed to read file chunk:', error)
+        return {
+          success: false,
+          message: 'Failed to read file chunk',
+          error: String(error),
+        }
       }
-    } catch (error) {
-      console.error('Failed to read file chunk:', error)
-      return {
-        success: false,
-        message: 'Failed to read file chunk',
-        error: String(error),
-      }
-    }
-  })
+    },
+  )
 }

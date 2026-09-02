@@ -13,7 +13,12 @@ import {
 } from './cursorTrack'
 
 const sampleAt = (timeMs: number) => ({ timeMs, x: 0.5, y: 0.5 })
-const clickAt = (timeMs: number) => ({ type: 'click' as const, startMs: timeMs, endMs: timeMs, point: { x: 0.5, y: 0.5 } })
+const clickAt = (timeMs: number) => ({
+  type: 'click' as const,
+  startMs: timeMs,
+  endMs: timeMs,
+  point: { x: 0.5, y: 0.5 },
+})
 
 describe('compactCursorTrackPauseRanges (A5 port of compactPendingCursorTelemetryPauseRanges)', () => {
   it('returns the input untouched when there are no usable ranges', () => {
@@ -25,7 +30,14 @@ describe('compactCursorTrackPauseRanges (A5 port of compactPendingCursorTelemetr
 
   it('drops samples inside a pause and shifts later samples back by the pause length', () => {
     const track = {
-      samples: [sampleAt(0), sampleAt(100), sampleAt(200), sampleAt(300), sampleAt(500), sampleAt(700)],
+      samples: [
+        sampleAt(0),
+        sampleAt(100),
+        sampleAt(200),
+        sampleAt(300),
+        sampleAt(500),
+        sampleAt(700),
+      ],
       events: [],
     }
     const compacted = compactCursorTrackPauseRanges(track, [{ startMs: 150, endMs: 350 }])
@@ -36,19 +48,27 @@ describe('compactCursorTrackPauseRanges (A5 port of compactPendingCursorTelemetr
   })
 
   it('accumulates several pauses and merges overlapping / unordered ranges', () => {
-    const track = { samples: [sampleAt(0), sampleAt(1000), sampleAt(2000), sampleAt(3000), sampleAt(4000)], events: [] }
+    const track = {
+      samples: [sampleAt(0), sampleAt(1000), sampleAt(2000), sampleAt(3000), sampleAt(4000)],
+      events: [],
+    }
     const compacted = compactCursorTrackPauseRanges(track, [
       { startMs: 2500, endMs: 2600 },
       { startMs: 900, endMs: 1100 },
       { startMs: 2550, endMs: 2700 },
       { endMs: 1500, startMs: 1050 }, // reversed + overlapping -> merged into 900..1500
     ])
-    expect(normalizeCursorTrackPauseRanges([
-      { startMs: 2500, endMs: 2600 },
-      { startMs: 900, endMs: 1100 },
-      { startMs: 2550, endMs: 2700 },
-      { endMs: 1500, startMs: 1050 },
-    ])).toEqual([{ startMs: 900, endMs: 1500 }, { startMs: 2500, endMs: 2700 }])
+    expect(
+      normalizeCursorTrackPauseRanges([
+        { startMs: 2500, endMs: 2600 },
+        { startMs: 900, endMs: 1100 },
+        { startMs: 2550, endMs: 2700 },
+        { endMs: 1500, startMs: 1050 },
+      ]),
+    ).toEqual([
+      { startMs: 900, endMs: 1500 },
+      { startMs: 2500, endMs: 2700 },
+    ])
     // 1000 inside first pause -> dropped; 2000 -> 1400; 3000 -> 3000-600-200 = 2200; 4000 -> 3200.
     expect(compacted.samples.map((sample) => sample.timeMs)).toEqual([0, 1400, 2200, 3200])
   })
@@ -72,7 +92,10 @@ describe('compactCursorTrackPauseRanges (A5 port of compactPendingCursorTelemetr
   })
 
   it('a pause that runs until the stop instant drops the trailing samples', () => {
-    const track = { samples: [sampleAt(0), sampleAt(100), sampleAt(900), sampleAt(1000)], events: [] }
+    const track = {
+      samples: [sampleAt(0), sampleAt(100), sampleAt(900), sampleAt(1000)],
+      events: [],
+    }
     const compacted = compactCursorTrackPauseRanges(track, [{ startMs: 500, endMs: 1000 }])
     expect(compacted.samples.map((sample) => sample.timeMs)).toEqual([0, 100])
   })
@@ -105,7 +128,11 @@ describe('cursorTrack (pure)', () => {
         { type: 'click', startMs: 20, endMs: 10, point: { x: 2, y: 0.5 } },
         { type: 'bogus' as 'click', startMs: 0, endMs: 0, point: { x: 0, y: 0 } },
       ],
-      space: { mode: 'source-display', displayId: ' 7 ', bounds: { x: 0, y: 0, width: 100, height: 50 } },
+      space: {
+        mode: 'source-display',
+        displayId: ' 7 ',
+        bounds: { x: 0, y: 0, width: 100, height: 50 },
+      },
       stats: { sampleCount: -1, clickCount: 3.9 },
       capture: { sourceId: 'screen:1:0', width: 1920.9, height: 1 },
     })
@@ -116,8 +143,14 @@ describe('cursorTrack (pure)', () => {
       { timeMs: 10, x: 0.25, y: 0.5, click: false, visible: true, cursorKind: 'text' },
       { timeMs: 50, x: 1, y: 0, click: true, visible: true, cursorKind: 'arrow' },
     ])
-    expect(track?.events).toEqual([{ type: 'click', startMs: 20, endMs: 20, point: { x: 1, y: 0.5 } }])
-    expect(track?.space).toEqual({ mode: 'source-display', displayId: '7', bounds: { x: 0, y: 0, width: 100, height: 50 } })
+    expect(track?.events).toEqual([
+      { type: 'click', startMs: 20, endMs: 20, point: { x: 1, y: 0.5 } },
+    ])
+    expect(track?.space).toEqual({
+      mode: 'source-display',
+      displayId: '7',
+      bounds: { x: 0, y: 0, width: 100, height: 50 },
+    })
     expect(track?.stats).toEqual({ sampleCount: 2, clickCount: 3 })
     expect(track?.capture).toEqual({ sourceId: 'screen:1:0', width: 1920, height: undefined })
   })
@@ -132,13 +165,21 @@ describe('cursorTrack (pure)', () => {
         { timeMs: 4, x: 0, y: 0 },
       ],
     })
-    expect(track?.samples.map((sample) => sample.cursorKind)).toEqual(['pointer', 'resize-nwse', 'text', 'arrow', 'arrow'])
+    expect(track?.samples.map((sample) => sample.cursorKind)).toEqual([
+      'pointer',
+      'resize-nwse',
+      'text',
+      'arrow',
+      'arrow',
+    ])
   })
 
   it('sanitizeCursorTrack returns undefined for empty input', () => {
     expect(sanitizeCursorTrack(undefined)).toBeUndefined()
     expect(sanitizeCursorTrack({ samples: [] })).toBeUndefined()
-    expect(sanitizeCursorTrack({ samples: [{ timeMs: 'x' as unknown as number, x: 0, y: 0 }] })).toBeUndefined()
+    expect(
+      sanitizeCursorTrack({ samples: [{ timeMs: 'x' as unknown as number, x: 0, y: 0 }] }),
+    ).toBeUndefined()
   })
 
   it('sanitizeVideoMetadata keeps only well-formed fields', () => {
@@ -180,7 +221,9 @@ describe('cursorTrack (pure)', () => {
     expect(raw.version).toBe(1)
 
     const track = await readCursorTrackSidecar(videoPath)
-    expect(track?.samples).toEqual([{ timeMs: 5, x: 0.1, y: 0.2, click: false, visible: true, cursorKind: 'arrow' }])
+    expect(track?.samples).toEqual([
+      { timeMs: 5, x: 0.1, y: 0.2, click: false, visible: true, cursorKind: 'arrow' },
+    ])
     expect(await readCursorTrackSidecar(path.join(dir, 'missing.webm'))).toBeUndefined()
   })
 

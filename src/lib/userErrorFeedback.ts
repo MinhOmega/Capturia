@@ -63,7 +63,9 @@ const ISSUE_LOG_TAIL_LINES = 30
 async function fetchMainLogTail(): Promise<string[]> {
   try {
     const tail = await window.electronAPI?.getMainLogTail?.(ISSUE_LOG_TAIL_LINES)
-    return Array.isArray(tail) ? tail.filter((line): line is string => typeof line === 'string') : []
+    return Array.isArray(tail)
+      ? tail.filter((line): line is string => typeof line === 'string')
+      : []
   } catch {
     return []
   }
@@ -138,7 +140,9 @@ export function reportUserActionError(input: ReportUserActionErrorInput): string
     buildIssueReportUrl({
       title: issueTitle,
       bodyLines:
-        logTail.length > 0 ? [...issueLines, '', '## Main process log (tail)', '```', ...logTail, '```'] : issueLines,
+        logTail.length > 0
+          ? [...issueLines, '', '## Main process log (tail)', '```', ...logTail, '```']
+          : issueLines,
     })
 
   toast.error(input.userMessage, {

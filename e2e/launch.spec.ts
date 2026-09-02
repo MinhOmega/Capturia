@@ -64,7 +64,8 @@ test('boots the HUD and opens the source selector', async () => {
       timeout: 30_000,
     })
     await hud.evaluate(() => {
-      const bridge = (window as unknown as { electronAPI: { openSourceSelector: () => void } }).electronAPI
+      const bridge = (window as unknown as { electronAPI: { openSourceSelector: () => void } })
+        .electronAPI
       bridge.openSourceSelector()
     })
     const selector = await selectorPromise
@@ -75,7 +76,9 @@ test('boots the HUD and opens the source selector', async () => {
     // existing and having rendered is the contract here.
     await expect(selector.locator('body')).not.toBeEmpty()
 
-    const windowCount = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length)
+    const windowCount = await app.evaluate(
+      ({ BrowserWindow }) => BrowserWindow.getAllWindows().length,
+    )
     expect(windowCount).toBeGreaterThanOrEqual(2)
   } finally {
     await app
@@ -87,7 +90,9 @@ test('boots the HUD and opens the source selector', async () => {
       })
     if (electronProcess.pid) {
       if (process.platform === 'win32') {
-        spawnSync('taskkill', ['/PID', String(electronProcess.pid), '/T', '/F'], { stdio: 'ignore' })
+        spawnSync('taskkill', ['/PID', String(electronProcess.pid), '/T', '/F'], {
+          stdio: 'ignore',
+        })
       } else if (!electronProcess.killed) {
         electronProcess.kill('SIGKILL')
       }

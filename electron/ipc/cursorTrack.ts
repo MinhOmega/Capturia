@@ -78,19 +78,28 @@ export function resolveCursorSidecarPath(videoPath: string): string {
   return path.join(parsed.dir, `${parsed.name}.cursor.json`)
 }
 
-export async function readCursorTrackSidecar(videoPath: string): Promise<CurrentVideoMetadata['cursorTrack'] | undefined> {
+export async function readCursorTrackSidecar(
+  videoPath: string,
+): Promise<CurrentVideoMetadata['cursorTrack'] | undefined> {
   const sidecarPath = resolveCursorSidecarPath(videoPath)
   try {
     const raw = await fs.readFile(sidecarPath, 'utf-8')
-    const parsed = JSON.parse(raw) as { cursorTrack?: CurrentVideoMetadata['cursorTrack'] } | CurrentVideoMetadata['cursorTrack']
-    const input = (parsed as { cursorTrack?: CurrentVideoMetadata['cursorTrack'] }).cursorTrack ?? (parsed as CurrentVideoMetadata['cursorTrack'])
+    const parsed = JSON.parse(raw) as
+      | { cursorTrack?: CurrentVideoMetadata['cursorTrack'] }
+      | CurrentVideoMetadata['cursorTrack']
+    const input =
+      (parsed as { cursorTrack?: CurrentVideoMetadata['cursorTrack'] }).cursorTrack ??
+      (parsed as CurrentVideoMetadata['cursorTrack'])
     return sanitizeCursorTrack(input)
   } catch {
     return undefined
   }
 }
 
-export async function writeCursorTrackSidecar(videoPath: string, cursorTrack: CurrentVideoMetadata['cursorTrack']): Promise<void> {
+export async function writeCursorTrackSidecar(
+  videoPath: string,
+  cursorTrack: CurrentVideoMetadata['cursorTrack'],
+): Promise<void> {
   const sanitized = sanitizeCursorTrack(cursorTrack)
   if (!sanitized) return
   const sidecarPath = resolveCursorSidecarPath(videoPath)
@@ -105,7 +114,9 @@ export async function writeCursorTrackSidecar(videoPath: string, cursorTrack: Cu
   await fs.writeFile(sidecarPath, payload, 'utf-8')
 }
 
-export function sanitizeCursorTrack(input?: CurrentVideoMetadata['cursorTrack'] | null): CurrentVideoMetadata['cursorTrack'] | undefined {
+export function sanitizeCursorTrack(
+  input?: CurrentVideoMetadata['cursorTrack'] | null,
+): CurrentVideoMetadata['cursorTrack'] | undefined {
   if (!input || !Array.isArray(input.samples) || input.samples.length === 0) return undefined
 
   const samples = input.samples
@@ -131,88 +142,101 @@ export function sanitizeCursorTrack(input?: CurrentVideoMetadata['cursorTrack'] 
   if (samples.length === 0) return undefined
   const events = Array.isArray(input.events)
     ? input.events
-      .slice(0, 1_200)
-      .map((event) => {
-        if (!event || typeof event !== 'object') return null
-        const type: 'click' | 'selection' | null = event.type === 'selection' ? 'selection' : event.type === 'click' ? 'click' : null
-        if (!type) return null
+        .slice(0, 1_200)
+        .map((event) => {
+          if (!event || typeof event !== 'object') return null
+          const type: 'click' | 'selection' | null =
+            event.type === 'selection' ? 'selection' : event.type === 'click' ? 'click' : null
+          if (!type) return null
 
-        const startMs = Number(event.startMs)
-        const endMs = Number(event.endMs)
-        const pointX = Number(event.point?.x)
-        const pointY = Number(event.point?.y)
-        if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || !Number.isFinite(pointX) || !Number.isFinite(pointY)) {
-          return null
-        }
-
-        const normalizedStartMs = Math.max(0, Math.round(startMs))
-        const normalizedEndMs = Math.max(normalizedStartMs, Math.round(endMs))
-        const normalizedPoint = {
-          x: Math.min(1, Math.max(0, pointX)),
-          y: Math.min(1, Math.max(0, pointY)),
-        }
-
-        const startPointX = Number(event.startPoint?.x)
-        const startPointY = Number(event.startPoint?.y)
-        const normalizedStartPoint = Number.isFinite(startPointX) && Number.isFinite(startPointY)
-          ? {
-            x: Math.min(1, Math.max(0, startPointX)),
-            y: Math.min(1, Math.max(0, startPointY)),
+          const startMs = Number(event.startMs)
+          const endMs = Number(event.endMs)
+          const pointX = Number(event.point?.x)
+          const pointY = Number(event.point?.y)
+          if (
+            !Number.isFinite(startMs) ||
+            !Number.isFinite(endMs) ||
+            !Number.isFinite(pointX) ||
+            !Number.isFinite(pointY)
+          ) {
+            return null
           }
-          : undefined
 
-        const endPointX = Number(event.endPoint?.x)
-        const endPointY = Number(event.endPoint?.y)
-        const normalizedEndPoint = Number.isFinite(endPointX) && Number.isFinite(endPointY)
-          ? {
-            x: Math.min(1, Math.max(0, endPointX)),
-            y: Math.min(1, Math.max(0, endPointY)),
+          const normalizedStartMs = Math.max(0, Math.round(startMs))
+          const normalizedEndMs = Math.max(normalizedStartMs, Math.round(endMs))
+          const normalizedPoint = {
+            x: Math.min(1, Math.max(0, pointX)),
+            y: Math.min(1, Math.max(0, pointY)),
           }
-          : undefined
 
-        const boundsMinX = Number(event.bounds?.minX)
-        const boundsMinY = Number(event.bounds?.minY)
-        const boundsMaxX = Number(event.bounds?.maxX)
-        const boundsMaxY = Number(event.bounds?.maxY)
-        const normalizedBounds = [boundsMinX, boundsMinY, boundsMaxX, boundsMaxY].every(Number.isFinite)
-          ? (() => {
-            const minX = Math.min(1, Math.max(0, boundsMinX))
-            const minY = Math.min(1, Math.max(0, boundsMinY))
-            const maxX = Math.max(minX, Math.min(1, Math.max(0, boundsMaxX)))
-            const maxY = Math.max(minY, Math.min(1, Math.max(0, boundsMaxY)))
-            return {
-              minX,
-              minY,
-              maxX,
-              maxY,
-              width: maxX - minX,
-              height: maxY - minY,
-            }
-          })()
-          : undefined
+          const startPointX = Number(event.startPoint?.x)
+          const startPointY = Number(event.startPoint?.y)
+          const normalizedStartPoint =
+            Number.isFinite(startPointX) && Number.isFinite(startPointY)
+              ? {
+                  x: Math.min(1, Math.max(0, startPointX)),
+                  y: Math.min(1, Math.max(0, startPointY)),
+                }
+              : undefined
 
-        const normalizedEvent: CursorTrackEventPayload = {
-          type,
-          startMs: normalizedStartMs,
-          endMs: normalizedEndMs,
-          point: normalizedPoint,
-        }
-        if (normalizedStartPoint) {
-          normalizedEvent.startPoint = normalizedStartPoint
-        }
-        if (normalizedEndPoint) {
-          normalizedEvent.endPoint = normalizedEndPoint
-        }
-        if (normalizedBounds) {
-          normalizedEvent.bounds = normalizedBounds
-        }
-        return normalizedEvent
-      })
-      .filter((event): event is NonNullable<typeof event> => Boolean(event))
-      .sort((a, b) => a.startMs - b.startMs)
+          const endPointX = Number(event.endPoint?.x)
+          const endPointY = Number(event.endPoint?.y)
+          const normalizedEndPoint =
+            Number.isFinite(endPointX) && Number.isFinite(endPointY)
+              ? {
+                  x: Math.min(1, Math.max(0, endPointX)),
+                  y: Math.min(1, Math.max(0, endPointY)),
+                }
+              : undefined
+
+          const boundsMinX = Number(event.bounds?.minX)
+          const boundsMinY = Number(event.bounds?.minY)
+          const boundsMaxX = Number(event.bounds?.maxX)
+          const boundsMaxY = Number(event.bounds?.maxY)
+          const normalizedBounds = [boundsMinX, boundsMinY, boundsMaxX, boundsMaxY].every(
+            Number.isFinite,
+          )
+            ? (() => {
+                const minX = Math.min(1, Math.max(0, boundsMinX))
+                const minY = Math.min(1, Math.max(0, boundsMinY))
+                const maxX = Math.max(minX, Math.min(1, Math.max(0, boundsMaxX)))
+                const maxY = Math.max(minY, Math.min(1, Math.max(0, boundsMaxY)))
+                return {
+                  minX,
+                  minY,
+                  maxX,
+                  maxY,
+                  width: maxX - minX,
+                  height: maxY - minY,
+                }
+              })()
+            : undefined
+
+          const normalizedEvent: CursorTrackEventPayload = {
+            type,
+            startMs: normalizedStartMs,
+            endMs: normalizedEndMs,
+            point: normalizedPoint,
+          }
+          if (normalizedStartPoint) {
+            normalizedEvent.startPoint = normalizedStartPoint
+          }
+          if (normalizedEndPoint) {
+            normalizedEvent.endPoint = normalizedEndPoint
+          }
+          if (normalizedBounds) {
+            normalizedEvent.bounds = normalizedBounds
+          }
+          return normalizedEvent
+        })
+        .filter((event): event is NonNullable<typeof event> => Boolean(event))
+        .sort((a, b) => a.startMs - b.startMs)
     : []
 
-  const clickCountFromEvents = events.reduce((count, event) => count + (event.type === 'click' ? 1 : 0), 0)
+  const clickCountFromEvents = events.reduce(
+    (count, event) => count + (event.type === 'click' ? 1 : 0),
+    0,
+  )
   const clickCountFromSamples = samples.filter((sample) => sample.click).length
   const clickCountFallback = Math.max(clickCountFromSamples, clickCountFromEvents)
   const normalized: NonNullable<CurrentVideoMetadata['cursorTrack']> = {
@@ -233,9 +257,10 @@ export function sanitizeCursorTrack(input?: CurrentVideoMetadata['cursorTrack'] 
     if ([x, y, width, height].every(Number.isFinite) && width >= 1 && height >= 1) {
       normalized.space = {
         mode: input.space.mode === 'source-display' ? 'source-display' : 'virtual-desktop',
-        displayId: typeof input.space.displayId === 'string' && input.space.displayId.trim().length > 0
-          ? input.space.displayId.trim()
-          : undefined,
+        displayId:
+          typeof input.space.displayId === 'string' && input.space.displayId.trim().length > 0
+            ? input.space.displayId.trim()
+            : undefined,
         bounds: {
           x,
           y,
@@ -250,17 +275,22 @@ export function sanitizeCursorTrack(input?: CurrentVideoMetadata['cursorTrack'] 
     const sampleCount = Number(input.stats.sampleCount)
     const clickCount = Number(input.stats.clickCount)
     normalized.stats = {
-      sampleCount: Number.isFinite(sampleCount) && sampleCount >= 0 ? Math.floor(sampleCount) : samples.length,
-      clickCount: Number.isFinite(clickCount) && clickCount >= 0 ? Math.floor(clickCount) : clickCountFallback,
+      sampleCount:
+        Number.isFinite(sampleCount) && sampleCount >= 0 ? Math.floor(sampleCount) : samples.length,
+      clickCount:
+        Number.isFinite(clickCount) && clickCount >= 0
+          ? Math.floor(clickCount)
+          : clickCountFallback,
     }
   }
 
   if (input.capture) {
     const width = Number(input.capture.width)
     const height = Number(input.capture.height)
-    const sourceId = typeof input.capture.sourceId === 'string' && input.capture.sourceId.trim().length > 0
-      ? input.capture.sourceId.trim()
-      : undefined
+    const sourceId =
+      typeof input.capture.sourceId === 'string' && input.capture.sourceId.trim().length > 0
+        ? input.capture.sourceId.trim()
+        : undefined
     if (sourceId || (Number.isFinite(width) && Number.isFinite(height))) {
       normalized.capture = {
         sourceId,
@@ -273,7 +303,9 @@ export function sanitizeCursorTrack(input?: CurrentVideoMetadata['cursorTrack'] 
   return normalized
 }
 
-export function sanitizeVideoMetadata(metadata?: CurrentVideoMetadata | null): CurrentVideoMetadata | null {
+export function sanitizeVideoMetadata(
+  metadata?: CurrentVideoMetadata | null,
+): CurrentVideoMetadata | null {
   if (!metadata) return null
 
   const frameRate = Number(metadata.frameRate)
@@ -315,7 +347,9 @@ export function sanitizeVideoMetadata(metadata?: CurrentVideoMetadata | null): C
 export type CursorTrackPauseRange = { startMs: number; endMs: number }
 
 /** Sort, clamp and drop empty / non-finite ranges; overlapping ranges are merged. */
-export function normalizeCursorTrackPauseRanges(ranges: readonly CursorTrackPauseRange[]): CursorTrackPauseRange[] {
+export function normalizeCursorTrackPauseRanges(
+  ranges: readonly CursorTrackPauseRange[],
+): CursorTrackPauseRange[] {
   const sorted = ranges
     .map((range) => ({
       startMs: Math.max(0, Math.min(Number(range.startMs), Number(range.endMs))),
@@ -372,33 +406,37 @@ function isInsideRange(timeMs: number, ranges: readonly CursorTrackPauseRange[])
  *
  * Pure; returns the input untouched when there is nothing to do.
  */
-export function compactCursorTrackPauseRanges<T extends Pick<CursorTrackPayload, 'samples' | 'events'>>(
-  track: T,
-  ranges: readonly CursorTrackPauseRange[],
-): T {
+export function compactCursorTrackPauseRanges<
+  T extends Pick<CursorTrackPayload, 'samples' | 'events'>,
+>(track: T, ranges: readonly CursorTrackPauseRange[]): T {
   const normalizedRanges = normalizeCursorTrackPauseRanges(ranges)
   if (normalizedRanges.length === 0) return track
 
   const samples = (Array.isArray(track.samples) ? track.samples : [])
     .filter((sample) => !isInsideRange(Number(sample.timeMs), normalizedRanges))
-    .map((sample) => ({ ...sample, timeMs: collapsePausedTime(Number(sample.timeMs), normalizedRanges) }))
+    .map((sample) => ({
+      ...sample,
+      timeMs: collapsePausedTime(Number(sample.timeMs), normalizedRanges),
+    }))
     .sort((a, b) => a.timeMs - b.timeMs)
 
   const events = Array.isArray(track.events)
     ? track.events
-      .filter((event) => {
-        const startInside = isInsideRange(Number(event.startMs), normalizedRanges)
-        const endInside = isInsideRange(Number(event.endMs), normalizedRanges)
-        if (!startInside || !endInside) return true
-        // Both ends inside: keep only when the event spans across a resume.
-        return normalizedRanges.every((range) => !(event.startMs >= range.startMs && event.endMs <= range.endMs))
-      })
-      .map((event) => ({
-        ...event,
-        startMs: collapsePausedTime(Number(event.startMs), normalizedRanges),
-        endMs: collapsePausedTime(Number(event.endMs), normalizedRanges),
-      }))
-      .sort((a, b) => a.startMs - b.startMs)
+        .filter((event) => {
+          const startInside = isInsideRange(Number(event.startMs), normalizedRanges)
+          const endInside = isInsideRange(Number(event.endMs), normalizedRanges)
+          if (!startInside || !endInside) return true
+          // Both ends inside: keep only when the event spans across a resume.
+          return normalizedRanges.every(
+            (range) => !(event.startMs >= range.startMs && event.endMs <= range.endMs),
+          )
+        })
+        .map((event) => ({
+          ...event,
+          startMs: collapsePausedTime(Number(event.startMs), normalizedRanges),
+          endMs: collapsePausedTime(Number(event.endMs), normalizedRanges),
+        }))
+        .sort((a, b) => a.startMs - b.startMs)
     : track.events
 
   return { ...track, samples, events }

@@ -53,8 +53,16 @@ export function registerIpcHandlers(
   }
 
   registerFileReadHandlers({ ipcMain: ctx.ipcMain, recordingsDir: ctx.recordingsDir })
-  registerCaptionHandlers({ ipcMain: ctx.ipcMain, recordingsDir: ctx.recordingsDir, userDataDir: ctx.userDataDir })
-  if (hudWindows) registerHudWindowsHandlers({ ipcMain: ctx.ipcMain as HudWindowsContext['ipcMain'], ...hudWindows })
+  registerCaptionHandlers({
+    ipcMain: ctx.ipcMain,
+    recordingsDir: ctx.recordingsDir,
+    userDataDir: ctx.userDataDir,
+  })
+  if (hudWindows)
+    registerHudWindowsHandlers({
+      ipcMain: ctx.ipcMain as HudWindowsContext['ipcMain'],
+      ...hudWindows,
+    })
 
   const cursorTracker = registerCursorTrackerHandlers(ctx)
   registerPermissionHandlers(ctx)

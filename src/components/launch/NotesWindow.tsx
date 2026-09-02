@@ -1,27 +1,27 @@
-import { EditorContent, useEditor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
-import { TooltipProvider } from "@/components/ui/tooltip";
-import { NotesToolbar } from "./NotesToolbar";
-import "./NotesWindow.css";
+import { EditorContent, useEditor } from '@tiptap/react'
+import StarterKit from '@tiptap/starter-kit'
+import { TooltipProvider } from '@/components/ui/tooltip'
+import { NotesToolbar } from './NotesToolbar'
+import './NotesWindow.css'
 
-export const NOTES_STORAGE_KEY = "capturia.notes";
+export const NOTES_STORAGE_KEY = 'capturia.notes'
 
 /**
  * Notes persist as HTML. Anything stored before the rich-text editor was plain
  * text; wrap it in paragraphs so StarterKit can parse it instead of dropping it.
  */
-export function getInitialNotesContent(storage: Pick<Storage, "getItem"> = localStorage): string {
-  const stored = storage.getItem(NOTES_STORAGE_KEY);
+export function getInitialNotesContent(storage: Pick<Storage, 'getItem'> = localStorage): string {
+  const stored = storage.getItem(NOTES_STORAGE_KEY)
   if (!stored) {
-    return "";
+    return ''
   }
 
-  if (!stored.trim().startsWith("<")) {
-    const escaped = stored.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-    return `<p>${escaped.replace(/\n/g, "</p><p>")}</p>`;
+  if (!stored.trim().startsWith('<')) {
+    const escaped = stored.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    return `<p>${escaped.replace(/\n/g, '</p><p>')}</p>`
   }
 
-  return stored;
+  return stored
 }
 
 /**
@@ -32,20 +32,20 @@ export function NotesWindow() {
   const editor = useEditor({
     extensions: [StarterKit],
     content: getInitialNotesContent(),
-    autofocus: "end",
+    autofocus: 'end',
     editorProps: {
       attributes: {
-        class: "tiptap",
+        class: 'tiptap',
       },
     },
     onUpdate: ({ editor: nextEditor }) => {
       try {
-        localStorage.setItem(NOTES_STORAGE_KEY, nextEditor.getHTML());
+        localStorage.setItem(NOTES_STORAGE_KEY, nextEditor.getHTML())
       } catch (error) {
-        console.warn("Failed to persist notes.", error);
+        console.warn('Failed to persist notes.', error)
       }
     },
-  });
+  })
 
   return (
     <TooltipProvider>
@@ -57,5 +57,5 @@ export function NotesWindow() {
         <EditorContent editor={editor} className="min-h-0 flex-1" data-testid="notes-editor" />
       </div>
     </TooltipProvider>
-  );
+  )
 }

@@ -2,17 +2,17 @@ import {
   DEFAULT_EDITOR_LAYOUT_SETTINGS,
   DEFAULT_EXPORT_SETTINGS,
   DEFAULT_PLAYBACK_SETTINGS,
-} from '@/components/video-editor/editorDefaults';
-import type { ExportFormat, ExportQuality } from '@/lib/exporter/types';
-import { ASPECT_RATIOS, type AspectRatio } from '@/utils/aspectRatioUtils';
+} from '@/components/video-editor/editorDefaults'
+import type { ExportFormat, ExportQuality } from '@/lib/exporter/types'
+import { ASPECT_RATIOS, type AspectRatio } from '@/utils/aspectRatioUtils'
 
-export const USER_PREFERENCES_STORAGE_KEY = 'capturia.userPreferences';
+export const USER_PREFERENCES_STORAGE_KEY = 'capturia.userPreferences'
 
-const MIN_SEEK_STEP_SECONDS = 1;
-const MAX_SEEK_STEP_SECONDS = 30;
-const MIN_PREVIEW_PLAYBACK_RATE = 0.25;
+const MIN_SEEK_STEP_SECONDS = 1
+const MAX_SEEK_STEP_SECONDS = 30
+const MIN_PREVIEW_PLAYBACK_RATE = 0.25
 /** Chromium caps HTMLMediaElement.playbackRate at 16. */
-const MAX_PREVIEW_PLAYBACK_RATE = 16;
+const MAX_PREVIEW_PLAYBACK_RATE = 16
 
 /**
  * Cross-session editor preferences. These seed a *new* project's editor state;
@@ -20,19 +20,19 @@ const MAX_PREVIEW_PLAYBACK_RATE = 16;
  */
 export interface UserPreferences {
   /** Default padding % */
-  padding: number;
+  padding: number
   /** Default aspect ratio */
-  aspectRatio: AspectRatio;
+  aspectRatio: AspectRatio
   /** Default export quality */
-  exportQuality: ExportQuality;
+  exportQuality: ExportQuality
   /** Default export format */
-  exportFormat: ExportFormat;
+  exportFormat: ExportFormat
   /** Folder used for the most recent successful export, if any */
-  exportFolder: string | null;
+  exportFolder: string | null
   /** Arrow-key seek step in seconds */
-  seekStepSeconds: number;
+  seekStepSeconds: number
   /** Preview playback rate */
-  previewPlaybackRate: number;
+  previewPlaybackRate: number
 }
 
 export const DEFAULT_PREFS: UserPreferences = {
@@ -43,40 +43,43 @@ export const DEFAULT_PREFS: UserPreferences = {
   exportFolder: null,
   seekStepSeconds: DEFAULT_PLAYBACK_SETTINGS.seekStepSeconds,
   previewPlaybackRate: DEFAULT_PLAYBACK_SETTINGS.previewPlaybackRate,
-};
+}
 
 /** Parses stored preferences without throwing on malformed JSON. */
 function safeJsonParse(text: string | null): Record<string, unknown> | null {
-  if (!text) return null;
+  if (!text) return null
   try {
-    return JSON.parse(text);
+    return JSON.parse(text)
   } catch {
-    return null;
+    return null
   }
 }
 
 function isFiniteInRange(value: unknown, min: number, max: number): value is number {
-  return typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max;
+  return typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max
 }
 
 /** Load preferences from localStorage, falling back to defaults for missing or invalid fields. */
 export function loadUserPreferences(): UserPreferences {
-  let raw: Record<string, unknown> | null = null;
+  let raw: Record<string, unknown> | null = null
   try {
-    raw = safeJsonParse(localStorage.getItem(USER_PREFERENCES_STORAGE_KEY));
+    raw = safeJsonParse(localStorage.getItem(USER_PREFERENCES_STORAGE_KEY))
   } catch {
-    return { ...DEFAULT_PREFS };
+    return { ...DEFAULT_PREFS }
   }
-  if (!raw || typeof raw !== 'object') return { ...DEFAULT_PREFS };
+  if (!raw || typeof raw !== 'object') return { ...DEFAULT_PREFS }
 
   return {
     padding: isFiniteInRange(raw.padding, 0, 100) ? raw.padding : DEFAULT_PREFS.padding,
     aspectRatio:
-      typeof raw.aspectRatio === 'string' && (ASPECT_RATIOS as readonly string[]).includes(raw.aspectRatio)
+      typeof raw.aspectRatio === 'string' &&
+      (ASPECT_RATIOS as readonly string[]).includes(raw.aspectRatio)
         ? (raw.aspectRatio as AspectRatio)
         : DEFAULT_PREFS.aspectRatio,
     exportQuality:
-      raw.exportQuality === 'medium' || raw.exportQuality === 'good' || raw.exportQuality === 'source'
+      raw.exportQuality === 'medium' ||
+      raw.exportQuality === 'good' ||
+      raw.exportQuality === 'source'
         ? raw.exportQuality
         : DEFAULT_PREFS.exportQuality,
     exportFormat:
@@ -87,13 +90,21 @@ export function loadUserPreferences(): UserPreferences {
       typeof raw.exportFolder === 'string' && raw.exportFolder.length > 0
         ? raw.exportFolder
         : DEFAULT_PREFS.exportFolder,
-    seekStepSeconds: isFiniteInRange(raw.seekStepSeconds, MIN_SEEK_STEP_SECONDS, MAX_SEEK_STEP_SECONDS)
+    seekStepSeconds: isFiniteInRange(
+      raw.seekStepSeconds,
+      MIN_SEEK_STEP_SECONDS,
+      MAX_SEEK_STEP_SECONDS,
+    )
       ? raw.seekStepSeconds
       : DEFAULT_PREFS.seekStepSeconds,
-    previewPlaybackRate: isFiniteInRange(raw.previewPlaybackRate, MIN_PREVIEW_PLAYBACK_RATE, MAX_PREVIEW_PLAYBACK_RATE)
+    previewPlaybackRate: isFiniteInRange(
+      raw.previewPlaybackRate,
+      MIN_PREVIEW_PLAYBACK_RATE,
+      MAX_PREVIEW_PLAYBACK_RATE,
+    )
       ? raw.previewPlaybackRate
       : DEFAULT_PREFS.previewPlaybackRate,
-  };
+  }
 }
 
 /**
@@ -103,31 +114,31 @@ export function loadUserPreferences(): UserPreferences {
  * "C:\\video.mp4" -> "C:\\"). Returns null if no separator is found.
  */
 export function parentDirectoryOf(filePath: string): string | null {
-  const lastSep = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
-  if (lastSep < 0) return null;
+  const lastSep = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'))
+  if (lastSep < 0) return null
 
   // POSIX root, e.g. "/video.mp4" -> "/"
-  if (lastSep === 0) return filePath[0];
+  if (lastSep === 0) return filePath[0]
 
   // Windows drive root, e.g. "C:\\video.mp4" -> "C:\\"
   if (lastSep === 2 && /^[A-Za-z]:[/\\]/.test(filePath)) {
-    return filePath.slice(0, lastSep + 1);
+    return filePath.slice(0, lastSep + 1)
   }
 
-  return filePath.slice(0, lastSep);
+  return filePath.slice(0, lastSep)
 }
 
 /** Remembered export folder as `string | undefined`, for IPC handlers that treat absence as "use the default". */
 export function getExportFolder(): string | undefined {
-  return loadUserPreferences().exportFolder ?? undefined;
+  return loadUserPreferences().exportFolder ?? undefined
 }
 
 /** Persist preferences to localStorage; only the provided fields are updated. */
 export function saveUserPreferences(partial: Partial<UserPreferences>): void {
-  const current = loadUserPreferences();
-  const merged = { ...current, ...partial };
+  const current = loadUserPreferences()
+  const merged = { ...current, ...partial }
   try {
-    localStorage.setItem(USER_PREFERENCES_STORAGE_KEY, JSON.stringify(merged));
+    localStorage.setItem(USER_PREFERENCES_STORAGE_KEY, JSON.stringify(merged))
   } catch {
     // localStorage may be unavailable (e.g. private browsing, quota exceeded)
   }

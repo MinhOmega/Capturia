@@ -1,4 +1,19 @@
-import { app, BrowserWindow, Tray, Menu, nativeImage, session, desktopCapturer, globalShortcut, ipcMain, dialog, shell, protocol, clipboard, net } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  Tray,
+  Menu,
+  nativeImage,
+  session,
+  desktopCapturer,
+  globalShortcut,
+  ipcMain,
+  dialog,
+  shell,
+  protocol,
+  clipboard,
+  net,
+} from 'electron'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import os from 'node:os'
@@ -24,7 +39,13 @@ import { buildIssueReportUrl, GITHUB_ISSUES_URL } from '../src/lib/supportLinks'
 import { getMainLocale, mainT, setMainLocale } from './i18n'
 import { mainLogBuffer } from './diagnostics/main-log-buffer'
 import { getInstallChannel } from './install-channel'
-import { type AboutFacts, COPYRIGHT, formatAboutDetail, PRODUCT_NAME, usesNativeAboutPanel } from './about'
+import {
+  type AboutFacts,
+  COPYRIGHT,
+  formatAboutDetail,
+  PRODUCT_NAME,
+  usesNativeAboutPanel,
+} from './about'
 import { buildEditMenuSubmenu, type EditorUndoRedoChannel, routeEditorUndoRedo } from './edit-menu'
 import {
   acceleratorToBinding,
@@ -57,7 +78,6 @@ if (IS_LINUX_WAYLAND) {
 // Resolved once at startup; `electron/paths.ts` owns the layout (lazy, testable).
 const RECORDINGS_DIR = getRecordingsDir()
 
-
 async function ensureRecordingsDir() {
   try {
     await fs.mkdir(RECORDINGS_DIR, { recursive: true })
@@ -84,7 +104,9 @@ export const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL']
 export const MAIN_DIST = path.join(process.env.APP_ROOT, 'dist-electron')
 export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist')
 
-process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL ? path.join(process.env.APP_ROOT, 'public') : RENDERER_DIST
+process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
+  ? path.join(process.env.APP_ROOT, 'public')
+  : RENDERER_DIST
 
 // Window references
 let mainWindow: BrowserWindow | null = null
@@ -123,8 +145,8 @@ const isMac = process.platform === 'darwin'
 const trayIconSize = isMac ? 16 : 24
 
 // Tray Icons
-const defaultTrayIcon = getTrayIcon('capturia.png', trayIconSize);
-const recordingTrayIcon = getTrayIcon('rec-button.png', trayIconSize);
+const defaultTrayIcon = getTrayIcon('capturia.png', trayIconSize)
+const recordingTrayIcon = getTrayIcon('rec-button.png', trayIconSize)
 
 function createWindow() {
   // Guard against duplicate HUDs (activate + tray + second-instance can race).
@@ -162,7 +184,7 @@ if (hasSingleInstanceLock) {
 }
 
 function createTray() {
-  tray = new Tray(defaultTrayIcon);
+  tray = new Tray(defaultTrayIcon)
   // Left click (Windows) / click without context menu: bring the HUD back.
   tray.on('click', () => {
     showMainWindow()
@@ -173,11 +195,13 @@ function createTray() {
 }
 
 function getTrayIcon(filename: string, size: number) {
-  return nativeImage.createFromPath(path.join(process.env.VITE_PUBLIC || RENDERER_DIST, filename)).resize({
-    width: size,
-    height: size,
-    quality: 'best'
-  });
+  return nativeImage
+    .createFromPath(path.join(process.env.VITE_PUBLIC || RENDERER_DIST, filename))
+    .resize({
+      width: size,
+      height: size,
+      quality: 'best',
+    })
 }
 
 // Main follows the renderer's language via the `set-locale` IPC; until the
@@ -295,7 +319,11 @@ function reportRuntimeError(context: string, error: unknown): void {
   void showRuntimeErrorDialog(context, error)
 }
 
-function trayText(locale: string, key: 'app' | 'recording' | 'stop' | 'open' | 'quit', source?: string): string {
+function trayText(
+  locale: string,
+  key: 'app' | 'recording' | 'stop' | 'open' | 'quit',
+  source?: string,
+): string {
   const keys = {
     app: 'common.electron.tray.openScreen',
     recording: 'common.electron.tray.recording',
@@ -306,12 +334,13 @@ function trayText(locale: string, key: 'app' | 'recording' | 'stop' | 'open' | '
   return mainT(locale, keys[key], { source: source ?? '' })
 }
 
-
 function updateTrayMenu(recording: boolean = false) {
-  if (!tray) return;
-  const locale = currentLocale();
-  const trayIcon = recording ? recordingTrayIcon : defaultTrayIcon;
-  const trayToolTip = recording ? trayText(locale, 'recording', selectedSourceName) : trayText(locale, 'app');
+  if (!tray) return
+  const locale = currentLocale()
+  const trayIcon = recording ? recordingTrayIcon : defaultTrayIcon
+  const trayToolTip = recording
+    ? trayText(locale, 'recording', selectedSourceName)
+    : trayText(locale, 'app')
   const menuTemplate = recording
     ? [
         {
@@ -329,13 +358,13 @@ function updateTrayMenu(recording: boolean = false) {
         {
           label: trayText(locale, 'quit'),
           click: () => {
-            app.quit();
+            app.quit()
           },
         },
-      ];
-  tray.setImage(trayIcon);
-  tray.setToolTip(trayToolTip);
-  tray.setContextMenu(Menu.buildFromTemplate(menuTemplate));
+      ]
+  tray.setImage(trayIcon)
+  tray.setToolTip(trayToolTip)
+  tray.setContextMenu(Menu.buildFromTemplate(menuTemplate))
 }
 
 function emitStopRecordingRequest(): void {
@@ -362,7 +391,9 @@ function isGlobalShortcutAction(value: unknown): value is GlobalShortcutAction {
   return typeof value === 'string' && (GLOBAL_SHORTCUT_ACTIONS as readonly string[]).includes(value)
 }
 
-function shortcutErrorMessage(error: 'empty' | 'conflict' | 'unavailable' | undefined): string | undefined {
+function shortcutErrorMessage(
+  error: 'empty' | 'conflict' | 'unavailable' | undefined,
+): string | undefined {
   if (!error) return undefined
   return mainT(currentLocale(), `common.electron.shortcut.${error}`)
 }
@@ -560,13 +591,19 @@ function setupApplicationMenu(): void {
         { type: 'separator' },
         { role: 'reload', label: menuLabel('actions.reload', 'Reload') },
         { role: 'forceReload', label: menuLabel('actions.forceReload', 'Force Reload') },
-        { role: 'toggleDevTools', label: menuLabel('actions.toggleDevTools', 'Toggle Developer Tools') },
+        {
+          role: 'toggleDevTools',
+          label: menuLabel('actions.toggleDevTools', 'Toggle Developer Tools'),
+        },
         { type: 'separator' },
         { role: 'resetZoom', label: menuLabel('actions.actualSize', 'Actual Size') },
         { role: 'zoomIn', label: menuLabel('actions.zoomIn', 'Zoom In') },
         { role: 'zoomOut', label: menuLabel('actions.zoomOut', 'Zoom Out') },
         { type: 'separator' },
-        { role: 'togglefullscreen', label: menuLabel('actions.toggleFullScreen', 'Toggle Full Screen') },
+        {
+          role: 'togglefullscreen',
+          label: menuLabel('actions.toggleFullScreen', 'Toggle Full Screen'),
+        },
       ],
     },
     {
@@ -630,7 +667,10 @@ function setupApplicationMenu(): void {
 let updateCheckInFlight = false
 const UPDATE_CHECK_TIMEOUT_MS = 10_000
 
-function updatesText(key: 'available' | 'current' | 'failed' | 'openRelease', vars?: Record<string, string>): string {
+function updatesText(
+  key: 'available' | 'current' | 'failed' | 'openRelease',
+  vars?: Record<string, string>,
+): string {
   return mainT(currentLocale(), `common.electron.updates.${key}`, vars)
 }
 
@@ -722,7 +762,8 @@ function configureAboutPanel(): void {
 
 /** Message boxes must be owned by a visible window or they open behind the always-on-top HUD. */
 function showMessageBox(options: Electron.MessageBoxOptions) {
-  const visible = (win: BrowserWindow | null) => (win && !win.isDestroyed() && win.isVisible() ? win : null)
+  const visible = (win: BrowserWindow | null) =>
+    win && !win.isDestroyed() && win.isVisible() ? win : null
   const parent = visible(BrowserWindow.getFocusedWindow()) ?? visible(mainWindow)
   return parent ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options)
 }
@@ -810,7 +851,9 @@ function buildDiagnosticReport(payload: DiagnosticPayload): string {
   const mainLog = mainLogBuffer.snapshot()
   lines.push('', `## Main process log (${mainLog.length} lines)`)
   for (const entry of mainLog) {
-    lines.push(`${new Date(entry.timestampMs).toISOString()} ${entry.level.toUpperCase().padEnd(5)} ${entry.text}`)
+    lines.push(
+      `${new Date(entry.timestampMs).toISOString()} ${entry.level.toUpperCase().padEnd(5)} ${entry.text}`,
+    )
   }
   return `${lines.join('\n')}\n`
 }
@@ -837,7 +880,9 @@ async function exportDiagnosticFile(
     ],
   }
   const result =
-    parent && !parent.isDestroyed() ? await dialog.showSaveDialog(parent, options) : await dialog.showSaveDialog(options)
+    parent && !parent.isDestroyed()
+      ? await dialog.showSaveDialog(parent, options)
+      : await dialog.showSaveDialog(options)
   if (result.canceled || !result.filePath) {
     return { success: false, cancelled: true }
   }
@@ -871,7 +916,10 @@ async function runSaveDiagnostics(): Promise<void> {
     title: mainT(locale, 'common.electron.diagnostics.savedTitle'),
     message: mainT(locale, 'common.electron.diagnostics.savedTitle'),
     detail: mainT(locale, 'common.electron.diagnostics.savedMessage', { path: result.path }),
-    buttons: [mainT(locale, 'common.electron.diagnostics.reveal'), menuLabel('actions.close', 'Close')],
+    buttons: [
+      mainT(locale, 'common.electron.diagnostics.reveal'),
+      menuLabel('actions.close', 'Close'),
+    ],
     defaultId: 0,
     cancelId: 1,
     noLink: true,
@@ -995,8 +1043,6 @@ app.on('before-quit', (event) => {
   })()
 })
 
-
-
 // Web permissions the renderer may hold/request. Everything else (notifications,
 // geolocation, clipboard, ...) is denied. `fullscreen` is a Capturia addition for the
 // editor's fullscreen preview (`requestFullscreen()`); the rest mirrors upstream.
@@ -1108,7 +1154,10 @@ appReady?.then(async () => {
   session.defaultSession.setDisplayMediaRequestHandler(async (_request, callback) => {
     let callbackInvoked = false
     try {
-      console.log('[display-media] handler invoked, selectedDesktopSourceId:', selectedDesktopSourceId)
+      console.log(
+        '[display-media] handler invoked, selectedDesktopSourceId:',
+        selectedDesktopSourceId,
+      )
       if (!selectedDesktopSourceId) {
         console.warn('[display-media] no selectedDesktopSourceId, rejecting request')
         callbackInvoked = true
@@ -1121,7 +1170,12 @@ appReady?.then(async () => {
         thumbnailSize: { width: 1, height: 1 },
         fetchWindowIcons: false,
       })
-      console.log('[display-media] desktopCapturer returned', sources.length, 'sources:', sources.map(s => s.id))
+      console.log(
+        '[display-media] desktopCapturer returned',
+        sources.length,
+        'sources:',
+        sources.map((s) => s.id),
+      )
       let selectedSource = sources.find((source) => source.id === selectedDesktopSourceId)
       // On Linux, window/screen IDs can change between source selection and recording.
       // Fall back to matching by type prefix (e.g. "window:" or "screen:").
@@ -1129,7 +1183,10 @@ appReady?.then(async () => {
         const typePrefix = selectedDesktopSourceId.split(':')[0] + ':'
         selectedSource = sources.find((source) => source.id.startsWith(typePrefix))
         if (selectedSource) {
-          console.log('[display-media] exact ID not found, matched by type prefix:', selectedSource.id)
+          console.log(
+            '[display-media] exact ID not found, matched by type prefix:',
+            selectedSource.id,
+          )
         }
       }
       if (!selectedSource) {
@@ -1192,7 +1249,11 @@ appReady?.then(async () => {
         }
       }
     }
-    return { success: result.ok, accelerator: result.accelerator, message: shortcutErrorMessage(result.error) }
+    return {
+      success: result.ok,
+      accelerator: result.accelerator,
+      message: shortcutErrorMessage(result.error),
+    }
   })
   ipcMain.handle('get-stop-recording-shortcut', () => {
     return { success: true, accelerator: globalShortcuts.getAccelerator('stopRecording') ?? '' }
@@ -1204,7 +1265,11 @@ appReady?.then(async () => {
       return { ok: false, accelerator: '', error: 'invalid' as const }
     }
     if (!binding || typeof binding.key !== 'string' || !isGlobalBindingAllowed(binding)) {
-      return { ok: false, accelerator: globalShortcuts.getAccelerator(action) ?? '', error: 'needsModifier' as const }
+      return {
+        ok: false,
+        accelerator: globalShortcuts.getAccelerator(action) ?? '',
+        error: 'needsModifier' as const,
+      }
     }
     const result = globalShortcuts.register(action, binding)
     return { ok: result.ok, accelerator: result.accelerator, error: result.error }
@@ -1222,7 +1287,10 @@ appReady?.then(async () => {
     return exportDiagnosticFile(payload && typeof payload === 'object' ? payload : {})
   })
   ipcMain.handle('get-main-log-tail', (_, lines?: number) => {
-    const count = Number.isFinite(lines) && (lines as number) > 0 ? Math.min(500, Math.floor(lines as number)) : ISSUE_LOG_TAIL_LINES
+    const count =
+      Number.isFinite(lines) && (lines as number) > 0
+        ? Math.min(500, Math.floor(lines as number))
+        : ISSUE_LOG_TAIL_LINES
     return mainLogBuffer.tail(count)
   })
 

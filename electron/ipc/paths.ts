@@ -60,24 +60,39 @@ export function hasAllowedExtension(
   return allowed.has(platformPath.extname(filePath).toLowerCase())
 }
 
-export function hasAllowedImportVideoExtension(filePath: string, platformPath: PlatformPath = nodePath): boolean {
+export function hasAllowedImportVideoExtension(
+  filePath: string,
+  platformPath: PlatformPath = nodePath,
+): boolean {
   return hasAllowedExtension(filePath, ALLOWED_IMPORT_VIDEO_EXTENSIONS, platformPath)
 }
 
-export function hasAllowedReadableExtension(filePath: string, platformPath: PlatformPath = nodePath): boolean {
+export function hasAllowedReadableExtension(
+  filePath: string,
+  platformPath: PlatformPath = nodePath,
+): boolean {
   return hasAllowedExtension(filePath, ALLOWED_READABLE_EXTENSIONS, platformPath)
 }
 
-export function hasAllowedExportExtension(filePath: string, platformPath: PlatformPath = nodePath): boolean {
+export function hasAllowedExportExtension(
+  filePath: string,
+  platformPath: PlatformPath = nodePath,
+): boolean {
   return hasAllowedExtension(filePath, ALLOWED_EXPORT_EXTENSIONS, platformPath)
 }
 
 /** True when `filePath` resolves to `dirPath` itself or to something below it. */
-export function isPathWithinDir(filePath: string, dirPath: string, platformPath: PlatformPath = nodePath): boolean {
+export function isPathWithinDir(
+  filePath: string,
+  dirPath: string,
+  platformPath: PlatformPath = nodePath,
+): boolean {
   const resolved = canonicalize(filePath, platformPath)
   const resolvedDir = canonicalize(dirPath, platformPath)
   if (resolved === resolvedDir) return true
-  const prefix = resolvedDir.endsWith(platformPath.sep) ? resolvedDir : resolvedDir + platformPath.sep
+  const prefix = resolvedDir.endsWith(platformPath.sep)
+    ? resolvedDir
+    : resolvedDir + platformPath.sep
   return resolved.startsWith(prefix)
 }
 
@@ -196,7 +211,10 @@ export function normalizeVideoSourcePath(
  * when the URL cannot be parsed. Handles the `/C:/...` form the renderer produces
  * on Windows.
  */
-export function localMediaUrlToPath(rawUrl: string, platformPath: PlatformPath = nodePath): string | null {
+export function localMediaUrlToPath(
+  rawUrl: string,
+  platformPath: PlatformPath = nodePath,
+): string | null {
   let pathname: string
   try {
     pathname = new URL(rawUrl).pathname
@@ -244,7 +262,13 @@ export function resolveOutputPathInDir(
     nodePath.win32.isAbsolute(trimmed) ||
     trimmed.includes('/') ||
     trimmed.includes('\\')
-  if (hasTraversalSegments || isNestedPath || parsed.base !== trimmed || trimmed === '.' || trimmed === '..') {
+  if (
+    hasTraversalSegments ||
+    isNestedPath ||
+    parsed.base !== trimmed ||
+    trimmed === '.' ||
+    trimmed === '..'
+  ) {
     throw new Error('File name must not contain path segments')
   }
 
@@ -294,7 +318,10 @@ export interface ExportPolicyOptions {
  * returned by a save dialog or a file directly inside a directory returned by the
  * export-directory picker.
  */
-export function isAllowedExportPath(targetPath: unknown, options: ExportPolicyOptions = {}): boolean {
+export function isAllowedExportPath(
+  targetPath: unknown,
+  options: ExportPolicyOptions = {},
+): boolean {
   const platformPath = options.platformPath ?? nodePath
   const registry = options.registry ?? approvedExportPaths
   if (typeof targetPath !== 'string' || targetPath.trim().length === 0) return false

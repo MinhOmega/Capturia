@@ -35,6 +35,8 @@
     "build:native": "node scripts/build-native-macos-helper.mjs",
     "build": "npm run build:native && tsc && vite build && electron-builder --publish never",
     "lint": "biome lint .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
     "preview": "vite preview",
     "build:mac": "npm run build:native && tsc && vite build && electron-builder --mac --publish never",
     "build:mac:x64": "npm run build:native && tsc && vite build && electron-builder --mac dmg --x64 --publish never",
@@ -126,6 +128,6 @@
   },
   "main": "dist-electron/main.js",
   "lint-staged": {
-    "*.{ts,tsx,js,jsx,mjs,cjs,json}": "biome check --no-errors-on-unmatched --files-ignore-unknown=true"
+    "*.{ts,tsx,js,jsx,mjs,cjs,json}": "biome check --write --no-errors-on-unmatched --files-ignore-unknown=true"
   }
 }

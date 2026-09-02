@@ -11,11 +11,19 @@
       "!**/release/**",
       "!**/landing/**",
       "!**/node_modules/**",
-      "!**/icons/**"
+      "!**/icons/**",
+      "!.claude/worktrees/**",
+      "!**/dist*/**",
+      "!public/wasm/**",
+      "!dist/ort/**",
+      "!src/assets/cursors/*.svg",
+      "!electron/native/**/*.swift",
+      "!**/package-lock.json",
+      "!src/i18n/locales/**"
     ]
   },
   "formatter": {
-    "enabled": false,
+    "enabled": true,
     "indentStyle": "space",
     "indentWidth": 2,
     "formatWithErrors": true,
@@ -111,7 +119,11 @@
       "quoteStyle": "single",
       "jsxQuoteStyle": "double",
       "semicolons": "asNeeded",
-      "trailingCommas": "all"
+      "trailingCommas": "all",
+      "quoteProperties": "preserve",
+      "arrowParentheses": "always",
+      "bracketSpacing": true,
+      "bracketSameLine": false
     }
   },
   "overrides": [

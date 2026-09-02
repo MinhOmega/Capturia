@@ -23,7 +23,10 @@ export function sanitizeCropRegion(region: CropRegion): CropRegion {
   return { x, y, width, height }
 }
 
-export function getCenteredAspectCropRegion(sourceAspectInput: number, targetAspectInput: number): CropRegion {
+export function getCenteredAspectCropRegion(
+  sourceAspectInput: number,
+  targetAspectInput: number,
+): CropRegion {
   const sourceAspect = sanitizeAspect(sourceAspectInput, 16 / 9)
   const targetAspect = sanitizeAspect(targetAspectInput, sourceAspect)
 
@@ -61,12 +64,15 @@ export function normalizeAspectCropRegion(
 
   const maxWidthFromCenter = 2 * Math.min(centerX, 1 - centerX)
   const maxHeightFromCenter = 2 * Math.min(centerY, 1 - centerY)
-  const maxWidthFromHeight = maxHeightFromCenter * targetAspect / sourceAspect
+  const maxWidthFromHeight = (maxHeightFromCenter * targetAspect) / sourceAspect
   const maxAllowedWidth = clamp(Math.min(maxWidthFromCenter, maxWidthFromHeight), MIN_SIZE, 1)
 
-  const requestedWidthFromInput = Math.max(region.width, region.height * targetAspect / sourceAspect)
+  const requestedWidthFromInput = Math.max(
+    region.width,
+    (region.height * targetAspect) / sourceAspect,
+  )
   const width = clamp(requestedWidthFromInput, MIN_SIZE, maxAllowedWidth)
-  const height = clamp(width * sourceAspect / targetAspect, MIN_SIZE, 1)
+  const height = clamp((width * sourceAspect) / targetAspect, MIN_SIZE, 1)
 
   const nextX = clamp(centerX - width / 2, 0, 1 - width)
   const nextY = clamp(centerY - height / 2, 0, 1 - height)
@@ -81,10 +87,9 @@ export function normalizeAspectCropRegion(
 
 export function cropRegionEquals(a: CropRegion, b: CropRegion, epsilon = 1e-4): boolean {
   return (
-    Math.abs(a.x - b.x) <= epsilon
-    && Math.abs(a.y - b.y) <= epsilon
-    && Math.abs(a.width - b.width) <= epsilon
-    && Math.abs(a.height - b.height) <= epsilon
+    Math.abs(a.x - b.x) <= epsilon &&
+    Math.abs(a.y - b.y) <= epsilon &&
+    Math.abs(a.width - b.width) <= epsilon &&
+    Math.abs(a.height - b.height) <= epsilon
   )
 }
-

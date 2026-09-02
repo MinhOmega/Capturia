@@ -6,19 +6,19 @@
  * explicitly with `data-timeline-scrub="off"` (Capturia's segment blocks, which
  * select on click instead).
  */
-export const TIMELINE_SCRUB_OPT_OUT_ATTR = 'data-timeline-scrub';
+export const TIMELINE_SCRUB_OPT_OUT_ATTR = 'data-timeline-scrub'
 
 export function shouldStartTimelineScrub(
   target: EventTarget | null,
   timelineElement: HTMLElement,
 ): boolean {
   if (!(target instanceof HTMLElement)) {
-    return false;
+    return false
   }
 
   for (let element: HTMLElement | null = target; element && element !== timelineElement; ) {
-    const className = element.className;
-    const classText = typeof className === 'string' ? className : '';
+    const className = element.className
+    const classText = typeof className === 'string' ? className : ''
 
     if (
       classText.split(/\s+/).includes('group') ||
@@ -28,11 +28,11 @@ export function shouldStartTimelineScrub(
       element.style.cursor === 'col-resize' ||
       element.getAttribute(TIMELINE_SCRUB_OPT_OUT_ATTR) === 'off'
     ) {
-      return false;
+      return false
     }
 
-    element = element.parentElement;
+    element = element.parentElement
   }
 
-  return true;
+  return true
 }

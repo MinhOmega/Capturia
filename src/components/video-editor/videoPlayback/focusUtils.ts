@@ -1,12 +1,12 @@
-import { ZOOM_DEPTH_SCALES, clampFocus, type ZoomFocus, type ZoomDepth } from "../types";
+import { ZOOM_DEPTH_SCALES, clampFocus, type ZoomFocus, type ZoomDepth } from '../types'
 
 interface StageSize {
-  width: number;
-  height: number;
+  width: number
+  height: number
 }
 
 function clamp(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, value));
+  return Math.max(min, Math.min(max, value))
 }
 
 /**
@@ -15,15 +15,15 @@ function clamp(value: number, min: number, max: number) {
  * window to any edge. Stage-normalised, so it's independent of stage size.
  */
 export function getFocusBoundsForScale(zoomScale: number) {
-  const safeScale = Number.isFinite(zoomScale) && zoomScale > 0 ? zoomScale : 1;
-  const margin = Math.min(0.5, 1 / (2 * safeScale));
+  const safeScale = Number.isFinite(zoomScale) && zoomScale > 0 ? zoomScale : 1
+  const margin = Math.min(0.5, 1 / (2 * safeScale))
 
   return {
     minX: margin,
     maxX: 1 - margin,
     minY: margin,
     maxY: 1 - margin,
-  };
+  }
 }
 
 /**
@@ -35,24 +35,24 @@ export function getFocusBoundsForScale(zoomScale: number) {
 export function clampFocusToScale(
   focus: ZoomFocus,
   zoomScale: number,
-  _stageSize?: StageSize
+  _stageSize?: StageSize,
 ): ZoomFocus {
-  const baseFocus = clampFocus(focus);
-  const bounds = getFocusBoundsForScale(zoomScale);
+  const baseFocus = clampFocus(focus)
+  const bounds = getFocusBoundsForScale(zoomScale)
 
   return {
     cx: clamp(baseFocus.cx, bounds.minX, bounds.maxX),
     cy: clamp(baseFocus.cy, bounds.minY, bounds.maxY),
-  };
+  }
 }
 
 /** Depth-preset wrapper around clampFocusToScale. */
 export function clampFocusToStage(
   focus: ZoomFocus,
   depth: ZoomDepth,
-  stageSize: StageSize
+  stageSize: StageSize,
 ): ZoomFocus {
-  return clampFocusToScale(focus, ZOOM_DEPTH_SCALES[depth], stageSize);
+  return clampFocusToScale(focus, ZOOM_DEPTH_SCALES[depth], stageSize)
 }
 
 export function stageFocusToVideoSpace(
@@ -60,20 +60,26 @@ export function stageFocusToVideoSpace(
   stageSize: StageSize,
   videoSize: { width: number; height: number },
   baseScale: number,
-  baseOffset: { x: number; y: number }
+  baseOffset: { x: number; y: number },
 ): ZoomFocus {
-  if (!stageSize.width || !stageSize.height || !videoSize.width || !videoSize.height || baseScale <= 0) {
-    return focus;
+  if (
+    !stageSize.width ||
+    !stageSize.height ||
+    !videoSize.width ||
+    !videoSize.height ||
+    baseScale <= 0
+  ) {
+    return focus
   }
 
-  const stageX = focus.cx * stageSize.width;
-  const stageY = focus.cy * stageSize.height;
+  const stageX = focus.cx * stageSize.width
+  const stageY = focus.cy * stageSize.height
 
-  const videoNormX = (stageX - baseOffset.x) / (videoSize.width * baseScale);
-  const videoNormY = (stageY - baseOffset.y) / (videoSize.height * baseScale);
+  const videoNormX = (stageX - baseOffset.x) / (videoSize.width * baseScale)
+  const videoNormY = (stageY - baseOffset.y) / (videoSize.height * baseScale)
 
   return {
     cx: videoNormX,
     cy: videoNormY,
-  };
+  }
 }
