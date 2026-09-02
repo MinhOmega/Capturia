@@ -12,6 +12,7 @@
 	"exportWarningAudioCodecUnsupported": "AAC audio encoding is not supported on this system. The video was exported without audio.",
 	"exportWarningDecoderFallback": "The fast WebCodecs decoder could not read this recording, so the export used the slower compatibility decoder.",
 	"exportWarningDecodeEndedEarly": "The source stopped decoding before its reported end, so the export may be slightly shorter than expected.",
+	"recordingSystemAudioUnavailable": "System audio could not be captured. Recording continues without it.",
 	"recordingCameraDisconnected": "Camera disconnected. Recording continues without the camera overlay.",
 	"saveGifFailed": "Failed to save GIF",
 	"saveVideoFailed": "Failed to save video",

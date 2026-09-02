@@ -34,6 +34,8 @@ import {
   SlidersHorizontal,
   Timer,
   Trash2,
+  Volume2,
+  VolumeX,
 } from 'lucide-react'
 import { getAvailableLocales, getLocaleName, useI18n } from '@/i18n'
 import { toast } from 'sonner'
@@ -84,6 +86,7 @@ const STOP_SHORTCUT_STORAGE_KEY = 'capturia.stopRecordingShortcut'
 const CAMERA_DEVICE_STORAGE_KEY = 'capturia.cameraDeviceId'
 const MICROPHONE_ENABLED_STORAGE_KEY = 'capturia.microphoneEnabled'
 const MICROPHONE_DEVICE_STORAGE_KEY = 'capturia.microphoneDeviceId'
+const SYSTEM_AUDIO_ENABLED_STORAGE_KEY = 'capturia.systemAudioEnabled'
 const DEFAULT_STOP_RECORDING_SHORTCUT = 'CommandOrControl+Shift+2'
 const AUTO_HIDE_HUD_ON_RECORD_STORAGE_KEY = 'capturia.autoHideHudOnRecord'
 const CAPTURE_MODE_STORAGE_KEY = 'capturia.captureMode'
@@ -240,6 +243,11 @@ export function LaunchWindow() {
     (device) => device.deviceId === microphoneDeviceId,
   )?.label
   const [microphonePopoverOpen, setMicrophonePopoverOpen] = useState(false)
+  // System audio (what the computer plays), mixed with the mic. Off by default:
+  // loopback capture is a deliberate choice, not something to surprise a user with.
+  const [systemAudioEnabled, setSystemAudioEnabled] = useState(
+    () => readStoredString(SYSTEM_AUDIO_ENABLED_STORAGE_KEY) === '1',
+  )
   const [captureProfile, setCaptureProfile] = useState<CaptureProfile>(() => {
     try {
       const value = window.localStorage.getItem('capturia.captureProfile')
@@ -349,6 +357,7 @@ export function LaunchWindow() {
     recording,
     recordingState,
     canPause,
+    nativeSystemAudioSupported,
     toggleRecording,
     pauseRecording,
     resumeRecording,
@@ -365,12 +374,19 @@ export function LaunchWindow() {
     cameraDeviceName,
     microphoneEnabled,
     microphoneDeviceId,
+    // The hook ignores this on the macOS browser fallback path; on the native path
+    // the helper answers with `canCaptureSystemAudio`, which gates the toggle below.
+    systemAudioEnabled,
     captureProfile,
     captureFrameRate: captureMode === 'pro' ? captureFrameRate : undefined,
     captureResolutionPreset: captureMode === 'pro' ? captureResolutionPreset : undefined,
     recordSystemCursor,
   })
   const isTransitioning = recordingState === 'starting' || recordingState === 'stopping'
+  // The browser recording path can only capture system audio on Windows (loopback)
+  // and Linux (desktop audio source). On macOS it is the native helper's job, so the
+  // toggle stays hidden there until the helper has reported that it can do it.
+  const systemAudioToggleAvailable = !isMacPlatform || nativeSystemAudioSupported
   const [countdownRemaining, setCountdownRemaining] = useState<number | null>(null)
   const isCountingDown = countdownRemaining !== null
   const controlsLocked = recording || isTransitioning || isCountingDown
@@ -745,6 +761,10 @@ export function LaunchWindow() {
   useEffect(() => {
     writeStoredString(MICROPHONE_DEVICE_STORAGE_KEY, microphoneDeviceId)
   }, [microphoneDeviceId])
+
+  useEffect(() => {
+    writeStoredString(SYSTEM_AUDIO_ENABLED_STORAGE_KEY, systemAudioEnabled ? '1' : '0')
+  }, [systemAudioEnabled])
 
   useEffect(() => {
     try {
@@ -1584,6 +1604,32 @@ export function LaunchWindow() {
             </Popover>
           ) : null}
         </div>
+
+        {systemAudioToggleAvailable ? (
+          <Button
+            variant="link"
+            size="sm"
+            className={`gap-1 shrink-0 min-w-[96px] text-white bg-transparent hover:bg-transparent px-1 text-center text-xs ${styles.electronNoDrag}`}
+            onClick={() => setSystemAudioEnabled((value) => !value)}
+            disabled={controlsLocked}
+            title={
+              systemAudioEnabled
+                ? t('launch.audio.disableSystemAudio')
+                : t('launch.audio.enableSystemAudio')
+            }
+            aria-pressed={systemAudioEnabled}
+            data-testid="launch-system-audio-toggle"
+          >
+            {systemAudioEnabled ? (
+              <Volume2 size={14} className="text-cyan-300" />
+            ) : (
+              <VolumeX size={14} className="text-white/50" />
+            )}
+            <span className={systemAudioEnabled ? 'text-cyan-300' : 'text-white/50'}>
+              {t('launch.systemAudio')}
+            </span>
+          </Button>
+        ) : null}
 
         <Button
           variant="link"

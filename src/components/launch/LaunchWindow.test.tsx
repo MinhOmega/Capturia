@@ -67,6 +67,7 @@ const recorderState = vi.hoisted(() => ({
     recording: false,
     recordingState: 'idle' as RecordingPhase,
     canPause: false,
+    nativeSystemAudioSupported: false,
     toggleRecording: vi.fn(),
     pauseRecording: vi.fn(),
     resumeRecording: vi.fn(),
@@ -455,5 +456,59 @@ describe('LaunchWindow HUD geometry', () => {
     fireResizeObservers()
     await flushAnimationFrames()
     expect(setSize).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('LaunchWindow system audio toggle', () => {
+  beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', StubResizeObserver)
+    resizeObservers.length = 0
+    window.localStorage.clear()
+    selectedSourceChangedListeners = []
+    sourceSelectorClosedListeners = []
+    mainSelectedSource = null
+    recorderState.value.nativeSystemAudioSupported = false
+    stubElectronAPI()
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+  })
+
+  it('is hidden on macOS until the native helper reports system-audio capture', async () => {
+    const { unmount } = render(<LaunchWindow />)
+    await screen.findByTestId('hud-bar')
+    await waitFor(() => {
+      expect(window.electronAPI.getPlatform).toHaveBeenCalled()
+    })
+    await waitFor(() => {
+      expect(screen.queryByTestId('launch-system-audio-toggle')).not.toBeInTheDocument()
+    })
+    unmount()
+
+    recorderState.value.nativeSystemAudioSupported = true
+    render(<LaunchWindow />)
+    expect(await screen.findByTestId('launch-system-audio-toggle')).toBeInTheDocument()
+  })
+
+  it('is shown on Linux and Windows, starts off and remembers the choice', async () => {
+    window.electronAPI.getPlatform = vi.fn(async () => 'linux')
+    const { unmount } = render(<LaunchWindow />)
+    const toggle = await screen.findByTestId('launch-system-audio-toggle')
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    expect(toggle).toHaveAttribute('title', 'Record system audio (what the computer plays)')
+
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    expect(toggle).toHaveAttribute('title', 'Stop recording system audio')
+    expect(window.localStorage.getItem('capturia.systemAudioEnabled')).toBe('1')
+
+    unmount()
+    render(<LaunchWindow />)
+    expect(await screen.findByTestId('launch-system-audio-toggle')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
   })
 })
