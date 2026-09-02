@@ -41,6 +41,10 @@ function ortWasmPlugin(): Plugin {
 
 const EMPTY_NODE_MODULE = path.resolve(__dirname, 'src/lib/vite-stubs/empty-node-module.ts')
 
+// Mirrors the guard in electron/main.ts: software rendering on Linux Wayland because
+// Electron 39 could hard-crash on some Ubuntu Wayland GPU stacks at startup. Kept as-is
+// through the Electron 41 upgrade (F8) until someone re-tests on a Wayland desktop; if
+// 41 launches cleanly without it, drop both this and the main.ts block together.
 const isLinuxWayland = process.platform === 'linux' && (process.env.XDG_SESSION_TYPE || '').toLowerCase() === 'wayland'
 const devElectronArgs = [
   '.',
