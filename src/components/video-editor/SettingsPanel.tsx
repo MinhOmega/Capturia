@@ -25,6 +25,7 @@ import {
   WandSparkles,
   Info,
   MousePointer2,
+  ChevronDown,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import * as SliderPrimitive from '@radix-ui/react-slider'
@@ -70,6 +71,7 @@ import { GITHUB_ISSUES_URL, GITHUB_REPO_URL } from '@/lib/supportLinks'
 import { reportUserActionError } from '@/lib/userErrorFeedback'
 import { BACKGROUND_IMAGE_ACCEPT, isSupportedBackgroundImageType } from './backgroundImageUpload'
 import { BACKGROUND_GRADIENT_PRESETS } from './backgroundPresets'
+import { GradientEditor } from './GradientEditor'
 import {
   DEFAULT_WALLPAPER,
   isSameBuiltInWallpaper,
@@ -496,6 +498,7 @@ export function SettingsPanel({
 
   const [selectedColor, setSelectedColor] = useState('#ADADAD')
   const [gradient, setGradient] = useState<string>(GRADIENTS[0])
+  const [showGradientEditor, setShowGradientEditor] = useState(false)
   const [showCropDropdown, setShowCropDropdown] = useState(false)
   const activeExportAspectRatios = exportAspectRatios
 
@@ -1797,6 +1800,31 @@ export function SettingsPanel({
                         />
                       ))}
                     </div>
+                    <button
+                      type="button"
+                      aria-expanded={showGradientEditor}
+                      onClick={() => setShowGradientEditor((prev) => !prev)}
+                      className="mt-2 w-full h-7 rounded-md border border-white/10 bg-white/5 text-[10px] text-slate-300 hover:bg-white/10 hover:text-white transition-all flex items-center justify-center gap-1"
+                    >
+                      <ChevronDown
+                        className={cn(
+                          'w-3 h-3 transition-transform',
+                          showGradientEditor && 'rotate-180',
+                        )}
+                      />
+                      {t('settings.gradientEditor.toggle')}
+                    </button>
+                    {showGradientEditor && (
+                      <div className="mt-2">
+                        <GradientEditor
+                          value={selected}
+                          onChange={(css) => {
+                            setGradient(css)
+                            onWallpaperChange(css)
+                          }}
+                        />
+                      </div>
+                    )}
                   </TabsContent>
                 </div>
               </Tabs>
