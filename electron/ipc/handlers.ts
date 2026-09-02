@@ -3,7 +3,7 @@ import { ipcMain, desktopCapturer, BrowserWindow, shell, app, dialog, screen, sy
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import crypto from 'node:crypto'
-import { RECORDINGS_DIR } from '../main'
+import { getRecordingsDir } from '../paths'
 import { scheduleRecordingsCleanup } from '../recordingsCleanup'
 import {
   approvedExportPaths,
@@ -1187,6 +1187,7 @@ export function registerIpcHandlers(
   onSourceSelectionChange?: (source: SelectedSource | null) => void,
   hudWindows?: Omit<HudWindowsContext, 'ipcMain'>,
 ) {
+  const RECORDINGS_DIR = getRecordingsDir()
   let currentVideoPath: string | null = null
   let currentVideoMetadata: CurrentVideoMetadata | null = null
   let cursorTracker: CursorTrackerRuntime | null = null
