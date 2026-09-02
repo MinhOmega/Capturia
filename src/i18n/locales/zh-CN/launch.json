@@ -146,6 +146,11 @@
 	},
 	"notes": "笔记",
 	"openNotesFailed": "无法打开笔记窗口。",
+	"dragHandle": "拖动以移动启动栏",
+	"tray": {
+		"useVertical": "切换为竖排托盘",
+		"useHorizontal": "切换为横排工具栏"
+	},
 	"tooltips": {
 		"openNotes": "打开笔记（不会出现在录制中）",
 		"notesToolbar": {

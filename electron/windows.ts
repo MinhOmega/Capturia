@@ -1,7 +1,16 @@
 import { app, BrowserWindow, screen } from 'electron'
 import { ipcMain } from 'electron'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import {
+  boundsFromHudAnchor,
+  HUD_MIN_WINDOW_SIZE,
+  type HudPoint,
+  type HudRect,
+  type HudSize,
+  hudAnchorOf,
+} from '../src/hooks/useHudLayout'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -17,6 +26,83 @@ export const HEADLESS = process.env['HEADLESS'] === '1' || process.env['HEADLESS
 
 let hudOverlayWindow: BrowserWindow | null = null
 let permissionCheckerWindow: BrowserWindow | null = null
+
+export function getHudOverlayWindow(): BrowserWindow | null {
+  return hudOverlayWindow && !hudOverlayWindow.isDestroyed() ? hudOverlayWindow : null
+}
+
+/**
+ * Where the HUD was last left. The bar hangs from the bottom-centre of its
+ * window and the window is resized around that point to fit its content, so
+ * the anchor (plus the last content-fit size, to avoid a clamp on a window
+ * that starts larger than it ends) is what survives a relaunch.
+ */
+type HudOverlayPlacement = { anchor: HudPoint; size: HudSize }
+
+const HUD_PLACEMENT_FILE = 'hud-overlay-placement.json'
+const HUD_PLACEMENT_WRITE_DELAY_MS = 300
+
+function hudPlacementPath(): string {
+  return path.join(app.getPath('userData'), HUD_PLACEMENT_FILE)
+}
+
+function isFinitePair(value: unknown, a: string, b: string): boolean {
+  if (!value || typeof value !== 'object') return false
+  const record = value as Record<string, unknown>
+  return Number.isFinite(record[a]) && Number.isFinite(record[b])
+}
+
+function readHudPlacement(): HudOverlayPlacement | null {
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(hudPlacementPath(), 'utf8'))
+    if (!parsed || typeof parsed !== 'object') return null
+    const { anchor, size } = parsed as Record<string, unknown>
+    if (!isFinitePair(anchor, 'x', 'y') || !isFinitePair(size, 'width', 'height')) return null
+    const placement = { anchor: anchor as HudPoint, size: size as HudSize }
+    // Ignore an anchor that no display contains any more (monitor unplugged).
+    const display = screen.getDisplayNearestPoint(placement.anchor)
+    const { bounds } = display
+    const inside =
+      placement.anchor.x >= bounds.x &&
+      placement.anchor.x <= bounds.x + bounds.width &&
+      placement.anchor.y >= bounds.y &&
+      placement.anchor.y <= bounds.y + bounds.height
+    return inside ? placement : null
+  } catch {
+    return null
+  }
+}
+
+function writeHudPlacement(bounds: HudRect): void {
+  try {
+    const file = hudPlacementPath()
+    mkdirSync(path.dirname(file), { recursive: true })
+    const placement: HudOverlayPlacement = {
+      anchor: hudAnchorOf(bounds),
+      size: { width: bounds.width, height: bounds.height },
+    }
+    writeFileSync(file, JSON.stringify(placement))
+  } catch (error) {
+    console.warn('[hud] failed to persist the HUD placement:', error)
+  }
+}
+
+/** Debounced: `move` fires for every frame of a drag and `resize` for every content change. */
+function trackHudPlacement(win: BrowserWindow): void {
+  let timer: NodeJS.Timeout | null = null
+  const schedule = () => {
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(() => {
+      timer = null
+      if (!win.isDestroyed() && !win.isMinimized()) writeHudPlacement(win.getBounds())
+    }, HUD_PLACEMENT_WRITE_DELAY_MS)
+  }
+  win.on('move', schedule)
+  win.on('resize', schedule)
+  win.on('closed', () => {
+    if (timer) clearTimeout(timer)
+  })
+}
 
 /**
  * C-1: the editor's caption worker loads the Whisper model over file:// and a
@@ -207,10 +293,11 @@ ipcMain.on('hud-overlay-hide', () => {
   }
 })
 
-// Recording mode: keep the full-size transparent overlay window — the renderer
-// handles compact-bar layout via CSS.  Resizing/repositioning is unreliable on
-// Wayland (compositor ignores setBounds) and can place the window off-center
-// or in the top-left corner.  Instead we just ensure always-on-top is enforced.
+// Recording mode: the renderer switches to its compact bar and the window
+// follows the content through `hud-overlay-set-size` (see hudWindowsHandlers).
+// This channel only re-asserts always-on-top: resizing/repositioning is
+// unreliable on Wayland (the compositor ignores setBounds) and can place the
+// window off-centre or in the top-left corner.
 
 ipcMain.on('hud-overlay-resize', () => {
   if (!hudOverlayWindow || hudOverlayWindow.isDestroyed()) return
@@ -236,26 +323,47 @@ export function createHudOverlayWindow(): BrowserWindow {
   const primaryDisplay = screen.getPrimaryDisplay()
   const { workArea } = primaryDisplay
 
+  // First launch (or Wayland, where the window never resizes itself): a wide,
+  // fairly tall transparent reserve so the bar and its popovers fit. Once the
+  // renderer reports its content size the window shrinks to it, anchored at
+  // its bottom-centre, and the reserve becomes click-through in the meantime.
   const horizontalMargin = 12
   const maxWindowWidth = 2200
   const availableWidth = Math.max(760, workArea.width - horizontalMargin)
-  const windowWidth = Math.min(maxWindowWidth, availableWidth)
-  const windowHeight = Math.min(420, Math.max(300, Math.round(workArea.height * 0.38)))
+  const defaultSize: HudSize = {
+    width: Math.min(maxWindowWidth, availableWidth),
+    height: Math.min(420, Math.max(300, Math.round(workArea.height * 0.38))),
+  }
+  const defaultAnchor: HudPoint = {
+    x: Math.floor(workArea.x + workArea.width / 2),
+    y: workArea.y + workArea.height - 8,
+  }
 
-  const x = Math.floor(workArea.x + (workArea.width - windowWidth) / 2)
-  const y = Math.floor(workArea.y + workArea.height - windowHeight - 8)
+  // Wayland ignores client-side positioning, so the remembered placement is moot there.
+  const placement = isLinuxWayland ? null : readHudPlacement()
+  const placementWorkArea = placement
+    ? screen.getDisplayNearestPoint(placement.anchor).workArea
+    : workArea
+  const { x, y, width, height } = boundsFromHudAnchor(
+    placement?.anchor ?? defaultAnchor,
+    placement?.size ?? defaultSize,
+    placementWorkArea,
+  )
 
   const win = new BrowserWindow({
-    width: windowWidth,
-    height: windowHeight,
-    minWidth: windowWidth,
-    maxWidth: windowWidth,
-    minHeight: windowHeight,
-    maxHeight: windowHeight,
-    x: x,
-    y: y,
+    width,
+    height,
+    // Loose on purpose: `hud-overlay-set-size` fits the window to its content.
+    minWidth: HUD_MIN_WINDOW_SIZE.width,
+    minHeight: HUD_MIN_WINDOW_SIZE.height,
+    x,
+    y,
     frame: false,
     transparent: true,
+    // Fully transparent backing: without it macOS paints the window as a glass
+    // panel, and the OS rounding would clip the bar's own corners.
+    backgroundColor: '#00000000',
+    roundedCorners: false,
     resizable: false,
     alwaysOnTop: true,
     skipTaskbar: !isLinuxWayland,
@@ -318,6 +426,7 @@ export function createHudOverlayWindow(): BrowserWindow {
   })
 
   hudOverlayWindow = win
+  if (!isLinuxWayland) trackHudPlacement(win)
 
   win.on('closed', () => {
     if (hudOverlayWindow === win) {

@@ -19,6 +19,7 @@ import { RxDragHandleDots2 } from 'react-icons/rx'
 import { FaFolderMinus } from 'react-icons/fa6'
 import { FiCamera, FiMinus, FiMousePointer, FiX } from 'react-icons/fi'
 import {
+  Columns3,
   EyeOff,
   Keyboard,
   Mic,
@@ -27,6 +28,7 @@ import {
   Pause,
   Play,
   RotateCcw,
+  Rows3,
   Settings2,
   Shield,
   SlidersHorizontal,
@@ -36,10 +38,24 @@ import {
 import { getAvailableLocales, getLocaleName, useI18n } from '@/i18n'
 import { toast } from 'sonner'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import {
+  HUD_INTERACTIVE_SELECTOR,
+  type HudOrientation,
+  type HudRect,
+  type HudSize,
+  isHudInteractiveTarget,
+  measureHudWindowSize,
+  nextHudOrientation,
+} from '@/hooks/useHudLayout'
 import { reportUserActionError } from '@/lib/userErrorFeedback'
+import { loadUserPreferences, saveUserPreferences } from '@/lib/userPreferences'
 import { resolveRecordingPermissionReadiness } from '@/lib/permissions/capturePermissions'
 
 const CAMERA_SHAPE_CYCLE: CameraOverlayShape[] = ['rounded', 'square', 'circle']
+// Slack the HUD window keeps around its content so outlines and popover
+// shadows are not clipped by the window edge.
+const HUD_WINDOW_SIDE_MARGIN = 16
+const HUD_WINDOW_TOP_MARGIN = 16
 const CAPTURE_PROFILE_CYCLE: CaptureProfile[] = ['balanced', 'quality', 'ultra']
 const CAPTURE_FRAME_RATE_OPTIONS: CaptureFrameRate[] = [24, 30, 60, 120]
 const CAPTURE_RESOLUTION_OPTIONS: CaptureResolutionPreset[] = ['auto', '1080p', '1440p', '2160p']
@@ -371,6 +387,259 @@ export function LaunchWindow() {
   const previousRecordingRef = useRef(false)
   const selectedSourceSyncErrorAtRef = useRef(0)
   const [elapsed, setElapsed] = useState(0)
+
+  // ---- HUD window geometry: orientation, click-through, drag, content-fit ----
+
+  // One row (horizontal) or a stacked tray (vertical), remembered across launches.
+  const [hudOrientation, setHudOrientation] = useState<HudOrientation>(
+    () => loadUserPreferences().hudOrientation,
+  )
+  const isVerticalTray = hudOrientation === 'vertical'
+  const toggleHudOrientation = useCallback(() => {
+    const next = nextHudOrientation(hudOrientation)
+    saveUserPreferences({ hudOrientation: next })
+    setHudOrientation(next)
+  }, [hudOrientation])
+
+  // Boxes the user can interact with (bar + open popovers), viewport-relative.
+  // Both the content-fit size and the main-process cursor poll derive from them.
+  const collectInteractiveRects = useCallback((): HudRect[] => {
+    const rects: HudRect[] = []
+    for (const element of document.querySelectorAll<HTMLElement>(HUD_INTERACTIVE_SELECTOR)) {
+      const rect = element.getBoundingClientRect()
+      if (rect.width > 0 && rect.height > 0) {
+        rects.push({ x: rect.left, y: rect.top, width: rect.width, height: rect.height })
+      }
+    }
+    return rects
+  }, [])
+
+  // Click-through: while the pointer is over the transparent reserve the window
+  // ignores mouse input so clicks reach the desktop underneath. `null` means the
+  // state is unknown (initial, or the last request failed). Once main reports
+  // the platform cannot do it (Wayland) the feature stays off for the session.
+  const hudIgnoreMouseRef = useRef<boolean | null>(null)
+  const clickThroughUnavailableRef = useRef(false)
+  const popoverOpenRef = useRef(false)
+  const isDraggingHudRef = useRef(false)
+  const setHudMouseEventsEnabled = useCallback(
+    (enabled: boolean) => {
+      const request = window.electronAPI?.setHudOverlayIgnoreMouseEvents
+      if (!request || clickThroughUnavailableRef.current) return
+      const ignore = !enabled
+      if (hudIgnoreMouseRef.current === ignore) return
+      hudIgnoreMouseRef.current = ignore
+      request(ignore, ignore ? collectInteractiveRects() : undefined)
+        .then((result) => {
+          if (result?.applied) return
+          hudIgnoreMouseRef.current = null
+          if (result?.reason === 'wayland' || result?.reason === 'no-window') {
+            clickThroughUnavailableRef.current = true
+          }
+        })
+        .catch(() => {
+          hudIgnoreMouseRef.current = null
+        })
+    },
+    [collectInteractiveRects],
+  )
+  /** Re-sends the boxes main polls against once they moved (window resize, popover). */
+  const syncInteractiveRects = useCallback(() => {
+    const request = window.electronAPI?.setHudOverlayIgnoreMouseEvents
+    if (!request || hudIgnoreMouseRef.current !== true) return
+    request(true, collectInteractiveRects()).catch(() => undefined)
+  }, [collectInteractiveRects])
+
+  useEffect(() => {
+    if (!window.electronAPI?.setHudOverlayIgnoreMouseEvents) return
+    const onPointerMove = (event: PointerEvent) => {
+      if (isDraggingHudRef.current) return
+      setHudMouseEventsEnabled(popoverOpenRef.current || isHudInteractiveTarget(event.target))
+    }
+    const onPointerLeave = () => {
+      if (isDraggingHudRef.current || popoverOpenRef.current) return
+      setHudMouseEventsEnabled(false)
+    }
+    window.addEventListener('pointermove', onPointerMove)
+    document.documentElement.addEventListener('pointerleave', onPointerLeave)
+    // The HUD appears under nobody's pointer: start transparent to clicks.
+    setHudMouseEventsEnabled(false)
+    return () => {
+      window.removeEventListener('pointermove', onPointerMove)
+      document.documentElement.removeEventListener('pointerleave', onPointerLeave)
+      hudIgnoreMouseRef.current = null
+      void window.electronAPI?.setHudOverlayIgnoreMouseEvents?.(false)?.catch?.(() => undefined)
+    }
+  }, [setHudMouseEventsEnabled])
+
+  // Content-fit: the window follows the bar (and any open popover) so the
+  // transparent reserve around it stays small. Main keeps the bottom-centre
+  // anchor, so measuring from the viewport's bottom-centre makes the result
+  // independent of the window's current size and the loop settles at once.
+  const hudBarRef = useRef<HTMLDivElement | null>(null)
+  const lastHudSizeRef = useRef<HudSize | null>(null)
+  const contentFitUnavailableRef = useRef(false)
+  const measureFrameRef = useRef<number | null>(null)
+  const measureHudSize = useCallback(() => {
+    const request = window.electronAPI?.setHudOverlaySize
+    // A drag moves the window frame by frame; a resize re-centring it at the
+    // same time would fight that. Measure again once the drag ends.
+    if (!request || contentFitUnavailableRef.current || isDraggingHudRef.current) return
+    const size = measureHudWindowSize({
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      rects: collectInteractiveRects(),
+      sideMargin: HUD_WINDOW_SIDE_MARGIN,
+      topMargin: HUD_WINDOW_TOP_MARGIN,
+    })
+    const last = lastHudSizeRef.current
+    if (last && last.width === size.width && last.height === size.height) return
+    lastHudSizeRef.current = size
+    request(size.width, size.height)
+      .then((result) => {
+        if (result?.applied) return
+        // Refused (e.g. mid-countdown): forget it so the next change retries.
+        lastHudSizeRef.current = null
+        if (result?.reason === 'wayland' || result?.reason === 'no-window') {
+          contentFitUnavailableRef.current = true
+        }
+      })
+      .catch(() => {
+        lastHudSizeRef.current = null
+      })
+  }, [collectInteractiveRects])
+  const scheduleHudMeasure = useCallback(() => {
+    if (measureFrameRef.current !== null) return
+    measureFrameRef.current = window.requestAnimationFrame(() => {
+      measureFrameRef.current = null
+      measureHudSize()
+      syncInteractiveRects()
+    })
+  }, [measureHudSize, syncInteractiveRects])
+
+  const hudResizeObserverRef = useRef<ResizeObserver | null>(null)
+  useEffect(() => {
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => scheduleHudMeasure())
+    hudResizeObserverRef.current = observer
+    if (hudBarRef.current) observer.observe(hudBarRef.current)
+
+    // Popovers render into portals under <body>: watch them come and go so the
+    // window grows around them and mouse input stays on while one is open.
+    const observedPortals = new Set<Element>()
+    const syncPortals = () => {
+      const wrappers = document.querySelectorAll('[data-radix-popper-content-wrapper]')
+      for (const wrapper of wrappers) {
+        if (!observedPortals.has(wrapper)) {
+          observedPortals.add(wrapper)
+          observer.observe(wrapper)
+        }
+      }
+      for (const element of observedPortals) {
+        if (!element.isConnected) {
+          observedPortals.delete(element)
+          observer.unobserve(element)
+        }
+      }
+      popoverOpenRef.current = wrappers.length > 0
+      if (popoverOpenRef.current) setHudMouseEventsEnabled(true)
+      scheduleHudMeasure()
+    }
+    const mutations = new MutationObserver(syncPortals)
+    mutations.observe(document.body, { childList: true })
+    const onWindowResize = () => scheduleHudMeasure()
+    window.addEventListener('resize', onWindowResize)
+    syncPortals()
+
+    return () => {
+      window.removeEventListener('resize', onWindowResize)
+      mutations.disconnect()
+      observer.disconnect()
+      hudResizeObserverRef.current = null
+      if (measureFrameRef.current !== null) {
+        window.cancelAnimationFrame(measureFrameRef.current)
+        measureFrameRef.current = null
+      }
+    }
+  }, [scheduleHudMeasure, setHudMouseEventsEnabled])
+  // The bar element changes between the idle bar and the compact recording bar.
+  const setHudBarEl = useCallback(
+    (element: HTMLDivElement | null) => {
+      const observer = hudResizeObserverRef.current
+      if (hudBarRef.current && observer) observer.unobserve(hudBarRef.current)
+      hudBarRef.current = element
+      if (element && observer) observer.observe(element)
+      scheduleHudMeasure()
+    },
+    [scheduleHudMeasure],
+  )
+
+  // Drag: the handle moves the window through main, one batched delta per
+  // frame. Where main cannot position windows (Wayland) the handle falls back
+  // to the native drag region. Position memory is main's job (it watches the
+  // window move), so nothing is persisted from here.
+  const [nativeDragFallback, setNativeDragFallback] = useState(false)
+  const dragLastPositionRef = useRef<{ x: number; y: number } | null>(null)
+  const pendingDragDeltaRef = useRef({ x: 0, y: 0 })
+  const dragFrameRef = useRef<number | null>(null)
+  const flushHudDragMove = useCallback(() => {
+    dragFrameRef.current = null
+    const { x, y } = pendingDragDeltaRef.current
+    pendingDragDeltaRef.current = { x: 0, y: 0 }
+    if (x === 0 && y === 0) return
+    window.electronAPI
+      ?.moveHudOverlayBy?.(x, y)
+      ?.then?.((result) => {
+        if (result && !result.applied && result.reason === 'wayland') {
+          setNativeDragFallback(true)
+        }
+      })
+      ?.catch?.(() => undefined)
+  }, [])
+  useEffect(() => {
+    return () => {
+      if (dragFrameRef.current !== null) window.cancelAnimationFrame(dragFrameRef.current)
+    }
+  }, [])
+  const handleHudDragPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (nativeDragFallback || event.button !== 0) return
+    event.preventDefault()
+    event.stopPropagation()
+    setHudMouseEventsEnabled(true)
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+    dragLastPositionRef.current = { x: event.screenX, y: event.screenY }
+    isDraggingHudRef.current = true
+  }
+  const handleHudDragPointerMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    const last = dragLastPositionRef.current
+    if (!last) return
+    pendingDragDeltaRef.current = {
+      x: pendingDragDeltaRef.current.x + (event.screenX - last.x),
+      y: pendingDragDeltaRef.current.y + (event.screenY - last.y),
+    }
+    dragLastPositionRef.current = { x: event.screenX, y: event.screenY }
+    if (dragFrameRef.current === null) {
+      dragFrameRef.current = window.requestAnimationFrame(flushHudDragMove)
+    }
+  }
+  const handleHudDragPointerEnd = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragLastPositionRef.current) return
+    dragLastPositionRef.current = null
+    if (dragFrameRef.current !== null) {
+      window.cancelAnimationFrame(dragFrameRef.current)
+      dragFrameRef.current = null
+    }
+    flushHudDragMove()
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+    isDraggingHudRef.current = false
+    scheduleHudMeasure()
+  }
+  const dragHandleClassName = `flex items-center justify-center shrink-0 h-7 w-6 ${styles.dragHandle} ${
+    nativeDragFallback ? styles.electronDrag : styles.electronNoDrag
+  }`
+  const popoverSide = isVerticalTray ? 'right' : 'top'
 
   useEffect(() => {
     let timer: NodeJS.Timeout | null = null
@@ -1005,12 +1274,12 @@ export function LaunchWindow() {
 
   if (showCompactBar) {
     return (
-      <div
-        className="w-full h-full flex items-end justify-center bg-transparent overflow-hidden pointer-events-none"
-        style={{ paddingBottom: 60 }}
-      >
+      <div className="w-full h-full flex items-end justify-center pb-2 bg-transparent overflow-hidden pointer-events-none">
         <div
-          className={`inline-flex items-center gap-2 px-3 py-1.5 pointer-events-auto ${styles.electronDrag}`}
+          ref={setHudBarEl}
+          data-hud-interactive="true"
+          data-testid="hud-compact-bar"
+          className={`inline-flex items-center gap-2 px-3 py-1.5 pointer-events-auto ${nativeDragFallback ? styles.electronDrag : ''}`}
           style={{
             borderRadius: 12,
             background: 'linear-gradient(135deg, rgba(30,30,40,0.94) 0%, rgba(20,20,30,0.88) 100%)',
@@ -1039,7 +1308,15 @@ export function LaunchWindow() {
           </div>
 
           {/* Center: Drag handle */}
-          <div className={`flex items-center px-1 ${styles.electronDrag}`}>
+          <div
+            className={dragHandleClassName}
+            title={t('launch.dragHandle')}
+            data-testid="hud-drag-handle"
+            onPointerDown={handleHudDragPointerDown}
+            onPointerMove={handleHudDragPointerMove}
+            onPointerUp={handleHudDragPointerEnd}
+            onPointerCancel={handleHudDragPointerEnd}
+          >
             <RxDragHandleDots2 size={16} className="text-white/30" />
           </div>
 
@@ -1085,10 +1362,42 @@ export function LaunchWindow() {
     )
   }
 
+  const windowButtons = (
+    <div className={`flex items-center gap-1 shrink-0 ${styles.electronNoDrag}`}>
+      <Button
+        variant="link"
+        size="icon"
+        className={`h-7 w-7 ${styles.electronNoDrag} hudOverlayButton`}
+        title={t('launch.hideHud')}
+        onClick={sendHudOverlayHide}
+      >
+        <FiMinus size={18} style={{ color: '#fff', opacity: 0.7 }} />
+      </Button>
+
+      <Button
+        variant="link"
+        size="icon"
+        className={`h-7 w-7 ${styles.electronNoDrag} hudOverlayButton`}
+        title={t('launch.closeApp')}
+        onClick={sendHudOverlayClose}
+      >
+        <FiX size={18} style={{ color: '#fff', opacity: 0.7 }} />
+      </Button>
+    </div>
+  )
+
   return (
     <div className="w-full h-full flex items-end justify-center pb-2 bg-transparent overflow-hidden pointer-events-none">
       <div
-        className={`inline-flex max-w-[calc(100%-12px)] items-center gap-2 px-3 py-2 pointer-events-auto ${styles.electronDrag}`}
+        ref={setHudBarEl}
+        data-hud-interactive="true"
+        data-hud-orientation={hudOrientation}
+        data-testid="hud-bar"
+        className={`pointer-events-auto ${
+          isVerticalTray
+            ? `flex flex-col items-stretch gap-1 px-2 py-2 w-[236px] max-h-[calc(100vh-16px)] overflow-y-auto ${styles.trayVertical}`
+            : 'inline-flex max-w-[calc(100%-12px)] items-center gap-2 px-3 py-2'
+        } ${nativeDragFallback ? styles.electronDrag : ''}`}
         style={{
           borderRadius: 16,
           background: 'linear-gradient(135deg, rgba(30,30,40,0.92) 0%, rgba(20,20,30,0.85) 100%)',
@@ -1099,8 +1408,37 @@ export function LaunchWindow() {
           minHeight: 44,
         }}
       >
-        <div className={`flex items-center gap-1 shrink-0 ${styles.electronDrag}`}>
-          <RxDragHandleDots2 size={18} className="text-white/40" />
+        <div className={`flex items-center gap-1 shrink-0 ${styles.trayHeader}`}>
+          <div
+            className={dragHandleClassName}
+            title={t('launch.dragHandle')}
+            data-testid="hud-drag-handle"
+            onPointerDown={handleHudDragPointerDown}
+            onPointerMove={handleHudDragPointerMove}
+            onPointerUp={handleHudDragPointerEnd}
+            onPointerCancel={handleHudDragPointerEnd}
+          >
+            <RxDragHandleDots2 size={18} className="text-white/40" />
+          </div>
+          <Button
+            variant="link"
+            size="icon"
+            className={`h-7 w-7 ${styles.electronNoDrag} hudOverlayButton`}
+            title={isVerticalTray ? t('launch.tray.useHorizontal') : t('launch.tray.useVertical')}
+            aria-label={
+              isVerticalTray ? t('launch.tray.useHorizontal') : t('launch.tray.useVertical')
+            }
+            aria-pressed={isVerticalTray}
+            onClick={toggleHudOrientation}
+            data-testid="launch-tray-layout-button"
+          >
+            {isVerticalTray ? (
+              <Rows3 size={15} style={{ color: '#fff', opacity: 0.7 }} />
+            ) : (
+              <Columns3 size={15} style={{ color: '#fff', opacity: 0.7 }} />
+            )}
+          </Button>
+          {isVerticalTray ? <div className="ml-auto">{windowButtons}</div> : null}
         </div>
 
         <Button
@@ -1301,7 +1639,7 @@ export function LaunchWindow() {
             </Button>
           </PopoverTrigger>
           <PopoverContent
-            side="top"
+            side={popoverSide}
             sideOffset={8}
             align="center"
             collisionPadding={12}
@@ -1469,7 +1807,7 @@ export function LaunchWindow() {
             </Button>
           </PopoverTrigger>
           <PopoverContent
-            side="top"
+            side={popoverSide}
             sideOffset={8}
             align="center"
             collisionPadding={12}
@@ -1541,7 +1879,7 @@ export function LaunchWindow() {
               </Button>
             </PopoverTrigger>
             <PopoverContent
-              side="top"
+              side={popoverSide}
               sideOffset={8}
               align="center"
               collisionPadding={12}
@@ -1634,27 +1972,7 @@ export function LaunchWindow() {
           ))}
         </select>
 
-        <div className={`flex items-center gap-1 shrink-0 ${styles.electronNoDrag}`}>
-          <Button
-            variant="link"
-            size="icon"
-            className={`h-7 w-7 ${styles.electronNoDrag} hudOverlayButton`}
-            title={t('launch.hideHud')}
-            onClick={sendHudOverlayHide}
-          >
-            <FiMinus size={18} style={{ color: '#fff', opacity: 0.7 }} />
-          </Button>
-
-          <Button
-            variant="link"
-            size="icon"
-            className={`h-7 w-7 ${styles.electronNoDrag} hudOverlayButton`}
-            title={t('launch.closeApp')}
-            onClick={sendHudOverlayClose}
-          >
-            <FiX size={18} style={{ color: '#fff', opacity: 0.7 }} />
-          </Button>
-        </div>
+        {isVerticalTray ? null : windowButtons}
       </div>
     </div>
   )

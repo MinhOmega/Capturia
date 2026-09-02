@@ -27,6 +27,7 @@ import {
   getPermissionCheckerWindow,
   createCountdownOverlayWindow,
   createNotesWindow,
+  getHudOverlayWindow,
   HEADLESS,
 } from './windows'
 import { registerIpcHandlers } from './ipc/handlers'
@@ -1337,6 +1338,7 @@ appReady?.then(async () => {
       getCountdownOverlayWindow: () => countdownOverlayWindow,
       createNotesWindow: createNotesWindowWrapper,
       getNotesWindow: () => notesWindow,
+      getHudOverlayWindow,
     },
   )
   createWindow()

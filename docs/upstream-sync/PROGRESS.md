@@ -276,3 +276,20 @@ candidate tag to exercise the four installer legs and the gated signing, and the
 
 Agents: `w5-audit` (deep re-audit), `w5-updater-fastpath` (M12 + D13), `w5-hud` (A24 + A25b),
 `w5-editor` (B1-d gradient editor + X1 blur regions). PR preparation plan recorded in PLAN.md.
+
+## 2026-09-03 — wave 5 round 1: A24 HUD click-through + drag + content-fit, A25b vertical tray
+
+The HUD window no longer swallows desktop clicks in its transparent reserve: main ignores
+mouse input while the pointer is over it (forwarded moves on macOS; a cursor poll against the
+bar/popover boxes on X11 and Windows; never on Wayland) and the window shrinks to its content
+around a bottom-centre anchor, so the reserve is small to begin with. The grip is a JS drag
+handle (`hud-overlay-move-by`, clamped to the display under the cursor) and the placement
+(anchor + size) is remembered in `userData/hud-overlay-placement.json`. `hudOrientation`
+(`horizontal` | `vertical`, default horizontal) in user preferences switches the bar to a
+stacked tray. New IPC: `hud-overlay-ignore-mouse-events`, `hud-overlay-move-by`,
+`hud-overlay-set-size`, all guarded to the HUD's own `webContents`. Pure geometry in
+`src/hooks/useHudLayout.ts` (shared with main). Note: `reviews/W5-A24-A25b-hud.md`.
+
+Gate on the batch branch: lint 0 errors / 116 warnings; tsc + test types clean; i18n 626 en
+keys (zh-CN, vi in parity); vitest **120 files / 1269 tests**. Nothing exercised in a live
+Electron (no display on the lead box): the review note lists the manual smoke.

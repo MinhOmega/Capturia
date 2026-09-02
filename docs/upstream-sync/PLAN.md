@@ -66,6 +66,12 @@ F7 window polish + `assetBaseUrl`, F8 dependency upgrades, B2-5 cursor kinds (Sw
 A-3 native pause/resume (Swift, needs macOS), F9 release signing, F10 e2e + update checker,
 F11 `handlers.ts` decomposition, T-last Biome format.
 
+## Wave 5 — round 1 (post-sync follow-ups)
+
+| Batch | Contents | Source |
+|---|---|---|
+| **W5 A24 + A25b HUD** | click-through over the transparent reserve, JS drag handle with placement memory, content-fit window resize, vertical tray toggle (`hudOrientation`) | A24, A25b, A19 |
+
 ## Backlog (not scheduled)
 
 Webcam sidecar + editor composite (A11/B1-f), Windows WGC helper (A27/C9), cursor themes (C10,
@@ -86,3 +92,5 @@ follow-up with the required toolchain.
 
 Wording rule from wave 5 on: commits, comments and docs describe behaviour in Capturia's own
 terms and do not name or link the source project or its commit hashes.
+
+`electron-updater`.

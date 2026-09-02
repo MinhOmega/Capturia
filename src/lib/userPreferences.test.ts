@@ -117,6 +117,17 @@ describe('user preferences persistence', () => {
     expect(prefs.exportFormat).toBe(DEFAULT_PREFS.exportFormat)
   })
 
+  it('defaults the HUD orientation to horizontal and round-trips vertical', () => {
+    expect(loadUserPreferences().hudOrientation).toBe('horizontal')
+    saveUserPreferences({ hudOrientation: 'vertical' })
+    expect(loadUserPreferences().hudOrientation).toBe('vertical')
+    localStorage.setItem(
+      USER_PREFERENCES_STORAGE_KEY,
+      JSON.stringify({ hudOrientation: 'diagonal' }),
+    )
+    expect(loadUserPreferences().hudOrientation).toBe('horizontal')
+  })
+
   it('falls back to defaults for out-of-range numbers', () => {
     localStorage.setItem(
       USER_PREFERENCES_STORAGE_KEY,
