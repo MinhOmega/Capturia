@@ -85,6 +85,10 @@ const EXPECTED_CHANNELS = [...CHANNELS_BEFORE_DECOMPOSITION, ...CHANNELS_ADDED_A
 
 /** Registered only when `main.ts` passes the HUD window plumbing. */
 const HUD_CHANNELS = [
+  // W5 A24: HUD click-through, drag and content-fit resize
+  'hud-overlay-ignore-mouse-events',
+  'hud-overlay-move-by',
+  'hud-overlay-set-size',
   'countdown-overlay-show',
   'countdown-overlay-set-value',
   'countdown-overlay-hide',
@@ -96,6 +100,7 @@ const HUD_WINDOWS = {
   getCountdownOverlayWindow: () => null,
   createNotesWindow: () => fakeWindow(),
   getNotesWindow: () => null,
+  getHudOverlayWindow: () => null,
 }
 
 function register(ipc: ReturnType<typeof fakeIpcMain>, userDataDir: string, withHud: boolean) {
