@@ -14,8 +14,15 @@ import {
   startNativeMouseButtonMonitor,
   stopNativeMouseButtonMonitor,
 } from '../native/mouseButtonMonitor'
+import type { CursorKind } from '../../src/lib/cursor/cursorKinds'
 import type { IpcContext, SelectedSource } from './context'
-import { type CursorTrackEventPayload, type CursorTrackPayload, sanitizeCursorTrack } from './cursorTrack'
+import {
+  type CursorTrackEventPayload,
+  type CursorTrackPauseRange,
+  type CursorTrackPayload,
+  compactCursorTrackPauseRanges,
+  sanitizeCursorTrack,
+} from './cursorTrack'
 import { getWindowBoundsById, parseWindowIdFromSourceId } from './windowBounds'
 
 /**
@@ -56,6 +63,13 @@ type CursorTrackerRuntime = {
   leftButtonDown: boolean
   activeGesture: ActiveSelectionGesture | null
   clickCount: number
+  /**
+   * Pause bookkeeping (A5): wall-clock `Date.now()` of the open pause, plus the
+   * closed ranges relative to `startedAt`. Sampling continues while paused; the
+   * ranges are compacted out of the track on stop.
+   */
+  pauseStartedAt: number | null
+  pauseRanges: CursorTrackPauseRange[]
 }
 
 
@@ -79,7 +93,7 @@ function pushCursorSample(
   tracker: CursorTrackerRuntime,
   now: number,
   point: { x: number; y: number },
-  cursorKind: 'arrow' | 'ibeam',
+  cursorKind: CursorKind,
   click = false,
 ): void {
   const timeMs = Math.max(0, now - tracker.startedAt)
@@ -105,6 +119,22 @@ function pushCursorSample(
   }
 
   tracker.lastSampleAt = now
+}
+
+function openPauseRange(tracker: CursorTrackerRuntime, now: number): boolean {
+  if (tracker.pauseStartedAt !== null) return false
+  tracker.pauseStartedAt = now
+  return true
+}
+
+function closePauseRange(tracker: CursorTrackerRuntime, now: number): boolean {
+  if (tracker.pauseStartedAt === null) return false
+  tracker.pauseRanges.push({
+    startMs: Math.max(0, tracker.pauseStartedAt - tracker.startedAt),
+    endMs: Math.max(0, now - tracker.startedAt),
+  })
+  tracker.pauseStartedAt = null
+  return true
 }
 
 function normalizeEventPoint(point: { x: number; y: number }): { x: number; y: number } {
@@ -164,7 +194,7 @@ function finalizeSelectionGesture(
   tracker: CursorTrackerRuntime,
   now: number,
   point: { x: number; y: number },
-  cursorKind: 'arrow' | 'ibeam',
+  cursorKind: CursorKind,
 ): void {
   if (!tracker.activeGesture) return
   updateSelectionGesture(tracker, point)
@@ -307,17 +337,23 @@ export function registerCursorTrackerHandlers(ctx: IpcContext): CursorTrackerReg
     }
     stopNativeCursorKindMonitor()
     stopNativeMouseButtonMonitor()
+    // A stop while paused closes the open range at the stop instant.
+    closePauseRange(cursorTracker, Date.now())
+    const compacted = compactCursorTrackPauseRanges(
+      { samples: cursorTracker.samples, events: cursorTracker.events },
+      cursorTracker.pauseRanges,
+    )
     const payload = sanitizeCursorTrack({
       source: 'recorded',
-      samples: cursorTracker.samples,
-      events: cursorTracker.events,
+      samples: compacted.samples,
+      events: compacted.events,
       space: {
         mode: cursorTracker.boundsMode,
         displayId: cursorTracker.displayId,
         bounds: cursorTracker.bounds,
       },
       stats: {
-        sampleCount: cursorTracker.samples.length,
+        sampleCount: compacted.samples.length,
         clickCount: cursorTracker.clickCount,
       },
       capture: {
@@ -513,6 +549,8 @@ export function registerCursorTrackerHandlers(ctx: IpcContext): CursorTrackerReg
       leftButtonDown: false,
       activeGesture: null,
       clickCount: 0,
+      pauseStartedAt: null,
+      pauseRanges: [],
     }
 
     cursorTracker = tracker
@@ -584,6 +622,21 @@ export function registerCursorTrackerHandlers(ctx: IpcContext): CursorTrackerReg
       warningCode: warningCodes.length > 0 ? warningCodes.join('+') : undefined,
       warningMessage: warningMessages.length > 0 ? warningMessages.join(' ') : undefined,
     }
+  })
+
+  // A5: the renderer tells the tracker when the recording is paused / resumed
+  // (both the MediaRecorder and the native path) so the wall-clock samples can
+  // be compacted onto the gap-free video timeline on stop.
+  ipcMain.handle('cursor-tracker-pause', () => {
+    if (!cursorTracker) return { success: false, message: 'Cursor tracker is not active.' }
+    const changed = openPauseRange(cursorTracker, Date.now())
+    return { success: true, changed }
+  })
+
+  ipcMain.handle('cursor-tracker-resume', () => {
+    if (!cursorTracker) return { success: false, message: 'Cursor tracker is not active.' }
+    const changed = closePauseRange(cursorTracker, Date.now())
+    return { success: true, changed }
   })
 
   ipcMain.handle('cursor-tracker-stop', () => {

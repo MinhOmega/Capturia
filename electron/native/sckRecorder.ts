@@ -63,16 +63,111 @@ type RecorderDoneInfo = {
   observedFrameRate?: number
 }
 
+/**
+ * Helper features announced on stdout right after `SCK_RECORDER_READY` as
+ * `SCK_RECORDER_CAPS <name> <name> ...`. A helper built before the stdin
+ * protocol never prints the line, so every capability defaults to off.
+ */
+export type NativeRecorderCapabilities = {
+  pause: boolean
+}
+
+export type NativeRecorderPauseResult = {
+  success: boolean
+  /** False when the running helper does not implement pause (old binary). */
+  supported: boolean
+  message?: string
+}
+
+type PauseAck = 'paused' | 'resumed'
+
 type ActiveNativeRecorderSession = {
   process: ChildProcess
   outputPath: string
   cursorMode: NativeCursorMode
   ready: RecorderReadyInfo
+  capabilities: NativeRecorderCapabilities
   doneInfoRef: { current?: RecorderDoneInfo }
   exitPromise: Promise<{ code: number | null; signal: NodeJS.Signals | null }>
+  /** Pending pause/resume commands waiting for their ack line. */
+  ackWaiters: AckWaiters
 }
 
+/** How long a pause/resume command may wait for `SCK_RECORDER_PAUSED|RESUMED`. */
+export const NATIVE_RECORDER_ACK_TIMEOUT_MS = 3_000
+
 let activeSession: ActiveNativeRecorderSession | null = null
+
+export const NO_NATIVE_RECORDER_CAPABILITIES: NativeRecorderCapabilities = Object.freeze({ pause: false })
+
+/** `SCK_RECORDER_CAPS pause` -> `{ pause: true }`; unknown names are ignored. */
+export function parseCapsLine(line: string): NativeRecorderCapabilities | null {
+  const match = /^SCK_RECORDER_CAPS\b(.*)$/i.exec(line.trim())
+  if (!match) return null
+  const names = new Set(
+    String(match[1])
+      .split(/\s+/)
+      .map((name) => name.trim().toLowerCase())
+      .filter(Boolean),
+  )
+  return { pause: names.has('pause') }
+}
+
+/** `SCK_RECORDER_PAUSED` / `SCK_RECORDER_RESUMED` acks for the stdin commands. */
+export function parsePauseAckLine(line: string): PauseAck | null {
+  const normalized = line.trim().toUpperCase()
+  if (normalized === 'SCK_RECORDER_PAUSED') return 'paused'
+  if (normalized === 'SCK_RECORDER_RESUMED') return 'resumed'
+  return null
+}
+
+/**
+ * Resolves the promise of a pending command when its ack line arrives, or with
+ * `false` on timeout. One waiter per ack kind: a second `pause` while the first
+ * is still pending shares the same ack.
+ */
+export class AckWaiters {
+  private readonly pending = new Map<PauseAck, { resolvers: Array<(ok: boolean) => void>; timer: ReturnType<typeof setTimeout> }>()
+
+  wait(kind: PauseAck, timeoutMs: number): Promise<boolean> {
+    return new Promise((resolve) => {
+      const existing = this.pending.get(kind)
+      if (existing) {
+        existing.resolvers.push(resolve)
+        return
+      }
+      const timer = globalThis.setTimeout(() => {
+        this.finish(kind, false)
+      }, timeoutMs)
+      this.pending.set(kind, { resolvers: [resolve], timer })
+    })
+  }
+
+  /** Returns true when a waiter was resolved. */
+  settle(kind: PauseAck): boolean {
+    return this.finish(kind, true)
+  }
+
+  /** Fail every pending waiter (helper exited or is being stopped). */
+  abortAll(): void {
+    for (const kind of [...this.pending.keys()]) {
+      this.finish(kind, false)
+    }
+  }
+
+  get pendingCount(): number {
+    return this.pending.size
+  }
+
+  private finish(kind: PauseAck, ok: boolean): boolean {
+    const entry = this.pending.get(kind)
+    if (!entry) return false
+    globalThis.clearTimeout(entry.timer)
+    this.pending.delete(kind)
+    for (const resolve of entry.resolvers) resolve(ok)
+    return true
+  }
+}
 
 function isChildProcessAlive(processRef: ChildProcess): boolean {
   const pid = processRef.pid
@@ -258,6 +353,7 @@ export function forceTerminateNativeMacRecorder(): void {
   activeSession = null
   if (!session) return
 
+  session.ackWaiters.abortAll()
   try {
     session.process.kill('SIGTERM')
   } catch {
@@ -278,6 +374,7 @@ export async function startNativeMacRecorder(options: NativeRecorderStartOptions
   code?: string
   message?: string
   ready?: RecorderReadyInfo
+  capabilities?: NativeRecorderCapabilities
 }> {
   if (process.platform !== 'darwin') {
     return { success: false, message: 'Native ScreenCaptureKit recorder is only supported on macOS.' }
@@ -339,17 +436,26 @@ export async function startNativeMacRecorder(options: NativeRecorderStartOptions
       }
     }
 
+    // stdin is a pipe so `pause` / `resume` / `stop` lines can be written to the
+    // helper. An old helper that never reads stdin is unaffected: it ignores the
+    // pipe and still stops on SIGINT.
     const helperProcess = spawn(helperPath, args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'],
     })
 
     helperProcess.stdout.setEncoding('utf8')
     helperProcess.stderr.setEncoding('utf8')
+    // A helper that closes stdin (or never reads it) must not crash main with EPIPE.
+    helperProcess.stdin?.on('error', (error) => {
+      console.warn('[sck-recorder] stdin error:', error)
+    })
 
     const exitPromise = waitForProcessExit(helperProcess)
 
     let readyInfo: RecorderReadyInfo | null = null
     const doneInfoRef: { current?: RecorderDoneInfo } = {}
+    const capabilitiesRef: { current: NativeRecorderCapabilities } = { current: { ...NO_NATIVE_RECORDER_CAPABILITIES } }
+    const ackWaiters = new AckWaiters()
     let stderrBuffer = ''
     const helperErrorRef: { current?: RecorderHelperErrorInfo } = {}
 
@@ -357,6 +463,16 @@ export async function startNativeMacRecorder(options: NativeRecorderStartOptions
       const maybeReady = parseReadyLine(line)
       if (maybeReady) {
         readyInfo = maybeReady
+      }
+      const maybeCaps = parseCapsLine(line)
+      if (maybeCaps) {
+        capabilitiesRef.current = maybeCaps
+        return
+      }
+      const maybeAck = parsePauseAckLine(line)
+      if (maybeAck) {
+        ackWaiters.settle(maybeAck)
+        return
       }
       const maybeDone = parseDoneLine(line)
       if (maybeDone) {
@@ -412,17 +528,28 @@ export async function startNativeMacRecorder(options: NativeRecorderStartOptions
       return { success: false, code: helperErrorRef.current?.code, message: reason }
     }
 
+    // The caps line follows READY in the same flush; give it one tick in case the
+    // two lines arrived in separate chunks. An old helper simply never sends it.
+    if (!capabilitiesRef.current.pause) {
+      await new Promise<void>((resolve) => {
+        globalThis.setTimeout(resolve, 50)
+      })
+    }
+
     activeSession = {
       process: helperProcess,
       outputPath: options.outputPath,
       cursorMode: options.cursorMode,
       ready: readyInfo,
+      capabilities: capabilitiesRef.current,
       doneInfoRef,
       exitPromise,
+      ackWaiters,
     }
 
     const helperPid = helperProcess.pid
     void exitPromise.finally(() => {
+      ackWaiters.abortAll()
       if (activeSession?.process.pid === helperPid) {
         activeSession = null
       }
@@ -431,6 +558,7 @@ export async function startNativeMacRecorder(options: NativeRecorderStartOptions
     return {
       success: true,
       ready: readyInfo,
+      capabilities: capabilitiesRef.current,
     }
   } catch (error) {
     return {
@@ -441,6 +569,57 @@ export async function startNativeMacRecorder(options: NativeRecorderStartOptions
   }
 }
 
+/** Capabilities of the running helper; all off when nothing is recording. */
+export function getNativeMacRecorderCapabilities(): NativeRecorderCapabilities {
+  return activeSession?.capabilities ?? NO_NATIVE_RECORDER_CAPABILITIES
+}
+
+async function sendPauseCommand(command: 'pause' | 'resume'): Promise<NativeRecorderPauseResult> {
+  const session = activeSession
+  if (!session) {
+    return { success: false, supported: false, message: 'Native recorder is not active.' }
+  }
+  if (!session.capabilities.pause) {
+    return {
+      success: false,
+      supported: false,
+      message: 'The native recorder helper was built without pause support; rebuild it with `npm run build:native`.',
+    }
+  }
+  const stdin = session.process.stdin
+  if (!stdin || stdin.destroyed || !stdin.writable) {
+    return { success: false, supported: true, message: 'Native recorder stdin is not writable.' }
+  }
+
+  const ackKind = command === 'pause' ? 'paused' : 'resumed'
+  const acked = session.ackWaiters.wait(ackKind, NATIVE_RECORDER_ACK_TIMEOUT_MS)
+  try {
+    stdin.write(`${command}\n`)
+  } catch (error) {
+    session.ackWaiters.abortAll()
+    return { success: false, supported: true, message: error instanceof Error ? error.message : String(error) }
+  }
+  const ok = await acked
+  if (!ok) {
+    return {
+      success: false,
+      supported: true,
+      message: `Native recorder did not acknowledge ${command} within ${NATIVE_RECORDER_ACK_TIMEOUT_MS} ms.`,
+    }
+  }
+  return { success: true, supported: true }
+}
+
+/** Write `pause` to the helper and wait for `SCK_RECORDER_PAUSED`. */
+export function pauseNativeMacRecorder(): Promise<NativeRecorderPauseResult> {
+  return sendPauseCommand('pause')
+}
+
+/** Write `resume` to the helper and wait for `SCK_RECORDER_RESUMED`. */
+export function resumeNativeMacRecorder(): Promise<NativeRecorderPauseResult> {
+  return sendPauseCommand('resume')
+}
+
 export async function stopNativeMacRecorder(): Promise<NativeRecorderStopResult> {
   const session = activeSession
   activeSession = null
@@ -449,6 +628,7 @@ export async function stopNativeMacRecorder(): Promise<NativeRecorderStopResult>
     return { success: false, message: 'Native recorder is not active.' }
   }
 
+  session.ackWaiters.abortAll()
   try {
     session.process.kill('SIGINT')
   } catch {

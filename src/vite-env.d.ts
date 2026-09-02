@@ -55,9 +55,28 @@ type CapturePermissionActionResult = {
   message?: string;
 };
 
+/** Keep in sync with `src/lib/cursor/cursorKinds.ts` (`CURSOR_KINDS`). */
+type CursorTrackCursorKind =
+  | 'arrow'
+  | 'text'
+  | 'pointer'
+  | 'crosshair'
+  | 'open-hand'
+  | 'closed-hand'
+  | 'resize-ew'
+  | 'resize-ns'
+  | 'resize-nesw'
+  | 'resize-nwse'
+  | 'move'
+  | 'not-allowed'
+  | 'wait'
+  | 'app-starting'
+  | 'help'
+  | 'up-arrow';
+
 type CursorTrackMetadata = {
   source?: 'recorded' | 'synthetic';
-  samples: Array<{ timeMs: number; x: number; y: number; click?: boolean; visible?: boolean; cursorKind?: 'arrow' | 'ibeam' }>;
+  samples: Array<{ timeMs: number; x: number; y: number; click?: boolean; visible?: boolean; cursorKind?: CursorTrackCursorKind }>;
   events?: Array<{
     type: 'click' | 'selection';
     startMs: number;
@@ -209,7 +228,11 @@ interface Window {
       frameRate?: number
       sourceKind?: 'display' | 'window' | 'unknown'
       hasMicrophoneAudio?: boolean
+      /** The running helper accepts `pause` / `resume`; false for an old binary. */
+      canPause?: boolean
     }>
+    pauseNativeScreenRecording: () => Promise<{ success: boolean; supported: boolean; message?: string }>
+    resumeNativeScreenRecording: () => Promise<{ success: boolean; supported: boolean; message?: string }>
     stopNativeScreenRecording: (options?: { discard?: boolean }) => Promise<{
       success: boolean
       path?: string
@@ -230,6 +253,8 @@ interface Window {
       captureSize?: { width?: number; height?: number }
     }) => Promise<{ success: boolean; warningCode?: string; warningMessage?: string }>
     stopCursorTracking: () => Promise<{ success: boolean; track?: CursorTrackMetadata }>
+    pauseCursorTracking: () => Promise<{ success: boolean; changed?: boolean; message?: string }>
+    resumeCursorTracking: () => Promise<{ success: boolean; changed?: boolean; message?: string }>
     onStopRecordingFromTray: (callback: () => void) => () => void
     showCountdownOverlay: (value: number, runId: number) => Promise<void>
     setCountdownOverlayValue: (value: number, runId: number) => Promise<void>
