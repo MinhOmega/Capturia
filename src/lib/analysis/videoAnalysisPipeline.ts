@@ -18,12 +18,20 @@ export interface BuildVideoAnalysisInput {
 
 function normalizeWords(words: TranscriptWord[]): TranscriptWord[] {
   return words
-    .map((word) => ({
-      text: String(word.text ?? '').trim(),
-      startMs: Math.max(0, Math.round(Number(word.startMs))),
-      endMs: Math.max(0, Math.round(Number(word.endMs))),
-      confidence: Number.isFinite(word.confidence) ? Number(word.confidence) : undefined,
-    }))
+    .map((word) => {
+      const normalized: TranscriptWord = {
+        text: String(word.text ?? '').trim(),
+        startMs: Math.max(0, Math.round(Number(word.startMs))),
+        endMs: Math.max(0, Math.round(Number(word.endMs))),
+        confidence: Number.isFinite(word.confidence) ? Number(word.confidence) : undefined,
+      };
+      // Keep the synthetic markers: roughCutEngine relies on them (see isGapInsideSyntheticPhrase).
+      if (word.synthetic) {
+        normalized.synthetic = true;
+        if (Number.isFinite(word.phraseIndex)) normalized.phraseIndex = Number(word.phraseIndex);
+      }
+      return normalized;
+    })
     .filter((word) => word.text.length > 0 && word.endMs > word.startMs)
     .sort((left, right) => left.startMs - right.startMs);
 }
