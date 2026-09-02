@@ -135,6 +135,7 @@
 	},
 	"microphone": "Micro",
 	"microphoneFallback": "Không dùng được micro. Ghi hình không có âm thanh.",
+	"microphoneDeviceNotFound": "Không tìm thấy micro đã chọn. Ghi âm bằng micro mặc định.",
 	"audio": {
 		"enableMicrophone": "Bật micro",
 		"disableMicrophone": "Tắt micro",

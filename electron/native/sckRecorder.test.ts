@@ -5,6 +5,7 @@ import {
   getNativeMacRecorderCapabilities,
   parseCapsLine,
   parsePauseAckLine,
+  parseWarnLine,
   pauseNativeMacRecorder,
   resumeNativeMacRecorder,
 } from './sckRecorder'
@@ -13,10 +14,10 @@ vi.mock('electron', async () => (await import('../ipc/__tests__/ipcTestKit')).cr
 
 describe('sck-recorder stdout protocol', () => {
   it('parses the capability line and ignores unknown names', () => {
-    expect(parseCapsLine('SCK_RECORDER_CAPS pause')).toEqual({ pause: true })
-    expect(parseCapsLine('SCK_RECORDER_CAPS   pause  future-thing')).toEqual({ pause: true })
-    expect(parseCapsLine('SCK_RECORDER_CAPS')).toEqual({ pause: false })
-    expect(parseCapsLine('SCK_RECORDER_CAPS something-else')).toEqual({ pause: false })
+    expect(parseCapsLine('SCK_RECORDER_CAPS pause')).toMatchObject({ pause: true })
+    expect(parseCapsLine('SCK_RECORDER_CAPS   pause  future-thing')).toMatchObject({ pause: true })
+    expect(parseCapsLine('SCK_RECORDER_CAPS')).toMatchObject({ pause: false })
+    expect(parseCapsLine('SCK_RECORDER_CAPS something-else')).toMatchObject({ pause: false })
     expect(parseCapsLine('SCK_RECORDER_READY width=1 height=1 fps=60 source=display')).toBeNull()
     expect(parseCapsLine('[log] SCK_RECORDER_CAPS pause')).toBeNull()
   })
@@ -81,5 +82,25 @@ describe('pause / resume without a helper', () => {
       success: false,
       supported: false,
     })
+  })
+})
+
+describe('sck-recorder warnings and capabilities added with mic device selection', () => {
+  it('parses the mic-device capability next to pause', () => {
+    expect(parseCapsLine('SCK_RECORDER_CAPS pause mic-device')).toEqual({
+      pause: true,
+      microphoneDevice: true,
+    })
+    expect(parseCapsLine('SCK_RECORDER_CAPS pause')).toMatchObject({ microphoneDevice: false })
+  })
+
+  it('parses warning lines with and without details', () => {
+    expect(
+      parseWarnLine('SCK_RECORDER_WARN mic_device_not_found requested=Yeti opened=MacBook Pro'),
+    ).toEqual({ code: 'mic_device_not_found', details: 'requested=Yeti opened=MacBook Pro' })
+    expect(parseWarnLine('SCK_RECORDER_WARN Something_Odd')).toEqual({ code: 'something_odd' })
+    expect(parseWarnLine('SCK_RECORDER_WARN')).toBeNull()
+    expect(parseWarnLine('SCK_RECORDER_ERROR code=x message=y')).toBeNull()
+    expect(parseWarnLine('[log] SCK_RECORDER_WARN mic_device_not_found')).toBeNull()
   })
 })

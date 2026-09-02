@@ -44,6 +44,9 @@ struct RecorderArguments {
     /// Preferred camera: AVCaptureDevice `uniqueID` and/or the browser-reported label.
     let cameraDeviceId: String?
     let cameraDeviceName: String?
+    /// Preferred microphone: AVCaptureDevice `uniqueID` and/or the browser-reported label.
+    let microphoneDeviceId: String?
+    let microphoneDeviceName: String?
 
     static func parse(from argv: [String]) throws -> RecorderArguments {
         var outputPath: String?
@@ -61,6 +64,8 @@ struct RecorderArguments {
         var cameraSizePercent = 22
         var cameraDeviceId: String?
         var cameraDeviceName: String?
+        var microphoneDeviceId: String?
+        var microphoneDeviceName: String?
 
         var idx = 1
         while idx < argv.count {
@@ -135,6 +140,16 @@ struct RecorderArguments {
                     cameraDeviceName = value
                 }
                 idx += 2
+            case "--mic-device-id":
+                if let value = next, !value.isEmpty {
+                    microphoneDeviceId = value
+                }
+                idx += 2
+            case "--mic-device-name":
+                if let value = next, !value.isEmpty {
+                    microphoneDeviceName = value
+                }
+                idx += 2
             default:
                 idx += 1
             }
@@ -163,7 +178,9 @@ struct RecorderArguments {
             cameraShape: cameraShape,
             cameraSizePercent: clampedSizePercent,
             cameraDeviceId: cameraDeviceId,
-            cameraDeviceName: cameraDeviceName
+            cameraDeviceName: cameraDeviceName,
+            microphoneDeviceId: microphoneDeviceId,
+            microphoneDeviceName: microphoneDeviceName
         )
     }
 }
@@ -517,13 +534,27 @@ final class MicrophoneCaptureProvider: NSObject, AVCaptureAudioDataOutputSampleB
     private let session = AVCaptureSession()
     private let outputQueue = DispatchQueue(label: "com.capturia.sck-recorder.microphone-output")
     private var onSampleBuffer: ((CMSampleBuffer) -> Void)?
+    private let preferredDeviceId: String?
+    private let preferredDeviceName: String?
+    /// True when a preferred device was requested but nothing matched, so the
+    /// system default was opened instead. The caller reports it as a warning.
+    private(set) var preferredDeviceMissing = false
+    /// `localizedName` of the device actually opened (for the log line).
+    private(set) var openedDeviceName: String?
+
+    init(preferredDeviceId: String? = nil, preferredDeviceName: String? = nil) {
+        self.preferredDeviceId = preferredDeviceId
+        self.preferredDeviceName = preferredDeviceName
+        super.init()
+    }
 
     func start(onSampleBuffer: @escaping (CMSampleBuffer) -> Void) throws {
         self.onSampleBuffer = onSampleBuffer
 
-        guard let device = AVCaptureDevice.default(for: .audio) else {
+        guard let device = selectCaptureDevice() else {
             throw RecorderError.microphoneUnavailable("No microphone input device available")
         }
+        openedDeviceName = device.localizedName
 
         let input = try AVCaptureDeviceInput(device: device)
         let output = AVCaptureAudioDataOutput()
@@ -565,6 +596,37 @@ final class MicrophoneCaptureProvider: NSObject, AVCaptureAudioDataOutputSampleB
     ) {
         guard CMSampleBufferDataIsReady(sampleBuffer) else { return }
         onSampleBuffer?(sampleBuffer)
+    }
+
+    /// The HUD picker's choice: exact uniqueID first, then the label Chromium
+    /// reported under the word-boundary rules. Chromium's deviceId is a per-origin
+    /// hash, so the name is the realistic hit. Nothing matched -> system default,
+    /// flagged in `preferredDeviceMissing`.
+    private func selectCaptureDevice() -> AVCaptureDevice? {
+        let hasPreference = preferredDeviceId != nil || preferredDeviceName != nil
+        if hasPreference {
+            var deviceTypes: [AVCaptureDevice.DeviceType] = [.builtInMicrophone]
+            if #available(macOS 14.0, *) {
+                deviceTypes.append(.external)
+            } else {
+                deviceTypes.append(.externalUnknown)
+            }
+            let devices = AVCaptureDevice.DiscoverySession(
+                deviceTypes: deviceTypes,
+                mediaType: .audio,
+                position: .unspecified
+            ).devices
+
+            if let preferredDeviceId, let match = devices.first(where: { $0.uniqueID == preferredDeviceId }) {
+                return match
+            }
+            if let preferredDeviceName, let match = DeviceNameMatching.pickDevice(named: preferredDeviceName, from: devices) {
+                return match
+            }
+            preferredDeviceMissing = true
+        }
+
+        return AVCaptureDevice.default(for: .audio)
     }
 }
 
@@ -1191,7 +1253,10 @@ final class SCKRecorder {
         var microphoneProvider: MicrophoneCaptureProvider?
         if args.microphoneEnabled {
             try await ensureMicrophonePermission()
-            let provider = MicrophoneCaptureProvider()
+            let provider = MicrophoneCaptureProvider(
+                preferredDeviceId: args.microphoneDeviceId,
+                preferredDeviceName: args.microphoneDeviceName
+            )
             do {
                 try provider.start { sampleBuffer in
                     writer.appendMicrophoneSampleBuffer(sampleBuffer)
@@ -1200,6 +1265,13 @@ final class SCKRecorder {
             } catch {
                 cameraProvider?.stop()
                 throw RecorderError.microphoneUnavailable(String(describing: error))
+            }
+            if provider.preferredDeviceMissing {
+                // Not fatal: the recording goes on with the default microphone and
+                // the Electron side turns this line into a toast.
+                let requested = args.microphoneDeviceName ?? args.microphoneDeviceId ?? ""
+                print("SCK_RECORDER_WARN mic_device_not_found requested=\(requested) opened=\(provider.openedDeviceName ?? "")")
+                fflush(stdout)
             }
         }
 
@@ -1451,7 +1523,7 @@ struct NativeRecorderMain {
             print("SCK_RECORDER_READY width=\(info.width) height=\(info.height) fps=\(args.fps) source=\(info.sourceKind) mic=\(info.hasMicrophoneAudio ? 1 : 0)")
             // Capability line: lets the Electron side detect a helper built without
             // the stdin protocol (an old binary never prints it -> pause unsupported).
-            print("SCK_RECORDER_CAPS pause")
+            print("SCK_RECORDER_CAPS pause mic-device")
             fflush(stdout)
 
             let stopSignal = StopSignal()

@@ -40,6 +40,8 @@ type NativeRecorderStartOptions = {
   cameraSizePercent?: number
   cameraDeviceId?: string
   cameraDeviceName?: string
+  microphoneDeviceId?: string
+  microphoneDeviceName?: string
   frameRate?: number
   maxLongEdge?: number
   bitrateScale?: number
@@ -256,6 +258,8 @@ export function registerRecordingFilesHandlers(ctx: IpcContext): RecordingFilesR
           : 22
         const cameraDeviceId = normalizeDeviceArgument(options?.cameraDeviceId)
         const cameraDeviceName = normalizeDeviceArgument(options?.cameraDeviceName)
+        const microphoneDeviceId = normalizeDeviceArgument(options?.microphoneDeviceId)
+        const microphoneDeviceName = normalizeDeviceArgument(options?.microphoneDeviceName)
         const frameRate = Number.isFinite(options?.frameRate) ? Number(options?.frameRate) : 60
         const maxLongEdge = Number.isFinite(options?.maxLongEdge)
           ? Math.max(2, Math.round(Number(options?.maxLongEdge)))
@@ -302,6 +306,8 @@ export function registerRecordingFilesHandlers(ctx: IpcContext): RecordingFilesR
           cameraSizePercent,
           cameraDeviceId,
           cameraDeviceName,
+          microphoneDeviceId,
+          microphoneDeviceName,
           frameRate,
           bitrateScale,
           width,
@@ -328,6 +334,8 @@ export function registerRecordingFilesHandlers(ctx: IpcContext): RecordingFilesR
           hasMicrophoneAudio: result.ready.hasMicrophoneAudio,
           // False for a helper built before the stdin protocol: the HUD hides Pause.
           canPause: result.capabilities?.pause === true,
+          // Non-fatal helper warnings (snake_case codes), e.g. `mic_device_not_found`.
+          warnings: (result.warnings ?? []).map((warning) => warning.code),
         }
       } catch (error) {
         return {

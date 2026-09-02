@@ -24,6 +24,14 @@ export type NativeRecorderStartOptions = {
    */
   cameraDeviceId?: string
   cameraDeviceName?: string
+  /**
+   * Preferred microphone, same contract as the camera pair: the helper tries the
+   * AVCaptureDevice `uniqueID`, then the label under the word-boundary rules of
+   * `electron/recording/deviceNameMatching.ts`, else opens the system default and
+   * prints `SCK_RECORDER_WARN mic_device_not_found`.
+   */
+  microphoneDeviceId?: string
+  microphoneDeviceName?: string
   frameRate: number
   bitrateScale?: number
   width?: number
@@ -70,6 +78,18 @@ type RecorderDoneInfo = {
  */
 export type NativeRecorderCapabilities = {
   pause: boolean
+  /** `--mic-device-id` / `--mic-device-name` are honoured (an old helper ignores them). */
+  microphoneDevice: boolean
+}
+
+/**
+ * Non-fatal condition the helper reported on stdout as
+ * `SCK_RECORDER_WARN <code> [details]` before or after READY. Codes are
+ * snake_case; the renderer maps known ones to toasts.
+ */
+export type NativeRecorderWarning = {
+  code: string
+  details?: string
 }
 
 export type NativeRecorderPauseResult = {
@@ -87,6 +107,7 @@ type ActiveNativeRecorderSession = {
   cursorMode: NativeCursorMode
   ready: RecorderReadyInfo
   capabilities: NativeRecorderCapabilities
+  warnings: NativeRecorderWarning[]
   doneInfoRef: { current?: RecorderDoneInfo }
   exitPromise: Promise<{ code: number | null; signal: NodeJS.Signals | null }>
   /** Pending pause/resume commands waiting for their ack line. */
@@ -100,9 +121,10 @@ let activeSession: ActiveNativeRecorderSession | null = null
 
 export const NO_NATIVE_RECORDER_CAPABILITIES: NativeRecorderCapabilities = Object.freeze({
   pause: false,
+  microphoneDevice: false,
 })
 
-/** `SCK_RECORDER_CAPS pause` -> `{ pause: true }`; unknown names are ignored. */
+/** `SCK_RECORDER_CAPS pause mic-device` -> `{ pause: true, ... }`; unknown names are ignored. */
 export function parseCapsLine(line: string): NativeRecorderCapabilities | null {
   const match = /^SCK_RECORDER_CAPS\b(.*)$/i.exec(line.trim())
   if (!match) return null
@@ -112,7 +134,21 @@ export function parseCapsLine(line: string): NativeRecorderCapabilities | null {
       .map((name) => name.trim().toLowerCase())
       .filter(Boolean),
   )
-  return { pause: names.has('pause') }
+  return {
+    pause: names.has('pause'),
+    microphoneDevice: names.has('mic-device'),
+  }
+}
+
+/** `SCK_RECORDER_WARN mic_device_not_found requested=...` -> `{ code, details }`. */
+export function parseWarnLine(line: string): NativeRecorderWarning | null {
+  const match = /^SCK_RECORDER_WARN\s+([a-z0-9_-]+)(?:\s+(.*))?$/i.exec(line.trim())
+  if (!match) return null
+  const details = String(match[2] ?? '').trim()
+  return {
+    code: String(match[1]).toLowerCase(),
+    ...(details ? { details } : {}),
+  }
 }
 
 /** `SCK_RECORDER_PAUSED` / `SCK_RECORDER_RESUMED` acks for the stdin commands. */
@@ -393,6 +429,7 @@ export async function startNativeMacRecorder(options: NativeRecorderStartOptions
   message?: string
   ready?: RecorderReadyInfo
   capabilities?: NativeRecorderCapabilities
+  warnings?: NativeRecorderWarning[]
 }> {
   if (process.platform !== 'darwin') {
     return {
@@ -468,6 +505,15 @@ export async function startNativeMacRecorder(options: NativeRecorderStartOptions
         args.push('--camera-device-name', options.cameraDeviceName)
       }
     }
+    if (options.microphoneEnabled !== false) {
+      // An old helper skips unknown flags (and their value) and keeps its default mic.
+      if (options.microphoneDeviceId) {
+        args.push('--mic-device-id', options.microphoneDeviceId)
+      }
+      if (options.microphoneDeviceName) {
+        args.push('--mic-device-name', options.microphoneDeviceName)
+      }
+    }
 
     // stdin is a pipe so `pause` / `resume` / `stop` lines can be written to the
     // helper. An old helper that never reads stdin is unaffected: it ignores the
@@ -491,6 +537,7 @@ export async function startNativeMacRecorder(options: NativeRecorderStartOptions
       current: { ...NO_NATIVE_RECORDER_CAPABILITIES },
     }
     const ackWaiters = new AckWaiters()
+    const warnings: NativeRecorderWarning[] = []
     let stderrBuffer = ''
     const helperErrorRef: { current?: RecorderHelperErrorInfo } = {}
 
@@ -507,6 +554,12 @@ export async function startNativeMacRecorder(options: NativeRecorderStartOptions
       const maybeAck = parsePauseAckLine(line)
       if (maybeAck) {
         ackWaiters.settle(maybeAck)
+        return
+      }
+      const maybeWarn = parseWarnLine(line)
+      if (maybeWarn) {
+        warnings.push(maybeWarn)
+        console.warn(`[sck-recorder] ${line}`)
         return
       }
       const maybeDone = parseDoneLine(line)
@@ -580,6 +633,7 @@ export async function startNativeMacRecorder(options: NativeRecorderStartOptions
       cursorMode: options.cursorMode,
       ready: readyInfo,
       capabilities: capabilitiesRef.current,
+      warnings,
       doneInfoRef,
       exitPromise,
       ackWaiters,
@@ -597,6 +651,8 @@ export async function startNativeMacRecorder(options: NativeRecorderStartOptions
       success: true,
       ready: readyInfo,
       capabilities: capabilitiesRef.current,
+      // Warnings printed before READY (e.g. the picked mic was not found).
+      warnings: [...warnings],
     }
   } catch (error) {
     return {
