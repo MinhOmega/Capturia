@@ -233,3 +233,12 @@ Review: `reviews/W4-F8-F9-deps-signing.md`. Gate after merge on the new stack: l
 116 warnings; tsc + test types clean; i18n 621; vitest **115 files / 1195 tests**; `vite build` OK.
 
 In flight: Swift batch A-3 + B2-5 (`w4-swift`). Then T-last Biome format and the final report.
+
+## 2026-08-27 — wave 4: Swift batch merged — native pause/resume + cursor kinds
+
+Swift uncompiled (Linux lead box); TS side degrades to "pause unsupported" with an old helper.
+16 cursor kinds with original MIT glyphs (upstream SVGs skipped for licence). Review:
+`reviews/W4-swift-pause-cursor-kinds.md`. Gate: lint 0 errors / 116 warnings; tsc + test types
+clean; i18n 623; vitest **118 files / 1228 tests**.
+
+Remaining: T-last Biome format, final report.
