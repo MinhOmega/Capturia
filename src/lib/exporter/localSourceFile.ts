@@ -182,6 +182,37 @@ export async function materializeLocalSourceFile(
   return copyToOpfsFile(videoUrl, info.size, info.mtimeMs ?? 0, options)
 }
 
+/**
+ * Reads a local recording whole into a `Blob`, for the source-copy export fast
+ * path. Returns `null` (instead of streaming through OPFS) when the file is
+ * larger than the in-memory threshold or cannot be read: the caller then falls
+ * back to the render pipeline, which streams. Never throws for a missing or
+ * oversized file; only for a missing desktop bridge.
+ */
+export async function loadLocalSourceBlob(
+  videoUrl: string,
+  options?: { thresholdBytes?: number; signal?: AbortSignal },
+): Promise<Blob | null> {
+  const api = window.electronAPI
+  if (!api) {
+    throw new Error('Local source loading is only available in the desktop app.')
+  }
+  throwIfAborted(options?.signal)
+  const threshold = options?.thresholdBytes ?? MAX_IN_MEMORY_SOURCE_BYTES
+
+  const info = await api.getReadableFileInfo(videoUrl)
+  if (!info.success || typeof info.size !== 'number' || info.size > threshold) {
+    return null
+  }
+  throwIfAborted(options?.signal)
+
+  const result = await api.readBinaryFile(videoUrl)
+  if (!result.success || !result.data) return null
+  throwIfAborted(options?.signal)
+  const name = (result.path || videoUrl).split(/[\\/]/).pop() || videoUrl
+  return new Blob([result.data], { type: mimeTypeForPath(name) })
+}
+
 async function copyToOpfsFile(
   videoUrl: string,
   size: number,

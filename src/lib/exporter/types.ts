@@ -42,7 +42,7 @@ export interface ExportProgress {
   totalFrames: number
   percentage: number
   estimatedTimeRemaining: number // in seconds
-  phase?: 'preparing' | 'extracting' | 'rendering' | 'finalizing' // Phase of export ('preparing' = source copy before decode)
+  phase?: 'preparing' | 'copying' | 'extracting' | 'rendering' | 'finalizing' // Phase of export ('preparing' = source copy before decode, 'copying' = source-copy fast path)
   phaseDetailKey?: string // i18n key for current sub-step
   renderProgress?: number // 0-100, progress of GIF rendering phase
   updatedAtMs?: number // wall-clock timestamp for last progress event
@@ -63,6 +63,8 @@ export interface ExportResult {
   errorKind?: 'background-load'
   backgroundUrl?: string
   warnings?: string[]
+  /** `true` when the source file was copied verbatim (no decode / render / encode). */
+  sourceCopy?: boolean
 }
 
 export interface VideoFrameData {
