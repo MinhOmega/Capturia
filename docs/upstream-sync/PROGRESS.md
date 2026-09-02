@@ -258,3 +258,16 @@ now quote-agnostic. Gate unchanged: lint 0 errors / 116 warnings; tsc + test typ
 i18n 623; vitest **118 files / 1228 tests**; `vite build`; `biome format .` reports nothing.
 
 Remaining: final report.
+
+## 2026-08-27 — T-last merged — sync complete
+
+Biome formatter enabled (W0-a style, `quoteProperties: preserve`), one-shot format of 328 files
+recorded in `.git-blame-ignore-revs`, lint-staged now formats. Final gate on
+`feat/upstream-sync-v1.7`: lint 0 errors / 116 warnings; tsc + test types clean; i18n 623 en
+keys (zh-CN, vi complete); vitest **118 files / 1228 tests** (main: 32 / 204); `vite build` OK;
+`biome format .` clean.
+
+Branch is local only (never pushed). Open before release: manual smoke checklists in every
+`reviews/W*.md`, the macOS checklist in `docs/native-helper.md` (Swift uncompiled), a release
+candidate tag to exercise the four installer legs and the gated signing, and the
+`decodePath` default flip after the export smoke passes.
