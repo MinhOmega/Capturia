@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AnnotationRegion } from '@/components/video-editor/types'
-import { DEFAULT_ANNOTATION_STYLE } from '@/components/video-editor/types'
+import { DEFAULT_ANNOTATION_STYLE, DEFAULT_BLUR_DATA } from '@/components/video-editor/types'
 import { DUPLICATE_ANNOTATION_OFFSET_PERCENT, duplicateAnnotationRegion } from './duplicate'
 
 function annotation(overrides: Partial<AnnotationRegion> = {}): AnnotationRegion {
@@ -60,5 +60,18 @@ describe('duplicateAnnotationRegion', () => {
   it('leaves figureData undefined for non-figure annotations', () => {
     const copy = duplicateAnnotationRegion(annotation(), { id: 'annotation-2', zIndex: 4 })
     expect(copy.figureData).toBeUndefined()
+    expect(copy.blurData).toBeUndefined()
+  })
+
+  it('deep-copies blurData for blur regions', () => {
+    const source = annotation({
+      type: 'blur',
+      content: '',
+      blurData: { ...DEFAULT_BLUR_DATA, shape: 'oval', blockSize: 20 },
+    })
+    const copy = duplicateAnnotationRegion(source, { id: 'blur-2', zIndex: 4 })
+    expect(copy.type).toBe('blur')
+    expect(copy.blurData).toEqual(source.blurData)
+    expect(copy.blurData).not.toBe(source.blurData)
   })
 })

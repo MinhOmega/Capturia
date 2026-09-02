@@ -1,6 +1,9 @@
 /** Prefix used when minting annotation ids (`annotation-1`, `annotation-2`, ...). */
 export const ANNOTATION_ID_PREFIX = 'annotation-'
 
+/** Prefix used when minting blur region ids (`blur-1`, `blur-2`, ...); they live in the annotation list. */
+export const BLUR_ID_PREFIX = 'blur-'
+
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }

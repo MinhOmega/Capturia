@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { getRenderableAnnotations, isAnnotationActiveAtTime } from './renderOrder'
+import {
+  getRenderableAnnotations,
+  getSelectionCycleAnnotations,
+  isAnnotationActiveAtTime,
+  isSelectionCyclable,
+} from './renderOrder'
 import type { AnnotationRegion } from '@/components/video-editor/types'
 
 let annotationCounter = 0
@@ -50,5 +55,27 @@ describe('annotation render order', () => {
     const invalid = makeAnnotation({ id: 'invalid', startMs: Number.NaN, endMs: 100 })
     expect(isAnnotationActiveAtTime(invalid, 50)).toBe(false)
     expect(getRenderableAnnotations([invalid], 50)).toEqual([])
+  })
+})
+
+describe('selection cycling', () => {
+  it('renders blur regions but leaves them out of the click-through / Tab cycle', () => {
+    const text = makeAnnotation({ id: 'text', zIndex: 1 })
+    const blur = makeAnnotation({ id: 'blur', type: 'blur', zIndex: 2 })
+    const figure = makeAnnotation({ id: 'figure', type: 'figure', zIndex: 3 })
+    const later = makeAnnotation({ id: 'later', startMs: 5000, endMs: 6000 })
+
+    expect(isSelectionCyclable(blur)).toBe(false)
+    expect(isSelectionCyclable(text)).toBe(true)
+    expect(getRenderableAnnotations([text, blur, figure, later], 100).map((a) => a.id)).toEqual([
+      'text',
+      'blur',
+      'figure',
+    ])
+    expect(getSelectionCycleAnnotations([text, blur, figure, later], 100).map((a) => a.id)).toEqual(
+      ['text', 'figure'],
+    )
+    expect(getSelectionCycleAnnotations([blur], 100)).toEqual([])
+    expect(getSelectionCycleAnnotations(undefined, 100)).toEqual([])
   })
 })
