@@ -13,16 +13,53 @@ import { LaunchWindow } from './LaunchWindow'
 
 type SelectedSourceChangedListener = Parameters<Window['electronAPI']['onSelectedSourceChanged']>[0]
 
+// Records every observer so a test can fire a content change by hand.
+const resizeObservers: Array<{ callback: () => void; targets: Set<Element> }> = []
 class StubResizeObserver {
-  observe() {
-    return undefined
+  private readonly entry: { callback: () => void; targets: Set<Element> }
+  constructor(callback: () => void) {
+    this.entry = { callback, targets: new Set() }
+    resizeObservers.push(this.entry)
   }
-  unobserve() {
-    return undefined
+  observe(target: Element) {
+    this.entry.targets.add(target)
+  }
+  unobserve(target: Element) {
+    this.entry.targets.delete(target)
   }
   disconnect() {
-    return undefined
+    this.entry.targets.clear()
   }
+}
+
+function fireResizeObservers() {
+  act(() => {
+    for (const entry of resizeObservers) entry.callback()
+  })
+}
+
+/** jsdom has no layout: give the HUD bar a box so measurement has something to fit. */
+function stubBarRect(
+  element: Element,
+  rect: { left: number; top: number; width: number; height: number },
+) {
+  element.getBoundingClientRect = () =>
+    ({
+      ...rect,
+      right: rect.left + rect.width,
+      bottom: rect.top + rect.height,
+      x: rect.left,
+      y: rect.top,
+      toJSON: () => undefined,
+    }) as DOMRect
+}
+
+async function flushAnimationFrames() {
+  await act(async () => {
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+    })
+  })
 }
 
 const recorderState = vi.hoisted(() => ({
@@ -102,6 +139,9 @@ function stubElectronAPI() {
     hudOverlayClose: vi.fn(),
     hudOverlayResize: vi.fn(),
     hudOverlayRestore: vi.fn(),
+    setHudOverlayIgnoreMouseEvents: vi.fn(async () => ({ applied: true })),
+    moveHudOverlayBy: vi.fn(async () => ({ applied: true })),
+    setHudOverlaySize: vi.fn(async () => ({ applied: true })),
     onSelectedSourceChanged: vi.fn((callback: SelectedSourceChangedListener) => {
       selectedSourceChangedListeners.push(callback)
       return () => {
@@ -143,6 +183,7 @@ function emitSourceSelectorClosed() {
 describe('LaunchWindow record button', () => {
   beforeEach(() => {
     vi.stubGlobal('ResizeObserver', StubResizeObserver)
+    resizeObservers.length = 0
     window.localStorage.clear()
     recorderState.value.toggleRecording.mockClear()
     selectedSourceChangedListeners = []
@@ -295,5 +336,124 @@ describe('LaunchWindow record button', () => {
       expect(screen.getByTestId('launch-record-button')).toHaveAttribute('title', 'Display 1')
     })
     expect(recorderState.value.toggleRecording).not.toHaveBeenCalled()
+  })
+})
+
+describe('LaunchWindow HUD geometry', () => {
+  beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', StubResizeObserver)
+    resizeObservers.length = 0
+    window.localStorage.clear()
+    selectedSourceChangedListeners = []
+    sourceSelectorClosedListeners = []
+    mainSelectedSource = null
+    stubElectronAPI()
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+  })
+
+  it('starts horizontal, toggles to a vertical tray and remembers it', async () => {
+    const { unmount } = render(<LaunchWindow />)
+    const bar = await screen.findByTestId('hud-bar')
+    expect(bar).toHaveAttribute('data-hud-orientation', 'horizontal')
+
+    const toggle = screen.getByTestId('launch-tray-layout-button')
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    expect(toggle).toHaveAttribute('title', 'Switch to vertical tray')
+
+    fireEvent.click(toggle)
+    expect(screen.getByTestId('hud-bar')).toHaveAttribute('data-hud-orientation', 'vertical')
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    expect(toggle).toHaveAttribute('title', 'Switch to horizontal bar')
+    // Every control is still there in the tray.
+    expect(screen.getByTestId('launch-record-button')).toBeInTheDocument()
+    expect(screen.getByTestId('launch-source-button')).toBeInTheDocument()
+    expect(screen.getByTestId('launch-microphone-toggle')).toBeInTheDocument()
+    expect(screen.getByTestId('launch-notes-button')).toBeInTheDocument()
+
+    unmount()
+    render(<LaunchWindow />)
+    expect(await screen.findByTestId('hud-bar')).toHaveAttribute('data-hud-orientation', 'vertical')
+  })
+
+  it('ignores mouse input over the transparent reserve and takes it back over the bar', async () => {
+    render(<LaunchWindow />)
+    const bar = await screen.findByTestId('hud-bar')
+    stubBarRect(bar, { left: 100, top: 300, width: 800, height: 44 })
+    const ignoreMouse = vi.mocked(window.electronAPI.setHudOverlayIgnoreMouseEvents)
+
+    // Mount: nobody is over the HUD yet, so it starts click-through with the
+    // boxes main polls against.
+    await waitFor(() => {
+      expect(ignoreMouse).toHaveBeenCalled()
+    })
+    const firstCall = ignoreMouse.mock.calls[0]
+    expect(firstCall?.[0]).toBe(true)
+    expect(Array.isArray(firstCall?.[1])).toBe(true)
+
+    ignoreMouse.mockClear()
+    fireEvent.pointerMove(bar)
+    expect(ignoreMouse).toHaveBeenLastCalledWith(false, undefined)
+
+    ignoreMouse.mockClear()
+    fireEvent.pointerMove(document.body)
+    expect(ignoreMouse).toHaveBeenCalledTimes(1)
+    expect(ignoreMouse.mock.calls[0]?.[0]).toBe(true)
+    expect(ignoreMouse.mock.calls[0]?.[1]).toEqual([{ x: 100, y: 300, width: 800, height: 44 }])
+
+    // Same state again: no duplicate round trip.
+    fireEvent.pointerMove(document.body)
+    expect(ignoreMouse).toHaveBeenCalledTimes(1)
+  })
+
+  it('moves the window from the drag handle and keeps input on while dragging', async () => {
+    render(<LaunchWindow />)
+    const handle = await screen.findByTestId('hud-drag-handle')
+    const moveBy = vi.mocked(window.electronAPI.moveHudOverlayBy)
+    const ignoreMouse = vi.mocked(window.electronAPI.setHudOverlayIgnoreMouseEvents)
+    await waitFor(() => {
+      expect(ignoreMouse).toHaveBeenCalled()
+    })
+    ignoreMouse.mockClear()
+
+    fireEvent.pointerDown(handle, { button: 0, screenX: 500, screenY: 900 })
+    expect(ignoreMouse).toHaveBeenLastCalledWith(false, undefined)
+    fireEvent.pointerMove(handle, { screenX: 510, screenY: 895 })
+    fireEvent.pointerMove(handle, { screenX: 525, screenY: 890 })
+    // A pointer move elsewhere during the drag must not switch input off.
+    ignoreMouse.mockClear()
+    fireEvent.pointerMove(document.body)
+    expect(ignoreMouse).not.toHaveBeenCalled()
+
+    fireEvent.pointerUp(handle, { screenX: 525, screenY: 890 })
+    await flushAnimationFrames()
+    // Deltas are batched per frame; the drag end flushes whatever is pending.
+    const total = moveBy.mock.calls.reduce((sum, [dx, dy]) => ({ x: sum.x + dx, y: sum.y + dy }), {
+      x: 0,
+      y: 0,
+    })
+    expect(total).toEqual({ x: 25, y: -10 })
+  })
+
+  it('asks main to fit the window to the bar when the content changes', async () => {
+    render(<LaunchWindow />)
+    const bar = await screen.findByTestId('hud-bar')
+    const setSize = vi.mocked(window.electronAPI.setHudOverlaySize)
+    await flushAnimationFrames()
+    setSize.mockClear()
+
+    // Viewport 1024x768 in jsdom: a 600x60 bar centred at the bottom.
+    stubBarRect(bar, { left: 212, top: 700, width: 600, height: 60 })
+    fireResizeObservers()
+    await flushAnimationFrames()
+    expect(setSize).toHaveBeenLastCalledWith(600 + 2 * 16, 768 - 700 + 16)
+
+    // Same size again is not re-sent.
+    fireResizeObservers()
+    await flushAnimationFrames()
+    expect(setSize).toHaveBeenCalledTimes(1)
   })
 })

@@ -6,6 +6,40 @@
   -webkit-app-region: no-drag;
 }
 
+/* JS drag handle: pointer deltas go to the main process (see LaunchWindow). */
+.dragHandle {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.dragHandle:active {
+  cursor: grabbing;
+}
+
+/* Vertical tray: every control group becomes a full-width row. */
+.trayVertical > * {
+  width: 100%;
+}
+
+.trayVertical button:not(.hudOverlayButton) {
+  justify-content: flex-start;
+  min-width: 0;
+  text-align: left;
+}
+
+.trayVertical > div > button:first-child:not(.hudOverlayButton) {
+  flex: 1 1 auto;
+}
+
+.trayVertical .trayHeader {
+  width: 100%;
+}
+
+.trayVertical select {
+  width: 100%;
+}
+
 
 .folderButton {
   cursor: pointer;
