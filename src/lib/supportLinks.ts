@@ -66,10 +66,7 @@ function truncateTitleToFit(title: string): string | null {
   return best
 }
 
-export function buildIssueReportUrl(input: {
-  title?: string
-  bodyLines?: string[]
-}): string {
+export function buildIssueReportUrl(input: { title?: string; bodyLines?: string[] }): string {
   const title = input.title?.trim()
   const body = (input.bodyLines ?? []).join('\n').trim()
 

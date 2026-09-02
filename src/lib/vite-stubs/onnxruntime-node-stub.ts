@@ -4,7 +4,7 @@
  * though we need the WASM build. The real `onnxruntime-node` is aliased away (it
  * pulls `fs`), so re-export `onnxruntime-web` to give the node branch a working ORT.
  */
-import * as ortWeb from 'onnxruntime-web';
+import * as ortWeb from 'onnxruntime-web'
 
-const ort = (ortWeb as { default?: typeof ortWeb }).default ?? ortWeb;
-export default ort;
+const ort = (ortWeb as { default?: typeof ortWeb }).default ?? ortWeb
+export default ort

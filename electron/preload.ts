@@ -11,18 +11,18 @@ const assetBaseUrl = readArgUrl('--asset-base-url=')
 const captionModelDirUrl = readArgUrl('--caption-model-dir=')
 
 contextBridge.exposeInMainWorld('electronAPI', {
-    hudOverlayHide: () => {
-      ipcRenderer.send('hud-overlay-hide');
-    },
-    hudOverlayClose: () => {
-      ipcRenderer.send('hud-overlay-close');
-    },
-    hudOverlayResize: (_width?: number, _height?: number) => {
-      ipcRenderer.send('hud-overlay-resize');
-    },
-    hudOverlayRestore: () => {
-      ipcRenderer.send('hud-overlay-restore');
-    },
+  hudOverlayHide: () => {
+    ipcRenderer.send('hud-overlay-hide')
+  },
+  hudOverlayClose: () => {
+    ipcRenderer.send('hud-overlay-close')
+  },
+  hudOverlayResize: (_width?: number, _height?: number) => {
+    ipcRenderer.send('hud-overlay-resize')
+  },
+  hudOverlayRestore: () => {
+    ipcRenderer.send('hud-overlay-restore')
+  },
   setLocale: (locale: string) => {
     return ipcRenderer.invoke('set-locale', locale)
   },
@@ -39,13 +39,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getCapturePermissionSnapshot: async () => {
     return await ipcRenderer.invoke('get-capture-permission-snapshot')
   },
-  requestCapturePermissionAccess: async (target: 'screen' | 'camera' | 'microphone' | 'accessibility' | 'input-monitoring') => {
+  requestCapturePermissionAccess: async (
+    target: 'screen' | 'camera' | 'microphone' | 'accessibility' | 'input-monitoring',
+  ) => {
     return await ipcRenderer.invoke('request-capture-permission-access', target)
   },
   openScreenCaptureSettings: async () => {
     return await ipcRenderer.invoke('open-screen-capture-settings')
   },
-  openPermissionSettings: async (target: 'screen-capture' | 'camera' | 'microphone' | 'accessibility' | 'input-monitoring') => {
+  openPermissionSettings: async (
+    target: 'screen-capture' | 'camera' | 'microphone' | 'accessibility' | 'input-monitoring',
+  ) => {
     return await ipcRenderer.invoke('open-permission-settings', target)
   },
   openPermissionChecker: async () => {
@@ -71,34 +75,41 @@ contextBridge.exposeInMainWorld('electronAPI', {
     videoData: ArrayBuffer,
     fileName: string,
     metadata?: {
-      frameRate?: number;
-      width?: number;
-      height?: number;
-      mimeType?: string;
-      capturedAt?: number;
-      systemCursorMode?: 'always' | 'never';
-      hasMicrophoneAudio?: boolean;
-      durationMs?: number;
+      frameRate?: number
+      width?: number
+      height?: number
+      mimeType?: string
+      capturedAt?: number
+      systemCursorMode?: 'always' | 'never'
+      hasMicrophoneAudio?: boolean
+      durationMs?: number
       cursorTrack?: {
-        source?: 'recorded' | 'synthetic';
-        samples: Array<{ timeMs: number; x: number; y: number; click?: boolean; visible?: boolean; cursorKind?: 'arrow' | 'ibeam' }>;
+        source?: 'recorded' | 'synthetic'
+        samples: Array<{
+          timeMs: number
+          x: number
+          y: number
+          click?: boolean
+          visible?: boolean
+          cursorKind?: 'arrow' | 'ibeam'
+        }>
         events?: Array<{
-          type: 'click' | 'selection';
-          startMs: number;
-          endMs: number;
-          point: { x: number; y: number };
-          startPoint?: { x: number; y: number };
-          endPoint?: { x: number; y: number };
+          type: 'click' | 'selection'
+          startMs: number
+          endMs: number
+          point: { x: number; y: number }
+          startPoint?: { x: number; y: number }
+          endPoint?: { x: number; y: number }
           bounds?: {
-            minX: number;
-            minY: number;
-            maxX: number;
-            maxY: number;
-            width: number;
-            height: number;
-          };
-        }>;
-      };
+            minX: number
+            minY: number
+            maxX: number
+            maxY: number
+            width: number
+            height: number
+          }
+        }>
+      }
     },
   ) => {
     return ipcRenderer.invoke('store-recorded-video', videoData, fileName, metadata)
@@ -121,17 +132,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setRecordingState: (recording: boolean) => {
     return ipcRenderer.invoke('set-recording-state', recording)
   },
-    startNativeScreenRecording: (options?: {
-      source?: { id?: string; display_id?: string | number | null }
-      cursorMode?: 'always' | 'never'
-      microphoneEnabled?: boolean
-      microphoneGain?: number
-      cameraEnabled?: boolean
-      cameraShape?: 'rounded' | 'square' | 'circle'
-      cameraSizePercent?: number
-      cameraDeviceId?: string
-      cameraDeviceName?: string
-      frameRate?: number
+  startNativeScreenRecording: (options?: {
+    source?: { id?: string; display_id?: string | number | null }
+    cursorMode?: 'always' | 'never'
+    microphoneEnabled?: boolean
+    microphoneGain?: number
+    cameraEnabled?: boolean
+    cameraShape?: 'rounded' | 'square' | 'circle'
+    cameraSizePercent?: number
+    cameraDeviceId?: string
+    cameraDeviceName?: string
+    frameRate?: number
     maxLongEdge?: number
     bitrateScale?: number
     width?: number
@@ -237,35 +248,45 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openVideoFilePicker: (locale?: string) => {
     return ipcRenderer.invoke('open-video-file-picker', locale)
   },
-  setCurrentVideoPath: (path: string, metadata?: {
-    frameRate?: number;
-    width?: number;
-    height?: number;
-    mimeType?: string;
-    capturedAt?: number;
-    systemCursorMode?: 'always' | 'never';
-    hasMicrophoneAudio?: boolean;
-    cursorTrack?: {
-      source?: 'recorded' | 'synthetic';
-      samples: Array<{ timeMs: number; x: number; y: number; click?: boolean; visible?: boolean; cursorKind?: 'arrow' | 'ibeam' }>;
-      events?: Array<{
-        type: 'click' | 'selection';
-        startMs: number;
-        endMs: number;
-        point: { x: number; y: number };
-        startPoint?: { x: number; y: number };
-        endPoint?: { x: number; y: number };
-        bounds?: {
-          minX: number;
-          minY: number;
-          maxX: number;
-          maxY: number;
-          width: number;
-          height: number;
-        };
-      }>;
-    };
-  }) => {
+  setCurrentVideoPath: (
+    path: string,
+    metadata?: {
+      frameRate?: number
+      width?: number
+      height?: number
+      mimeType?: string
+      capturedAt?: number
+      systemCursorMode?: 'always' | 'never'
+      hasMicrophoneAudio?: boolean
+      cursorTrack?: {
+        source?: 'recorded' | 'synthetic'
+        samples: Array<{
+          timeMs: number
+          x: number
+          y: number
+          click?: boolean
+          visible?: boolean
+          cursorKind?: 'arrow' | 'ibeam'
+        }>
+        events?: Array<{
+          type: 'click' | 'selection'
+          startMs: number
+          endMs: number
+          point: { x: number; y: number }
+          startPoint?: { x: number; y: number }
+          endPoint?: { x: number; y: number }
+          bounds?: {
+            minX: number
+            minY: number
+            maxX: number
+            maxY: number
+            width: number
+            height: number
+          }
+        }>
+      }
+    },
+  ) => {
     return ipcRenderer.invoke('set-current-video-path', path, metadata)
   },
   getCurrentVideoPath: () => {
@@ -344,7 +365,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   // W3-c: global shortcuts, application menu, lifecycle flush, diagnostics
-  updateGlobalShortcut: (action: 'openApp' | 'stopRecording', binding: { key: string; ctrl?: boolean; shift?: boolean; alt?: boolean }) => {
+  updateGlobalShortcut: (
+    action: 'openApp' | 'stopRecording',
+    binding: { key: string; ctrl?: boolean; shift?: boolean; alt?: boolean },
+  ) => {
     return ipcRenderer.invoke('update-global-shortcut', action, binding)
   },
   getGlobalShortcuts: () => {
@@ -376,7 +400,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveBeforeCloseDone: () => {
     ipcRenderer.send('save-before-close-done')
   },
-  saveDiagnostic: (payload?: { error?: string; stack?: string; projectState?: unknown; logs?: string[]; locale?: string }) => {
+  saveDiagnostic: (payload?: {
+    error?: string
+    stack?: string
+    projectState?: unknown
+    logs?: string[]
+    locale?: string
+  }) => {
     return ipcRenderer.invoke('save-diagnostic', payload)
   },
   getMainLogTail: (lines?: number) => {

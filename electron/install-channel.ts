@@ -10,8 +10,8 @@
 // real facts and takes the Electron `app` bits as parameters so this module
 // never imports `electron` at runtime (vitest runs it under node).
 
-import { existsSync, readFileSync } from 'node:fs';
-import path from 'node:path';
+import { existsSync, readFileSync } from 'node:fs'
+import path from 'node:path'
 
 /** Where the running binary came from. */
 export type InstallChannel =
@@ -29,21 +29,21 @@ export type InstallChannel =
   | 'nix'
   /** Unpacked `npm run dev`, or a build we cannot classify. */
   | 'dev'
-  | 'unknown';
+  | 'unknown'
 
 export interface InstallProbe {
-  platform: NodeJS.Platform;
+  platform: NodeJS.Platform
   /** `false` for `npm run dev` - but NOT sufficient on its own: Flatpak and Snap are packaged. */
-  isPackaged: boolean;
-  execPath: string;
+  isPackaged: boolean
+  execPath: string
   /** `process.windowsStore` is `true` or **undefined**, never `false`. Normalise before passing. */
-  windowsStore: boolean;
+  windowsStore: boolean
   /** `FLATPAK_ID`, `SNAP`, `SNAP_REVISION`, `APPIMAGE`. */
-  env: Readonly<Record<string, string | undefined>>;
+  env: Readonly<Record<string, string | undefined>>
   /** `/.flatpak-info` exists (the env var leaks to child processes; the file does not). */
-  hasFlatpakInfo: boolean;
+  hasFlatpakInfo: boolean
   /** Contents of `<resourcesPath>/package-type`, or null (electron-builder writes it for deb/rpm/pacman). */
-  packageType: string | null;
+  packageType: string | null
 }
 
 const SELF_UPDATING: ReadonlySet<InstallChannel> = new Set<InstallChannel>([
@@ -53,14 +53,14 @@ const SELF_UPDATING: ReadonlySet<InstallChannel> = new Set<InstallChannel>([
   'deb',
   'rpm',
   'pacman',
-]);
+])
 
 const PLATFORM_OWNED: ReadonlySet<InstallChannel> = new Set<InstallChannel>([
   'store',
   'flatpak',
   'snap',
   'nix',
-]);
+])
 
 /**
  * Pure decision table. Platform-owned markers are checked FIRST because they
@@ -68,30 +68,34 @@ const PLATFORM_OWNED: ReadonlySet<InstallChannel> = new Set<InstallChannel>([
  * `package-type` file, and a Snap still looks like a plain Linux install.
  */
 export function classifyInstall(probe: InstallProbe): InstallChannel {
-  if (!probe.isPackaged) return 'dev';
+  if (!probe.isPackaged) return 'dev'
 
   // --- platform-owned ---
-  if (probe.windowsStore) return 'store';
-  if (probe.env.FLATPAK_ID || probe.hasFlatpakInfo) return 'flatpak';
+  if (probe.windowsStore) return 'store'
+  if (probe.env.FLATPAK_ID || probe.hasFlatpakInfo) return 'flatpak'
   // Two markers, not one: a bare `SNAP` is a plausible collision with an unrelated variable.
-  if (probe.env.SNAP && probe.env.SNAP_REVISION) return 'snap';
-  if (probe.execPath.startsWith('/nix/store/')) return 'nix';
+  if (probe.env.SNAP && probe.env.SNAP_REVISION) return 'snap'
+  if (probe.execPath.startsWith('/nix/store/')) return 'nix'
 
   // --- self-owned ---
-  if (probe.env.APPIMAGE) return 'appimage';
-  if (probe.packageType === 'deb' || probe.packageType === 'rpm' || probe.packageType === 'pacman') {
-    return probe.packageType;
+  if (probe.env.APPIMAGE) return 'appimage'
+  if (
+    probe.packageType === 'deb' ||
+    probe.packageType === 'rpm' ||
+    probe.packageType === 'pacman'
+  ) {
+    return probe.packageType
   }
-  if (probe.platform === 'win32') return 'nsis';
-  if (probe.platform === 'darwin') return 'dmg';
+  if (probe.platform === 'win32') return 'nsis'
+  if (probe.platform === 'darwin') return 'dmg'
 
   // A packaged Linux build with no APPIMAGE and no package-type: do not guess.
-  return 'unknown';
+  return 'unknown'
 }
 
 /** May this copy download and install a new version over itself? */
 export function ownsItsUpdates(channel: InstallChannel): boolean {
-  return SELF_UPDATING.has(channel);
+  return SELF_UPDATING.has(channel)
 }
 
 /**
@@ -101,19 +105,22 @@ export function ownsItsUpdates(channel: InstallChannel): boolean {
  * the release page is still useful.
  */
 export function platformOwnsUpdates(channel: InstallChannel): boolean {
-  return PLATFORM_OWNED.has(channel);
+  return PLATFORM_OWNED.has(channel)
 }
 
 /** The single rule every update affordance keys off (no check mid-recording either). */
-export function offersUpdateCheck(channel: InstallChannel, state: { readonly recording: boolean }): boolean {
-  return !platformOwnsUpdates(channel) && !state.recording;
+export function offersUpdateCheck(
+  channel: InstallChannel,
+  state: { readonly recording: boolean },
+): boolean {
+  return !platformOwnsUpdates(channel) && !state.recording
 }
 
 export interface InstallProbeSource {
   /** `app.isPackaged` */
-  isPackaged: boolean;
+  isPackaged: boolean
   /** `process.resourcesPath` */
-  resourcesPath: string;
+  resourcesPath: string
 }
 
 export function probeInstall(source: InstallProbeSource): InstallProbe {
@@ -125,22 +132,22 @@ export function probeInstall(source: InstallProbeSource): InstallProbe {
     env: process.env,
     hasFlatpakInfo: process.platform === 'linux' && existsSync('/.flatpak-info'),
     packageType: readPackageType(source.resourcesPath),
-  };
+  }
 }
 
 function readPackageType(resourcesPath: string): string | null {
   try {
-    return readFileSync(path.join(resourcesPath, 'package-type'), 'utf8').trim();
+    return readFileSync(path.join(resourcesPath, 'package-type'), 'utf8').trim()
   } catch {
     // Absent on every platform except a deb/rpm/pacman install. Not an error.
-    return null;
+    return null
   }
 }
 
 /** Memoized: `probeInstall()` touches the filesystem, and the answer cannot change while the process lives. */
-let cachedChannel: InstallChannel | null = null;
+let cachedChannel: InstallChannel | null = null
 
 export function getInstallChannel(source: InstallProbeSource): InstallChannel {
-  if (cachedChannel === null) cachedChannel = classifyInstall(probeInstall(source));
-  return cachedChannel;
+  if (cachedChannel === null) cachedChannel = classifyInstall(probeInstall(source))
+  return cachedChannel
 }

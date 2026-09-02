@@ -9,28 +9,28 @@
 // (3cb4dd8c).
 
 export class PlanarChunkQueue {
-  private readonly channels: number;
-  private readonly queue: Float32Array[][];
-  private headOffset = 0; // consumed samples into queue[*][0] (shared across channels)
-  private queuedLen = 0;
+  private readonly channels: number
+  private readonly queue: Float32Array[][]
+  private headOffset = 0 // consumed samples into queue[*][0] (shared across channels)
+  private queuedLen = 0
 
   constructor(channels: number) {
-    this.channels = Math.max(1, channels);
-    this.queue = Array.from({ length: this.channels }, () => []);
+    this.channels = Math.max(1, channels)
+    this.queue = Array.from({ length: this.channels }, () => [])
   }
 
   /** Samples currently buffered (per channel). */
   get length(): number {
-    return this.queuedLen;
+    return this.queuedLen
   }
 
   /** Append the first `count` samples of each channel plane (stored by reference). */
   push(planes: Float32Array[], count: number): void {
-    if (count <= 0) return;
+    if (count <= 0) return
     for (let c = 0; c < this.channels; c++) {
-      this.queue[c].push((planes[c] ?? planes[0]).subarray(0, count));
+      this.queue[c].push((planes[c] ?? planes[0]).subarray(0, count))
     }
-    this.queuedLen += count;
+    this.queuedLen += count
   }
 
   /**
@@ -38,42 +38,42 @@ export class PlanarChunkQueue {
    * out [ch0 samples..., ch1 samples..., ...]. `take` must be <= length.
    */
   take(take: number): Float32Array {
-    if (take <= 0) return new Float32Array(0);
-    const data = new Float32Array(take * this.channels);
+    if (take <= 0) return new Float32Array(0)
+    const data = new Float32Array(take * this.channels)
     for (let c = 0; c < this.channels; c++) {
-      let need = take;
-      let ci = 0;
-      let off = this.headOffset;
-      let dst = c * take;
+      let need = take
+      let ci = 0
+      let off = this.headOffset
+      let dst = c * take
       while (need > 0) {
-        const chunk = this.queue[c][ci];
-        const avail = chunk.length - off;
-        const n = avail < need ? avail : need;
-        data.set(chunk.subarray(off, off + n), dst);
-        dst += n;
-        need -= n;
+        const chunk = this.queue[c][ci]
+        const avail = chunk.length - off
+        const n = avail < need ? avail : need
+        data.set(chunk.subarray(off, off + n), dst)
+        dst += n
+        need -= n
         if (n < avail) {
-          off += n;
+          off += n
         } else {
-          ci += 1;
-          off = 0;
+          ci += 1
+          off = 0
         }
       }
     }
     // Advance the shared head / drop fully consumed chunks (identical layout per channel).
-    let remaining = take;
+    let remaining = take
     while (remaining > 0) {
-      const avail = this.queue[0][0].length - this.headOffset;
+      const avail = this.queue[0][0].length - this.headOffset
       if (avail <= remaining) {
-        for (let c = 0; c < this.channels; c++) this.queue[c].shift();
-        this.headOffset = 0;
-        remaining -= avail;
+        for (let c = 0; c < this.channels; c++) this.queue[c].shift()
+        this.headOffset = 0
+        remaining -= avail
       } else {
-        this.headOffset += remaining;
-        remaining = 0;
+        this.headOffset += remaining
+        remaining = 0
       }
     }
-    this.queuedLen -= take;
-    return data;
+    this.queuedLen -= take
+    return data
   }
 }

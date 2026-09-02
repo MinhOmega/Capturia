@@ -33,7 +33,9 @@ interface ParsedVersion {
 }
 
 function parseVersion(value: string): ParsedVersion {
-  const match = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(value.trim())
+  const match = /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(
+    value.trim(),
+  )
   if (!match) throw new Error(`invalid semantic version: ${value}`)
   const prerelease = match[4]?.split('.') ?? []
   const coreIdentifiers = [match[1], match[2], match[3]]

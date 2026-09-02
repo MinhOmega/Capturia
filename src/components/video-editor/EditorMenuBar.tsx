@@ -1,4 +1,4 @@
-import { Fragment } from "react";
+import { Fragment } from 'react'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -6,52 +6,52 @@ import {
   DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+} from '@/components/ui/dropdown-menu'
 
 export interface EditorMenuBarProps {
   /** Whether the app is running on macOS. Drives shortcut-hint formatting. */
-  isMac: boolean;
+  isMac: boolean
   /** Qualified-key translator (`t("common.actions.file")`). */
-  t: (qualifiedKey: string) => string;
-  onImportVideo: () => void;
-  onExport: () => void;
-  onReturnToRecorder: () => void;
-  onQuit: () => void;
-  onUndo: () => void;
-  onRedo: () => void;
-  onKeyboardShortcuts: () => void;
-  onToggleTimeline: () => void;
-  onToggleSettings: () => void;
-  onReload: () => void;
-  onSaveDiagnostics: () => void;
-  onReportIssue: () => void;
-  onAbout: () => void;
-  canUndo: boolean;
-  canRedo: boolean;
-  timelineVisible: boolean;
-  settingsVisible: boolean;
+  t: (qualifiedKey: string) => string
+  onImportVideo: () => void
+  onExport: () => void
+  onReturnToRecorder: () => void
+  onQuit: () => void
+  onUndo: () => void
+  onRedo: () => void
+  onKeyboardShortcuts: () => void
+  onToggleTimeline: () => void
+  onToggleSettings: () => void
+  onReload: () => void
+  onSaveDiagnostics: () => void
+  onReportIssue: () => void
+  onAbout: () => void
+  canUndo: boolean
+  canRedo: boolean
+  timelineVisible: boolean
+  settingsVisible: boolean
 }
 
 export interface EditorMenuItem {
-  id: string;
-  label: string;
+  id: string
+  label: string
   /** Human-readable, platform-aware shortcut hint (e.g. "Ctrl+O" / "⌘O"). */
-  shortcut?: string;
-  onSelect: () => void;
-  disabled?: boolean;
+  shortcut?: string
+  onSelect: () => void
+  disabled?: boolean
   /** Renders the item in a destructive (red) style, e.g. Quit. */
-  danger?: boolean;
+  danger?: boolean
   /** Draws a separator immediately before this item. */
-  separatorBefore?: boolean;
+  separatorBefore?: boolean
   /** Checkbox-style state for toggles. */
-  checked?: boolean;
+  checked?: boolean
 }
 
 export interface EditorMenu {
-  id: string;
-  label: string;
-  minWidthClass: string;
-  items: EditorMenuItem[];
+  id: string
+  label: string
+  minWidthClass: string
+  items: EditorMenuItem[]
 }
 
 /**
@@ -61,11 +61,11 @@ export interface EditorMenu {
  * keydown handler, so the hints stay truthful.
  */
 export function formatShortcut(isMac: boolean, key: string): string {
-  return isMac ? `⌘${key}` : `Ctrl+${key}`;
+  return isMac ? `⌘${key}` : `Ctrl+${key}`
 }
 
 export function formatShiftShortcut(isMac: boolean, key: string): string {
-  return isMac ? `⌘⇧${key}` : `Ctrl+Shift+${key}`;
+  return isMac ? `⌘⇧${key}` : `Ctrl+Shift+${key}`
 }
 
 /**
@@ -74,36 +74,36 @@ export function formatShiftShortcut(isMac: boolean, key: string): string {
  * handler wiring can be unit-tested without mounting Radix.
  */
 export function buildEditorMenuModel(props: EditorMenuBarProps): EditorMenu[] {
-  const { isMac, t } = props;
+  const { isMac, t } = props
 
   return [
     {
-      id: "file",
-      label: t("common.actions.file"),
-      minWidthClass: "min-w-[190px]",
+      id: 'file',
+      label: t('common.actions.file'),
+      minWidthClass: 'min-w-[190px]',
       items: [
         {
-          id: "import-video",
-          label: t("common.actions.importVideo"),
-          shortcut: formatShortcut(isMac, "O"),
+          id: 'import-video',
+          label: t('common.actions.importVideo'),
+          shortcut: formatShortcut(isMac, 'O'),
           onSelect: props.onImportVideo,
         },
         {
-          id: "export",
-          label: t("common.actions.export"),
-          shortcut: formatShortcut(isMac, "E"),
+          id: 'export',
+          label: t('common.actions.export'),
+          shortcut: formatShortcut(isMac, 'E'),
           onSelect: props.onExport,
         },
         {
-          id: "return-to-recorder",
-          label: t("common.actions.returnToRecorder"),
+          id: 'return-to-recorder',
+          label: t('common.actions.returnToRecorder'),
           onSelect: props.onReturnToRecorder,
           separatorBefore: true,
         },
         {
-          id: "quit",
-          label: t("common.actions.quit"),
-          shortcut: formatShortcut(isMac, "Q"),
+          id: 'quit',
+          label: t('common.actions.quit'),
+          shortcut: formatShortcut(isMac, 'Q'),
           onSelect: props.onQuit,
           danger: true,
           separatorBefore: true,
@@ -111,86 +111,86 @@ export function buildEditorMenuModel(props: EditorMenuBarProps): EditorMenu[] {
       ],
     },
     {
-      id: "edit",
-      label: t("common.actions.edit"),
-      minWidthClass: "min-w-[170px]",
+      id: 'edit',
+      label: t('common.actions.edit'),
+      minWidthClass: 'min-w-[170px]',
       items: [
         {
-          id: "undo",
-          label: t("common.actions.undo"),
-          shortcut: formatShortcut(isMac, "Z"),
+          id: 'undo',
+          label: t('common.actions.undo'),
+          shortcut: formatShortcut(isMac, 'Z'),
           onSelect: props.onUndo,
           disabled: !props.canUndo,
         },
         {
-          id: "redo",
-          label: t("common.actions.redo"),
+          id: 'redo',
+          label: t('common.actions.redo'),
           // Redo is bound to both Ctrl+Y and Ctrl+Shift+Z; show the
           // idiomatic hint per platform (⌘⇧Z on macOS, Ctrl+Y elsewhere).
-          shortcut: isMac ? formatShiftShortcut(isMac, "Z") : formatShortcut(isMac, "Y"),
+          shortcut: isMac ? formatShiftShortcut(isMac, 'Z') : formatShortcut(isMac, 'Y'),
           onSelect: props.onRedo,
           disabled: !props.canRedo,
         },
         {
-          id: "keyboard-shortcuts",
-          label: t("common.actions.keyboardShortcuts"),
+          id: 'keyboard-shortcuts',
+          label: t('common.actions.keyboardShortcuts'),
           onSelect: props.onKeyboardShortcuts,
           separatorBefore: true,
         },
       ],
     },
     {
-      id: "view",
-      label: t("common.actions.view"),
-      minWidthClass: "min-w-[190px]",
+      id: 'view',
+      label: t('common.actions.view'),
+      minWidthClass: 'min-w-[190px]',
       items: [
         {
-          id: "toggle-timeline",
-          label: t("common.actions.toggleTimeline"),
-          shortcut: formatShiftShortcut(isMac, "T"),
+          id: 'toggle-timeline',
+          label: t('common.actions.toggleTimeline'),
+          shortcut: formatShiftShortcut(isMac, 'T'),
           onSelect: props.onToggleTimeline,
           checked: props.timelineVisible,
         },
         {
-          id: "toggle-settings",
-          label: t("common.actions.toggleSettings"),
-          shortcut: formatShiftShortcut(isMac, "P"),
+          id: 'toggle-settings',
+          label: t('common.actions.toggleSettings'),
+          shortcut: formatShiftShortcut(isMac, 'P'),
           onSelect: props.onToggleSettings,
           checked: props.settingsVisible,
         },
         {
-          id: "reload",
-          label: t("common.actions.reload"),
-          shortcut: formatShortcut(isMac, "R"),
+          id: 'reload',
+          label: t('common.actions.reload'),
+          shortcut: formatShortcut(isMac, 'R'),
           onSelect: props.onReload,
           separatorBefore: true,
         },
       ],
     },
     {
-      id: "help",
-      label: t("common.actions.help"),
-      minWidthClass: "min-w-[170px]",
+      id: 'help',
+      label: t('common.actions.help'),
+      minWidthClass: 'min-w-[170px]',
       items: [
         {
-          id: "report-issue",
-          label: t("common.actions.reportIssue"),
+          id: 'report-issue',
+          label: t('common.actions.reportIssue'),
           onSelect: props.onReportIssue,
         },
         {
-          id: "save-diagnostics",
-          label: t("common.actions.saveDiagnostics"),
+          id: 'save-diagnostics',
+          label: t('common.actions.saveDiagnostics'),
           onSelect: props.onSaveDiagnostics,
         },
         {
-          id: "about",
-          label: t("common.actions.about"),
+          id: 'about',
+          label: t('common.actions.about'),
           onSelect: props.onAbout,
           separatorBefore: true,
         },
       ],
     },
-  ];
+  ]
 }
 
 /**
@@ -199,10 +199,10 @@ export function buildEditorMenuModel(props: EditorMenuBarProps): EditorMenu[] {
  * Windows/Linux (see electron/windows.ts); on macOS it mirrors the global bar.
  */
 export function EditorMenuBar(props: EditorMenuBarProps) {
-  const menus = buildEditorMenuModel(props);
+  const menus = buildEditorMenuModel(props)
 
   return (
-    <div className={`flex items-center gap-0.5 ${props.isMac ? "ml-14" : "ml-1"}`}>
+    <div className={`flex items-center gap-0.5 ${props.isMac ? 'ml-14' : 'ml-1'}`}>
       {menus.map((menu) => (
         <DropdownMenu key={menu.id}>
           <DropdownMenuTrigger asChild>
@@ -225,19 +225,21 @@ export function EditorMenuBar(props: EditorMenuBarProps) {
                   disabled={item.disabled}
                   className={
                     item.danger
-                      ? "hover:bg-red-500/20 focus:bg-red-500/20 focus:text-red-400 text-red-400 cursor-pointer justify-between"
-                      : "hover:bg-white/[0.08] focus:bg-white/[0.08] focus:text-white cursor-pointer justify-between"
+                      ? 'hover:bg-red-500/20 focus:bg-red-500/20 focus:text-red-400 text-red-400 cursor-pointer justify-between'
+                      : 'hover:bg-white/[0.08] focus:bg-white/[0.08] focus:text-white cursor-pointer justify-between'
                   }
                 >
                   <span className="flex items-center gap-2">
                     {item.checked !== undefined && (
                       <span aria-hidden="true" className="w-3 text-[#34B27B]">
-                        {item.checked ? "✓" : ""}
+                        {item.checked ? '✓' : ''}
                       </span>
                     )}
                     {item.label}
                   </span>
-                  {item.shortcut && <DropdownMenuShortcut className="ml-2">{item.shortcut}</DropdownMenuShortcut>}
+                  {item.shortcut && (
+                    <DropdownMenuShortcut className="ml-2">{item.shortcut}</DropdownMenuShortcut>
+                  )}
                 </DropdownMenuItem>
               </Fragment>
             ))}
@@ -245,5 +247,5 @@ export function EditorMenuBar(props: EditorMenuBarProps) {
         </DropdownMenu>
       ))}
     </div>
-  );
+  )
 }

@@ -11,7 +11,7 @@ import type {
   ZoomDepth,
   ZoomFocus,
   ZoomRegion,
-} from './types';
+} from './types'
 
 /**
  * The copyable attributes of each region, tagged with its `kind` so paste can
@@ -19,50 +19,50 @@ import type {
  * copyable attribute instead (`segmentSpeed`), pasted onto another segment.
  */
 export type CopiedZoom = {
-  kind: 'zoom';
-  depth: ZoomDepth;
-  customScale?: number;
-  focus: ZoomFocus;
-  rotationPreset?: Rotation3DPreset;
-};
+  kind: 'zoom'
+  depth: ZoomDepth
+  customScale?: number
+  focus: ZoomFocus
+  rotationPreset?: Rotation3DPreset
+}
 
-export type CopiedSegmentSpeed = { kind: 'segmentSpeed'; speed: PlaybackSpeed };
+export type CopiedSegmentSpeed = { kind: 'segmentSpeed'; speed: PlaybackSpeed }
 
 /** Annotation copy captures everything; paste then uses only the styling for an existing
  * region, or the full set for a brand-new one. */
 export type CopiedAnnotation = {
-  kind: 'annotation';
+  kind: 'annotation'
   // Styling - applied both when pasting onto an existing region and onto a new one.
-  style: AnnotationTextStyle;
-  size: AnnotationSize;
-  figureData?: FigureData;
+  style: AnnotationTextStyle
+  size: AnnotationSize
+  figureData?: FigureData
   // Content & placement - used only when pasting as a brand-new region.
-  type: AnnotationType;
-  content: string;
-  textContent?: string;
-  imageContent?: string;
-  position: AnnotationPosition;
-};
+  type: AnnotationType
+  content: string
+  textContent?: string
+  imageContent?: string
+  position: AnnotationPosition
+}
 
-export type CopiedRegion = CopiedZoom | CopiedSegmentSpeed | CopiedAnnotation;
+export type CopiedRegion = CopiedZoom | CopiedSegmentSpeed | CopiedAnnotation
 
-export type CopiedRegionKind = CopiedRegion['kind'];
+export type CopiedRegionKind = CopiedRegion['kind']
 
 /** Session clipboard for "copy/paste region attributes" (not undoable, not persisted).
  * Module-level so it's shared regardless of which editor instance copied. */
-let clipboard: CopiedRegion | null = null;
+let clipboard: CopiedRegion | null = null
 
 export function getCopiedRegion(): CopiedRegion | null {
-  return clipboard;
+  return clipboard
 }
 
 export function setCopiedRegion(region: CopiedRegion): void {
-  clipboard = region;
+  clipboard = region
 }
 
 /** Empties the session clipboard (tests and editor teardown). */
 export function clearCopiedRegion(): void {
-  clipboard = null;
+  clipboard = null
 }
 
 export function extractZoomAttributes(region: ZoomRegion): CopiedZoom {
@@ -70,14 +70,14 @@ export function extractZoomAttributes(region: ZoomRegion): CopiedZoom {
     kind: 'zoom',
     depth: region.depth,
     focus: { ...region.focus },
-  };
-  if (region.customScale !== undefined) copied.customScale = region.customScale;
-  if (region.rotationPreset !== undefined) copied.rotationPreset = region.rotationPreset;
-  return copied;
+  }
+  if (region.customScale !== undefined) copied.customScale = region.customScale
+  if (region.rotationPreset !== undefined) copied.rotationPreset = region.rotationPreset
+  return copied
 }
 
 export function extractSegmentSpeedAttributes(segment: VideoSegment): CopiedSegmentSpeed {
-  return { kind: 'segmentSpeed', speed: segment.speed };
+  return { kind: 'segmentSpeed', speed: segment.speed }
 }
 
 export function extractAnnotationAttributes(region: AnnotationRegion): CopiedAnnotation {
@@ -91,7 +91,7 @@ export function extractAnnotationAttributes(region: AnnotationRegion): CopiedAnn
     textContent: region.textContent,
     imageContent: region.imageContent,
     position: { ...region.position },
-  };
+  }
 }
 
 /**
@@ -114,15 +114,15 @@ export function buildZoomRegion(
     depth: attrs.depth,
     focus: { ...attrs.focus },
     source: 'manual',
-  };
-  if (attrs.customScale !== undefined) region.customScale = attrs.customScale;
-  if (attrs.rotationPreset !== undefined) region.rotationPreset = attrs.rotationPreset;
-  return region;
+  }
+  if (attrs.customScale !== undefined) region.customScale = attrs.customScale
+  if (attrs.rotationPreset !== undefined) region.rotationPreset = attrs.rotationPreset
+  return region
 }
 
 /** Pastes a copied speed onto a segment: timing, deletion state and id are kept. */
 export function applySegmentSpeed(segment: VideoSegment, attrs: CopiedSegmentSpeed): VideoSegment {
-  return { ...segment, speed: attrs.speed };
+  return { ...segment, speed: attrs.speed }
 }
 
 /** Pastes onto an EXISTING annotation: only the styling is overwritten - the target keeps
@@ -139,7 +139,7 @@ export function replaceAnnotationAttributes(
     // (e.g. pasting a figure's attributes onto a text annotation keeps the text figure-less).
     figureData:
       region.type === 'figure' && attrs.figureData ? { ...attrs.figureData } : region.figureData,
-  };
+  }
 }
 
 /**
@@ -156,10 +156,16 @@ export function buildPastedAnnotation(
   const position =
     positionOffsetPercent > 0
       ? {
-          x: Math.min(Math.max(0, 100 - attrs.size.width), attrs.position.x + positionOffsetPercent),
-          y: Math.min(Math.max(0, 100 - attrs.size.height), attrs.position.y + positionOffsetPercent),
+          x: Math.min(
+            Math.max(0, 100 - attrs.size.width),
+            attrs.position.x + positionOffsetPercent,
+          ),
+          y: Math.min(
+            Math.max(0, 100 - attrs.size.height),
+            attrs.position.y + positionOffsetPercent,
+          ),
         }
-      : { ...attrs.position };
+      : { ...attrs.position }
   return {
     ...base,
     type: attrs.type,
@@ -170,5 +176,5 @@ export function buildPastedAnnotation(
     size: { ...attrs.size },
     style: { ...attrs.style },
     figureData: attrs.figureData ? { ...attrs.figureData } : undefined,
-  };
+  }
 }

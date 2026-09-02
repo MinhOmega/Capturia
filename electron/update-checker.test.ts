@@ -23,14 +23,19 @@ describe('compareVersions', () => {
     expect(compareVersions('9007199254740993.0.0', '9007199254740992.0.0')).toBeGreaterThan(0)
   })
 
-  it.each(['01.0.0', '1.02.0', '1.0.03', '1.0.0-rc.01'])('rejects leading-zero numeric identifiers in %s', (version) => {
-    expect(() => compareVersions(version, '1.0.0')).toThrow('invalid semantic version')
-  })
+  it.each(['01.0.0', '1.02.0', '1.0.03', '1.0.0-rc.01'])(
+    'rejects leading-zero numeric identifiers in %s',
+    (version) => {
+      expect(() => compareVersions(version, '1.0.0')).toThrow('invalid semantic version')
+    },
+  )
 })
 
 describe('checkLatestRelease', () => {
   it('points at the Capturia repository', () => {
-    expect(LATEST_RELEASE_API).toBe('https://api.github.com/repos/MinhOmega/Capturia/releases/latest')
+    expect(LATEST_RELEASE_API).toBe(
+      'https://api.github.com/repos/MinhOmega/Capturia/releases/latest',
+    )
   })
 
   it('reports a newer official stable release', async () => {
@@ -92,7 +97,10 @@ describe('checkLatestRelease', () => {
 
     await checkLatestRelease({ currentVersion: '1.5.4', fetchLatest, signal: controller.signal })
 
-    expect(fetchLatest).toHaveBeenCalledWith(LATEST_RELEASE_API, expect.objectContaining({ signal: controller.signal }))
+    expect(fetchLatest).toHaveBeenCalledWith(
+      LATEST_RELEASE_API,
+      expect.objectContaining({ signal: controller.signal }),
+    )
   })
 
   it.each([
@@ -123,7 +131,9 @@ describe('checkLatestRelease', () => {
       }),
     )
 
-    await expect(checkLatestRelease({ currentVersion: '1.5.4', fetchLatest })).rejects.toThrow('untrusted release URL')
+    await expect(checkLatestRelease({ currentVersion: '1.5.4', fetchLatest })).rejects.toThrow(
+      'untrusted release URL',
+    )
   })
 
   it.each([
@@ -143,18 +153,20 @@ describe('checkLatestRelease', () => {
       }),
     )
 
-    await expect(checkLatestRelease({ currentVersion: '1.5.4', fetchLatest })).rejects.toThrow('untrusted release URL')
+    await expect(checkLatestRelease({ currentVersion: '1.5.4', fetchLatest })).rejects.toThrow(
+      'untrusted release URL',
+    )
   })
 
   it('rejects unsuccessful or malformed GitHub responses', async () => {
     const unavailable = vi.fn().mockResolvedValue(releaseResponse({}, 503))
-    await expect(checkLatestRelease({ currentVersion: '1.5.4', fetchLatest: unavailable })).rejects.toThrow(
-      'GitHub release check failed (503)',
-    )
+    await expect(
+      checkLatestRelease({ currentVersion: '1.5.4', fetchLatest: unavailable }),
+    ).rejects.toThrow('GitHub release check failed (503)')
 
     const malformed = vi.fn().mockResolvedValue(releaseResponse({ tag_name: 'v2.0.0' }))
-    await expect(checkLatestRelease({ currentVersion: '1.5.4', fetchLatest: malformed })).rejects.toThrow(
-      'invalid GitHub release response',
-    )
+    await expect(
+      checkLatestRelease({ currentVersion: '1.5.4', fetchLatest: malformed }),
+    ).rejects.toThrow('invalid GitHub release response')
   })
 })

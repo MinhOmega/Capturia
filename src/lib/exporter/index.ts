@@ -6,8 +6,8 @@ export {
   readExportDecodePathOverride,
   waitForEncoderQueueSpace,
   type VideoExporterConfig,
-} from './videoExporter';
-export { VideoFileDecoder } from './videoDecoder';
+} from './videoExporter'
+export { VideoFileDecoder } from './videoDecoder'
 export {
   StreamingVideoDecoder,
   computeExportMetrics,
@@ -16,7 +16,7 @@ export {
   validateDuration,
   type DecodedVideoInfo,
   type ExportMetrics,
-} from './streamingDecoder';
+} from './streamingDecoder'
 export {
   buildSpeedSegments,
   computeKeepSegments,
@@ -25,26 +25,26 @@ export {
   type SpeedRegion,
   type SpeedTimelineSegment,
   type TimelineSegment,
-} from './timelineSegments';
+} from './timelineSegments'
 export {
   buildDecodeTimelinePlan,
   getSpeedTimelineDurationSec,
   segmentsToSpeedTimeline,
   type DecodeTimelineInput,
   type DecodeTimelinePlan,
-} from './segmentAdapter';
-export { FrameRenderer } from './frameRenderer';
-export { VideoMuxer } from './muxer';
-export { GifExporter, calculateOutputDimensions } from './gifExporter';
+} from './segmentAdapter'
+export { FrameRenderer } from './frameRenderer'
+export { VideoMuxer } from './muxer'
+export { GifExporter, calculateOutputDimensions } from './gifExporter'
 export {
   materializeLocalSourceFile,
   releaseLocalSourceFile,
   clearStaleSourceCache,
   type MaterializeOptions,
   type MaterializeProgress,
-} from './localSourceFile';
-export { MAX_IN_MEMORY_SOURCE_BYTES } from './sourceFileLimits';
-export { resolveSourceDurationMs } from './sourceDuration';
+} from './localSourceFile'
+export { MAX_IN_MEMORY_SOURCE_BYTES } from './sourceFileLimits'
+export { resolveSourceDurationMs } from './sourceDuration'
 export {
   buildExportDiagnosticMessage,
   buildSaveDiagnosticMessage,
@@ -52,20 +52,25 @@ export {
   type ExportDiagnostics,
   type ExportDiagnosticLabels,
   type ExportFormatLabel,
-} from './exportDiagnostics';
+} from './exportDiagnostics'
 export {
   EXPORT_AUDIO_CODECS,
   selectExportAudioCodec,
   isAudioCodecEncodingSupported,
   type ExportAudioCodec,
-} from './audioCodecSelection';
-export { calculateEffectiveSourceDimensions, calculateMp4ExportPlan, resolveExportFrameRate, normalizeExportSourceFrameRate } from './mp4ExportPlan';
+} from './audioCodecSelection'
+export {
+  calculateEffectiveSourceDimensions,
+  calculateMp4ExportPlan,
+  resolveExportFrameRate,
+  normalizeExportSourceFrameRate,
+} from './mp4ExportPlan'
 export type {
   ExportConfig,
   ExportDecodePath,
   ExportProgress,
-  ExportResult, 
-  VideoFrameData, 
+  ExportResult,
+  VideoFrameData,
   ExportQuality,
   ExportAudioProcessingConfig,
   ExportFormat,
@@ -73,15 +78,15 @@ export type {
   GifSizePreset,
   GifExportConfig,
   ExportSettings,
-} from './types';
+} from './types'
 export {
   DEFAULT_EXPORT_DECODE_PATH,
   EXPORT_DECODE_PATH_STORAGE_KEY,
   isExportDecodePath,
-} from './types';
+} from './types'
 export {
   GIF_SIZE_PRESETS,
-  GIF_FRAME_RATES, 
-  VALID_GIF_FRAME_RATES, 
-  isValidGifFrameRate 
-} from './types';
+  GIF_FRAME_RATES,
+  VALID_GIF_FRAME_RATES,
+  isValidGifFrameRate,
+} from './types'

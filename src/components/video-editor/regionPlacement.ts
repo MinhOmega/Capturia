@@ -16,9 +16,9 @@ export function findFreeGapAt(
   startPos: number,
   totalMs: number,
 ): { ok: boolean; gapMs: number } {
-  const sorted = [...regions].sort((a, b) => a.startMs - b.startMs);
-  const nextRegion = sorted.find((r) => r.startMs > startPos);
-  const gapMs = nextRegion ? nextRegion.startMs - startPos : totalMs - startPos;
-  const overlapping = sorted.some((r) => startPos >= r.startMs && startPos < r.endMs);
-  return { ok: !overlapping && gapMs > 0, gapMs };
+  const sorted = [...regions].sort((a, b) => a.startMs - b.startMs)
+  const nextRegion = sorted.find((r) => r.startMs > startPos)
+  const gapMs = nextRegion ? nextRegion.startMs - startPos : totalMs - startPos
+  const overlapping = sorted.some((r) => startPos >= r.startMs && startPos < r.endMs)
+  return { ok: !overlapping && gapMs > 0, gapMs }
 }

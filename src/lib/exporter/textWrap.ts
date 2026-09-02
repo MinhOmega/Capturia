@@ -14,32 +14,32 @@
  * Unicode script escapes need ES2018+; tsconfig targets ES2020.
  */
 
-export const CJK_CHAR = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+export const CJK_CHAR = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u
 
 export function isCjkChar(ch: string): boolean {
-  return CJK_CHAR.test(ch);
+  return CJK_CHAR.test(ch)
 }
 
 type GraphemeSegmenter = {
-  segment(value: string): Iterable<{ segment: string }>;
-};
+  segment(value: string): Iterable<{ segment: string }>
+}
 
 type IntlWithSegmenter = typeof Intl & {
   Segmenter?: new (
     locales?: string | string[],
     options?: { granularity?: 'grapheme' },
-  ) => GraphemeSegmenter;
-};
+  ) => GraphemeSegmenter
+}
 
-const Segmenter = (Intl as IntlWithSegmenter).Segmenter;
+const Segmenter = (Intl as IntlWithSegmenter).Segmenter
 const graphemeSegmenter =
-  typeof Segmenter === 'function' ? new Segmenter(undefined, { granularity: 'grapheme' }) : null;
+  typeof Segmenter === 'function' ? new Segmenter(undefined, { granularity: 'grapheme' }) : null
 
 /** Split into user-perceived characters (emoji + combining marks stay together). */
 export function splitGraphemes(value: string): string[] {
-  if (!value) return [];
-  if (!graphemeSegmenter) return Array.from(value);
-  return Array.from(graphemeSegmenter.segment(value), ({ segment }) => segment);
+  if (!value) return []
+  if (!graphemeSegmenter) return Array.from(value)
+  return Array.from(graphemeSegmenter.segment(value), ({ segment }) => segment)
 }
 
 /**
@@ -47,43 +47,43 @@ export function splitGraphemes(value: string): string[] {
  * and single CJK characters. Joining the tokens reproduces the input.
  */
 export function tokenizeForWrap(line: string): string[] {
-  const tokens: string[] = [];
-  let buffer = '';
+  const tokens: string[] = []
+  let buffer = ''
   const flushBuffer = () => {
     if (buffer) {
-      tokens.push(...buffer.split(/(\s+)/).filter((s) => s.length > 0));
-      buffer = '';
-    }
-  };
-  for (const ch of Array.from(line)) {
-    if (CJK_CHAR.test(ch)) {
-      flushBuffer();
-      tokens.push(ch);
-    } else {
-      buffer += ch;
+      tokens.push(...buffer.split(/(\s+)/).filter((s) => s.length > 0))
+      buffer = ''
     }
   }
-  flushBuffer();
-  return tokens;
+  for (const ch of Array.from(line)) {
+    if (CJK_CHAR.test(ch)) {
+      flushBuffer()
+      tokens.push(ch)
+    } else {
+      buffer += ch
+    }
+  }
+  flushBuffer()
+  return tokens
 }
 
-export type MeasureText = (text: string) => number;
+export type MeasureText = (text: string) => number
 
 /** Break one overlong token at grapheme boundaries so every piece fits. */
 function breakToken(token: string, maxWidth: number, measure: MeasureText): string[] {
-  const pieces: string[] = [];
-  let current = '';
+  const pieces: string[] = []
+  let current = ''
   for (const grapheme of splitGraphemes(token)) {
-    const test = current + grapheme;
+    const test = current + grapheme
     if (current && measure(test) > maxWidth) {
-      pieces.push(current);
-      current = grapheme;
+      pieces.push(current)
+      current = grapheme
     } else {
-      current = test;
+      current = test
     }
   }
-  if (current) pieces.push(current);
-  return pieces;
+  if (current) pieces.push(current)
+  return pieces
 }
 
 /**
@@ -91,44 +91,44 @@ function breakToken(token: string, maxWidth: number, measure: MeasureText): stri
  * the empty line's vertical space, like the preview's `pre-wrap` does.
  */
 export function wrapLine(line: string, maxWidth: number, measure: MeasureText): string[] {
-  if (!line) return [''];
-  if (!(maxWidth > 0)) return [line];
+  if (!line) return ['']
+  if (!(maxWidth > 0)) return [line]
 
-  const lines: string[] = [];
-  let current = '';
+  const lines: string[] = []
+  let current = ''
   // Trailing whitespace hangs in CSS (pre-wrap) and never affects alignment,
   // so it is dropped from every emitted line.
-  const emit = (value: string) => lines.push(value.trimEnd());
+  const emit = (value: string) => lines.push(value.trimEnd())
 
   const pushToken = (token: string) => {
-    const test = current + token;
+    const test = current + token
     if (current && measure(test) > maxWidth) {
-      emit(current);
-      current = token.trimStart();
-      return;
+      emit(current)
+      current = token.trimStart()
+      return
     }
-    current = test;
-  };
+    current = test
+  }
 
   for (const token of tokenizeForWrap(line)) {
-    const isWhitespace = /^\s+$/.test(token);
+    const isWhitespace = /^\s+$/.test(token)
     if (!isWhitespace && measure(token) > maxWidth) {
       // Overlong word: flush what we have, then split it by grapheme so the
       // pieces fill successive lines (CSS word-break: break-word behaviour).
       if (current.trim()) {
-        emit(current);
-        current = '';
+        emit(current)
+        current = ''
       }
-      const pieces = breakToken(token, maxWidth, measure);
-      for (let i = 0; i < pieces.length - 1; i++) emit(pieces[i]);
-      current = pieces[pieces.length - 1] ?? '';
-      continue;
+      const pieces = breakToken(token, maxWidth, measure)
+      for (let i = 0; i < pieces.length - 1; i++) emit(pieces[i])
+      current = pieces[pieces.length - 1] ?? ''
+      continue
     }
-    pushToken(token);
+    pushToken(token)
   }
 
-  if (current || lines.length === 0) emit(current);
-  return lines;
+  if (current || lines.length === 0) emit(current)
+  return lines
 }
 
 /**
@@ -136,9 +136,9 @@ export function wrapLine(line: string, maxWidth: number, measure: MeasureText): 
  * soft-wrapped to `maxWidth` using `measure` (canvas `measureText().width`).
  */
 export function wrapTextLines(content: string, maxWidth: number, measure: MeasureText): string[] {
-  const lines: string[] = [];
+  const lines: string[] = []
   for (const rawLine of content.split('\n')) {
-    lines.push(...wrapLine(rawLine, maxWidth, measure));
+    lines.push(...wrapLine(rawLine, maxWidth, measure))
   }
-  return lines;
+  return lines
 }

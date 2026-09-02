@@ -6,7 +6,11 @@ import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import { isVideoAnalysisResultLike, saveSidecar } from '../analysis/videoAnalysisService'
-import { hasAllowedImportVideoExtension, isReadablePathAllowed, normalizeVideoSourcePath } from './paths'
+import {
+  hasAllowedImportVideoExtension,
+  isReadablePathAllowed,
+  normalizeVideoSourcePath,
+} from './paths'
 
 /**
  * IPC for the in-browser Whisper caption fallback (C-1):
@@ -119,7 +123,10 @@ export interface CaptionModelStatus {
   missingFiles: string[]
 }
 
-export async function getCaptionModelStatus(userDataDir: string, model: CaptionModelDescriptor): Promise<CaptionModelStatus> {
+export async function getCaptionModelStatus(
+  userDataDir: string,
+  model: CaptionModelDescriptor,
+): Promise<CaptionModelStatus> {
   const dir = captionModelDir(userDataDir, model)
   const missingFiles: string[] = []
   let downloadedBytes = 0
@@ -174,7 +181,11 @@ export function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError'
 }
 
-export function backoffMs(attempt: number, retryAfter: string | null, random: () => number = Math.random): number {
+export function backoffMs(
+  attempt: number,
+  retryAfter: string | null,
+  random: () => number = Math.random,
+): number {
   // Honor Retry-After when the server sends it (seconds or an HTTP date).
   if (retryAfter) {
     const secs = Number(retryAfter)
@@ -229,7 +240,8 @@ async function fetchWithRetry(
       }
       throw new DownloadHttpError(res.status, url, res.statusText)
     } catch (error) {
-      if (isAbortError(error) || (error instanceof Error && error.name === 'AbortError')) throw abortError()
+      if (isAbortError(error) || (error instanceof Error && error.name === 'AbortError'))
+        throw abortError()
       if (error instanceof DownloadHttpError) throw error
       lastError = error
       if (attempt >= MAX_ATTEMPTS) break
@@ -291,9 +303,12 @@ async function ensureFile(
     onBytes(written)
   })
   try {
-    await pipeline(source, createWriteStream(tmp, { flags: resumeFrom > 0 ? 'a' : 'w' }), { signal })
+    await pipeline(source, createWriteStream(tmp, { flags: resumeFrom > 0 ? 'a' : 'w' }), {
+      signal,
+    })
   } catch (error) {
-    if (isAbortError(error) || (error instanceof Error && error.name === 'AbortError')) throw abortError()
+    if (isAbortError(error) || (error instanceof Error && error.name === 'AbortError'))
+      throw abortError()
     throw error
   }
 
@@ -302,7 +317,9 @@ async function ensureFile(
     if (actual.toLowerCase() !== file.expectedSha256.toLowerCase()) {
       // Drop the bad download; a stale-but-valid copy (if any) stays in place.
       await fs.rm(tmp, { force: true }).catch(() => undefined)
-      throw new Error(`Checksum mismatch for ${file.name}: expected ${file.expectedSha256}, got ${actual}`)
+      throw new Error(
+        `Checksum mismatch for ${file.name}: expected ${file.expectedSha256}, got ${actual}`,
+      )
     }
   }
   await fs.rename(tmp, filePath)
@@ -323,7 +340,14 @@ export async function downloadCaptionModel(options: DownloadModelOptions): Promi
     const existing = await fileSize(filePath)
     if (existing > 0) {
       completedBytes += existing
-      options.onProgress?.({ modelId: model.id, file: file.name, fileIndex, fileCount, downloadedBytes: completedBytes, totalBytes })
+      options.onProgress?.({
+        modelId: model.id,
+        file: file.name,
+        fileIndex,
+        fileCount,
+        downloadedBytes: completedBytes,
+        totalBytes,
+      })
       continue
     }
 
@@ -374,7 +398,11 @@ export function resolveSidecarVideoPath(inputPath: unknown, recordingsDir: strin
 
 export function registerCaptionHandlers(ctx: CaptionHandlerContext): void {
   const { ipcMain, recordingsDir, userDataDir } = ctx
-  let activeDownload: { modelId: string; controller: AbortController; promise: Promise<void> } | null = null
+  let activeDownload: {
+    modelId: string
+    controller: AbortController
+    promise: Promise<void>
+  } | null = null
 
   ipcMain.handle('caption-model-dir', () => {
     return { success: true, dir: captionModelsRoot(userDataDir) }
@@ -423,7 +451,8 @@ export function registerCaptionHandlers(ctx: CaptionHandlerContext): void {
       await promise
       return { success: true }
     } catch (error) {
-      if (isAbortError(error)) return { success: false, aborted: true, message: 'Download cancelled' }
+      if (isAbortError(error))
+        return { success: false, aborted: true, message: 'Download cancelled' }
       console.error('Caption model download failed:', error)
       return { success: false, message: error instanceof Error ? error.message : String(error) }
     } finally {

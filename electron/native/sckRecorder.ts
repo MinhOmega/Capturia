@@ -98,7 +98,9 @@ export const NATIVE_RECORDER_ACK_TIMEOUT_MS = 3_000
 
 let activeSession: ActiveNativeRecorderSession | null = null
 
-export const NO_NATIVE_RECORDER_CAPABILITIES: NativeRecorderCapabilities = Object.freeze({ pause: false })
+export const NO_NATIVE_RECORDER_CAPABILITIES: NativeRecorderCapabilities = Object.freeze({
+  pause: false,
+})
 
 /** `SCK_RECORDER_CAPS pause` -> `{ pause: true }`; unknown names are ignored. */
 export function parseCapsLine(line: string): NativeRecorderCapabilities | null {
@@ -127,7 +129,10 @@ export function parsePauseAckLine(line: string): PauseAck | null {
  * is still pending shares the same ack.
  */
 export class AckWaiters {
-  private readonly pending = new Map<PauseAck, { resolvers: Array<(ok: boolean) => void>; timer: ReturnType<typeof setTimeout> }>()
+  private readonly pending = new Map<
+    PauseAck,
+    { resolvers: Array<(ok: boolean) => void>; timer: ReturnType<typeof setTimeout> }
+  >()
 
   wait(kind: PauseAck, timeoutMs: number): Promise<boolean> {
     return new Promise((resolve) => {
@@ -194,7 +199,10 @@ function clearStaleActiveSession(): void {
 }
 
 function parseReadyLine(line: string): RecorderReadyInfo | null {
-  const match = /SCK_RECORDER_READY\s+width=(\d+)\s+height=(\d+)\s+fps=(\d+)\s+source=([a-zA-Z-]+)(?:\s+mic=(\d+))?/.exec(line)
+  const match =
+    /SCK_RECORDER_READY\s+width=(\d+)\s+height=(\d+)\s+fps=(\d+)\s+source=([a-zA-Z-]+)(?:\s+mic=(\d+))?/.exec(
+      line,
+    )
   if (!match) return null
   const width = Number(match[1])
   const height = Number(match[2])
@@ -205,11 +213,8 @@ function parseReadyLine(line: string): RecorderReadyInfo | null {
     return null
   }
 
-  const sourceKind: RecorderReadyInfo['sourceKind'] = sourceKindRaw === 'window'
-    ? 'window'
-    : sourceKindRaw === 'display'
-      ? 'display'
-      : 'unknown'
+  const sourceKind: RecorderReadyInfo['sourceKind'] =
+    sourceKindRaw === 'window' ? 'window' : sourceKindRaw === 'display' ? 'display' : 'unknown'
 
   return {
     width: Math.max(2, Math.round(width)),
@@ -237,9 +242,10 @@ function parseDoneLine(line: string): RecorderDoneInfo | null {
   if (!Number.isFinite(frameCount) || frameCount < 0) {
     return null
   }
-  const observedFrameRate = Number.isFinite(observedFrameRateRaw) && observedFrameRateRaw > 0
-    ? Math.max(1, Math.min(240, Math.round(observedFrameRateRaw)))
-    : undefined
+  const observedFrameRate =
+    Number.isFinite(observedFrameRateRaw) && observedFrameRateRaw > 0
+      ? Math.max(1, Math.min(240, Math.round(observedFrameRateRaw)))
+      : undefined
   return {
     frameCount: Math.max(0, Math.round(frameCount)),
     observedFrameRate,
@@ -286,23 +292,35 @@ async function ensureHelperBinary(): Promise<string> {
 
   await new Promise<void>((resolve, reject) => {
     const arch = process.arch === 'arm64' ? 'arm64' : 'x86_64'
-    const compile = spawn('xcrun', [
-      'swiftc',
-      '-parse-as-library',
-      '-O',
-      '-target', `${arch}-apple-macos13.0`,
-      sourcePath,
-      '-framework', 'ScreenCaptureKit',
-      '-framework', 'AVFoundation',
-      '-framework', 'CoreMedia',
-      '-framework', 'CoreVideo',
-      '-framework', 'CoreGraphics',
-      '-framework', 'Foundation',
-      '-o', helperPath,
-    ], {
-      cwd: projectRoot,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
+    const compile = spawn(
+      'xcrun',
+      [
+        'swiftc',
+        '-parse-as-library',
+        '-O',
+        '-target',
+        `${arch}-apple-macos13.0`,
+        sourcePath,
+        '-framework',
+        'ScreenCaptureKit',
+        '-framework',
+        'AVFoundation',
+        '-framework',
+        'CoreMedia',
+        '-framework',
+        'CoreVideo',
+        '-framework',
+        'CoreGraphics',
+        '-framework',
+        'Foundation',
+        '-o',
+        helperPath,
+      ],
+      {
+        cwd: projectRoot,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    )
 
     let stderr = ''
     compile.stderr.on('data', (chunk) => {
@@ -377,7 +395,10 @@ export async function startNativeMacRecorder(options: NativeRecorderStartOptions
   capabilities?: NativeRecorderCapabilities
 }> {
   if (process.platform !== 'darwin') {
-    return { success: false, message: 'Native ScreenCaptureKit recorder is only supported on macOS.' }
+    return {
+      success: false,
+      message: 'Native ScreenCaptureKit recorder is only supported on macOS.',
+    }
   }
 
   // Darwin kernel 22.x = macOS 13 Ventura. The native helper requires macOS >= 13.0.
@@ -399,15 +420,27 @@ export async function startNativeMacRecorder(options: NativeRecorderStartOptions
   try {
     const helperPath = await ensureHelperBinary()
     const args = [
-      '--output', options.outputPath,
-      '--hide-cursor', options.cursorMode === 'never' ? '1' : '0',
-      '--microphone-enabled', options.microphoneEnabled === false ? '0' : '1',
-      '--microphone-gain', String(
-        Math.max(0.5, Math.min(2, Number.isFinite(options.microphoneGain) ? Number(options.microphoneGain) : 1)),
+      '--output',
+      options.outputPath,
+      '--hide-cursor',
+      options.cursorMode === 'never' ? '1' : '0',
+      '--microphone-enabled',
+      options.microphoneEnabled === false ? '0' : '1',
+      '--microphone-gain',
+      String(
+        Math.max(
+          0.5,
+          Math.min(2, Number.isFinite(options.microphoneGain) ? Number(options.microphoneGain) : 1),
+        ),
       ),
-      '--fps', String(Math.max(1, Math.min(120, Math.round(options.frameRate || 60)))),
-      '--bitrate-scale', String(
-        Math.max(0.5, Math.min(2, Number.isFinite(options.bitrateScale) ? Number(options.bitrateScale) : 1)),
+      '--fps',
+      String(Math.max(1, Math.min(120, Math.round(options.frameRate || 60)))),
+      '--bitrate-scale',
+      String(
+        Math.max(
+          0.5,
+          Math.min(2, Number.isFinite(options.bitrateScale) ? Number(options.bitrateScale) : 1),
+        ),
       ),
     ]
 
@@ -454,7 +487,9 @@ export async function startNativeMacRecorder(options: NativeRecorderStartOptions
 
     let readyInfo: RecorderReadyInfo | null = null
     const doneInfoRef: { current?: RecorderDoneInfo } = {}
-    const capabilitiesRef: { current: NativeRecorderCapabilities } = { current: { ...NO_NATIVE_RECORDER_CAPABILITIES } }
+    const capabilitiesRef: { current: NativeRecorderCapabilities } = {
+      current: { ...NO_NATIVE_RECORDER_CAPABILITIES },
+    }
     const ackWaiters = new AckWaiters()
     let stderrBuffer = ''
     const helperErrorRef: { current?: RecorderHelperErrorInfo } = {}
@@ -505,26 +540,29 @@ export async function startNativeMacRecorder(options: NativeRecorderStartOptions
         }
       }, 20)
 
-      exitPromise.then(() => {
-        globalThis.clearTimeout(timeout)
-        globalThis.clearInterval(interval)
-        if (!readyInfo) {
+      exitPromise
+        .then(() => {
+          globalThis.clearTimeout(timeout)
+          globalThis.clearInterval(interval)
+          if (!readyInfo) {
+            resolve(false)
+          }
+        })
+        .catch(() => {
+          globalThis.clearTimeout(timeout)
+          globalThis.clearInterval(interval)
           resolve(false)
-        }
-      }).catch(() => {
-        globalThis.clearTimeout(timeout)
-        globalThis.clearInterval(interval)
-        resolve(false)
-      })
+        })
     })
 
     if (!started || !readyInfo) {
       cleanupStdout()
       cleanupStderr()
       const exit = await exitPromise
-      const reason = helperErrorRef.current?.message
-        || stderrBuffer.trim()
-        || `Helper exited before ready (code=${exit.code ?? 'null'}, signal=${exit.signal ?? 'none'})`
+      const reason =
+        helperErrorRef.current?.message ||
+        stderrBuffer.trim() ||
+        `Helper exited before ready (code=${exit.code ?? 'null'}, signal=${exit.signal ?? 'none'})`
       return { success: false, code: helperErrorRef.current?.code, message: reason }
     }
 
@@ -583,7 +621,8 @@ async function sendPauseCommand(command: 'pause' | 'resume'): Promise<NativeReco
     return {
       success: false,
       supported: false,
-      message: 'The native recorder helper was built without pause support; rebuild it with `npm run build:native`.',
+      message:
+        'The native recorder helper was built without pause support; rebuild it with `npm run build:native`.',
     }
   }
   const stdin = session.process.stdin
@@ -597,7 +636,11 @@ async function sendPauseCommand(command: 'pause' | 'resume'): Promise<NativeReco
     stdin.write(`${command}\n`)
   } catch (error) {
     session.ackWaiters.abortAll()
-    return { success: false, supported: true, message: error instanceof Error ? error.message : String(error) }
+    return {
+      success: false,
+      supported: true,
+      message: error instanceof Error ? error.message : String(error),
+    }
   }
   const ok = await acked
   if (!ok) {

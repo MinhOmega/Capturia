@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Keyboard, RotateCcw } from 'lucide-react';
-import { toast } from 'sonner';
+import { useCallback, useEffect, useState } from 'react'
+import { Keyboard, RotateCcw } from 'lucide-react'
+import { toast } from 'sonner'
 
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
 import {
   DEFAULT_SHORTCUTS,
   EDITOR_SHORTCUT_ACTIONS,
@@ -17,101 +17,101 @@ import {
   type ShortcutBinding,
   type ShortcutConflict,
   type ShortcutsConfig,
-} from '@/lib/shortcuts';
-import { useShortcuts } from '@/contexts/ShortcutsContext';
-import { useI18n } from '@/i18n';
+} from '@/lib/shortcuts'
+import { useShortcuts } from '@/contexts/ShortcutsContext'
+import { useI18n } from '@/i18n'
 
-const MODIFIER_KEYS = new Set(['Control', 'Shift', 'Alt', 'Meta']);
+const MODIFIER_KEYS = new Set(['Control', 'Shift', 'Alt', 'Meta'])
 
 /** Global accelerators without Ctrl/Cmd or Alt would swallow a plain key system-wide. */
 function isAllowedGlobalBinding(binding: ShortcutBinding): boolean {
-  return Boolean(binding.ctrl || binding.alt);
+  return Boolean(binding.ctrl || binding.alt)
 }
 
 export function ShortcutsConfigDialog() {
-  const { t } = useI18n();
+  const { t } = useI18n()
   const { shortcuts, isMac, isConfigOpen, closeConfig, setShortcuts, persistShortcuts } =
-    useShortcuts();
+    useShortcuts()
 
-  const [draft, setDraft] = useState<ShortcutsConfig>(shortcuts);
-  const [captureFor, setCaptureFor] = useState<ShortcutAction | null>(null);
+  const [draft, setDraft] = useState<ShortcutsConfig>(shortcuts)
+  const [captureFor, setCaptureFor] = useState<ShortcutAction | null>(null)
   const [conflict, setConflict] = useState<{
-    forAction: ShortcutAction;
-    pending: ShortcutBinding;
-    conflictWith: ShortcutConflict;
-  } | null>(null);
+    forAction: ShortcutAction
+    pending: ShortcutBinding
+    conflictWith: ShortcutConflict
+  } | null>(null)
 
   // Sync draft when dialog opens
   useEffect(() => {
     if (isConfigOpen) {
-      setDraft(shortcuts);
-      setCaptureFor(null);
-      setConflict(null);
+      setDraft(shortcuts)
+      setCaptureFor(null)
+      setConflict(null)
     }
-  }, [isConfigOpen, shortcuts]);
+  }, [isConfigOpen, shortcuts])
 
   // Key capture listener
   useEffect(() => {
-    if (!captureFor) return;
+    if (!captureFor) return
 
     const handleCapture = (e: KeyboardEvent) => {
-      e.preventDefault();
-      e.stopPropagation();
+      e.preventDefault()
+      e.stopPropagation()
 
       if (e.key === 'Escape') {
-        setCaptureFor(null);
-        return;
+        setCaptureFor(null)
+        return
       }
 
-      if (MODIFIER_KEYS.has(e.key)) return;
+      if (MODIFIER_KEYS.has(e.key)) return
 
       const binding: ShortcutBinding = {
         key: e.key.toLowerCase(),
         ...(e.ctrlKey || e.metaKey ? { ctrl: true } : {}),
         ...(e.shiftKey ? { shift: true } : {}),
         ...(e.altKey ? { alt: true } : {}),
-      };
-
-      if (isGlobalShortcutAction(captureFor) && !isAllowedGlobalBinding(binding)) {
-        toast.error(t('shortcuts.globalNeedsModifier'));
-        return;
       }
 
-      const found = findConflict(binding, captureFor, draft);
-      setCaptureFor(null);
+      if (isGlobalShortcutAction(captureFor) && !isAllowedGlobalBinding(binding)) {
+        toast.error(t('shortcuts.globalNeedsModifier'))
+        return
+      }
+
+      const found = findConflict(binding, captureFor, draft)
+      setCaptureFor(null)
 
       if (found?.type === 'fixed') {
-        toast.error(t('shortcuts.conflictFixed', { label: t(found.labelKey) }));
-        return;
+        toast.error(t('shortcuts.conflictFixed', { label: t(found.labelKey) }))
+        return
       }
 
       if (found?.type === 'configurable') {
-        setConflict({ forAction: captureFor, pending: binding, conflictWith: found });
-        return;
+        setConflict({ forAction: captureFor, pending: binding, conflictWith: found })
+        return
       }
 
-      setDraft((prev) => ({ ...prev, [captureFor]: binding }));
-    };
+      setDraft((prev) => ({ ...prev, [captureFor]: binding }))
+    }
 
-    window.addEventListener('keydown', handleCapture, { capture: true });
-    return () => window.removeEventListener('keydown', handleCapture, { capture: true });
-  }, [captureFor, draft, t]);
+    window.addEventListener('keydown', handleCapture, { capture: true })
+    return () => window.removeEventListener('keydown', handleCapture, { capture: true })
+  }, [captureFor, draft, t])
 
   const handleSwap = useCallback(() => {
-    if (!conflict || conflict.conflictWith.type !== 'configurable') return;
-    const { forAction, pending, conflictWith } = conflict;
+    if (!conflict || conflict.conflictWith.type !== 'configurable') return
+    const { forAction, pending, conflictWith } = conflict
     setDraft((prev) => ({
       ...prev,
       [forAction]: pending,
       [conflictWith.action]: prev[forAction],
-    }));
-    setConflict(null);
-  }, [conflict]);
+    }))
+    setConflict(null)
+  }, [conflict])
 
-  const handleCancelConflict = useCallback(() => setConflict(null), []);
+  const handleCancelConflict = useCallback(() => setConflict(null), [])
 
   const handleSave = useCallback(async () => {
-    const result = await persistShortcuts(draft);
+    const result = await persistShortcuts(draft)
     if (!result.ok) {
       // Keep the dialog (and the draft) open so the user can pick another combo.
       if (result.reason === 'registration') {
@@ -120,111 +120,134 @@ export function ShortcutsConfigDialog() {
             label: t(SHORTCUT_LABEL_KEYS[result.action]),
             shortcut: formatBinding(draft[result.action], isMac),
           }),
-        );
+        )
       } else {
-        toast.error(t('shortcuts.saveFailed'));
+        toast.error(t('shortcuts.saveFailed'))
       }
-      return;
+      return
     }
-    setShortcuts(draft);
-    toast.success(t('shortcuts.saved'));
-    closeConfig();
-  }, [draft, isMac, setShortcuts, persistShortcuts, closeConfig, t]);
+    setShortcuts(draft)
+    toast.success(t('shortcuts.saved'))
+    closeConfig()
+  }, [draft, isMac, setShortcuts, persistShortcuts, closeConfig, t])
 
   const handleReset = useCallback(() => {
-    setDraft({ ...DEFAULT_SHORTCUTS });
-    toast.info(t('shortcuts.resetHint'));
-  }, [t]);
+    setDraft({ ...DEFAULT_SHORTCUTS })
+    toast.info(t('shortcuts.resetHint'))
+  }, [t])
 
   const handleClose = useCallback(() => {
-    setCaptureFor(null);
-    setConflict(null);
-    closeConfig();
-  }, [closeConfig]);
+    setCaptureFor(null)
+    setConflict(null)
+    closeConfig()
+  }, [closeConfig])
 
   return (
-    <Dialog open={isConfigOpen} onOpenChange={(open: boolean) => { if (!open) handleClose(); }}>
-      <DialogContent aria-describedby={undefined} className="bg-[#09090b] border-white/10 text-white max-w-[420px] max-h-[85vh] !p-0 flex flex-col">
+    <Dialog
+      open={isConfigOpen}
+      onOpenChange={(open: boolean) => {
+        if (!open) handleClose()
+      }}
+    >
+      <DialogContent
+        aria-describedby={undefined}
+        className="bg-[#09090b] border-white/10 text-white max-w-[420px] max-h-[85vh] !p-0 flex flex-col"
+      >
         {/* Header */}
         <DialogHeader className="px-5 pt-5 pb-3 shrink-0">
           <DialogTitle className="flex items-center gap-2 text-sm">
             <Keyboard className="w-4 h-4 text-[#34B27B]" />
             {t('shortcuts.configTitle')}
           </DialogTitle>
-          <p className="text-[10px] text-slate-500 mt-1.5">
-            {t('shortcuts.instructions')}
-          </p>
+          <p className="text-[10px] text-slate-500 mt-1.5">{t('shortcuts.instructions')}</p>
         </DialogHeader>
 
         {/* Scrollable content */}
         <div className="flex-1 overflow-y-auto min-h-0 px-5 themed-scrollbar">
           {/* Configurable shortcuts (editor, then global) */}
           {[
-            { key: 'editor', titleKey: 'shortcuts.configurable', hintKey: null, actions: EDITOR_SHORTCUT_ACTIONS },
-            { key: 'global', titleKey: 'shortcuts.global', hintKey: 'shortcuts.globalHint', actions: GLOBAL_SHORTCUT_ACTIONS },
+            {
+              key: 'editor',
+              titleKey: 'shortcuts.configurable',
+              hintKey: null,
+              actions: EDITOR_SHORTCUT_ACTIONS,
+            },
+            {
+              key: 'global',
+              titleKey: 'shortcuts.global',
+              hintKey: 'shortcuts.globalHint',
+              actions: GLOBAL_SHORTCUT_ACTIONS,
+            },
           ].map((section) => (
-          <div key={section.key} className={section.key === 'global' ? 'space-y-0.5 mt-4' : 'space-y-0.5'}>
-            <p className="text-[10px] text-slate-500 mb-2 uppercase tracking-wide font-semibold">
-              {t(section.titleKey)}
-            </p>
-            {section.hintKey && (
-              <p className="text-[10px] text-slate-500 mb-2">{t(section.hintKey)}</p>
-            )}
-            {section.actions.map((action) => {
-              const isCapturing = captureFor === action;
-              const hasConflict = conflict?.forAction === action;
-              return (
-                <div key={action}>
-                  <div className="flex items-center justify-between py-1.5 px-1 border-b border-white/5">
-                    <span className="text-sm text-slate-300">{t(SHORTCUT_LABEL_KEYS[action])}</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setConflict(null);
-                        setCaptureFor(isCapturing ? null : action);
-                      }}
-                      title={isCapturing ? t('shortcuts.pressKey') : undefined}
-                      className={[
-                        'px-2 py-1 rounded text-xs font-mono border transition-all min-w-[90px] text-center select-none',
-                        isCapturing
-                          ? 'bg-[#34B27B]/20 border-[#34B27B] text-[#34B27B] animate-pulse'
-                          : hasConflict
-                            ? 'bg-amber-500/10 border-amber-500/50 text-amber-400'
-                            : 'bg-white/5 border-white/10 text-slate-200 hover:border-[#34B27B]/50 hover:text-[#34B27B] cursor-pointer',
-                      ].join(' ')}
-                    >
-                      {isCapturing ? t('shortcuts.pressKey') : formatBinding(draft[action], isMac)}
-                    </button>
-                  </div>
-                  {hasConflict && conflict?.conflictWith.type === 'configurable' && (
-                    <div className="flex items-center justify-between px-1 py-1.5 mb-0.5 bg-amber-500/10 border border-amber-500/20 rounded text-xs animate-in slide-in-from-top-1 duration-150">
-                      <span className="text-amber-400">
-                        {t('shortcuts.conflictWith', {
-                          label: t(SHORTCUT_LABEL_KEYS[conflict.conflictWith.action]),
-                        })}
+            <div
+              key={section.key}
+              className={section.key === 'global' ? 'space-y-0.5 mt-4' : 'space-y-0.5'}
+            >
+              <p className="text-[10px] text-slate-500 mb-2 uppercase tracking-wide font-semibold">
+                {t(section.titleKey)}
+              </p>
+              {section.hintKey && (
+                <p className="text-[10px] text-slate-500 mb-2">{t(section.hintKey)}</p>
+              )}
+              {section.actions.map((action) => {
+                const isCapturing = captureFor === action
+                const hasConflict = conflict?.forAction === action
+                return (
+                  <div key={action}>
+                    <div className="flex items-center justify-between py-1.5 px-1 border-b border-white/5">
+                      <span className="text-sm text-slate-300">
+                        {t(SHORTCUT_LABEL_KEYS[action])}
                       </span>
-                      <div className="flex gap-1.5">
-                        <button
-                          type="button"
-                          onClick={handleSwap}
-                          className="px-2 py-0.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 rounded text-amber-300 font-medium transition-colors"
-                        >
-                          {t('shortcuts.swap')}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleCancelConflict}
-                          className="px-2 py-0.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded text-slate-400 transition-colors"
-                        >
-                          {t('common.cancel')}
-                        </button>
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setConflict(null)
+                          setCaptureFor(isCapturing ? null : action)
+                        }}
+                        title={isCapturing ? t('shortcuts.pressKey') : undefined}
+                        className={[
+                          'px-2 py-1 rounded text-xs font-mono border transition-all min-w-[90px] text-center select-none',
+                          isCapturing
+                            ? 'bg-[#34B27B]/20 border-[#34B27B] text-[#34B27B] animate-pulse'
+                            : hasConflict
+                              ? 'bg-amber-500/10 border-amber-500/50 text-amber-400'
+                              : 'bg-white/5 border-white/10 text-slate-200 hover:border-[#34B27B]/50 hover:text-[#34B27B] cursor-pointer',
+                        ].join(' ')}
+                      >
+                        {isCapturing
+                          ? t('shortcuts.pressKey')
+                          : formatBinding(draft[action], isMac)}
+                      </button>
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                    {hasConflict && conflict?.conflictWith.type === 'configurable' && (
+                      <div className="flex items-center justify-between px-1 py-1.5 mb-0.5 bg-amber-500/10 border border-amber-500/20 rounded text-xs animate-in slide-in-from-top-1 duration-150">
+                        <span className="text-amber-400">
+                          {t('shortcuts.conflictWith', {
+                            label: t(SHORTCUT_LABEL_KEYS[conflict.conflictWith.action]),
+                          })}
+                        </span>
+                        <div className="flex gap-1.5">
+                          <button
+                            type="button"
+                            onClick={handleSwap}
+                            className="px-2 py-0.5 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 rounded text-amber-300 font-medium transition-colors"
+                          >
+                            {t('shortcuts.swap')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleCancelConflict}
+                            className="px-2 py-0.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded text-slate-400 transition-colors"
+                          >
+                            {t('common.cancel')}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
           ))}
 
           {/* Fixed shortcuts */}
@@ -272,5 +295,5 @@ export function ShortcutsConfigDialog() {
         </div>
       </DialogContent>
     </Dialog>
-  );
+  )
 }

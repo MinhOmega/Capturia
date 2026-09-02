@@ -21,7 +21,9 @@ type Handler = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown
 
 function fakeIpcMain() {
   const handlers = new Map<string, Handler>()
-  const event = { sender: { isDestroyed: () => false, send: vi.fn() } } as unknown as IpcMainInvokeEvent
+  const event = {
+    sender: { isDestroyed: () => false, send: vi.fn() },
+  } as unknown as IpcMainInvokeEvent
   return {
     ipcMain: {
       handle: (channel: string, handler: Handler) => {
@@ -66,7 +68,10 @@ function fakeFetch(
     if (queue && queue.length > 0) {
       const status = queue.shift()!
       if (status !== 200) {
-        return new Response('nope', { status, headers: status === 429 ? { 'retry-after': '0' } : {} })
+        return new Response('nope', {
+          status,
+          headers: status === 429 ? { 'retry-after': '0' } : {},
+        })
       }
     }
     const body = files[url]
@@ -96,7 +101,10 @@ afterEach(async () => {
   await rm(userDataDir, { recursive: true, force: true })
 })
 
-function tinyModel(contents: Record<string, string>, withDigest = true): { model: CaptionModelDescriptor; files: Record<string, Uint8Array> } {
+function tinyModel(
+  contents: Record<string, string>,
+  withDigest = true,
+): { model: CaptionModelDescriptor; files: Record<string, Uint8Array> } {
   const model: CaptionModelDescriptor = {
     id: 'Test/tiny',
     revision: 'main',
@@ -113,7 +121,10 @@ function tinyModel(contents: Record<string, string>, withDigest = true): { model
 
 describe('caption model status + download', () => {
   it('reports missing files, downloads them with progress and then reports present', async () => {
-    const { model, files } = tinyModel({ 'config.json': '{"a":1}', 'onnx/encoder.onnx': 'ENCODER-BYTES' })
+    const { model, files } = tinyModel({
+      'config.json': '{"a":1}',
+      'onnx/encoder.onnx': 'ENCODER-BYTES',
+    })
     const { fetcher, calls } = fakeFetch(files)
 
     const before = await getCaptionModelStatus(userDataDir, model)
@@ -179,7 +190,12 @@ describe('caption model status + download', () => {
     const missing = tinyModel({ 'zzz.json': 'x' }, false)
     const notFound = fakeFetch({})
     await expect(
-      downloadCaptionModel({ userDataDir, model: missing.model, fetcher: notFound.fetcher, backoff: noBackoff }),
+      downloadCaptionModel({
+        userDataDir,
+        model: missing.model,
+        fetcher: notFound.fetcher,
+        backoff: noBackoff,
+      }),
     ).rejects.toThrow(/HTTP 404/)
     expect(notFound.calls).toHaveLength(1)
   })
@@ -189,7 +205,9 @@ describe('caption model status + download', () => {
     files[modelFileUrl(model, model.files[0]!)] = bytes('EVIL')
     const { fetcher } = fakeFetch(files)
 
-    await expect(downloadCaptionModel({ userDataDir, model, fetcher, backoff: noBackoff })).rejects.toThrow(/Checksum mismatch/)
+    await expect(
+      downloadCaptionModel({ userDataDir, model, fetcher, backoff: noBackoff }),
+    ).rejects.toThrow(/Checksum mismatch/)
     expect((await getCaptionModelStatus(userDataDir, model)).present).toBe(false)
   })
 
@@ -201,21 +219,31 @@ describe('caption model status + download', () => {
         start(ctrl) {
           ctrl.enqueue(bytes('AA'))
           controller.abort()
-          init?.signal?.addEventListener('abort', () => ctrl.error(Object.assign(new Error('aborted'), { name: 'AbortError' })))
+          init?.signal?.addEventListener('abort', () =>
+            ctrl.error(Object.assign(new Error('aborted'), { name: 'AbortError' })),
+          )
         },
       })
       return new Response(stream, { status: 200 })
     }) as typeof fetch
 
     await expect(
-      downloadCaptionModel({ userDataDir, model, fetcher, backoff: noBackoff, signal: controller.signal }),
+      downloadCaptionModel({
+        userDataDir,
+        model,
+        fetcher,
+        backoff: noBackoff,
+        signal: controller.signal,
+      }),
     ).rejects.toMatchObject({ name: 'AbortError' })
     expect((await getCaptionModelStatus(userDataDir, model)).present).toBe(false)
   })
 
   it('exposes the pinned whisper-tiny file list', () => {
     expect(WHISPER_TINY_MODEL.id).toBe('Xenova/whisper-tiny')
-    expect(WHISPER_TINY_MODEL.files.map((f) => f.name)).toContain('onnx/decoder_model_merged_quantized.onnx')
+    expect(WHISPER_TINY_MODEL.files.map((f) => f.name)).toContain(
+      'onnx/decoder_model_merged_quantized.onnx',
+    )
     expect(modelFileUrl(WHISPER_TINY_MODEL, WHISPER_TINY_MODEL.files[0]!)).toBe(
       'https://huggingface.co/Xenova/whisper-tiny/resolve/main/config.json',
     )
@@ -243,8 +271,14 @@ describe('registerCaptionHandlers', () => {
       'caption-model-download-cancel',
       'caption-model-status',
     ])
-    expect(await invoke('caption-model-dir')).toEqual({ success: true, dir: path.join(userDataDir, 'caption-models') })
-    const status = (await invoke('caption-model-status')) as { success: boolean; status: { modelId: string; present: boolean } }
+    expect(await invoke('caption-model-dir')).toEqual({
+      success: true,
+      dir: path.join(userDataDir, 'caption-models'),
+    })
+    const status = (await invoke('caption-model-status')) as {
+      success: boolean
+      status: { modelId: string; present: boolean }
+    }
     expect(status.success).toBe(true)
     expect(status.status.modelId).toBe('Xenova/whisper-tiny')
     expect(status.status.present).toBe(false)
@@ -258,21 +292,35 @@ describe('registerCaptionHandlers', () => {
     const videoPath = path.join(recordingsDir, 'rec.mp4')
     await writeFile(videoPath, 'x')
     const analysis = {
-      transcript: { locale: 'en-US', text: 'hi', words: [{ text: 'hi', startMs: 0, endMs: 100, synthetic: true, phraseIndex: 0 }], createdAtMs: 1 },
+      transcript: {
+        locale: 'en-US',
+        text: 'hi',
+        words: [{ text: 'hi', startMs: 0, endMs: 100, synthetic: true, phraseIndex: 0 }],
+        createdAtMs: 1,
+      },
       subtitleCues: [],
       roughCutSuggestions: [],
     }
 
-    const ok = (await invoke('analysis-save-sidecar', videoPath, analysis)) as { success: boolean; path?: string }
+    const ok = (await invoke('analysis-save-sidecar', videoPath, analysis)) as {
+      success: boolean
+      path?: string
+    }
     expect(ok.success).toBe(true)
     expect(ok.path).toBe(path.join(recordingsDir, 'rec.analysis.json'))
     const written = JSON.parse(await readFile(ok.path!, 'utf-8'))
     expect(written).toEqual({ version: 1, analysis })
 
-    expect(await invoke('analysis-save-sidecar', videoPath, { transcript: {} })).toMatchObject({ success: false })
+    expect(await invoke('analysis-save-sidecar', videoPath, { transcript: {} })).toMatchObject({
+      success: false,
+    })
     const outside = path.join(userDataDir, 'elsewhere.mp4')
-    expect(await invoke('analysis-save-sidecar', outside, analysis)).toMatchObject({ success: false })
-    expect(await invoke('analysis-save-sidecar', path.join(recordingsDir, 'notes.txt'), analysis)).toMatchObject({ success: false })
+    expect(await invoke('analysis-save-sidecar', outside, analysis)).toMatchObject({
+      success: false,
+    })
+    expect(
+      await invoke('analysis-save-sidecar', path.join(recordingsDir, 'notes.txt'), analysis),
+    ).toMatchObject({ success: false })
   })
 
   it('resolveSidecarVideoPath accepts explicitly approved paths outside the recordings dir', () => {

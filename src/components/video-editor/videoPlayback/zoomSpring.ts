@@ -3,8 +3,8 @@ import {
   getZoomSpringConfig,
   type SpringState,
   stepSpringValue,
-} from "./motionSmoothing";
-import type { ZoomTransform } from "./zoomTransform";
+} from './motionSmoothing'
+import type { ZoomTransform } from './zoomTransform'
 
 /**
  * Spring-chase for the camera zoom transform.
@@ -16,12 +16,12 @@ import type { ZoomTransform } from "./zoomTransform";
  * motion velocity-continuous.
  */
 
-export type { ZoomTransform };
+export type { ZoomTransform }
 
 export interface ZoomSpringState {
-  scale: SpringState;
-  x: SpringState;
-  y: SpringState;
+  scale: SpringState
+  x: SpringState
+  y: SpringState
 }
 
 export function createZoomSpringState(): ZoomSpringState {
@@ -29,7 +29,7 @@ export function createZoomSpringState(): ZoomSpringState {
     scale: createSpringState(1),
     x: createSpringState(0),
     y: createSpringState(0),
-  };
+  }
 }
 
 /** Snap every axis straight to the target (used on seek / pause / first frame). */
@@ -39,9 +39,9 @@ export function resetZoomSpring(state: ZoomSpringState, target: ZoomTransform): 
     [state.x, target.x],
     [state.y, target.y],
   ] as const) {
-    axis.value = value;
-    axis.velocity = 0;
-    axis.initialized = true;
+    axis.value = value
+    axis.velocity = 0
+    axis.initialized = true
   }
 }
 
@@ -56,15 +56,15 @@ function stepAxis(
   deltaMs: number,
   config: ReturnType<typeof getZoomSpringConfig>,
 ): number {
-  const before = axis.initialized ? axis.value : target;
-  const after = stepSpringValue(axis, target, deltaMs, config);
-  const crossed = (before <= target && after > target) || (before >= target && after < target);
+  const before = axis.initialized ? axis.value : target
+  const after = stepSpringValue(axis, target, deltaMs, config)
+  const crossed = (before <= target && after > target) || (before >= target && after < target)
   if (crossed) {
-    axis.value = target;
-    axis.velocity = 0;
-    return target;
+    axis.value = target
+    axis.velocity = 0
+    return target
   }
-  return after;
+  return after
 }
 
 /** Advance the spring toward target by deltaMs (content time); returns the smoothed transform. */
@@ -73,10 +73,10 @@ export function stepZoomSpring(
   target: ZoomTransform,
   deltaMs: number,
 ): ZoomTransform {
-  const config = getZoomSpringConfig();
+  const config = getZoomSpringConfig()
   return {
     scale: stepAxis(state.scale, target.scale, deltaMs, config),
     x: stepAxis(state.x, target.x, deltaMs, config),
     y: stepAxis(state.y, target.y, deltaMs, config),
-  };
+  }
 }

@@ -2,7 +2,11 @@ import { app } from 'electron'
 import { spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { type CursorKind, isCursorKind, normalizeCursorKind } from '../../src/lib/cursor/cursorKinds'
+import {
+  type CursorKind,
+  isCursorKind,
+  normalizeCursorKind,
+} from '../../src/lib/cursor/cursorKinds'
 
 export type NativeCursorKind = CursorKind
 
@@ -83,24 +87,38 @@ async function ensureHelperBinary(): Promise<string | null> {
     }
 
     const projectRoot = app.getAppPath()
-    const sourcePath = path.join(projectRoot, 'electron', 'native', 'macos', 'cursor-kind-monitor.swift')
+    const sourcePath = path.join(
+      projectRoot,
+      'electron',
+      'native',
+      'macos',
+      'cursor-kind-monitor.swift',
+    )
 
     try {
       await fs.mkdir(path.dirname(helperPath), { recursive: true })
       await new Promise<void>((resolve, reject) => {
-        const compile = spawn('xcrun', [
-          'swiftc',
-          '-parse-as-library',
-          '-O',
-          sourcePath,
-          '-framework', 'Foundation',
-          '-framework', 'AppKit',
-          '-framework', 'CryptoKit',
-          '-o', helperPath,
-        ], {
-          cwd: projectRoot,
-          stdio: ['ignore', 'pipe', 'pipe'],
-        })
+        const compile = spawn(
+          'xcrun',
+          [
+            'swiftc',
+            '-parse-as-library',
+            '-O',
+            sourcePath,
+            '-framework',
+            'Foundation',
+            '-framework',
+            'AppKit',
+            '-framework',
+            'CryptoKit',
+            '-o',
+            helperPath,
+          ],
+          {
+            cwd: projectRoot,
+            stdio: ['ignore', 'pipe', 'pipe'],
+          },
+        )
 
         let stderr = ''
         compile.stderr.on('data', (chunk) => {
@@ -123,7 +141,10 @@ async function ensureHelperBinary(): Promise<string | null> {
       return helperPath
     } catch (error) {
       helperUnavailable = true
-      console.warn('Failed to prepare native cursor kind helper, using arrow cursor fallback.', error)
+      console.warn(
+        'Failed to prepare native cursor kind helper, using arrow cursor fallback.',
+        error,
+      )
       return null
     }
   })()
