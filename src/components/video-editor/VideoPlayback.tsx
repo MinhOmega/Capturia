@@ -9,7 +9,7 @@ import {
   useCallback,
 } from 'react'
 import { classifyWallpaper, DEFAULT_WALLPAPER, resolveImageWallpaperUrl } from '@/lib/wallpaper'
-import { Application, Container, Sprite, Graphics, Texture, VideoSource } from 'pixi.js'
+import { Application, Container, Sprite, Graphics, Rectangle, Texture, VideoSource } from 'pixi.js'
 import { MotionBlurFilter } from 'pixi-filters/motion-blur'
 import {
   computeRotation3DContainScale,
@@ -45,7 +45,12 @@ import {
   getNativeAspectRatioValue,
 } from '@/utils/aspectRatioUtils'
 import { AnnotationOverlay } from './AnnotationOverlay'
-import { getRenderableAnnotations } from '@/lib/annotations/renderOrder'
+import {
+  getRenderableAnnotations,
+  getSelectionCycleAnnotations,
+  isSelectionCyclable,
+} from '@/lib/annotations/renderOrder'
+import { BLUR_REGIONS_ENABLED } from './featureFlags'
 import { getPreviewBackgroundFilter } from '@/lib/rendering/backgroundBlur'
 import type { SubtitleCue } from '@/lib/analysis/types'
 import { findSubtitleCueAtTime, normalizeSubtitleCues } from '@/lib/analysis/subtitleTrack'
@@ -215,6 +220,24 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
     // Overlay size for annotation overlays; fed by a ResizeObserver so the first
     // paint never falls back to a placeholder size.
     const [overlaySize, setOverlaySize] = useState({ width: 800, height: 600 })
+
+    /**
+     * Snapshot of the composited stage (video, zoom, background blur) at CSS
+     * size. Blur regions sample their pixels from it. The WebGL canvas cannot
+     * be read back after it has been presented, so the stage is re-rendered
+     * into an extract instead. Only called while a blur region is on screen.
+     */
+    const capturePreviewFrame = useCallback((): HTMLCanvasElement | null => {
+      const app = appRef.current
+      if (!app?.renderer?.extract) return null
+      try {
+        const frame = new Rectangle(0, 0, app.screen.width, app.screen.height)
+        const extracted = app.renderer.extract.canvas({ target: app.stage, frame, resolution: 1 })
+        return extracted instanceof HTMLCanvasElement ? extracted : null
+      } catch {
+        return null
+      }
+    }, [])
     const idleResolutionRef = useRef(1)
     const isDraggingFocusRef = useRef(false)
     const stageSizeRef = useRef({ width: 0, height: 0 })
@@ -1479,17 +1502,26 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
             {(() => {
               const timeMs = Math.round(currentTime * 1000)
               const sorted = getRenderableAnnotations(annotationRegions || [], timeMs)
+              // Blur regions are excluded from the click-through cycle: clicking a
+              // selected one keeps it selected instead of jumping to a text box.
+              const cycle = getSelectionCycleAnnotations(annotationRegions || [], timeMs)
+              const hasBlurRegions =
+                BLUR_REGIONS_ENABLED && sorted.some((annotation) => annotation.type === 'blur')
+              // One composite snapshot per render is shared by every blur region.
+              const previewFrame = hasBlurRegions ? capturePreviewFrame() : null
 
               // Handle click-through cycling: when clicking same annotation, cycle to next
               const handleAnnotationClick = (clickedId: string) => {
                 if (!onSelectAnnotation) return
+                const clicked = sorted.find((a) => a.id === clickedId)
+                const cyclable = clicked ? isSelectionCyclable(clicked) : false
 
                 // If clicking on already selected annotation and there are multiple overlapping
-                if (clickedId === selectedAnnotationId && sorted.length > 1) {
+                if (cyclable && clickedId === selectedAnnotationId && cycle.length > 1) {
                   // Find current index and cycle to next
-                  const currentIndex = sorted.findIndex((a) => a.id === clickedId)
-                  const nextIndex = (currentIndex + 1) % sorted.length
-                  onSelectAnnotation(sorted[nextIndex].id)
+                  const currentIndex = cycle.findIndex((a) => a.id === clickedId)
+                  const nextIndex = (currentIndex + 1) % cycle.length
+                  onSelectAnnotation(cycle[nextIndex].id)
                 } else {
                   // First click or clicking different annotation
                   onSelectAnnotation(clickedId)
@@ -1504,6 +1536,8 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
                   containerWidth={overlaySize.width}
                   containerHeight={overlaySize.height}
                   currentTimeMs={timeMs}
+                  previewSourceCanvas={annotation.type === 'blur' ? previewFrame : null}
+                  previewFrameVersion={timeMs}
                   onPositionChange={(id, position) => onAnnotationPositionChange?.(id, position)}
                   onSizeChange={(id, size) => onAnnotationSizeChange?.(id, size)}
                   onClick={handleAnnotationClick}
