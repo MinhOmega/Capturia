@@ -73,7 +73,13 @@ describe('AckWaiters', () => {
 describe('pause / resume without a helper', () => {
   it('reports unsupported when no native session is active', async () => {
     expect(getNativeMacRecorderCapabilities()).toEqual(NO_NATIVE_RECORDER_CAPABILITIES)
-    await expect(pauseNativeMacRecorder()).resolves.toMatchObject({ success: false, supported: false })
-    await expect(resumeNativeMacRecorder()).resolves.toMatchObject({ success: false, supported: false })
+    await expect(pauseNativeMacRecorder()).resolves.toMatchObject({
+      success: false,
+      supported: false,
+    })
+    await expect(resumeNativeMacRecorder()).resolves.toMatchObject({
+      success: false,
+      supported: false,
+    })
   })
 })

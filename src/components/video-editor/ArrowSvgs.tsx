@@ -1,9 +1,9 @@
-import type { ArrowDirection } from './types';
+import type { ArrowDirection } from './types'
 
 interface ArrowSvgProps {
-  color: string;
-  strokeWidth: number;
-  className?: string;
+  color: string
+  strokeWidth: number
+  className?: string
 }
 
 /**
@@ -30,7 +30,7 @@ export function ArrowUp({ color, strokeWidth, className }: ArrowSvgProps) {
         filter="url(#arrow-shadow)"
       />
     </svg>
-  );
+  )
 }
 
 export function ArrowDown({ color, strokeWidth, className }: ArrowSvgProps) {
@@ -51,7 +51,7 @@ export function ArrowDown({ color, strokeWidth, className }: ArrowSvgProps) {
         filter="url(#arrow-shadow)"
       />
     </svg>
-  );
+  )
 }
 
 export function ArrowLeft({ color, strokeWidth, className }: ArrowSvgProps) {
@@ -72,7 +72,7 @@ export function ArrowLeft({ color, strokeWidth, className }: ArrowSvgProps) {
         filter="url(#arrow-shadow)"
       />
     </svg>
-  );
+  )
 }
 
 export function ArrowRight({ color, strokeWidth, className }: ArrowSvgProps) {
@@ -93,7 +93,7 @@ export function ArrowRight({ color, strokeWidth, className }: ArrowSvgProps) {
         filter="url(#arrow-shadow)"
       />
     </svg>
-  );
+  )
 }
 
 export function ArrowUpRight({ color, strokeWidth, className }: ArrowSvgProps) {
@@ -114,7 +114,7 @@ export function ArrowUpRight({ color, strokeWidth, className }: ArrowSvgProps) {
         filter="url(#arrow-shadow)"
       />
     </svg>
-  );
+  )
 }
 
 export function ArrowUpLeft({ color, strokeWidth, className }: ArrowSvgProps) {
@@ -135,7 +135,7 @@ export function ArrowUpLeft({ color, strokeWidth, className }: ArrowSvgProps) {
         filter="url(#arrow-shadow)"
       />
     </svg>
-  );
+  )
 }
 
 export function ArrowDownRight({ color, strokeWidth, className }: ArrowSvgProps) {
@@ -156,7 +156,7 @@ export function ArrowDownRight({ color, strokeWidth, className }: ArrowSvgProps)
         filter="url(#arrow-shadow)"
       />
     </svg>
-  );
+  )
 }
 
 export function ArrowDownLeft({ color, strokeWidth, className }: ArrowSvgProps) {
@@ -177,18 +177,26 @@ export function ArrowDownLeft({ color, strokeWidth, className }: ArrowSvgProps) 
         filter="url(#arrow-shadow)"
       />
     </svg>
-  );
+  )
 }
 
 export function getArrowComponent(direction: ArrowDirection) {
   switch (direction) {
-    case 'up': return ArrowUp;
-    case 'down': return ArrowDown;
-    case 'left': return ArrowLeft;
-    case 'right': return ArrowRight;
-    case 'up-right': return ArrowUpRight;
-    case 'up-left': return ArrowUpLeft;
-    case 'down-right': return ArrowDownRight;
-    case 'down-left': return ArrowDownLeft;
+    case 'up':
+      return ArrowUp
+    case 'down':
+      return ArrowDown
+    case 'left':
+      return ArrowLeft
+    case 'right':
+      return ArrowRight
+    case 'up-right':
+      return ArrowUpRight
+    case 'up-left':
+      return ArrowUpLeft
+    case 'down-right':
+      return ArrowDownRight
+    case 'down-left':
+      return ArrowDownLeft
   }
 }

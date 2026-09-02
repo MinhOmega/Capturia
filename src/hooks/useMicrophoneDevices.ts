@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from 'react'
 
 export interface MicrophoneDevice {
-  deviceId: string;
-  label: string;
-  groupId: string;
+  deviceId: string
+  label: string
+  groupId: string
 }
 
 /**
@@ -15,61 +15,61 @@ export interface MicrophoneDevice {
  * `""` means "system default" (no `deviceId` constraint). A persisted id is kept
  * while the device is present and reset to the default when it is unplugged.
  */
-export function useMicrophoneDevices(enabled: boolean = true, initialDeviceId: string = "") {
-  const [devices, setDevices] = useState<MicrophoneDevice[]>([]);
-  const [selectedDeviceId, setSelectedDeviceId] = useState<string>(initialDeviceId);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const selectedDeviceIdRef = useRef(selectedDeviceId);
-  selectedDeviceIdRef.current = selectedDeviceId;
+export function useMicrophoneDevices(enabled: boolean = true, initialDeviceId: string = '') {
+  const [devices, setDevices] = useState<MicrophoneDevice[]>([])
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string>(initialDeviceId)
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const selectedDeviceIdRef = useRef(selectedDeviceId)
+  selectedDeviceIdRef.current = selectedDeviceId
 
   useEffect(() => {
-    if (!enabled) return;
-    const mediaDevices = navigator.mediaDevices as MediaDevices | undefined;
+    if (!enabled) return
+    const mediaDevices = navigator.mediaDevices as MediaDevices | undefined
     if (!mediaDevices) {
-      setError("Media devices are unavailable");
-      return;
+      setError('Media devices are unavailable')
+      return
     }
-    let mounted = true;
+    let mounted = true
 
     const loadDevices = async () => {
       try {
-        setIsLoading(true);
-        setError(null);
+        setIsLoading(true)
+        setError(null)
 
-        const allDevices = await mediaDevices.enumerateDevices();
+        const allDevices = await mediaDevices.enumerateDevices()
         const audioInputs = allDevices
-          .filter((device) => device.kind === "audioinput")
+          .filter((device) => device.kind === 'audioinput')
           .map((device) => ({
             deviceId: device.deviceId,
             label: device.label || `Microphone ${device.deviceId.slice(0, 8)}`,
             groupId: device.groupId,
-          }));
+          }))
 
         if (mounted) {
-          setDevices(audioInputs);
-          const currentId = selectedDeviceIdRef.current;
+          setDevices(audioInputs)
+          const currentId = selectedDeviceIdRef.current
           if (currentId && !audioInputs.some((device) => device.deviceId === currentId)) {
-            setSelectedDeviceId("");
+            setSelectedDeviceId('')
           }
-          setIsLoading(false);
+          setIsLoading(false)
         }
       } catch (err) {
         if (mounted) {
-          setError(err instanceof Error ? err.message : "Failed to enumerate audio devices");
-          setIsLoading(false);
+          setError(err instanceof Error ? err.message : 'Failed to enumerate audio devices')
+          setIsLoading(false)
         }
       }
-    };
+    }
 
-    loadDevices();
+    loadDevices()
 
-    mediaDevices.addEventListener("devicechange", loadDevices);
+    mediaDevices.addEventListener('devicechange', loadDevices)
     return () => {
-      mounted = false;
-      mediaDevices.removeEventListener("devicechange", loadDevices);
-    };
-  }, [enabled]);
+      mounted = false
+      mediaDevices.removeEventListener('devicechange', loadDevices)
+    }
+  }, [enabled])
 
-  return { devices, selectedDeviceId, setSelectedDeviceId, isLoading, error };
+  return { devices, selectedDeviceId, setSelectedDeviceId, isLoading, error }
 }

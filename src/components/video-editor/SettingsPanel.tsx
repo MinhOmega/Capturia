@@ -1,39 +1,90 @@
-import { cn } from "@/lib/utils";
-import { useCallback, useEffect, useRef } from "react";
-import { Slider } from "@/components/ui/slider";
-import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
-import { useState } from "react";
-import ColorPicker from '@/components/ui/color-picker';
-import { Trash2, Download, Crop, X, Bug, Upload, Star, Film, Image, Sparkles, Palette, Captions, Scissors, ScanSearch, AudioWaveform, WandSparkles, Info, MousePointer2 } from "lucide-react";
-import { toast } from "sonner";
-import * as SliderPrimitive from "@radix-ui/react-slider";
-import type { ZoomDepth, ZoomFocus, ZoomFocusMode, CropRegion, AnnotationRegion, AnnotationType, FigureData, Rotation3DPreset } from "./types";
-import { ROTATION_3D_PRESET_ORDER } from "./types";
-import { MAX_PLAYBACK_SPEED, MAX_ZOOM_SCALE, MIN_PLAYBACK_SPEED, MIN_ZOOM_SCALE, ZOOM_DEPTH_SCALES } from "./types";
-import { parseCustomPlaybackSpeedInput } from "./customPlaybackSpeed";
-import { getFocusBoundsForScale } from "./videoPlayback/focusUtils";
-import { CropControl } from "./CropControl";
-import { KeyboardShortcutsHelp } from "./KeyboardShortcutsHelp";
-import { AnnotationSettingsPanel } from "./AnnotationSettingsPanel";
-import { ASPECT_RATIOS, type AspectRatio, getAspectRatioLabel } from "@/utils/aspectRatioUtils";
-import type { ExportQuality, ExportFormat, GifFrameRate, GifSizePreset } from "@/lib/exporter";
-import { GIF_FRAME_RATES, GIF_SIZE_PRESETS } from "@/lib/exporter";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { useI18n } from "@/i18n";
-import { DEFAULT_CURSOR_STYLE, type CursorMovementStyle, type CursorStyleConfig } from "@/lib/cursor";
-import { GITHUB_ISSUES_URL, GITHUB_REPO_URL } from "@/lib/supportLinks";
-import { reportUserActionError } from "@/lib/userErrorFeedback";
-import { BACKGROUND_IMAGE_ACCEPT, isSupportedBackgroundImageType } from "./backgroundImageUpload";
-import { BACKGROUND_GRADIENT_PRESETS } from "./backgroundPresets";
-import { DEFAULT_WALLPAPER, isSameBuiltInWallpaper, resolveImageWallpaperUrl, WALLPAPER_PATHS } from "@/lib/wallpaper";
-import { CAPTION_ENGINE_SETTINGS, type CaptionEngineSetting } from "@/lib/captioning/captionEngineSetting";
+import { cn } from '@/lib/utils'
+import { useCallback, useEffect, useRef } from 'react'
+import { Slider } from '@/components/ui/slider'
+import { Switch } from '@/components/ui/switch'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Button } from '@/components/ui/button'
+import { useState } from 'react'
+import ColorPicker from '@/components/ui/color-picker'
+import {
+  Trash2,
+  Download,
+  Crop,
+  X,
+  Bug,
+  Upload,
+  Star,
+  Film,
+  Image,
+  Sparkles,
+  Palette,
+  Captions,
+  Scissors,
+  ScanSearch,
+  AudioWaveform,
+  WandSparkles,
+  Info,
+  MousePointer2,
+} from 'lucide-react'
+import { toast } from 'sonner'
+import * as SliderPrimitive from '@radix-ui/react-slider'
+import type {
+  ZoomDepth,
+  ZoomFocus,
+  ZoomFocusMode,
+  CropRegion,
+  AnnotationRegion,
+  AnnotationType,
+  FigureData,
+  Rotation3DPreset,
+} from './types'
+import { ROTATION_3D_PRESET_ORDER } from './types'
+import {
+  MAX_PLAYBACK_SPEED,
+  MAX_ZOOM_SCALE,
+  MIN_PLAYBACK_SPEED,
+  MIN_ZOOM_SCALE,
+  ZOOM_DEPTH_SCALES,
+} from './types'
+import { parseCustomPlaybackSpeedInput } from './customPlaybackSpeed'
+import { getFocusBoundsForScale } from './videoPlayback/focusUtils'
+import { CropControl } from './CropControl'
+import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp'
+import { AnnotationSettingsPanel } from './AnnotationSettingsPanel'
+import { ASPECT_RATIOS, type AspectRatio, getAspectRatioLabel } from '@/utils/aspectRatioUtils'
+import type { ExportQuality, ExportFormat, GifFrameRate, GifSizePreset } from '@/lib/exporter'
+import { GIF_FRAME_RATES, GIF_SIZE_PRESETS } from '@/lib/exporter'
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '@/components/ui/accordion'
+import { useI18n } from '@/i18n'
+import {
+  DEFAULT_CURSOR_STYLE,
+  type CursorMovementStyle,
+  type CursorStyleConfig,
+} from '@/lib/cursor'
+import { GITHUB_ISSUES_URL, GITHUB_REPO_URL } from '@/lib/supportLinks'
+import { reportUserActionError } from '@/lib/userErrorFeedback'
+import { BACKGROUND_IMAGE_ACCEPT, isSupportedBackgroundImageType } from './backgroundImageUpload'
+import { BACKGROUND_GRADIENT_PRESETS } from './backgroundPresets'
+import {
+  DEFAULT_WALLPAPER,
+  isSameBuiltInWallpaper,
+  resolveImageWallpaperUrl,
+  WALLPAPER_PATHS,
+} from '@/lib/wallpaper'
+import {
+  CAPTION_ENGINE_SETTINGS,
+  type CaptionEngineSetting,
+} from '@/lib/captioning/captionEngineSetting'
 
-const GRADIENTS = BACKGROUND_GRADIENT_PRESETS;
-const ZOOM_FOCUS_MODES: readonly ZoomFocusMode[] = ['manual', 'auto'];
+const GRADIENTS = BACKGROUND_GRADIENT_PRESETS
+const ZOOM_FOCUS_MODES: readonly ZoomFocusMode[] = ['manual', 'auto']
 
-const SEGMENT_SPEED_PRESETS = [0.25, 0.5, 0.75, 1, 1.5, 1.75, 2, 2.5, 3, 5, 8, 10, 20, 40] as const;
+const SEGMENT_SPEED_PRESETS = [0.25, 0.5, 0.75, 1, 1.5, 1.75, 2, 2.5, 3, 5, 8, 10, 20, 40] as const
 
 /**
  * Free-form segment speed. Digits and one decimal separator (comma accepted),
@@ -48,45 +99,45 @@ function SegmentSpeedInput({
   onError,
   ariaLabel,
 }: {
-  value: number;
-  onChange: (speed: number) => void;
-  onError: () => void;
-  ariaLabel: string;
+  value: number
+  onChange: (speed: number) => void
+  onError: () => void
+  ariaLabel: string
 }) {
-  const isPreset = (SEGMENT_SPEED_PRESETS as readonly number[]).includes(value);
-  const [draft, setDraft] = useState(isPreset ? "" : String(value));
-  const [isFocused, setIsFocused] = useState(false);
+  const isPreset = (SEGMENT_SPEED_PRESETS as readonly number[]).includes(value)
+  const [draft, setDraft] = useState(isPreset ? '' : String(value))
+  const [isFocused, setIsFocused] = useState(false)
 
-  const prevValue = useRef(value);
+  const prevValue = useRef(value)
   if (!isFocused && prevValue.current !== value) {
-    prevValue.current = value;
-    setDraft(isPreset ? "" : String(value));
+    prevValue.current = value
+    setDraft(isPreset ? '' : String(value))
   }
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const result = parseCustomPlaybackSpeedInput(e.target.value);
-      if (result.status === "too-fast") {
-        onError();
-        return;
+      const result = parseCustomPlaybackSpeedInput(e.target.value)
+      if (result.status === 'too-fast') {
+        onError()
+        return
       }
-      setDraft(result.draft);
-      if (result.status === "valid") {
-        onChange(result.speed);
+      setDraft(result.draft)
+      if (result.status === 'valid') {
+        onChange(result.speed)
       }
     },
     [onChange, onError],
-  );
+  )
 
   const handleBlur = useCallback(() => {
-    setIsFocused(false);
-    const result = parseCustomPlaybackSpeedInput(draft);
-    if (result.status === "valid") {
-      setDraft(String(result.speed));
+    setIsFocused(false)
+    const result = parseCustomPlaybackSpeedInput(draft)
+    if (result.status === 'valid') {
+      setDraft(String(result.speed))
     } else {
-      setDraft(isPreset ? "" : String(value));
+      setDraft(isPreset ? '' : String(value))
     }
-  }, [draft, isPreset, value]);
+  }, [draft, isPreset, value])
 
   return (
     <div className="flex items-center gap-1">
@@ -100,134 +151,134 @@ function SegmentSpeedInput({
         onFocus={() => setIsFocused(true)}
         onChange={handleChange}
         onBlur={handleBlur}
-        onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+        onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
         className="w-16 text-[10px] bg-white/5 border border-white/10 rounded px-2 py-1 text-white text-center tabular-nums outline-none focus:border-[#34B27B]/50"
       />
       <span className="text-[10px] font-semibold text-slate-500">×</span>
     </div>
-  );
+  )
 }
 
 interface SettingsPanelProps {
-  selected: string;
-  onWallpaperChange: (path: string) => void;
-  selectedZoomDepth?: ZoomDepth | null;
-  onZoomDepthChange?: (depth: ZoomDepth) => void;
+  selected: string
+  onWallpaperChange: (path: string) => void
+  selectedZoomDepth?: ZoomDepth | null
+  onZoomDepthChange?: (depth: ZoomDepth) => void
   /** Continuous zoom scale of the selected region (customScale, or null when it follows the depth preset). */
-  selectedZoomCustomScale?: number | null;
-  onZoomCustomScaleChange?: (scale: number) => void;
+  selectedZoomCustomScale?: number | null
+  onZoomCustomScaleChange?: (scale: number) => void
   /** Fired when a slider drag / keyboard adjustment ends (one history entry per gesture). */
-  onZoomCustomScaleCommit?: () => void;
+  onZoomCustomScaleCommit?: () => void
   /** Focus of the selected zoom region, shown in the precision X/Y inputs. */
-  selectedZoomFocus?: ZoomFocus | null;
+  selectedZoomFocus?: ZoomFocus | null
   /** Live focus edits from the X/Y inputs (already inside the bounds for the effective scale). */
-  onZoomFocusCoordinateChange?: (focus: ZoomFocus) => void;
+  onZoomFocusCoordinateChange?: (focus: ZoomFocus) => void
   /** Blur / Enter on an X/Y input: the typed value commits as one history entry. */
-  onZoomFocusCoordinateCommit?: () => void;
+  onZoomFocusCoordinateCommit?: () => void
   /** Focus mode of the selected zoom ('auto' = camera follows the recorded cursor). */
-  selectedZoomFocusMode?: ZoomFocusMode | null;
-  onZoomFocusModeChange?: (mode: ZoomFocusMode) => void;
+  selectedZoomFocusMode?: ZoomFocusMode | null
+  onZoomFocusModeChange?: (mode: ZoomFocusMode) => void
   /** 3D tilt preset of the selected zoom (null = flat). */
-  selectedZoomRotationPreset?: Rotation3DPreset | null;
+  selectedZoomRotationPreset?: Rotation3DPreset | null
   /** null clears the preset (back to flat). */
-  onZoomRotationPresetChange?: (preset: Rotation3DPreset | null) => void;
+  onZoomRotationPresetChange?: (preset: Rotation3DPreset | null) => void
   /** Global "Auto-Focus all" toggle: every zoom follows the cursor; the per-zoom control is locked. */
-  autoFocusAll?: boolean;
-  onToggleAutoFocusAll?: (enabled: boolean) => void;
+  autoFocusAll?: boolean
+  onToggleAutoFocusAll?: (enabled: boolean) => void
   /** Hold-to-preview: pointer/key down shows the zoomed camera at the playhead, up restores the unzoomed view. */
-  onZoomPreviewStart?: () => void;
-  onZoomPreviewEnd?: () => void;
-  selectedZoomId?: string | null;
-  onZoomDelete?: (id: string) => void;
-  selectedSegment?: import('./types').VideoSegment | null;
-  onDeleteSegment?: () => void;
-  onSegmentSpeedChange?: (id: string, speed: number) => void;
-  shadowIntensity?: number;
-  onShadowChange?: (intensity: number) => void;
-  showBlur?: boolean;
-  onBlurChange?: (showBlur: boolean) => void;
+  onZoomPreviewStart?: () => void
+  onZoomPreviewEnd?: () => void
+  selectedZoomId?: string | null
+  onZoomDelete?: (id: string) => void
+  selectedSegment?: import('./types').VideoSegment | null
+  onDeleteSegment?: () => void
+  onSegmentSpeedChange?: (id: string, speed: number) => void
+  shadowIntensity?: number
+  onShadowChange?: (intensity: number) => void
+  showBlur?: boolean
+  onBlurChange?: (showBlur: boolean) => void
   /** Zoom motion blur amount 0..1 (0 = off). */
-  motionBlurAmount?: number;
-  onMotionBlurChange?: (amount: number) => void;
-  borderRadius?: number;
-  onBorderRadiusChange?: (radius: number) => void;
-  padding?: number;
-  onPaddingChange?: (padding: number) => void;
+  motionBlurAmount?: number
+  onMotionBlurChange?: (amount: number) => void
+  borderRadius?: number
+  onBorderRadiusChange?: (radius: number) => void
+  padding?: number
+  onPaddingChange?: (padding: number) => void
   /** True for the 'native' aspect: padding is forced to 0 and the slider is locked. */
-  paddingDisabled?: boolean;
-  cropRegion?: CropRegion;
-  onCropChange?: (region: CropRegion) => void;
-  aspectRatio: AspectRatio;
-  videoElement?: HTMLVideoElement | null;
-  exportQuality?: ExportQuality;
-  onExportQualityChange?: (quality: ExportQuality) => void;
+  paddingDisabled?: boolean
+  cropRegion?: CropRegion
+  onCropChange?: (region: CropRegion) => void
+  aspectRatio: AspectRatio
+  videoElement?: HTMLVideoElement | null
+  exportQuality?: ExportQuality
+  onExportQualityChange?: (quality: ExportQuality) => void
   // Export format settings
-  exportFormat?: ExportFormat;
-  onExportFormatChange?: (format: ExportFormat) => void;
-  exportAspectRatios?: AspectRatio[];
-  onExportAspectRatiosChange?: (ratios: AspectRatio[]) => void;
-  onPreviewAspectRatioChange?: (ratio: AspectRatio) => void;
-  gifFrameRate?: GifFrameRate;
-  onGifFrameRateChange?: (rate: GifFrameRate) => void;
-  gifLoop?: boolean;
-  onGifLoopChange?: (loop: boolean) => void;
-  gifSizePreset?: GifSizePreset;
-  onGifSizePresetChange?: (preset: GifSizePreset) => void;
-  gifOutputDimensions?: { width: number; height: number };
-  onExport?: () => void;
-  selectedAnnotationId?: string | null;
-  annotationRegions?: AnnotationRegion[];
-  onAnnotationContentChange?: (id: string, content: string) => void;
-  onAnnotationTypeChange?: (id: string, type: AnnotationType) => void;
-  onAnnotationStyleChange?: (id: string, style: Partial<AnnotationRegion['style']>) => void;
-  onAnnotationFigureDataChange?: (id: string, figureData: FigureData) => void;
-  onAnnotationDuplicate?: (id: string) => void;
-  onAnnotationDelete?: (id: string) => void;
-  hasAudioTrack?: boolean;
-  audioEnabled?: boolean;
-  onAudioEnabledChange?: (enabled: boolean) => void;
-  audioGain?: number;
-  onAudioGainChange?: (gain: number) => void;
-  audioNormalizeLoudness?: boolean;
-  onAudioNormalizeLoudnessChange?: (enabled: boolean) => void;
-  audioTargetLufs?: number;
-  onAudioTargetLufsChange?: (value: number) => void;
-  audioLimiterDb?: number;
-  onAudioLimiterDbChange?: (value: number) => void;
-  cursorStyle?: CursorStyleConfig;
-  onCursorStyleChange?: (style: CursorStyleConfig) => void;
-  hasCursorTrack?: boolean;
+  exportFormat?: ExportFormat
+  onExportFormatChange?: (format: ExportFormat) => void
+  exportAspectRatios?: AspectRatio[]
+  onExportAspectRatiosChange?: (ratios: AspectRatio[]) => void
+  onPreviewAspectRatioChange?: (ratio: AspectRatio) => void
+  gifFrameRate?: GifFrameRate
+  onGifFrameRateChange?: (rate: GifFrameRate) => void
+  gifLoop?: boolean
+  onGifLoopChange?: (loop: boolean) => void
+  gifSizePreset?: GifSizePreset
+  onGifSizePresetChange?: (preset: GifSizePreset) => void
+  gifOutputDimensions?: { width: number; height: number }
+  onExport?: () => void
+  selectedAnnotationId?: string | null
+  annotationRegions?: AnnotationRegion[]
+  onAnnotationContentChange?: (id: string, content: string) => void
+  onAnnotationTypeChange?: (id: string, type: AnnotationType) => void
+  onAnnotationStyleChange?: (id: string, style: Partial<AnnotationRegion['style']>) => void
+  onAnnotationFigureDataChange?: (id: string, figureData: FigureData) => void
+  onAnnotationDuplicate?: (id: string) => void
+  onAnnotationDelete?: (id: string) => void
+  hasAudioTrack?: boolean
+  audioEnabled?: boolean
+  onAudioEnabledChange?: (enabled: boolean) => void
+  audioGain?: number
+  onAudioGainChange?: (gain: number) => void
+  audioNormalizeLoudness?: boolean
+  onAudioNormalizeLoudnessChange?: (enabled: boolean) => void
+  audioTargetLufs?: number
+  onAudioTargetLufsChange?: (value: number) => void
+  audioLimiterDb?: number
+  onAudioLimiterDbChange?: (value: number) => void
+  cursorStyle?: CursorStyleConfig
+  onCursorStyleChange?: (style: CursorStyleConfig) => void
+  hasCursorTrack?: boolean
   /** Auto-zoom wand: ON suggests zooms around existing regions, OFF removes only the suggested ones. */
-  autoZoomEnabled?: boolean;
-  onToggleAutoZoom?: (enabled: boolean) => void;
-  autoEditDisabled?: boolean;
-  onAnalyzeCursor?: () => void;
-  cursorAnalysisProgress?: number | null;
-  onGenerateSubtitles?: () => void;
-  onApplyRoughCut?: () => void;
-  analysisRunning?: boolean;
-  subtitleCueCount?: number;
-  roughCutSuggestionCount?: number;
+  autoZoomEnabled?: boolean
+  onToggleAutoZoom?: (enabled: boolean) => void
+  autoEditDisabled?: boolean
+  onAnalyzeCursor?: () => void
+  cursorAnalysisProgress?: number | null
+  onGenerateSubtitles?: () => void
+  onApplyRoughCut?: () => void
+  analysisRunning?: boolean
+  subtitleCueCount?: number
+  roughCutSuggestionCount?: number
   /** C-1: which engine "Generate Subtitles" uses (native macOS speech / on-device Whisper). */
-  captionEngine?: CaptionEngineSetting;
-  onCaptionEngineChange?: (engine: CaptionEngineSetting) => void;
-  seekStepSeconds?: number;
-  onSeekStepSecondsChange?: (step: number) => void;
+  captionEngine?: CaptionEngineSetting
+  onCaptionEngineChange?: (engine: CaptionEngineSetting) => void
+  seekStepSeconds?: number
+  onSeekStepSecondsChange?: (step: number) => void
   // Timeline section (W2-b)
-  showTimelineWaveform?: boolean;
-  onTimelineWaveformChange?: (show: boolean) => void;
+  showTimelineWaveform?: boolean
+  onTimelineWaveformChange?: (show: boolean) => void
 }
 
-export default SettingsPanel;
+export default SettingsPanel
 
 const ZOOM_DEPTH_OPTIONS: Array<{ depth: ZoomDepth; label: string }> = [
-  { depth: 1, label: "1.25×" },
-  { depth: 2, label: "1.5×" },
-  { depth: 3, label: "1.8×" },
-  { depth: 4, label: "2.2×" },
-  { depth: 5, label: "3.5×" },
-  { depth: 6, label: "5×" },
-];
+  { depth: 1, label: '1.25×' },
+  { depth: 2, label: '1.5×' },
+  { depth: 3, label: '1.8×' },
+  { depth: 4, label: '2.2×' },
+  { depth: 5, label: '3.5×' },
+  { depth: 6, label: '5×' },
+]
 
 /**
  * Percentage input for one zoom-focus axis. While focused it keeps a local draft
@@ -241,14 +292,14 @@ function ZoomFocusCoordInput({
   disabled,
   ariaLabel,
 }: {
-  percent: number;
-  onChange: (nextPercent: number) => void;
-  onCommit?: () => void;
-  disabled?: boolean;
-  ariaLabel: string;
+  percent: number
+  onChange: (nextPercent: number) => void
+  onCommit?: () => void
+  disabled?: boolean
+  ariaLabel: string
 }) {
-  const [draft, setDraft] = useState<string | null>(null);
-  const display = percent.toFixed(1);
+  const [draft, setDraft] = useState<string | null>(null)
+  const display = percent.toFixed(1)
 
   return (
     <input
@@ -262,39 +313,39 @@ function ZoomFocusCoordInput({
       aria-label={ariaLabel}
       onFocus={() => setDraft(display)}
       onChange={(e) => {
-        const next = e.target.value;
-        setDraft(next);
-        const parsed = Number(next);
-        if (next !== "" && Number.isFinite(parsed)) {
-          onChange(Math.min(100, Math.max(0, parsed)));
+        const next = e.target.value
+        setDraft(next)
+        const parsed = Number(next)
+        if (next !== '' && Number.isFinite(parsed)) {
+          onChange(Math.min(100, Math.max(0, parsed)))
         }
       }}
       onBlur={() => {
-        setDraft(null);
-        onCommit?.();
+        setDraft(null)
+        onCommit?.()
       }}
       onKeyDown={(e) => {
-        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
       }}
       className="h-7 w-full rounded-md border border-white/10 bg-white/5 px-2 text-[11px] text-slate-200 outline-none focus:border-[#34B27B]/50 focus:ring-1 focus:ring-[#34B27B]/30 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none disabled:opacity-50 disabled:cursor-not-allowed"
     />
-  );
+  )
 }
 
 const CURSOR_MOVEMENT_PRESETS: Array<{
-  style: Exclude<CursorMovementStyle, "custom">;
-  smoothingMs: number;
-  labelKey: string;
+  style: Exclude<CursorMovementStyle, 'custom'>
+  smoothingMs: number
+  labelKey: string
 }> = [
-  { style: "rapid", smoothingMs: 0, labelKey: "settings.cursorMovementRapid" },
-  { style: "quick", smoothingMs: 36, labelKey: "settings.cursorMovementQuick" },
-  { style: "default", smoothingMs: 78, labelKey: "settings.cursorMovementDefault" },
-  { style: "slow", smoothingMs: 130, labelKey: "settings.cursorMovementSlow" },
-];
+  { style: 'rapid', smoothingMs: 0, labelKey: 'settings.cursorMovementRapid' },
+  { style: 'quick', smoothingMs: 36, labelKey: 'settings.cursorMovementQuick' },
+  { style: 'default', smoothingMs: 78, labelKey: 'settings.cursorMovementDefault' },
+  { style: 'slow', smoothingMs: 130, labelKey: 'settings.cursorMovementSlow' },
+]
 
-export function SettingsPanel({ 
-  selected, 
-  onWallpaperChange, 
+export function SettingsPanel({
+  selected,
+  onWallpaperChange,
   selectedZoomDepth,
   onZoomDepthChange,
   selectedZoomCustomScale = null,
@@ -316,21 +367,21 @@ export function SettingsPanel({
   selectedSegment = null,
   onDeleteSegment,
   onSegmentSpeedChange,
-  shadowIntensity = 0, 
-  onShadowChange, 
-  showBlur, 
-  onBlurChange, 
+  shadowIntensity = 0,
+  onShadowChange,
+  showBlur,
+  onBlurChange,
   motionBlurAmount = 0,
-  onMotionBlurChange, 
-  borderRadius = 0, 
-  onBorderRadiusChange, 
-  padding = 50, 
-  onPaddingChange, 
+  onMotionBlurChange,
+  borderRadius = 0,
+  onBorderRadiusChange,
+  padding = 50,
+  onPaddingChange,
   paddingDisabled = false,
-  cropRegion, 
-  onCropChange, 
-  aspectRatio, 
-  videoElement, 
+  cropRegion,
+  onCropChange,
+  aspectRatio,
+  videoElement,
   exportQuality = 'good',
   onExportQualityChange,
   exportFormat = 'mp4',
@@ -385,28 +436,28 @@ export function SettingsPanel({
   showTimelineWaveform = false,
   onTimelineWaveformChange,
 }: SettingsPanelProps) {
-  const { t } = useI18n();
-  const [wallpaperPaths, setWallpaperPaths] = useState<string[]>([]);
-  const [customImages, setCustomImages] = useState<string[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const { t } = useI18n()
+  const [wallpaperPaths, setWallpaperPaths] = useState<string[]>([])
+  const [customImages, setCustomImages] = useState<string[]>([])
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const openSupportUrl = async (url: string, context: string) => {
     try {
-      const result = await window.electronAPI.openExternalUrl(url);
+      const result = await window.electronAPI.openExternalUrl(url)
       if (!result.success) {
-        throw new Error(result.error || "openExternalUrl returned unsuccessful result");
+        throw new Error(result.error || 'openExternalUrl returned unsuccessful result')
       }
     } catch (error) {
       reportUserActionError({
         t,
-        userMessage: t("common.error.reportOpenFailed"),
+        userMessage: t('common.error.reportOpenFailed'),
         error,
         context,
         details: { url },
         dedupeKey: context,
-      });
+      })
     }
-  };
+  }
 
   // Thumbnails need a loadable URL; the value handed to onWallpaperChange stays
   // the canonical "/wallpapers/wallpaperN.jpg" so projects persist portably.
@@ -414,145 +465,175 @@ export function SettingsPanel({
     let mounted = true
     ;(async () => {
       try {
-        const resolved = await Promise.all(WALLPAPER_PATHS.map(p => resolveImageWallpaperUrl(p)))
+        const resolved = await Promise.all(WALLPAPER_PATHS.map((p) => resolveImageWallpaperUrl(p)))
         if (mounted) setWallpaperPaths(resolved)
       } catch {
         if (mounted) setWallpaperPaths([...WALLPAPER_PATHS])
       }
     })()
-    return () => { mounted = false }
+    return () => {
+      mounted = false
+    }
   }, [])
   const colorPalette = [
-    '#FF0000', '#FFD700', '#00FF00', '#FFFFFF', '#0000FF', '#FF6B00',
-    '#9B59B6', '#E91E63', '#00BCD4', '#FF5722', '#8BC34A', '#FFC107',
-    '#34B27B', '#000000', '#607D8B', '#795548',
-  ];
-  
-  const [selectedColor, setSelectedColor] = useState('#ADADAD');
-  const [gradient, setGradient] = useState<string>(GRADIENTS[0]);
-  const [showCropDropdown, setShowCropDropdown] = useState(false);
-  const activeExportAspectRatios = exportAspectRatios;
+    '#FF0000',
+    '#FFD700',
+    '#00FF00',
+    '#FFFFFF',
+    '#0000FF',
+    '#FF6B00',
+    '#9B59B6',
+    '#E91E63',
+    '#00BCD4',
+    '#FF5722',
+    '#8BC34A',
+    '#FFC107',
+    '#34B27B',
+    '#000000',
+    '#607D8B',
+    '#795548',
+  ]
 
-  const zoomEnabled = Boolean(selectedZoomDepth);
+  const [selectedColor, setSelectedColor] = useState('#ADADAD')
+  const [gradient, setGradient] = useState<string>(GRADIENTS[0])
+  const [showCropDropdown, setShowCropDropdown] = useState(false)
+  const activeExportAspectRatios = exportAspectRatios
+
+  const zoomEnabled = Boolean(selectedZoomDepth)
   // Effective scale of the selected zoom: customScale wins over the depth preset
   // (mirrors getZoomScale). Drives the badge, the active preset and the slider.
-  const effectiveZoomScale = selectedZoomCustomScale
-    ?? (selectedZoomDepth ? ZOOM_DEPTH_SCALES[selectedZoomDepth] : MIN_ZOOM_SCALE);
-  const effectiveZoomScaleLabel = `${Number.isInteger(effectiveZoomScale)
-    ? effectiveZoomScale.toFixed(0)
-    : effectiveZoomScale.toFixed(2).replace(/0$/, '')}×`;
-  const segmentSelected = Boolean(selectedSegment);
+  const effectiveZoomScale =
+    selectedZoomCustomScale ??
+    (selectedZoomDepth ? ZOOM_DEPTH_SCALES[selectedZoomDepth] : MIN_ZOOM_SCALE)
+  const effectiveZoomScaleLabel = `${
+    Number.isInteger(effectiveZoomScale)
+      ? effectiveZoomScale.toFixed(0)
+      : effectiveZoomScale.toFixed(2).replace(/0$/, '')
+  }×`
+  const segmentSelected = Boolean(selectedSegment)
 
   const handleDeleteClick = () => {
     if (selectedZoomId && onZoomDelete) {
-      onZoomDelete(selectedZoomId);
+      onZoomDelete(selectedZoomId)
     }
-  };
+  }
 
   const toggleExportAspectRatio = (ratio: AspectRatio) => {
-    onPreviewAspectRatioChange?.(ratio);
-    if (!onExportAspectRatiosChange) return;
-    const currentlySelected = activeExportAspectRatios.includes(ratio);
+    onPreviewAspectRatioChange?.(ratio)
+    if (!onExportAspectRatiosChange) return
+    const currentlySelected = activeExportAspectRatios.includes(ratio)
 
-    const nextSelection = new Set(activeExportAspectRatios);
+    const nextSelection = new Set(activeExportAspectRatios)
     if (currentlySelected) {
-      nextSelection.delete(ratio);
+      nextSelection.delete(ratio)
     } else {
-      nextSelection.add(ratio);
+      nextSelection.add(ratio)
     }
 
-    const ordered = ASPECT_RATIOS.filter((candidate) => nextSelection.has(candidate));
-    onExportAspectRatiosChange(ordered);
-  };
+    const ordered = ASPECT_RATIOS.filter((candidate) => nextSelection.has(candidate))
+    onExportAspectRatiosChange(ordered)
+  }
 
   const updateCursorStyle = (patch: Partial<CursorStyleConfig>) => {
-    if (!onCursorStyleChange) return;
+    if (!onCursorStyleChange) return
     onCursorStyleChange({
       ...cursorStyle,
       ...patch,
-    });
-  };
+    })
+  }
 
-  const applyMovementPreset = (style: Exclude<CursorMovementStyle, "custom">) => {
-    const preset = CURSOR_MOVEMENT_PRESETS.find((item) => item.style === style);
-    if (!preset) return;
+  const applyMovementPreset = (style: Exclude<CursorMovementStyle, 'custom'>) => {
+    const preset = CURSOR_MOVEMENT_PRESETS.find((item) => item.style === style)
+    if (!preset) return
     updateCursorStyle({
       movementStyle: preset.style,
       smoothingMs: preset.smoothingMs,
-    });
-  };
+    })
+  }
 
-  const activeMovementStyle: CursorMovementStyle = cursorStyle.movementStyle ?? "custom";
+  const activeMovementStyle: CursorMovementStyle = cursorStyle.movementStyle ?? 'custom'
 
   const formatSignedPx = (value: number) => {
-    const rounded = Math.round(value);
-    return `${rounded > 0 ? "+" : ""}${rounded}px`;
-  };
+    const rounded = Math.round(value)
+    return `${rounded > 0 ? '+' : ''}${rounded}px`
+  }
 
   const handleImageUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = event.target.files;
-    if (!files || files.length === 0) return;
+    const files = event.target.files
+    if (!files || files.length === 0) return
 
-    const file = files[0];
-    
+    const file = files[0]
+
     // Validate file type - JPG/JPEG/PNG only
     if (!isSupportedBackgroundImageType(file.type, file.name)) {
-      toast.error(t("settings.fileTypeInvalid"), {
-        description: t("settings.uploadJpgOnly"),
-      });
-      event.target.value = '';
-      return;
+      toast.error(t('settings.fileTypeInvalid'), {
+        description: t('settings.uploadJpgOnly'),
+      })
+      event.target.value = ''
+      return
     }
 
-    const reader = new FileReader();
+    const reader = new FileReader()
 
     reader.onload = (e) => {
-      const dataUrl = e.target?.result as string;
+      const dataUrl = e.target?.result as string
       if (dataUrl) {
-        setCustomImages(prev => [...prev, dataUrl]);
-        onWallpaperChange(dataUrl);
-        toast.success(t("settings.uploadOk"));
+        setCustomImages((prev) => [...prev, dataUrl])
+        onWallpaperChange(dataUrl)
+        toast.success(t('settings.uploadOk'))
       }
-    };
+    }
 
     reader.onerror = () => {
-      toast.error(t("settings.uploadFailed"), {
-        description: t("settings.uploadReadError"),
-      });
-    };
+      toast.error(t('settings.uploadFailed'), {
+        description: t('settings.uploadReadError'),
+      })
+    }
 
-    reader.readAsDataURL(file);
+    reader.readAsDataURL(file)
     // Reset input so the same file can be selected again
-    event.target.value = '';
-  };
+    event.target.value = ''
+  }
 
   const handleRemoveCustomImage = (imageUrl: string, event: React.MouseEvent) => {
-    event.stopPropagation();
-    setCustomImages(prev => prev.filter(img => img !== imageUrl));
+    event.stopPropagation()
+    setCustomImages((prev) => prev.filter((img) => img !== imageUrl))
     // If the removed image was selected, clear selection
     if (selected === imageUrl) {
-      onWallpaperChange(DEFAULT_WALLPAPER);
+      onWallpaperChange(DEFAULT_WALLPAPER)
     }
-  };
+  }
 
   // Find selected annotation
-  const selectedAnnotation = selectedAnnotationId 
-    ? annotationRegions.find(a => a.id === selectedAnnotationId)
-    : null;
+  const selectedAnnotation = selectedAnnotationId
+    ? annotationRegions.find((a) => a.id === selectedAnnotationId)
+    : null
 
   // If an annotation is selected, show annotation settings instead
-  if (selectedAnnotation && onAnnotationContentChange && onAnnotationTypeChange && onAnnotationStyleChange && onAnnotationDelete) {
+  if (
+    selectedAnnotation &&
+    onAnnotationContentChange &&
+    onAnnotationTypeChange &&
+    onAnnotationStyleChange &&
+    onAnnotationDelete
+  ) {
     return (
       <AnnotationSettingsPanel
         annotation={selectedAnnotation}
         onContentChange={(content) => onAnnotationContentChange(selectedAnnotation.id, content)}
         onTypeChange={(type) => onAnnotationTypeChange(selectedAnnotation.id, type)}
         onStyleChange={(style) => onAnnotationStyleChange(selectedAnnotation.id, style)}
-        onFigureDataChange={onAnnotationFigureDataChange ? (figureData) => onAnnotationFigureDataChange(selectedAnnotation.id, figureData) : undefined}
-        onDuplicate={onAnnotationDuplicate ? () => onAnnotationDuplicate(selectedAnnotation.id) : undefined}
+        onFigureDataChange={
+          onAnnotationFigureDataChange
+            ? (figureData) => onAnnotationFigureDataChange(selectedAnnotation.id, figureData)
+            : undefined
+        }
+        onDuplicate={
+          onAnnotationDuplicate ? () => onAnnotationDuplicate(selectedAnnotation.id) : undefined
+        }
         onDelete={() => onAnnotationDelete(selectedAnnotation.id)}
       />
-    );
+    )
   }
 
   return (
@@ -560,7 +641,7 @@ export function SettingsPanel({
       <div className="flex-1 overflow-y-auto custom-scrollbar p-4 pb-0">
         <div className="mb-4">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-medium text-slate-200">{t("settings.zoomLevel")}</span>
+            <span className="text-sm font-medium text-slate-200">{t('settings.zoomLevel')}</span>
             <div className="flex items-center gap-2">
               {zoomEnabled && selectedZoomDepth && (
                 <span className="text-[10px] uppercase tracking-wider font-medium text-[#34B27B] bg-[#34B27B]/10 px-2 py-0.5 rounded-full">
@@ -574,8 +655,9 @@ export function SettingsPanel({
             {ZOOM_DEPTH_OPTIONS.map((option) => {
               // A preset is "active" when the effective scale equals it, so a custom
               // scale that lands exactly on a preset lights that preset up.
-              const isActive = zoomEnabled
-                && Math.abs(effectiveZoomScale - ZOOM_DEPTH_SCALES[option.depth]) < 0.005;
+              const isActive =
+                zoomEnabled &&
+                Math.abs(effectiveZoomScale - ZOOM_DEPTH_SCALES[option.depth]) < 0.005
               return (
                 <Button
                   key={option.depth}
@@ -583,27 +665,33 @@ export function SettingsPanel({
                   disabled={!zoomEnabled}
                   onClick={() => onZoomDepthChange?.(option.depth)}
                   className={cn(
-                    "h-auto w-full rounded-lg border px-1 py-2 text-center shadow-sm transition-all",
-                    "duration-200 ease-out",
-                    zoomEnabled ? "opacity-100 cursor-pointer" : "opacity-40 cursor-not-allowed",
+                    'h-auto w-full rounded-lg border px-1 py-2 text-center shadow-sm transition-all',
+                    'duration-200 ease-out',
+                    zoomEnabled ? 'opacity-100 cursor-pointer' : 'opacity-40 cursor-not-allowed',
                     isActive
-                      ? "border-[#34B27B] bg-[#34B27B] text-white shadow-[#34B27B]/20"
-                      : "border-white/5 bg-white/5 text-slate-400 hover:bg-white/10 hover:border-white/10 hover:text-slate-200"
+                      ? 'border-[#34B27B] bg-[#34B27B] text-white shadow-[#34B27B]/20'
+                      : 'border-white/5 bg-white/5 text-slate-400 hover:bg-white/10 hover:border-white/10 hover:text-slate-200',
                   )}
                 >
                   <span className="text-xs font-semibold">{option.label}</span>
                 </Button>
-              );
+              )
             })}
           </div>
           {!zoomEnabled && (
-            <p className="text-[10px] text-slate-500 mt-2 text-center">{t("settings.selectZoomToAdjust")}</p>
+            <p className="text-[10px] text-slate-500 mt-2 text-center">
+              {t('settings.selectZoomToAdjust')}
+            </p>
           )}
           {zoomEnabled && onZoomCustomScaleChange && (
             <div className="mt-3">
               <div className="flex items-center justify-between mb-1.5">
-                <span className="text-[11px] font-medium text-slate-400">{t("settings.zoomCustomScale")}</span>
-                <span className="text-[11px] font-semibold text-slate-300 tabular-nums">{effectiveZoomScale.toFixed(2)}×</span>
+                <span className="text-[11px] font-medium text-slate-400">
+                  {t('settings.zoomCustomScale')}
+                </span>
+                <span className="text-[11px] font-semibold text-slate-300 tabular-nums">
+                  {effectiveZoomScale.toFixed(2)}×
+                </span>
               </div>
               <SliderPrimitive.Root
                 min={MIN_ZOOM_SCALE}
@@ -613,25 +701,25 @@ export function SettingsPanel({
                 onValueChange={(values) => onZoomCustomScaleChange(values[0])}
                 onValueCommit={() => onZoomCustomScaleCommit?.()}
                 disabled={!zoomEnabled}
-                aria-label={t("settings.zoomCustomScale")}
+                aria-label={t('settings.zoomCustomScale')}
                 className="relative flex w-full touch-none select-none items-center py-1"
               >
                 <SliderPrimitive.Track className="relative h-1.5 w-full grow overflow-hidden rounded-full border border-white/10 bg-white/5">
                   <SliderPrimitive.Range
                     className={cn(
-                      "absolute h-full transition-colors duration-150",
-                      selectedZoomCustomScale != null ? "bg-[#34B27B]" : "bg-white/20",
+                      'absolute h-full transition-colors duration-150',
+                      selectedZoomCustomScale != null ? 'bg-[#34B27B]' : 'bg-white/20',
                     )}
                   />
                 </SliderPrimitive.Track>
                 <SliderPrimitive.Thumb
                   className={cn(
-                    "block h-3.5 w-3.5 rounded-full border-2 shadow transition-all duration-150",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#34B27B]/50",
-                    "disabled:pointer-events-none disabled:opacity-50 cursor-grab active:cursor-grabbing",
+                    'block h-3.5 w-3.5 rounded-full border-2 shadow transition-all duration-150',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#34B27B]/50',
+                    'disabled:pointer-events-none disabled:opacity-50 cursor-grab active:cursor-grabbing',
                     selectedZoomCustomScale != null
-                      ? "border-[#34B27B] bg-[#34B27B] shadow-[0_0_6px_rgba(52,178,123,0.4)]"
-                      : "border-white/20 bg-[#2a2a30] hover:border-white/40",
+                      ? 'border-[#34B27B] bg-[#34B27B] shadow-[0_0_6px_rgba(52,178,123,0.4)]'
+                      : 'border-white/20 bg-[#2a2a30] hover:border-white/40',
                   )}
                 />
               </SliderPrimitive.Root>
@@ -644,15 +732,20 @@ export function SettingsPanel({
           {zoomEnabled && hasCursorTrack && onZoomFocusModeChange && (
             <div className="mt-3 space-y-1.5">
               <div className="flex items-center justify-between gap-3">
-                <span className="text-[11px] font-medium text-slate-400">{t("settings.zoomFocusMode")}</span>
+                <span className="text-[11px] font-medium text-slate-400">
+                  {t('settings.zoomFocusMode')}
+                </span>
                 <div
                   role="radiogroup"
-                  aria-label={t("settings.zoomFocusMode")}
+                  aria-label={t('settings.zoomFocusMode')}
                   className="grid w-32 grid-cols-2 gap-0.5 rounded-lg border border-white/[0.06] bg-white/[0.035] p-0.5"
                 >
                   {ZOOM_FOCUS_MODES.map((mode) => {
-                    const isActive = (selectedZoomFocusMode ?? 'manual') === mode;
-                    const label = mode === 'auto' ? t("settings.zoomFocusModeAuto") : t("settings.zoomFocusModeManual");
+                    const isActive = (selectedZoomFocusMode ?? 'manual') === mode
+                    const label =
+                      mode === 'auto'
+                        ? t('settings.zoomFocusModeAuto')
+                        : t('settings.zoomFocusModeManual')
                     return (
                       <Button
                         key={mode}
@@ -660,66 +753,72 @@ export function SettingsPanel({
                         role="radio"
                         aria-checked={isActive}
                         disabled={autoFocusAll}
-                        title={mode === 'auto' ? t("settings.zoomFocusModeAutoDescription") : undefined}
+                        title={
+                          mode === 'auto' ? t('settings.zoomFocusModeAutoDescription') : undefined
+                        }
                         onClick={() => !autoFocusAll && onZoomFocusModeChange(mode)}
                         className={cn(
-                          "h-6 w-full rounded-md border px-1 text-center transition-all duration-150 ease-out",
+                          'h-6 w-full rounded-md border px-1 text-center transition-all duration-150 ease-out',
                           isActive
-                            ? "border-[#34B27B]/50 bg-[#34B27B] text-white hover:bg-[#34B27B]"
-                            : "border-transparent bg-transparent text-slate-400 hover:bg-white/[0.06] hover:text-slate-200",
-                          autoFocusAll ? "cursor-not-allowed opacity-50" : "cursor-pointer",
+                            ? 'border-[#34B27B]/50 bg-[#34B27B] text-white hover:bg-[#34B27B]'
+                            : 'border-transparent bg-transparent text-slate-400 hover:bg-white/[0.06] hover:text-slate-200',
+                          autoFocusAll ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
                         )}
                       >
                         <span className="text-[10px] font-semibold">{label}</span>
                       </Button>
-                    );
+                    )
                   })}
                 </div>
               </div>
               {autoFocusAll && (
                 <div className="flex items-start gap-1 text-[10px] leading-snug text-slate-500">
                   <Info size={11} className="mt-px shrink-0" />
-                  <span>{t("settings.zoomFocusModeLockedDisclaimer")}</span>
+                  <span>{t('settings.zoomFocusModeLockedDisclaimer')}</span>
                 </div>
               )}
             </div>
           )}
           {zoomEnabled && onZoomRotationPresetChange && (
             <div className="mt-3 space-y-1.5">
-              <span className="text-[11px] font-medium text-slate-400 block">{t("settings.zoom3dTitle")}</span>
+              <span className="text-[11px] font-medium text-slate-400 block">
+                {t('settings.zoom3dTitle')}
+              </span>
               <div
                 role="radiogroup"
-                aria-label={t("settings.zoom3dTitle")}
+                aria-label={t('settings.zoom3dTitle')}
                 className="grid grid-cols-4 gap-0.5 rounded-lg border border-white/[0.06] bg-white/[0.035] p-0.5"
               >
-                {([null, ...ROTATION_3D_PRESET_ORDER] as Array<Rotation3DPreset | null>).map((preset) => {
-                  const isActive = (selectedZoomRotationPreset ?? null) === preset;
-                  const label =
-                    preset === null
-                      ? t("settings.zoom3dNone")
-                      : preset === 'iso'
-                        ? t("settings.zoom3dIso")
-                        : preset === 'left'
-                          ? t("settings.zoom3dLeft")
-                          : t("settings.zoom3dRight");
-                  return (
-                    <Button
-                      key={preset ?? 'none'}
-                      type="button"
-                      role="radio"
-                      aria-checked={isActive}
-                      onClick={() => onZoomRotationPresetChange(preset)}
-                      className={cn(
-                        "h-6 w-full rounded-md border px-1 text-center transition-all duration-150 ease-out cursor-pointer",
-                        isActive
-                          ? "border-[#34B27B]/50 bg-[#34B27B] text-white hover:bg-[#34B27B]"
-                          : "border-transparent bg-transparent text-slate-400 hover:bg-white/[0.06] hover:text-slate-200",
-                      )}
-                    >
-                      <span className="text-[10px] font-semibold">{label}</span>
-                    </Button>
-                  );
-                })}
+                {([null, ...ROTATION_3D_PRESET_ORDER] as Array<Rotation3DPreset | null>).map(
+                  (preset) => {
+                    const isActive = (selectedZoomRotationPreset ?? null) === preset
+                    const label =
+                      preset === null
+                        ? t('settings.zoom3dNone')
+                        : preset === 'iso'
+                          ? t('settings.zoom3dIso')
+                          : preset === 'left'
+                            ? t('settings.zoom3dLeft')
+                            : t('settings.zoom3dRight')
+                    return (
+                      <Button
+                        key={preset ?? 'none'}
+                        type="button"
+                        role="radio"
+                        aria-checked={isActive}
+                        onClick={() => onZoomRotationPresetChange(preset)}
+                        className={cn(
+                          'h-6 w-full rounded-md border px-1 text-center transition-all duration-150 ease-out cursor-pointer',
+                          isActive
+                            ? 'border-[#34B27B]/50 bg-[#34B27B] text-white hover:bg-[#34B27B]'
+                            : 'border-transparent bg-transparent text-slate-400 hover:bg-white/[0.06] hover:text-slate-200',
+                        )}
+                      >
+                        <span className="text-[10px] font-semibold">{label}</span>
+                      </Button>
+                    )
+                  },
+                )}
               </div>
             </div>
           )}
@@ -733,60 +832,80 @@ export function SettingsPanel({
               onPointerLeave={() => onZoomPreviewEnd()}
               onPointerCancel={() => onZoomPreviewEnd()}
               onKeyDown={(e) => {
-                if ((e.key === " " || e.key === "Enter") && !e.repeat) {
-                  e.preventDefault();
-                  onZoomPreviewStart();
+                if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) {
+                  e.preventDefault()
+                  onZoomPreviewStart()
                 }
               }}
               onKeyUp={(e) => {
-                if (e.key === " " || e.key === "Enter") {
-                  e.preventDefault();
-                  onZoomPreviewEnd();
+                if (e.key === ' ' || e.key === 'Enter') {
+                  e.preventDefault()
+                  onZoomPreviewEnd()
                 }
               }}
               onBlur={() => onZoomPreviewEnd()}
               className="mt-2 w-full select-none gap-2 bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10 hover:border-white/20 hover:text-white active:border-[#34B27B]/50 active:bg-[#34B27B] active:text-white transition-all h-8 text-xs"
             >
               <ScanSearch className="w-3 h-3" />
-              {t("settings.zoomPreviewHold")}
+              {t('settings.zoomPreviewHold')}
             </Button>
           )}
-          {zoomEnabled && selectedZoomFocus && onZoomFocusCoordinateChange && selectedZoomFocusMode !== 'auto' && (() => {
-            // 0-100 % spans the focus range allowed at the effective scale, so the
-            // typed value always lands on a reachable position.
-            const bounds = getFocusBoundsForScale(effectiveZoomScale);
-            const xRange = bounds.maxX - bounds.minX;
-            const yRange = bounds.maxY - bounds.minY;
-            const toPercent = (value: number, min: number, range: number) =>
-              range <= 0 ? 50 : Math.max(0, Math.min(100, ((value - min) / range) * 100));
-            const fromPercent = (p: number, min: number, range: number) =>
-              range <= 0 ? min : min + (p / 100) * range;
-            return (
-              <div className="mt-3">
-                <span className="text-[11px] font-medium text-slate-400 mb-1.5 block">{t("settings.zoomFocusPosition")}</span>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">{t("settings.zoomFocusX")}</label>
-                    <ZoomFocusCoordInput
-                      ariaLabel={t("settings.zoomFocusX")}
-                      percent={toPercent(selectedZoomFocus.cx, bounds.minX, xRange)}
-                      onChange={(p) => onZoomFocusCoordinateChange({ cx: fromPercent(p, bounds.minX, xRange), cy: selectedZoomFocus.cy })}
-                      onCommit={onZoomFocusCoordinateCommit}
-                    />
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">{t("settings.zoomFocusY")}</label>
-                    <ZoomFocusCoordInput
-                      ariaLabel={t("settings.zoomFocusY")}
-                      percent={toPercent(selectedZoomFocus.cy, bounds.minY, yRange)}
-                      onChange={(p) => onZoomFocusCoordinateChange({ cx: selectedZoomFocus.cx, cy: fromPercent(p, bounds.minY, yRange) })}
-                      onCommit={onZoomFocusCoordinateCommit}
-                    />
+          {zoomEnabled &&
+            selectedZoomFocus &&
+            onZoomFocusCoordinateChange &&
+            selectedZoomFocusMode !== 'auto' &&
+            (() => {
+              // 0-100 % spans the focus range allowed at the effective scale, so the
+              // typed value always lands on a reachable position.
+              const bounds = getFocusBoundsForScale(effectiveZoomScale)
+              const xRange = bounds.maxX - bounds.minX
+              const yRange = bounds.maxY - bounds.minY
+              const toPercent = (value: number, min: number, range: number) =>
+                range <= 0 ? 50 : Math.max(0, Math.min(100, ((value - min) / range) * 100))
+              const fromPercent = (p: number, min: number, range: number) =>
+                range <= 0 ? min : min + (p / 100) * range
+              return (
+                <div className="mt-3">
+                  <span className="text-[11px] font-medium text-slate-400 mb-1.5 block">
+                    {t('settings.zoomFocusPosition')}
+                  </span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">
+                        {t('settings.zoomFocusX')}
+                      </label>
+                      <ZoomFocusCoordInput
+                        ariaLabel={t('settings.zoomFocusX')}
+                        percent={toPercent(selectedZoomFocus.cx, bounds.minX, xRange)}
+                        onChange={(p) =>
+                          onZoomFocusCoordinateChange({
+                            cx: fromPercent(p, bounds.minX, xRange),
+                            cy: selectedZoomFocus.cy,
+                          })
+                        }
+                        onCommit={onZoomFocusCoordinateCommit}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">
+                        {t('settings.zoomFocusY')}
+                      </label>
+                      <ZoomFocusCoordInput
+                        ariaLabel={t('settings.zoomFocusY')}
+                        percent={toPercent(selectedZoomFocus.cy, bounds.minY, yRange)}
+                        onChange={(p) =>
+                          onZoomFocusCoordinateChange({
+                            cx: selectedZoomFocus.cx,
+                            cy: fromPercent(p, bounds.minY, yRange),
+                          })
+                        }
+                        onCommit={onZoomFocusCoordinateCommit}
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })()}
+              )
+            })()}
           {zoomEnabled && (
             <Button
               onClick={handleDeleteClick}
@@ -795,7 +914,7 @@ export function SettingsPanel({
               className="mt-2 w-full gap-2 bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 transition-all h-8 text-xs"
             >
               <Trash2 className="w-3 h-3" />
-              {t("settings.deleteZoom")}
+              {t('settings.deleteZoom')}
             </Button>
           )}
           <Button
@@ -805,16 +924,16 @@ export function SettingsPanel({
             size="sm"
             disabled={autoEditDisabled}
             aria-pressed={autoZoomEnabled}
-            title={autoZoomEnabled ? t("settings.autoZoomOn") : t("settings.autoZoomOff")}
+            title={autoZoomEnabled ? t('settings.autoZoomOn') : t('settings.autoZoomOff')}
             className={cn(
-              "mt-2 w-full gap-2 border transition-all h-8 text-xs disabled:opacity-50",
+              'mt-2 w-full gap-2 border transition-all h-8 text-xs disabled:opacity-50',
               autoZoomEnabled
-                ? "bg-[#34B27B]/15 text-[#34B27B] border-[#34B27B]/30 hover:bg-[#34B27B]/25 hover:border-[#34B27B]/40 hover:text-[#34B27B]"
-                : "bg-white/5 text-slate-200 border-white/10 hover:bg-white/10 hover:border-white/20 hover:text-white",
+                ? 'bg-[#34B27B]/15 text-[#34B27B] border-[#34B27B]/30 hover:bg-[#34B27B]/25 hover:border-[#34B27B]/40 hover:text-[#34B27B]'
+                : 'bg-white/5 text-slate-200 border-white/10 hover:bg-white/10 hover:border-white/20 hover:text-white',
             )}
           >
             <WandSparkles className="w-3 h-3" />
-            {t("settings.autoEdit")}
+            {t('settings.autoEdit')}
           </Button>
           {hasCursorTrack && onToggleAutoFocusAll && (
             <Button
@@ -823,16 +942,16 @@ export function SettingsPanel({
               variant="outline"
               size="sm"
               aria-pressed={autoFocusAll}
-              title={autoFocusAll ? t("settings.autoFocusAllOn") : t("settings.autoFocusAllOff")}
+              title={autoFocusAll ? t('settings.autoFocusAllOn') : t('settings.autoFocusAllOff')}
               className={cn(
-                "mt-2 w-full gap-2 border transition-all h-8 text-xs disabled:opacity-50",
+                'mt-2 w-full gap-2 border transition-all h-8 text-xs disabled:opacity-50',
                 autoFocusAll
-                  ? "bg-[#34B27B]/15 text-[#34B27B] border-[#34B27B]/30 hover:bg-[#34B27B]/25 hover:border-[#34B27B]/40 hover:text-[#34B27B]"
-                  : "bg-white/5 text-slate-200 border-white/10 hover:bg-white/10 hover:border-white/20 hover:text-white",
+                  ? 'bg-[#34B27B]/15 text-[#34B27B] border-[#34B27B]/30 hover:bg-[#34B27B]/25 hover:border-[#34B27B]/40 hover:text-[#34B27B]'
+                  : 'bg-white/5 text-slate-200 border-white/10 hover:bg-white/10 hover:border-white/20 hover:text-white',
               )}
             >
               <MousePointer2 className="w-3 h-3" />
-              {t("settings.autoFocusAll")}
+              {t('settings.autoFocusAll')}
             </Button>
           )}
           <div className="mt-2 grid grid-cols-2 gap-2">
@@ -844,7 +963,7 @@ export function SettingsPanel({
               className="gap-1.5 bg-white/5 text-slate-200 border border-white/10 hover:bg-white/10 hover:border-white/20 hover:text-white transition-all h-8 text-[10px] disabled:opacity-50"
             >
               <Captions className="w-3 h-3 text-[#34B27B]" />
-              {t("settings.generateSubtitles")}
+              {t('settings.generateSubtitles')}
             </Button>
             <Button
               onClick={() => onApplyRoughCut?.()}
@@ -854,19 +973,27 @@ export function SettingsPanel({
               className="gap-1.5 bg-white/5 text-slate-200 border border-white/10 hover:bg-white/10 hover:border-white/20 hover:text-white transition-all h-8 text-[10px] disabled:opacity-50"
             >
               <Scissors className="w-3 h-3 text-[#34B27B]" />
-              {t("settings.applyRoughCut")}
+              {t('settings.applyRoughCut')}
             </Button>
           </div>
           <div className="mt-1 flex items-center justify-between text-[10px] text-slate-500 px-1">
-            <span>{t("timeline.subtitle")}: {subtitleCueCount}</span>
-            <span>{t("settings.applyRoughCut")}: {roughCutSuggestionCount}</span>
+            <span>
+              {t('timeline.subtitle')}: {subtitleCueCount}
+            </span>
+            <span>
+              {t('settings.applyRoughCut')}: {roughCutSuggestionCount}
+            </span>
           </div>
           {onCaptionEngineChange && (
             <div className="mt-2 px-1">
               <div className="flex items-center justify-between text-[10px] text-slate-500">
-                <span>{t("settings.captionsEngine")}</span>
+                <span>{t('settings.captionsEngine')}</span>
               </div>
-              <div className="mt-1 grid grid-cols-3 gap-1" role="radiogroup" aria-label={t("settings.captionsEngine")}>
+              <div
+                className="mt-1 grid grid-cols-3 gap-1"
+                role="radiogroup"
+                aria-label={t('settings.captionsEngine')}
+              >
                 {CAPTION_ENGINE_SETTINGS.map((engine) => (
                   <button
                     key={engine}
@@ -875,15 +1002,19 @@ export function SettingsPanel({
                     aria-checked={captionEngine === engine}
                     disabled={analysisRunning}
                     onClick={() => onCaptionEngineChange(engine)}
-                    title={t(`settings.captionsEngine${engine === 'auto' ? 'Auto' : engine === 'native' ? 'Native' : 'Whisper'}Hint`)}
+                    title={t(
+                      `settings.captionsEngine${engine === 'auto' ? 'Auto' : engine === 'native' ? 'Native' : 'Whisper'}Hint`,
+                    )}
                     className={cn(
-                      "h-7 rounded-md border text-[10px] transition-all disabled:opacity-50",
+                      'h-7 rounded-md border text-[10px] transition-all disabled:opacity-50',
                       captionEngine === engine
-                        ? "bg-[#34B27B]/15 text-[#34B27B] border-[#34B27B]/30"
-                        : "bg-white/5 text-slate-300 border-white/10 hover:bg-white/10 hover:border-white/20 hover:text-white",
+                        ? 'bg-[#34B27B]/15 text-[#34B27B] border-[#34B27B]/30'
+                        : 'bg-white/5 text-slate-300 border-white/10 hover:bg-white/10 hover:border-white/20 hover:text-white',
                     )}
                   >
-                    {t(`settings.captionsEngine${engine === 'auto' ? 'Auto' : engine === 'native' ? 'Native' : 'Whisper'}`)}
+                    {t(
+                      `settings.captionsEngine${engine === 'auto' ? 'Auto' : engine === 'native' ? 'Native' : 'Whisper'}`,
+                    )}
                   </button>
                 ))}
               </div>
@@ -894,10 +1025,13 @@ export function SettingsPanel({
         {segmentSelected && selectedSegment && (
           <div className="mb-4 rounded-xl bg-white/[0.02] border border-white/5 p-3 space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-medium text-slate-300">{t("timeline.segmentSpeed")}</span>
+              <span className="text-[10px] font-medium text-slate-300">
+                {t('timeline.segmentSpeed')}
+              </span>
               <div className="flex items-center gap-2">
                 <span className="text-[10px] text-slate-500 tabular-nums">
-                  {(selectedSegment.startMs / 1000).toFixed(1)}s – {(selectedSegment.endMs / 1000).toFixed(1)}s
+                  {(selectedSegment.startMs / 1000).toFixed(1)}s –{' '}
+                  {(selectedSegment.endMs / 1000).toFixed(1)}s
                 </span>
                 <span className="text-[10px] tabular-nums">
                   <span className="text-slate-400">
@@ -905,7 +1039,13 @@ export function SettingsPanel({
                   </span>
                   {selectedSegment.speed !== 1 && (
                     <span className="text-[#34B27B]">
-                      {" → "}{((selectedSegment.endMs - selectedSegment.startMs) / 1000 / selectedSegment.speed).toFixed(1)}s
+                      {' → '}
+                      {(
+                        (selectedSegment.endMs - selectedSegment.startMs) /
+                        1000 /
+                        selectedSegment.speed
+                      ).toFixed(1)}
+                      s
                     </span>
                   )}
                 </span>
@@ -919,10 +1059,10 @@ export function SettingsPanel({
                   key={speed}
                   onClick={() => onSegmentSpeedChange?.(selectedSegment.id, speed)}
                   className={cn(
-                    "px-2 py-1 rounded text-[10px] font-medium transition-colors",
+                    'px-2 py-1 rounded text-[10px] font-medium transition-colors',
                     selectedSegment.speed === speed
-                      ? "bg-[#34B27B] text-white"
-                      : "bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white border border-white/5"
+                      ? 'bg-[#34B27B] text-white'
+                      : 'bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white border border-white/5',
                   )}
                 >
                   {speed}x
@@ -932,13 +1072,17 @@ export function SettingsPanel({
 
             {/* Custom speed input; keyed by segment so a new selection never shows a stale draft */}
             <div className="flex items-center justify-between rounded-lg border border-white/5 bg-white/[0.03] px-2 py-1.5">
-              <span className="text-[10px] text-slate-500">{t("settings.customPlaybackSpeed")}</span>
+              <span className="text-[10px] text-slate-500">
+                {t('settings.customPlaybackSpeed')}
+              </span>
               <SegmentSpeedInput
                 key={selectedSegment.id}
                 value={selectedSegment.speed}
-                ariaLabel={t("settings.customPlaybackSpeed")}
+                ariaLabel={t('settings.customPlaybackSpeed')}
                 onChange={(speed) => onSegmentSpeedChange?.(selectedSegment.id, speed)}
-                onError={() => toast.error(t("settings.maxSpeedError", { max: MAX_PLAYBACK_SPEED }))}
+                onError={() =>
+                  toast.error(t('settings.maxSpeedError', { max: MAX_PLAYBACK_SPEED }))
+                }
               />
             </div>
 
@@ -951,27 +1095,31 @@ export function SettingsPanel({
                 className="w-full gap-2 bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 transition-all h-7 text-[10px]"
               >
                 <Trash2 className="w-3 h-3" />
-                {t("settings.deleteTrim")}
+                {t('settings.deleteTrim')}
               </Button>
             ) : null}
           </div>
         )}
 
-        <Accordion type="multiple" defaultValue={["effects", "background"]} className="space-y-1">
+        <Accordion type="multiple" defaultValue={['effects', 'background']} className="space-y-1">
           <AccordionItem value="effects" className="border-white/5 rounded-xl bg-white/[0.02] px-3">
             <AccordionTrigger className="py-2.5 hover:no-underline">
               <div className="flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-[#34B27B]" />
-                <span className="text-xs font-medium">{t("settings.videoEffects")}</span>
+                <span className="text-xs font-medium">{t('settings.videoEffects')}</span>
               </div>
             </AccordionTrigger>
             <AccordionContent className="pb-3">
               <div className="grid grid-cols-2 gap-2 mb-3">
                 <div className="p-2 rounded-lg bg-white/5 border border-white/5">
                   <div className="flex items-center justify-between mb-1">
-                    <div className="text-[10px] font-medium text-slate-300">{t("settings.motionBlur")}</div>
+                    <div className="text-[10px] font-medium text-slate-300">
+                      {t('settings.motionBlur')}
+                    </div>
                     <span className="text-[10px] text-slate-500 font-mono">
-                      {motionBlurAmount === 0 ? t("settings.motionBlurOff") : motionBlurAmount.toFixed(2)}
+                      {motionBlurAmount === 0
+                        ? t('settings.motionBlurOff')
+                        : motionBlurAmount.toFixed(2)}
                     </span>
                   </div>
                   <Slider
@@ -984,7 +1132,9 @@ export function SettingsPanel({
                   />
                 </div>
                 <div className="flex items-center justify-between p-2 rounded-lg bg-white/5 border border-white/5">
-                  <div className="text-[10px] font-medium text-slate-300">{t("settings.blurBg")}</div>
+                  <div className="text-[10px] font-medium text-slate-300">
+                    {t('settings.blurBg')}
+                  </div>
                   <Switch
                     checked={showBlur}
                     onCheckedChange={onBlurChange}
@@ -995,7 +1145,9 @@ export function SettingsPanel({
 
               <div className="rounded-lg bg-white/5 border border-white/5 p-2 mb-3">
                 <div className="flex items-center justify-between mb-2">
-                  <div className="text-[10px] font-medium text-slate-300">{t("settings.cursorComposer")}</div>
+                  <div className="text-[10px] font-medium text-slate-300">
+                    {t('settings.cursorComposer')}
+                  </div>
                   <Switch
                     checked={cursorStyle.enabled}
                     onCheckedChange={(enabled) => updateCursorStyle({ enabled })}
@@ -1004,7 +1156,9 @@ export function SettingsPanel({
                 </div>
                 {cursorStyle.enabled && !hasCursorTrack && (
                   <div className="rounded-md bg-amber-500/10 border border-amber-500/20 p-2 mb-2">
-                    <div className="text-[10px] text-amber-400/90">{t("settings.cursorTrackUnavailable")}</div>
+                    <div className="text-[10px] text-amber-400/90">
+                      {t('settings.cursorTrackUnavailable')}
+                    </div>
                     {onAnalyzeCursor && (
                       <div className="mt-2">
                         <Button
@@ -1016,8 +1170,8 @@ export function SettingsPanel({
                         >
                           <ScanSearch className="w-3 h-3" />
                           {cursorAnalysisProgress !== null
-                            ? t("settings.analyzingCursor", { progress: cursorAnalysisProgress })
-                            : t("settings.analyzeCursor")}
+                            ? t('settings.analyzingCursor', { progress: cursorAnalysisProgress })
+                            : t('settings.analyzeCursor')}
                         </Button>
                         {cursorAnalysisProgress !== null && (
                           <div className="mt-1.5 h-1 rounded-full bg-white/10 overflow-hidden">
@@ -1033,11 +1187,15 @@ export function SettingsPanel({
                 )}
                 <div className="rounded-md bg-black/20 border border-white/5 p-2 mb-2 space-y-2">
                   <div className="flex items-center justify-between">
-                    <div className="text-[10px] text-slate-300">{t("settings.cursorMovementStyle")}</div>
+                    <div className="text-[10px] text-slate-300">
+                      {t('settings.cursorMovementStyle')}
+                    </div>
                     <span className="text-[10px] text-slate-500">
-                      {activeMovementStyle === "custom"
-                        ? t("settings.cursorMovementCustom")
-                        : t(`settings.cursorMovement${activeMovementStyle.charAt(0).toUpperCase()}${activeMovementStyle.slice(1)}`)}
+                      {activeMovementStyle === 'custom'
+                        ? t('settings.cursorMovementCustom')
+                        : t(
+                            `settings.cursorMovement${activeMovementStyle.charAt(0).toUpperCase()}${activeMovementStyle.slice(1)}`,
+                          )}
                     </span>
                   </div>
                   <div className="grid grid-cols-4 gap-1">
@@ -1048,10 +1206,10 @@ export function SettingsPanel({
                         variant="outline"
                         size="sm"
                         className={cn(
-                          "h-6 px-0 text-[10px] border transition-all",
+                          'h-6 px-0 text-[10px] border transition-all',
                           activeMovementStyle === preset.style
-                            ? "bg-[#34B27B]/20 border-[#34B27B]/40 text-[#9DF3CB] hover:bg-[#34B27B]/25"
-                            : "bg-white/5 border-white/10 text-slate-300 hover:bg-white/10 hover:text-white",
+                            ? 'bg-[#34B27B]/20 border-[#34B27B]/40 text-[#9DF3CB] hover:bg-[#34B27B]/25'
+                            : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10 hover:text-white',
                         )}
                         onClick={() => applyMovementPreset(preset.style)}
                       >
@@ -1062,7 +1220,9 @@ export function SettingsPanel({
                 </div>
                 <div className="rounded-md bg-black/20 border border-white/5 p-2 mb-2 space-y-2">
                   <div className="flex items-center justify-between">
-                    <div className="text-[10px] text-slate-300">{t("settings.cursorAutoHideStatic")}</div>
+                    <div className="text-[10px] text-slate-300">
+                      {t('settings.cursorAutoHideStatic')}
+                    </div>
                     <Switch
                       checked={cursorStyle.autoHideStatic}
                       onCheckedChange={(autoHideStatic) => updateCursorStyle({ autoHideStatic })}
@@ -1073,12 +1233,18 @@ export function SettingsPanel({
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <div className="flex items-center justify-between mb-1">
-                          <div className="text-[10px] text-slate-400">{t("settings.cursorStaticHideDelay")}</div>
-                          <span className="text-[10px] text-slate-500 font-mono">{Math.round(cursorStyle.staticHideDelayMs)}ms</span>
+                          <div className="text-[10px] text-slate-400">
+                            {t('settings.cursorStaticHideDelay')}
+                          </div>
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            {Math.round(cursorStyle.staticHideDelayMs)}ms
+                          </span>
                         </div>
                         <Slider
                           value={[cursorStyle.staticHideDelayMs]}
-                          onValueChange={(values) => updateCursorStyle({ staticHideDelayMs: values[0] })}
+                          onValueChange={(values) =>
+                            updateCursorStyle({ staticHideDelayMs: values[0] })
+                          }
                           min={0}
                           max={4000}
                           step={20}
@@ -1087,12 +1253,18 @@ export function SettingsPanel({
                       </div>
                       <div>
                         <div className="flex items-center justify-between mb-1">
-                          <div className="text-[10px] text-slate-400">{t("settings.cursorStaticHideFade")}</div>
-                          <span className="text-[10px] text-slate-500 font-mono">{Math.round(cursorStyle.staticHideFadeMs)}ms</span>
+                          <div className="text-[10px] text-slate-400">
+                            {t('settings.cursorStaticHideFade')}
+                          </div>
+                          <span className="text-[10px] text-slate-500 font-mono">
+                            {Math.round(cursorStyle.staticHideFadeMs)}ms
+                          </span>
                         </div>
                         <Slider
                           value={[cursorStyle.staticHideFadeMs]}
-                          onValueChange={(values) => updateCursorStyle({ staticHideFadeMs: values[0] })}
+                          onValueChange={(values) =>
+                            updateCursorStyle({ staticHideFadeMs: values[0] })
+                          }
                           min={40}
                           max={1200}
                           step={20}
@@ -1104,18 +1276,26 @@ export function SettingsPanel({
                 </div>
                 <div className="rounded-md bg-black/20 border border-white/5 p-2 mb-2 space-y-2">
                   <div className="flex items-center justify-between">
-                    <div className="text-[10px] text-slate-300">{t("settings.cursorLoopPosition")}</div>
+                    <div className="text-[10px] text-slate-300">
+                      {t('settings.cursorLoopPosition')}
+                    </div>
                     <Switch
                       checked={cursorStyle.loopCursorPosition}
-                      onCheckedChange={(loopCursorPosition) => updateCursorStyle({ loopCursorPosition })}
+                      onCheckedChange={(loopCursorPosition) =>
+                        updateCursorStyle({ loopCursorPosition })
+                      }
                       className="data-[state=checked]:bg-[#34B27B] scale-90"
                     />
                   </div>
                   {cursorStyle.loopCursorPosition && (
                     <div>
                       <div className="flex items-center justify-between mb-1">
-                        <div className="text-[10px] text-slate-400">{t("settings.cursorLoopBlend")}</div>
-                        <span className="text-[10px] text-slate-500 font-mono">{Math.round(cursorStyle.loopBlendMs)}ms</span>
+                        <div className="text-[10px] text-slate-400">
+                          {t('settings.cursorLoopBlend')}
+                        </div>
+                        <span className="text-[10px] text-slate-500 font-mono">
+                          {Math.round(cursorStyle.loopBlendMs)}ms
+                        </span>
                       </div>
                       <Slider
                         value={[cursorStyle.loopBlendMs]}
@@ -1130,7 +1310,9 @@ export function SettingsPanel({
                 </div>
                 <div className="rounded-md bg-black/20 border border-white/5 p-2 mb-2">
                   <div className="flex items-center justify-between">
-                    <div className="text-[10px] text-slate-300">{t("settings.cursorClipToBounds")}</div>
+                    <div className="text-[10px] text-slate-300">
+                      {t('settings.cursorClipToBounds')}
+                    </div>
                     <Switch
                       checked={cursorStyle.clipToBounds ?? false}
                       onCheckedChange={(clipToBounds) => updateCursorStyle({ clipToBounds })}
@@ -1141,8 +1323,10 @@ export function SettingsPanel({
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <div className="text-[10px] text-slate-400">{t("settings.cursorSize")}</div>
-                      <span className="text-[10px] text-slate-500 font-mono">{cursorStyle.size.toFixed(2)}x</span>
+                      <div className="text-[10px] text-slate-400">{t('settings.cursorSize')}</div>
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        {cursorStyle.size.toFixed(2)}x
+                      </span>
                     </div>
                     <Slider
                       value={[cursorStyle.size]}
@@ -1155,8 +1339,12 @@ export function SettingsPanel({
                   </div>
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <div className="text-[10px] text-slate-400">{t("settings.cursorHighlight")}</div>
-                      <span className="text-[10px] text-slate-500 font-mono">{Math.round(cursorStyle.highlight * 100)}%</span>
+                      <div className="text-[10px] text-slate-400">
+                        {t('settings.cursorHighlight')}
+                      </div>
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        {Math.round(cursorStyle.highlight * 100)}%
+                      </span>
                     </div>
                     <Slider
                       value={[cursorStyle.highlight]}
@@ -1169,8 +1357,10 @@ export function SettingsPanel({
                   </div>
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <div className="text-[10px] text-slate-400">{t("settings.cursorRipple")}</div>
-                      <span className="text-[10px] text-slate-500 font-mono">{Math.round(cursorStyle.ripple * 100)}%</span>
+                      <div className="text-[10px] text-slate-400">{t('settings.cursorRipple')}</div>
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        {Math.round(cursorStyle.ripple * 100)}%
+                      </span>
                     </div>
                     <Slider
                       value={[cursorStyle.ripple]}
@@ -1183,12 +1373,18 @@ export function SettingsPanel({
                   </div>
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <div className="text-[10px] text-slate-400">{t("settings.cursorSmoothing")}</div>
-                      <span className="text-[10px] text-slate-500 font-mono">{Math.round(cursorStyle.smoothingMs)}ms</span>
+                      <div className="text-[10px] text-slate-400">
+                        {t('settings.cursorSmoothing')}
+                      </div>
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        {Math.round(cursorStyle.smoothingMs)}ms
+                      </span>
                     </div>
                     <Slider
                       value={[cursorStyle.smoothingMs]}
-                      onValueChange={(values) => updateCursorStyle({ smoothingMs: values[0], movementStyle: "custom" })}
+                      onValueChange={(values) =>
+                        updateCursorStyle({ smoothingMs: values[0], movementStyle: 'custom' })
+                      }
                       min={0}
                       max={200}
                       step={5}
@@ -1197,8 +1393,12 @@ export function SettingsPanel({
                   </div>
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <div className="text-[10px] text-slate-400">{t("settings.cursorMotionBlur")}</div>
-                      <span className="text-[10px] text-slate-500 font-mono">{Math.round((cursorStyle.motionBlur ?? 0) * 100)}%</span>
+                      <div className="text-[10px] text-slate-400">
+                        {t('settings.cursorMotionBlur')}
+                      </div>
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        {Math.round((cursorStyle.motionBlur ?? 0) * 100)}%
+                      </span>
                     </div>
                     <Slider
                       value={[cursorStyle.motionBlur ?? 0]}
@@ -1211,8 +1411,12 @@ export function SettingsPanel({
                   </div>
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <div className="text-[10px] text-slate-400">{t("settings.cursorTimeOffset")}</div>
-                      <span className="text-[10px] text-slate-500 font-mono">{formatSignedPx(cursorStyle.timeOffsetMs).replace("px", "ms")}</span>
+                      <div className="text-[10px] text-slate-400">
+                        {t('settings.cursorTimeOffset')}
+                      </div>
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        {formatSignedPx(cursorStyle.timeOffsetMs).replace('px', 'ms')}
+                      </span>
                     </div>
                     <Slider
                       value={[cursorStyle.timeOffsetMs]}
@@ -1225,8 +1429,12 @@ export function SettingsPanel({
                   </div>
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <div className="text-[10px] text-slate-400">{t("settings.cursorOffsetX")}</div>
-                      <span className="text-[10px] text-slate-500 font-mono">{formatSignedPx(cursorStyle.offsetX)}</span>
+                      <div className="text-[10px] text-slate-400">
+                        {t('settings.cursorOffsetX')}
+                      </div>
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        {formatSignedPx(cursorStyle.offsetX)}
+                      </span>
                     </div>
                     <Slider
                       value={[cursorStyle.offsetX]}
@@ -1239,8 +1447,12 @@ export function SettingsPanel({
                   </div>
                   <div>
                     <div className="flex items-center justify-between mb-1">
-                      <div className="text-[10px] text-slate-400">{t("settings.cursorOffsetY")}</div>
-                      <span className="text-[10px] text-slate-500 font-mono">{formatSignedPx(cursorStyle.offsetY)}</span>
+                      <div className="text-[10px] text-slate-400">
+                        {t('settings.cursorOffsetY')}
+                      </div>
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        {formatSignedPx(cursorStyle.offsetY)}
+                      </span>
                     </div>
                     <Slider
                       value={[cursorStyle.offsetY]}
@@ -1259,16 +1471,18 @@ export function SettingsPanel({
                       className="h-6 px-2 text-[10px] bg-white/5 border-white/10 text-slate-300 hover:bg-white/10 hover:text-white"
                       onClick={() => updateCursorStyle({ offsetX: 0, offsetY: 0, timeOffsetMs: 0 })}
                     >
-                      {t("settings.cursorOffsetReset")}
+                      {t('settings.cursorOffsetReset')}
                     </Button>
                   </div>
                 </div>
               </div>
-              
+
               <div className="grid grid-cols-2 gap-2">
                 <div className="col-span-2 rounded-lg bg-white/5 border border-white/5 p-2">
                   <div className="flex items-center justify-between mb-2">
-                    <div className="text-[10px] font-medium text-slate-300">{t("settings.audioTrack")}</div>
+                    <div className="text-[10px] font-medium text-slate-300">
+                      {t('settings.audioTrack')}
+                    </div>
                     <Switch
                       checked={hasAudioTrack && audioEnabled}
                       disabled={!hasAudioTrack}
@@ -1279,8 +1493,12 @@ export function SettingsPanel({
                   {hasAudioTrack ? (
                     <div className="space-y-2">
                       <div className="flex items-center justify-between mb-1">
-                        <div className="text-[10px] text-slate-400">{t("settings.audioVolume")}</div>
-                        <span className="text-[10px] text-slate-500 font-mono">{Math.round(audioGain * 100)}%</span>
+                        <div className="text-[10px] text-slate-400">
+                          {t('settings.audioVolume')}
+                        </div>
+                        <span className="text-[10px] text-slate-500 font-mono">
+                          {Math.round(audioGain * 100)}%
+                        </span>
                       </div>
                       <Slider
                         value={[audioGain]}
@@ -1293,7 +1511,9 @@ export function SettingsPanel({
                       />
                       <div className="mt-1 rounded-md border border-white/10 bg-black/20 p-2">
                         <div className="flex items-center justify-between">
-                          <div className="text-[10px] text-slate-300">{t("settings.audioNormalizeLoudness")}</div>
+                          <div className="text-[10px] text-slate-300">
+                            {t('settings.audioNormalizeLoudness')}
+                          </div>
                           <Switch
                             checked={audioNormalizeLoudness}
                             disabled={!audioEnabled}
@@ -1301,11 +1521,17 @@ export function SettingsPanel({
                             className="data-[state=checked]:bg-[#34B27B] scale-90 disabled:opacity-50"
                           />
                         </div>
-                        <div className="mt-1 text-[10px] text-slate-500">{t("settings.audioNormalizeHint")}</div>
+                        <div className="mt-1 text-[10px] text-slate-500">
+                          {t('settings.audioNormalizeHint')}
+                        </div>
                         <div className="mt-2">
                           <div className="flex items-center justify-between mb-1">
-                            <div className="text-[10px] text-slate-400">{t("settings.audioTargetLufs")}</div>
-                            <span className="text-[10px] text-slate-500 font-mono">{audioTargetLufs.toFixed(1)} LUFS</span>
+                            <div className="text-[10px] text-slate-400">
+                              {t('settings.audioTargetLufs')}
+                            </div>
+                            <span className="text-[10px] text-slate-500 font-mono">
+                              {audioTargetLufs.toFixed(1)} LUFS
+                            </span>
                           </div>
                           <Slider
                             value={[audioTargetLufs]}
@@ -1319,8 +1545,12 @@ export function SettingsPanel({
                         </div>
                         <div className="mt-2">
                           <div className="flex items-center justify-between mb-1">
-                            <div className="text-[10px] text-slate-400">{t("settings.audioLimiterCeiling")}</div>
-                            <span className="text-[10px] text-slate-500 font-mono">{audioLimiterDb.toFixed(1)} dBFS</span>
+                            <div className="text-[10px] text-slate-400">
+                              {t('settings.audioLimiterCeiling')}
+                            </div>
+                            <span className="text-[10px] text-slate-500 font-mono">
+                              {audioLimiterDb.toFixed(1)} dBFS
+                            </span>
                           </div>
                           <Slider
                             value={[audioLimiterDb]}
@@ -1335,13 +1565,19 @@ export function SettingsPanel({
                       </div>
                     </div>
                   ) : (
-                    <div className="text-[10px] text-slate-500">{t("settings.audioTrackMissing")}</div>
+                    <div className="text-[10px] text-slate-500">
+                      {t('settings.audioTrackMissing')}
+                    </div>
                   )}
                 </div>
                 <div className="p-2 rounded-lg bg-white/5 border border-white/5">
                   <div className="flex items-center justify-between mb-1">
-                    <div className="text-[10px] font-medium text-slate-300">{t("settings.shadow")}</div>
-                    <span className="text-[10px] text-slate-500 font-mono">{Math.round(shadowIntensity * 100)}%</span>
+                    <div className="text-[10px] font-medium text-slate-300">
+                      {t('settings.shadow')}
+                    </div>
+                    <span className="text-[10px] text-slate-500 font-mono">
+                      {Math.round(shadowIntensity * 100)}%
+                    </span>
                   </div>
                   <Slider
                     value={[shadowIntensity]}
@@ -1354,7 +1590,9 @@ export function SettingsPanel({
                 </div>
                 <div className="p-2 rounded-lg bg-white/5 border border-white/5">
                   <div className="flex items-center justify-between mb-1">
-                    <div className="text-[10px] font-medium text-slate-300">{t("settings.roundness")}</div>
+                    <div className="text-[10px] font-medium text-slate-300">
+                      {t('settings.roundness')}
+                    </div>
                     <span className="text-[10px] text-slate-500 font-mono">{borderRadius}px</span>
                   </div>
                   <Slider
@@ -1368,7 +1606,9 @@ export function SettingsPanel({
                 </div>
                 <div className="p-2 rounded-lg bg-white/5 border border-white/5">
                   <div className="flex items-center justify-between mb-1">
-                    <div className="text-[10px] font-medium text-slate-300">{t("settings.padding")}</div>
+                    <div className="text-[10px] font-medium text-slate-300">
+                      {t('settings.padding')}
+                    </div>
                     <span className="text-[10px] text-slate-500 font-mono">{padding}%</span>
                   </div>
                   <Slider
@@ -1381,12 +1621,16 @@ export function SettingsPanel({
                     className="w-full [&_[role=slider]]:bg-[#34B27B] [&_[role=slider]]:border-[#34B27B] [&_[role=slider]]:h-3 [&_[role=slider]]:w-3"
                   />
                   {paddingDisabled ? (
-                    <p className="mt-1 text-[10px] leading-snug text-slate-500">{t("settings.paddingNativeHint")}</p>
+                    <p className="mt-1 text-[10px] leading-snug text-slate-500">
+                      {t('settings.paddingNativeHint')}
+                    </p>
                   ) : null}
                 </div>
                 <div className="p-2 rounded-lg bg-white/5 border border-white/5">
                   <div className="flex items-center justify-between mb-1">
-                    <div className="text-[10px] font-medium text-slate-300">{t("settings.seekStep")}</div>
+                    <div className="text-[10px] font-medium text-slate-300">
+                      {t('settings.seekStep')}
+                    </div>
                     <span className="text-[10px] text-slate-500 font-mono">{seekStepSeconds}s</span>
                   </div>
                   <Slider
@@ -1406,26 +1650,44 @@ export function SettingsPanel({
                 className="w-full mt-2 gap-1.5 bg-white/5 text-slate-200 border-white/10 hover:bg-white/10 hover:border-white/20 hover:text-white text-[10px] h-8 transition-all"
               >
                 <Crop className="w-3 h-3" />
-                {t("settings.cropVideo")}
+                {t('settings.cropVideo')}
               </Button>
             </AccordionContent>
           </AccordionItem>
 
-          <AccordionItem value="background" className="border-white/5 rounded-xl bg-white/[0.02] px-3">
+          <AccordionItem
+            value="background"
+            className="border-white/5 rounded-xl bg-white/[0.02] px-3"
+          >
             <AccordionTrigger className="py-2.5 hover:no-underline">
               <div className="flex items-center gap-2">
                 <Palette className="w-4 h-4 text-[#34B27B]" />
-                <span className="text-xs font-medium">{t("settings.background")}</span>
+                <span className="text-xs font-medium">{t('settings.background')}</span>
               </div>
             </AccordionTrigger>
             <AccordionContent className="pb-3">
               <Tabs defaultValue="image" className="w-full">
                 <TabsList className="mb-2 bg-white/5 border border-white/5 p-0.5 w-full grid grid-cols-3 h-7 rounded-lg">
-                  <TabsTrigger value="image" className="data-[state=active]:bg-[#34B27B] data-[state=active]:text-white text-slate-400 text-[10px] py-1 rounded-md transition-all">{t("settings.backgroundImage")}</TabsTrigger>
-                  <TabsTrigger value="color" className="data-[state=active]:bg-[#34B27B] data-[state=active]:text-white text-slate-400 text-[10px] py-1 rounded-md transition-all">{t("settings.backgroundColor")}</TabsTrigger>
-                  <TabsTrigger value="gradient" className="data-[state=active]:bg-[#34B27B] data-[state=active]:text-white text-slate-400 text-[10px] py-1 rounded-md transition-all">{t("settings.backgroundGradient")}</TabsTrigger>
+                  <TabsTrigger
+                    value="image"
+                    className="data-[state=active]:bg-[#34B27B] data-[state=active]:text-white text-slate-400 text-[10px] py-1 rounded-md transition-all"
+                  >
+                    {t('settings.backgroundImage')}
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="color"
+                    className="data-[state=active]:bg-[#34B27B] data-[state=active]:text-white text-slate-400 text-[10px] py-1 rounded-md transition-all"
+                  >
+                    {t('settings.backgroundColor')}
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="gradient"
+                    className="data-[state=active]:bg-[#34B27B] data-[state=active]:text-white text-slate-400 text-[10px] py-1 rounded-md transition-all"
+                  >
+                    {t('settings.backgroundGradient')}
+                  </TabsTrigger>
                 </TabsList>
-                
+
                 <div className="max-h-[min(200px,25vh)] overflow-y-auto custom-scrollbar">
                   <TabsContent value="image" className="mt-0 space-y-2">
                     <input
@@ -1441,22 +1703,26 @@ export function SettingsPanel({
                       className="w-full gap-2 bg-white/5 text-slate-200 border-white/10 hover:bg-[#34B27B] hover:text-white hover:border-[#34B27B] transition-all h-7 text-[10px]"
                     >
                       <Upload className="w-3 h-3" />
-                      {t("settings.uploadCustom")}
+                      {t('settings.uploadCustom')}
                     </Button>
 
                     <div className="grid grid-cols-7 gap-1.5">
                       {customImages.map((imageUrl, idx) => {
-                        const isSelected = selected === imageUrl;
+                        const isSelected = selected === imageUrl
                         return (
                           <div
                             key={`custom-${idx}`}
                             className={cn(
-                              "aspect-square w-9 h-9 rounded-md border-2 overflow-hidden cursor-pointer transition-all duration-200 relative group shadow-sm",
+                              'aspect-square w-9 h-9 rounded-md border-2 overflow-hidden cursor-pointer transition-all duration-200 relative group shadow-sm',
                               isSelected
-                                ? "border-[#34B27B] ring-1 ring-[#34B27B]/30"
-                                : "border-white/10 hover:border-[#34B27B]/40 opacity-80 hover:opacity-100 bg-white/5"
+                                ? 'border-[#34B27B] ring-1 ring-[#34B27B]/30'
+                                : 'border-white/10 hover:border-[#34B27B]/40 opacity-80 hover:opacity-100 bg-white/5',
                             )}
-                            style={{ backgroundImage: `url(${imageUrl})`, backgroundSize: "cover", backgroundPosition: "center" }}
+                            style={{
+                              backgroundImage: `url(${imageUrl})`,
+                              backgroundSize: 'cover',
+                              backgroundPosition: 'center',
+                            }}
                             onClick={() => onWallpaperChange(imageUrl)}
                             role="button"
                           >
@@ -1467,22 +1733,26 @@ export function SettingsPanel({
                               <X className="w-2 h-2 text-white" />
                             </button>
                           </div>
-                        );
+                        )
                       })}
 
                       {WALLPAPER_PATHS.map((path, index) => {
-                        const thumbnailUrl = wallpaperPaths[index] ?? path;
-                        const isSelected = isSameBuiltInWallpaper(selected, path);
+                        const thumbnailUrl = wallpaperPaths[index] ?? path
+                        const isSelected = isSameBuiltInWallpaper(selected, path)
                         return (
                           <div
                             key={path}
                             className={cn(
-                              "aspect-square w-9 h-9 rounded-md border-2 overflow-hidden cursor-pointer transition-all duration-200 shadow-sm",
+                              'aspect-square w-9 h-9 rounded-md border-2 overflow-hidden cursor-pointer transition-all duration-200 shadow-sm',
                               isSelected
-                                ? "border-[#34B27B] ring-1 ring-[#34B27B]/30"
-                                : "border-white/10 hover:border-[#34B27B]/40 opacity-80 hover:opacity-100 bg-white/5"
+                                ? 'border-[#34B27B] ring-1 ring-[#34B27B]/30'
+                                : 'border-white/10 hover:border-[#34B27B]/40 opacity-80 hover:opacity-100 bg-white/5',
                             )}
-                            style={{ backgroundImage: `url(${thumbnailUrl})`, backgroundSize: "cover", backgroundPosition: "center" }}
+                            style={{
+                              backgroundImage: `url(${thumbnailUrl})`,
+                              backgroundSize: 'cover',
+                              backgroundPosition: 'center',
+                            }}
                             onClick={() => onWallpaperChange(path)}
                             role="button"
                           />
@@ -1490,36 +1760,39 @@ export function SettingsPanel({
                       })}
                     </div>
                   </TabsContent>
-                  
+
                   <TabsContent value="color" className="mt-0">
                     <ColorPicker
                       selectedColor={selectedColor}
                       colorPalette={colorPalette}
                       onUpdateColor={(color) => {
-                        setSelectedColor(color);
-                        onWallpaperChange(color);
+                        setSelectedColor(color)
+                        onWallpaperChange(color)
                       }}
                       translations={{
-                        colorWheel: t("settings.colorWheel"),
-                        colorPalette: t("settings.colorPalette"),
+                        colorWheel: t('settings.colorWheel'),
+                        colorPalette: t('settings.colorPalette'),
                       }}
                     />
                   </TabsContent>
-                  
+
                   <TabsContent value="gradient" className="mt-0">
                     <div className="grid grid-cols-7 gap-1.5">
                       {GRADIENTS.map((g, idx) => (
                         <div
                           key={g}
                           className={cn(
-                            "aspect-square w-9 h-9 rounded-md border-2 overflow-hidden cursor-pointer transition-all duration-200 shadow-sm",
-                            gradient === g 
-                              ? "border-[#34B27B] ring-1 ring-[#34B27B]/30" 
-                              : "border-white/10 hover:border-[#34B27B]/40 opacity-80 hover:opacity-100 bg-white/5"
+                            'aspect-square w-9 h-9 rounded-md border-2 overflow-hidden cursor-pointer transition-all duration-200 shadow-sm',
+                            gradient === g
+                              ? 'border-[#34B27B] ring-1 ring-[#34B27B]/30'
+                              : 'border-white/10 hover:border-[#34B27B]/40 opacity-80 hover:opacity-100 bg-white/5',
                           )}
                           style={{ background: g }}
                           aria-label={`Gradient ${idx + 1}`}
-                          onClick={() => { setGradient(g); onWallpaperChange(g); }}
+                          onClick={() => {
+                            setGradient(g)
+                            onWallpaperChange(g)
+                          }}
                           role="button"
                         />
                       ))}
@@ -1530,18 +1803,25 @@ export function SettingsPanel({
             </AccordionContent>
           </AccordionItem>
 
-          <AccordionItem value="timeline" className="border-white/5 rounded-xl bg-white/[0.02] px-3">
+          <AccordionItem
+            value="timeline"
+            className="border-white/5 rounded-xl bg-white/[0.02] px-3"
+          >
             <AccordionTrigger className="py-2.5 hover:no-underline">
               <div className="flex items-center gap-2">
                 <AudioWaveform className="w-4 h-4 text-[#34B27B]" />
-                <span className="text-xs font-medium">{t("settings.timeline.title")}</span>
+                <span className="text-xs font-medium">{t('settings.timeline.title')}</span>
               </div>
             </AccordionTrigger>
             <AccordionContent className="pb-3">
               <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-white/5 border border-white/5">
                 <div className="min-w-0">
-                  <div className="text-[10px] font-medium text-slate-300">{t("settings.timeline.waveform")}</div>
-                  <div className="text-[10px] text-slate-500 mt-0.5">{t("settings.timeline.waveformDesc")}</div>
+                  <div className="text-[10px] font-medium text-slate-300">
+                    {t('settings.timeline.waveform')}
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">
+                    {t('settings.timeline.waveformDesc')}
+                  </div>
                 </div>
                 <Switch
                   checked={showTimelineWaveform}
@@ -1556,15 +1836,17 @@ export function SettingsPanel({
 
       {showCropDropdown && cropRegion && onCropChange && (
         <>
-          <div 
+          <div
             className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 animate-in fade-in duration-200"
             onClick={() => setShowCropDropdown(false)}
           />
           <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[60] bg-[#09090b] rounded-2xl shadow-2xl border border-white/10 p-8 w-[90vw] max-w-5xl max-h-[90vh] overflow-auto animate-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between mb-6">
               <div>
-                <span className="text-xl font-bold text-slate-200">{t("settings.cropDialogTitle")}</span>
-                <p className="text-sm text-slate-400 mt-2">{t("settings.cropDialogDesc")}</p>
+                <span className="text-xl font-bold text-slate-200">
+                  {t('settings.cropDialogTitle')}
+                </span>
+                <p className="text-sm text-slate-400 mt-2">{t('settings.cropDialogDesc')}</p>
               </div>
               <Button
                 variant="ghost"
@@ -1587,7 +1869,7 @@ export function SettingsPanel({
                 size="lg"
                 className="bg-[#34B27B] hover:bg-[#34B27B]/90 text-white"
               >
-                {t("common.done")}
+                {t('common.done')}
               </Button>
             </div>
           </div>
@@ -1599,10 +1881,10 @@ export function SettingsPanel({
           <button
             onClick={() => onExportFormatChange?.('mp4')}
             className={cn(
-              "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border transition-all text-xs font-medium",
+              'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border transition-all text-xs font-medium',
               exportFormat === 'mp4'
-                ? "bg-[#34B27B]/10 border-[#34B27B]/50 text-white"
-                : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-slate-200"
+                ? 'bg-[#34B27B]/10 border-[#34B27B]/50 text-white'
+                : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-slate-200',
             )}
           >
             <Film className="w-3.5 h-3.5" />
@@ -1611,10 +1893,10 @@ export function SettingsPanel({
           <button
             onClick={() => onExportFormatChange?.('gif')}
             className={cn(
-              "flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border transition-all text-xs font-medium",
+              'flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg border transition-all text-xs font-medium',
               exportFormat === 'gif'
-                ? "bg-[#34B27B]/10 border-[#34B27B]/50 text-white"
-                : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-slate-200"
+                ? 'bg-[#34B27B]/10 border-[#34B27B]/50 text-white'
+                : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-slate-200',
             )}
           >
             <Image className="w-3.5 h-3.5" />
@@ -1628,63 +1910,71 @@ export function SettingsPanel({
               <button
                 onClick={() => onExportQualityChange?.('medium')}
                 className={cn(
-                  "rounded-md transition-all text-[10px] font-medium",
-                  exportQuality === 'medium' ? "bg-white text-black" : "text-slate-400 hover:text-slate-200"
+                  'rounded-md transition-all text-[10px] font-medium',
+                  exportQuality === 'medium'
+                    ? 'bg-white text-black'
+                    : 'text-slate-400 hover:text-slate-200',
                 )}
               >
-                {t("settings.quality.low")}
+                {t('settings.quality.low')}
               </button>
               <button
                 onClick={() => onExportQualityChange?.('good')}
                 className={cn(
-                  "rounded-md transition-all text-[10px] font-medium",
-                  exportQuality === 'good' ? "bg-white text-black" : "text-slate-400 hover:text-slate-200"
+                  'rounded-md transition-all text-[10px] font-medium',
+                  exportQuality === 'good'
+                    ? 'bg-white text-black'
+                    : 'text-slate-400 hover:text-slate-200',
                 )}
               >
-                {t("settings.quality.medium")}
+                {t('settings.quality.medium')}
               </button>
               <button
                 onClick={() => onExportQualityChange?.('source')}
                 className={cn(
-                  "rounded-md transition-all text-[10px] font-medium",
-                  exportQuality === 'source' ? "bg-white text-black" : "text-slate-400 hover:text-slate-200"
+                  'rounded-md transition-all text-[10px] font-medium',
+                  exportQuality === 'source'
+                    ? 'bg-white text-black'
+                    : 'text-slate-400 hover:text-slate-200',
                 )}
               >
-                {t("settings.quality.high")}
+                {t('settings.quality.high')}
               </button>
             </div>
 
             <div className="rounded-lg border border-white/10 bg-white/5 p-2">
               <div className="mb-2 flex items-center justify-between text-[10px]">
                 <span className="uppercase tracking-wide text-slate-400">
-                  {t("settings.exportAspectRatios")}
+                  {t('settings.exportAspectRatios')}
                 </span>
                 <span className="text-slate-500">
-                  {t("settings.exportAspectRatioCount", { count: activeExportAspectRatios.length })}
+                  {t('settings.exportAspectRatioCount', { count: activeExportAspectRatios.length })}
                 </span>
               </div>
               <div className="grid grid-cols-4 gap-1">
                 {ASPECT_RATIOS.map((ratio) => {
-                  const isSelected = activeExportAspectRatios.includes(ratio);
+                  const isSelected = activeExportAspectRatios.includes(ratio)
                   return (
                     <button
                       key={ratio}
                       type="button"
                       onClick={() => toggleExportAspectRatio(ratio)}
                       className={cn(
-                        "h-6 rounded-md border text-[10px] font-medium transition-all",
+                        'h-6 rounded-md border text-[10px] font-medium transition-all',
                         isSelected
-                          ? "border-[#34B27B]/70 bg-[#34B27B]/20 text-white"
-                          : "border-white/10 text-slate-400 hover:border-[#34B27B]/50 hover:text-slate-200",
+                          ? 'border-[#34B27B]/70 bg-[#34B27B]/20 text-white'
+                          : 'border-white/10 text-slate-400 hover:border-[#34B27B]/50 hover:text-slate-200',
                       )}
                     >
-                      {ratio === "native" ? t("settings.aspectRatioNative") : getAspectRatioLabel(ratio)}
+                      {ratio === 'native'
+                        ? t('settings.aspectRatioNative')
+                        : getAspectRatioLabel(ratio)}
                     </button>
-                  );
+                  )
                 })}
               </div>
               <p className="mt-2 text-[10px] leading-snug text-slate-500">
-                {t("settings.exportAspectRatioHint")}
+                {t('settings.exportAspectRatioHint')}
               </p>
             </div>
           </div>
@@ -1699,8 +1989,10 @@ export function SettingsPanel({
                     key={rate.value}
                     onClick={() => onGifFrameRateChange?.(rate.value)}
                     className={cn(
-                      "rounded-md transition-all text-[10px] font-medium",
-                      gifFrameRate === rate.value ? "bg-white text-black" : "text-slate-400 hover:text-slate-200"
+                      'rounded-md transition-all text-[10px] font-medium',
+                      gifFrameRate === rate.value
+                        ? 'bg-white text-black'
+                        : 'text-slate-400 hover:text-slate-200',
                     )}
                   >
                     {rate.value}
@@ -1713,19 +2005,25 @@ export function SettingsPanel({
                     key={key}
                     onClick={() => onGifSizePresetChange?.(key as GifSizePreset)}
                     className={cn(
-                      "rounded-md transition-all text-[10px] font-medium",
-                      gifSizePreset === key ? "bg-white text-black" : "text-slate-400 hover:text-slate-200"
+                      'rounded-md transition-all text-[10px] font-medium',
+                      gifSizePreset === key
+                        ? 'bg-white text-black'
+                        : 'text-slate-400 hover:text-slate-200',
                     )}
                   >
-                    {key === 'original' ? t("settings.gif.original") : key.charAt(0).toUpperCase() + key.slice(1, 3)}
+                    {key === 'original'
+                      ? t('settings.gif.original')
+                      : key.charAt(0).toUpperCase() + key.slice(1, 3)}
                   </button>
                 ))}
               </div>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-[10px] text-slate-500">{gifOutputDimensions.width} × {gifOutputDimensions.height}px</span>
+              <span className="text-[10px] text-slate-500">
+                {gifOutputDimensions.width} × {gifOutputDimensions.height}px
+              </span>
               <div className="flex items-center gap-2">
-                <span className="text-[10px] text-slate-400">{t("common.loop")}</span>
+                <span className="text-[10px] text-slate-400">{t('common.loop')}</span>
                 <Switch
                   checked={gifLoop}
                   onCheckedChange={onGifLoopChange}
@@ -1735,7 +2033,7 @@ export function SettingsPanel({
             </div>
           </div>
         )}
-        
+
         <Button
           type="button"
           size="lg"
@@ -1743,29 +2041,29 @@ export function SettingsPanel({
           className="w-full py-5 text-sm font-semibold flex items-center justify-center gap-2 bg-[#34B27B] text-white rounded-xl shadow-lg shadow-[#34B27B]/20 hover:bg-[#34B27B]/90 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
         >
           <Download className="w-4 h-4" />
-          {t("settings.exportVideo", { format: exportFormat === 'gif' ? 'GIF' : 'Video' })}
+          {t('settings.exportVideo', { format: exportFormat === 'gif' ? 'GIF' : 'Video' })}
         </Button>
 
         <div className="flex gap-2 mt-3">
           <button
             type="button"
             onClick={() => {
-              void openSupportUrl(GITHUB_ISSUES_URL, 'settings-panel.open-report-bug-link');
+              void openSupportUrl(GITHUB_ISSUES_URL, 'settings-panel.open-report-bug-link')
             }}
             className="flex-1 flex items-center justify-center gap-1.5 text-[10px] text-slate-500 hover:text-slate-300 py-1.5 transition-colors"
           >
             <Bug className="w-3 h-3 text-[#34B27B]" />
-            {t("settings.reportBug")}
+            {t('settings.reportBug')}
           </button>
           <button
             type="button"
             onClick={() => {
-              void openSupportUrl(GITHUB_REPO_URL, 'settings-panel.open-star-repo-link');
+              void openSupportUrl(GITHUB_REPO_URL, 'settings-panel.open-star-repo-link')
             }}
             className="flex-1 flex items-center justify-center gap-1.5 text-[10px] text-slate-500 hover:text-slate-300 py-1.5 transition-colors"
           >
             <Star className="w-3 h-3 text-yellow-400" />
-            {t("settings.starGithub")}
+            {t('settings.starGithub')}
           </button>
         </div>
         <div className="text-center text-[10px] text-slate-600 mt-2 pt-2 border-t border-white/5 select-text">
@@ -1773,5 +2071,5 @@ export function SettingsPanel({
         </div>
       </div>
     </div>
-  );
+  )
 }

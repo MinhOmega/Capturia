@@ -8,7 +8,11 @@ import {
   type CaptureBoundsMode,
   type CaptureSourceRef,
 } from '../../src/lib/cursor/captureSpace'
-import { getNativeCursorKind, startNativeCursorKindMonitor, stopNativeCursorKindMonitor } from '../native/cursorKindMonitor'
+import {
+  getNativeCursorKind,
+  startNativeCursorKindMonitor,
+  stopNativeCursorKindMonitor,
+} from '../native/cursorKindMonitor'
 import {
   drainNativeMouseButtonTransitions,
   startNativeMouseButtonMonitor,
@@ -71,7 +75,6 @@ type CursorTrackerRuntime = {
   pauseStartedAt: number | null
   pauseRanges: CursorTrackPauseRange[]
 }
-
 
 type ActiveSelectionGesture = {
   startMs: number
@@ -157,7 +160,8 @@ function startSelectionGesture(
   point: { x: number; y: number },
 ): void {
   const normalized = normalizeEventPoint(normalizePointToBounds(point, tracker.bounds))
-  const hasVisiblePoint = tracker.boundsMode === 'virtual-desktop' || isPointInsideBounds(point, tracker.bounds, 0.5)
+  const hasVisiblePoint =
+    tracker.boundsMode === 'virtual-desktop' || isPointInsideBounds(point, tracker.bounds, 0.5)
   tracker.activeGesture = {
     startMs: Math.max(0, now - tracker.startedAt),
     startPoint: normalized,
@@ -183,10 +187,14 @@ function updateSelectionGesture(
   gesture.minY = Math.min(gesture.minY, normalized.y)
   gesture.maxX = Math.max(gesture.maxX, normalized.x)
   gesture.maxY = Math.max(gesture.maxY, normalized.y)
-  const distanceFromStart = Math.hypot(normalized.x - gesture.startPoint.x, normalized.y - gesture.startPoint.y)
+  const distanceFromStart = Math.hypot(
+    normalized.x - gesture.startPoint.x,
+    normalized.y - gesture.startPoint.y,
+  )
   gesture.maxDistance = Math.max(gesture.maxDistance, distanceFromStart)
   if (!gesture.hasVisiblePoint) {
-    gesture.hasVisiblePoint = tracker.boundsMode === 'virtual-desktop' || isPointInsideBounds(point, tracker.bounds, 0.5)
+    gesture.hasVisiblePoint =
+      tracker.boundsMode === 'virtual-desktop' || isPointInsideBounds(point, tracker.bounds, 0.5)
   }
 }
 
@@ -206,11 +214,10 @@ function finalizeSelectionGesture(
   const endMs = Math.max(gesture.startMs, now - tracker.startedAt)
   const width = Math.max(0, gesture.maxX - gesture.minX)
   const height = Math.max(0, gesture.maxY - gesture.minY)
-  const isSelection = (
-    gesture.maxDistance >= SELECTION_MIN_DISTANCE_NORM
-    || width >= SELECTION_MIN_DIMENSION_NORM
-    || height >= SELECTION_MIN_DIMENSION_NORM
-  )
+  const isSelection =
+    gesture.maxDistance >= SELECTION_MIN_DISTANCE_NORM ||
+    width >= SELECTION_MIN_DIMENSION_NORM ||
+    height >= SELECTION_MIN_DIMENSION_NORM
 
   if (!isSelection) {
     appendCursorEvent(tracker, {
@@ -248,12 +255,15 @@ function finalizeSelectionGesture(
   })
 }
 
-export function normalizeSourceRef(input?: CaptureSourceRef | SelectedSource | null): CaptureSourceRef | undefined {
+export function normalizeSourceRef(
+  input?: CaptureSourceRef | SelectedSource | null,
+): CaptureSourceRef | undefined {
   if (!input) return undefined
   const sourceId = typeof input.id === 'string' ? input.id : ''
-  const displayId = input.display_id === null || input.display_id === undefined
-    ? undefined
-    : String(input.display_id)
+  const displayId =
+    input.display_id === null || input.display_id === undefined
+      ? undefined
+      : String(input.display_id)
   if (!sourceId && !displayId) return undefined
   return {
     id: sourceId || undefined,
@@ -261,7 +271,9 @@ export function normalizeSourceRef(input?: CaptureSourceRef | SelectedSource | n
   }
 }
 
-function normalizeCaptureSize(input?: CursorTrackerStartOptions['captureSize']): { width: number; height: number } | undefined {
+function normalizeCaptureSize(
+  input?: CursorTrackerStartOptions['captureSize'],
+): { width: number; height: number } | undefined {
   if (!input) return undefined
   const width = Math.floor(Number(input.width))
   const height = Math.floor(Number(input.height))
@@ -374,11 +386,14 @@ export function registerCursorTrackerHandlers(ctx: IpcContext): CursorTrackerReg
     if (process.platform === 'linux') {
       const sessionType = process.env['XDG_SESSION_TYPE'] || ''
       if (sessionType === 'wayland') {
-        console.warn('[cursor-tracker] Wayland detected — cursor position tracking is not supported. The cursor embedded in the video stream will be used instead.')
+        console.warn(
+          '[cursor-tracker] Wayland detected — cursor position tracking is not supported. The cursor embedded in the video stream will be used instead.',
+        )
         return {
           success: false,
           warningCode: 'WAYLAND_UNSUPPORTED',
-          warningMessage: 'Cursor position tracking is not available on Wayland. The cursor will be captured directly in the video stream.',
+          warningMessage:
+            'Cursor position tracking is not available on Wayland. The cursor will be captured directly in the video stream.',
         }
       }
     }
@@ -389,7 +404,8 @@ export function registerCursorTrackerHandlers(ctx: IpcContext): CursorTrackerReg
 
     const startedAt = Date.now()
     const initialPoint = screen.getCursorScreenPoint()
-    const sourceRef = normalizeSourceRef(options?.source) ?? normalizeSourceRef(ctx.session.selectedSource)
+    const sourceRef =
+      normalizeSourceRef(options?.source) ?? normalizeSourceRef(ctx.session.selectedSource)
     const captureSize = normalizeCaptureSize(options?.captureSize)
     const windowId = parseWindowIdFromSourceId(sourceRef?.id)
     console.log('[cursor-tracker] starting:', {
@@ -503,9 +519,9 @@ export function registerCursorTrackerHandlers(ctx: IpcContext): CursorTrackerReg
         let click = false
         if (cursorTracker.useHeuristicClick) {
           if (
-            cursorTracker.stillFrames >= 2
-            && cursorTracker.lastSpeed > 950
-            && now - cursorTracker.lastClickAt > 240
+            cursorTracker.stillFrames >= 2 &&
+            cursorTracker.lastSpeed > 950 &&
+            now - cursorTracker.lastClickAt > 240
           ) {
             click = true
             cursorTracker.lastClickAt = now
@@ -557,7 +573,12 @@ export function registerCursorTrackerHandlers(ctx: IpcContext): CursorTrackerReg
     if (windowId) {
       tracker.boundsRefreshTimer = globalThis.setInterval(() => {
         void (async () => {
-          if (!cursorTracker || cursorTracker !== tracker || !tracker.windowId || tracker.refreshingBounds) {
+          if (
+            !cursorTracker ||
+            cursorTracker !== tracker ||
+            !tracker.windowId ||
+            tracker.refreshingBounds
+          ) {
             return
           }
 
@@ -610,11 +631,15 @@ export function registerCursorTrackerHandlers(ctx: IpcContext): CursorTrackerReg
     const warningCodes: string[] = []
     if (usingWindowBoundsFallback) {
       warningCodes.push('window_bounds_fallback')
-      warningMessages.push('Window capture is using fallback bounds mapping. Cursor alignment may be less accurate.')
+      warningMessages.push(
+        'Window capture is using fallback bounds mapping. Cursor alignment may be less accurate.',
+      )
     }
     if (!nativeMouseMonitorReady) {
       warningCodes.push('mouse_button_fallback')
-      warningMessages.push('Native mouse button monitor is unavailable. Selection-aware auto zoom will fall back to click heuristics.')
+      warningMessages.push(
+        'Native mouse button monitor is unavailable. Selection-aware auto zoom will fall back to click heuristics.',
+      )
     }
 
     return {

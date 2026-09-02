@@ -24,7 +24,9 @@ export type FakeIpcMain = {
 export function fakeIpcMain(): FakeIpcMain {
   const handlers = new Map<string, Handler>()
   const registered: string[] = []
-  const event = { sender: { isDestroyed: () => false, send: vi.fn() } } as unknown as IpcMainInvokeEvent
+  const event = {
+    sender: { isDestroyed: () => false, send: vi.fn() },
+  } as unknown as IpcMainInvokeEvent
   return {
     ipcMain: {
       handle: (channel, handler) => {
@@ -33,7 +35,7 @@ export function fakeIpcMain(): FakeIpcMain {
       },
     },
     registered,
-    invoke: async <T,>(channel: string, ...args: unknown[]): Promise<T> => {
+    invoke: async <T>(channel: string, ...args: unknown[]): Promise<T> => {
       const handler = handlers.get(channel)
       if (!handler) throw new Error(`no handler for ${channel}`)
       return (await handler(event, ...args)) as T
@@ -87,9 +89,25 @@ export function createElectronMock() {
     ipcMain: { handle: vi.fn(), on: vi.fn(), removeHandler: vi.fn() },
     screen: {
       getCursorScreenPoint: vi.fn(() => ({ x: 10, y: 10 })),
-      getAllDisplays: vi.fn(() => [{ id: 1, bounds: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1, size: { width: 1920, height: 1080 } }]),
-      getDisplayNearestPoint: vi.fn(() => ({ id: 1, bounds: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 })),
-      getPrimaryDisplay: vi.fn(() => ({ id: 1, bounds: { x: 0, y: 0, width: 1920, height: 1080 }, workArea: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 })),
+      getAllDisplays: vi.fn(() => [
+        {
+          id: 1,
+          bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+          scaleFactor: 1,
+          size: { width: 1920, height: 1080 },
+        },
+      ]),
+      getDisplayNearestPoint: vi.fn(() => ({
+        id: 1,
+        bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+        scaleFactor: 1,
+      })),
+      getPrimaryDisplay: vi.fn(() => ({
+        id: 1,
+        bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+        workArea: { x: 0, y: 0, width: 1920, height: 1080 },
+        scaleFactor: 1,
+      })),
     },
     shell: {
       openExternal: vi.fn(async () => undefined),

@@ -4,63 +4,62 @@ export type CapturePermissionStatus =
   | 'restricted'
   | 'not-determined'
   | 'unknown'
-  | 'manual-check';
+  | 'manual-check'
 
 export type CapturePermissionKey =
   | 'screen'
   | 'camera'
   | 'microphone'
   | 'accessibility'
-  | 'input-monitoring';
+  | 'input-monitoring'
 
 export type PermissionSettingsTarget =
   | 'screen-capture'
   | 'camera'
   | 'microphone'
   | 'accessibility'
-  | 'input-monitoring';
+  | 'input-monitoring'
 
 export interface CapturePermissionItem {
-  key: CapturePermissionKey;
-  status: CapturePermissionStatus;
-  requiredForRecording: boolean;
-  canOpenSettings: boolean;
-  settingsTarget?: PermissionSettingsTarget;
+  key: CapturePermissionKey
+  status: CapturePermissionStatus
+  requiredForRecording: boolean
+  canOpenSettings: boolean
+  settingsTarget?: PermissionSettingsTarget
 }
 
 export interface CapturePermissionSnapshot {
-  platform: string;
-  checkedAtMs: number;
-  canOpenSystemSettings: boolean;
-  items: CapturePermissionItem[];
+  platform: string
+  checkedAtMs: number
+  canOpenSystemSettings: boolean
+  items: CapturePermissionItem[]
 }
 
 export function isPermissionGranted(status: CapturePermissionStatus): boolean {
-  return status === 'granted';
+  return status === 'granted'
 }
 
 export function isPermissionBlocked(status: CapturePermissionStatus): boolean {
-  return status === 'denied' || status === 'restricted';
+  return status === 'denied' || status === 'restricted'
 }
 
 export function getPermissionItem(
   snapshot: CapturePermissionSnapshot,
   key: CapturePermissionKey,
 ): CapturePermissionItem | undefined {
-  return snapshot.items.find((item) => item.key === key);
+  return snapshot.items.find((item) => item.key === key)
 }
 
 export function resolveRecordingPermissionReadiness(snapshot: CapturePermissionSnapshot): {
-  ready: boolean;
-  missingRequired: CapturePermissionItem[];
+  ready: boolean
+  missingRequired: CapturePermissionItem[]
 } {
   const missingRequired = snapshot.items.filter(
     (item) => item.requiredForRecording && !isPermissionGranted(item.status),
-  );
+  )
 
   return {
     ready: missingRequired.length === 0,
     missingRequired,
-  };
+  }
 }
-

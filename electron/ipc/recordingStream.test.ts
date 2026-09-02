@@ -39,14 +39,18 @@ describe('RecordingStreamRegistry', () => {
   it('rejects open when the target path is not writable (open is awaited, not assumed)', async () => {
     const registry = new RecordingStreamRegistry()
     // Parent directory does not exist, so createWriteStream emits 'error' on open.
-    await expect(registry.open('rec.webm', path.join(dir, 'does-not-exist', 'rec.webm'))).rejects.toThrow()
+    await expect(
+      registry.open('rec.webm', path.join(dir, 'does-not-exist', 'rec.webm')),
+    ).rejects.toThrow()
     // A failed open must not register a stream the renderer would treat as live.
     expect(registry.has('rec.webm')).toBe(false)
   })
 
   it('rejects append when no stream is open', async () => {
     const registry = new RecordingStreamRegistry()
-    await expect(registry.append('rec.webm', Buffer.from('x'))).rejects.toThrow(/No active recording stream/)
+    await expect(registry.append('rec.webm', Buffer.from('x'))).rejects.toThrow(
+      /No active recording stream/,
+    )
   })
 
   it('discard closes the stream and removes the partial file', async () => {

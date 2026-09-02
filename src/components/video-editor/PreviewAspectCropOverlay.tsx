@@ -36,7 +36,8 @@ type PixelRect = { x: number; y: number; width: number; height: number }
 
 function resolveContentRect(bounds: PixelRect, sourceAspectRatio: number): PixelRect {
   if (bounds.width <= 0 || bounds.height <= 0) return { x: 0, y: 0, width: 0, height: 0 }
-  const safeSourceAspect = Number.isFinite(sourceAspectRatio) && sourceAspectRatio > 0 ? sourceAspectRatio : 16 / 9
+  const safeSourceAspect =
+    Number.isFinite(sourceAspectRatio) && sourceAspectRatio > 0 ? sourceAspectRatio : 16 / 9
   const containerAspect = bounds.width / bounds.height
 
   if (containerAspect > safeSourceAspect) {
@@ -87,24 +88,39 @@ export function PreviewAspectCropOverlay({
     return () => observer.disconnect()
   }, [])
 
-  const containerRect = useMemo<PixelRect>(() => ({
-    x: 0,
-    y: 0,
-    width: overlaySize.width,
-    height: overlaySize.height,
-  }), [overlaySize.height, overlaySize.width])
+  const containerRect = useMemo<PixelRect>(
+    () => ({
+      x: 0,
+      y: 0,
+      width: overlaySize.width,
+      height: overlaySize.height,
+    }),
+    [overlaySize.height, overlaySize.width],
+  )
 
   const contentRect = useMemo(
     () => resolveContentRect(containerRect, sourceAspectRatio),
     [containerRect, sourceAspectRatio],
   )
 
-  const frameRect = useMemo(() => ({
-    left: contentRect.x + cropRegion.x * contentRect.width,
-    top: contentRect.y + cropRegion.y * contentRect.height,
-    width: cropRegion.width * contentRect.width,
-    height: cropRegion.height * contentRect.height,
-  }), [contentRect.height, contentRect.width, contentRect.x, contentRect.y, cropRegion.height, cropRegion.width, cropRegion.x, cropRegion.y])
+  const frameRect = useMemo(
+    () => ({
+      left: contentRect.x + cropRegion.x * contentRect.width,
+      top: contentRect.y + cropRegion.y * contentRect.height,
+      width: cropRegion.width * contentRect.width,
+      height: cropRegion.height * contentRect.height,
+    }),
+    [
+      contentRect.height,
+      contentRect.width,
+      contentRect.x,
+      contentRect.y,
+      cropRegion.height,
+      cropRegion.width,
+      cropRegion.x,
+      cropRegion.y,
+    ],
+  )
 
   const pointToNormalized = (event: React.PointerEvent<HTMLDivElement>) => {
     const rect = overlayRef.current?.getBoundingClientRect()
@@ -152,8 +168,10 @@ export function PreviewAspectCropOverlay({
     const point = pointToNormalized(event)
     if (!point) return
 
-    const safeTargetAspect = Number.isFinite(targetAspectRatio) && targetAspectRatio > 0 ? targetAspectRatio : 16 / 9
-    const safeSourceAspect = Number.isFinite(sourceAspectRatio) && sourceAspectRatio > 0 ? sourceAspectRatio : 16 / 9
+    const safeTargetAspect =
+      Number.isFinite(targetAspectRatio) && targetAspectRatio > 0 ? targetAspectRatio : 16 / 9
+    const safeSourceAspect =
+      Number.isFinite(sourceAspectRatio) && sourceAspectRatio > 0 ? sourceAspectRatio : 16 / 9
 
     if (dragState.mode === 'move') {
       const nextX = clamp(point.x - dragState.offsetX, 0, 1 - dragState.width)
@@ -168,12 +186,12 @@ export function PreviewAspectCropOverlay({
     }
 
     const candidateWidthByX = point.x - dragState.anchorX
-    const candidateWidthByY = (point.y - dragState.anchorY) * safeTargetAspect / safeSourceAspect
+    const candidateWidthByY = ((point.y - dragState.anchorY) * safeTargetAspect) / safeSourceAspect
     const maxWidthByX = 1 - dragState.anchorX
-    const maxWidthByY = (1 - dragState.anchorY) * safeTargetAspect / safeSourceAspect
+    const maxWidthByY = ((1 - dragState.anchorY) * safeTargetAspect) / safeSourceAspect
     const maxWidth = Math.max(0.06, Math.min(maxWidthByX, maxWidthByY))
     const nextWidth = clamp(Math.max(candidateWidthByX, candidateWidthByY), 0.06, maxWidth)
-    const nextHeight = nextWidth * safeSourceAspect / safeTargetAspect
+    const nextHeight = (nextWidth * safeSourceAspect) / safeTargetAspect
 
     onCropChange(
       normalizeAspectCropRegion(
@@ -227,7 +245,10 @@ export function PreviewAspectCropOverlay({
           left: contentRect.x,
           top: frameRect.top + frameRect.height,
           width: contentRect.width,
-          height: Math.max(0, contentRect.y + contentRect.height - (frameRect.top + frameRect.height)),
+          height: Math.max(
+            0,
+            contentRect.y + contentRect.height - (frameRect.top + frameRect.height),
+          ),
         }}
       />
       <div
@@ -244,7 +265,10 @@ export function PreviewAspectCropOverlay({
         style={{
           left: frameRect.left + frameRect.width,
           top: frameRect.top,
-          width: Math.max(0, contentRect.x + contentRect.width - (frameRect.left + frameRect.width)),
+          width: Math.max(
+            0,
+            contentRect.x + contentRect.width - (frameRect.left + frameRect.width),
+          ),
           height: frameRect.height,
         }}
       />

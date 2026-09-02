@@ -9,33 +9,33 @@
  * the drag and the playhead's own rendering feel laggy.
  */
 export function createRafCoalescer<T>(flush: (value: T) => void) {
-  let pendingValue: T | undefined;
-  let hasPending = false;
-  let rafId: number | null = null;
+  let pendingValue: T | undefined
+  let hasPending = false
+  let rafId: number | null = null
 
   const schedule = (value: T) => {
-    pendingValue = value;
-    hasPending = true;
-    if (rafId !== null) return;
+    pendingValue = value
+    hasPending = true
+    if (rafId !== null) return
     rafId = requestAnimationFrame(() => {
-      rafId = null;
+      rafId = null
       if (hasPending) {
-        hasPending = false;
-        const valueToFlush = pendingValue as T;
-        pendingValue = undefined;
-        flush(valueToFlush);
+        hasPending = false
+        const valueToFlush = pendingValue as T
+        pendingValue = undefined
+        flush(valueToFlush)
       }
-    });
-  };
+    })
+  }
 
   const cancel = () => {
     if (rafId !== null) {
-      cancelAnimationFrame(rafId);
-      rafId = null;
+      cancelAnimationFrame(rafId)
+      rafId = null
     }
-    hasPending = false;
-    pendingValue = undefined;
-  };
+    hasPending = false
+    pendingValue = undefined
+  }
 
-  return { schedule, cancel };
+  return { schedule, cancel }
 }

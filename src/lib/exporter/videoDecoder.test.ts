@@ -1,9 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
-import { VideoFileDecoder } from './videoDecoder';
+import { describe, expect, it, vi } from 'vitest'
+import { VideoFileDecoder } from './videoDecoder'
 
 function createMockVideo() {
-  type Listener = () => void;
-  const listeners: Record<string, Listener[]> = {};
+  type Listener = () => void
+  const listeners: Record<string, Listener[]> = {}
   return {
     defaultMuted: false,
     muted: false,
@@ -13,112 +13,112 @@ function createMockVideo() {
     paused: true,
     setAttribute: vi.fn(),
     addEventListener(event: string, handler: Listener) {
-      const arr = listeners[event] ?? [];
-      arr.push(handler);
-      listeners[event] = arr;
+      const arr = listeners[event] ?? []
+      arr.push(handler)
+      listeners[event] = arr
     },
     removeEventListener(event: string, handler: Listener) {
-      const arr = listeners[event];
-      if (arr) listeners[event] = arr.filter((h) => h !== handler);
+      const arr = listeners[event]
+      if (arr) listeners[event] = arr.filter((h) => h !== handler)
     },
     pause: vi.fn(),
     _emit(event: string) {
-      for (const h of listeners[event] ?? []) h();
+      for (const h of listeners[event] ?? []) h()
     },
     _listenerCount(event: string) {
-      return (listeners[event] ?? []).length;
+      return (listeners[event] ?? []).length
     },
-  };
+  }
 }
 
 describe('VideoFileDecoder silent defences', () => {
   describe('applySilentDefaults', () => {
     it('sets muted, volume, preload and inline attributes', () => {
-      const decoder = new VideoFileDecoder() as any;
-      const video = createMockVideo();
+      const decoder = new VideoFileDecoder() as any
+      const video = createMockVideo()
 
-      decoder.applySilentDefaults(video);
+      decoder.applySilentDefaults(video)
 
-      expect(video.muted).toBe(true);
-      expect(video.volume).toBe(0);
-      expect(video.defaultMuted).toBe(true);
-      expect(video.preload).toBe('metadata');
-      expect(video.playsInline).toBe(true);
-      expect(video.setAttribute).toHaveBeenCalledWith('muted', '');
-      expect(video.setAttribute).toHaveBeenCalledWith('playsinline', '');
-    });
+      expect(video.muted).toBe(true)
+      expect(video.volume).toBe(0)
+      expect(video.defaultMuted).toBe(true)
+      expect(video.preload).toBe('metadata')
+      expect(video.playsInline).toBe(true)
+      expect(video.setAttribute).toHaveBeenCalledWith('muted', '')
+      expect(video.setAttribute).toHaveBeenCalledWith('playsinline', '')
+    })
 
     it('overrides a previously audible video element', () => {
-      const decoder = new VideoFileDecoder() as any;
-      const video = createMockVideo();
-      video.muted = false;
-      video.volume = 0.8;
-      video.defaultMuted = false;
+      const decoder = new VideoFileDecoder() as any
+      const video = createMockVideo()
+      video.muted = false
+      video.volume = 0.8
+      video.defaultMuted = false
 
-      decoder.applySilentDefaults(video);
+      decoder.applySilentDefaults(video)
 
-      expect(video.muted).toBe(true);
-      expect(video.volume).toBe(0);
-      expect(video.defaultMuted).toBe(true);
-    });
-  });
+      expect(video.muted).toBe(true)
+      expect(video.volume).toBe(0)
+      expect(video.defaultMuted).toBe(true)
+    })
+  })
 
   describe('setupSilentPlaybackGuard', () => {
     it('pauses and mutes on play event', () => {
-      const decoder = new VideoFileDecoder() as any;
-      const video = createMockVideo();
+      const decoder = new VideoFileDecoder() as any
+      const video = createMockVideo()
 
-      decoder.setupSilentPlaybackGuard(video);
-      video._emit('play');
+      decoder.setupSilentPlaybackGuard(video)
+      video._emit('play')
 
-      expect(video.pause).toHaveBeenCalledOnce();
-      expect(video.muted).toBe(true);
-      expect(video.volume).toBe(0);
-      expect(video.defaultMuted).toBe(true);
-    });
+      expect(video.pause).toHaveBeenCalledOnce()
+      expect(video.muted).toBe(true)
+      expect(video.volume).toBe(0)
+      expect(video.defaultMuted).toBe(true)
+    })
 
     it('intercepts multiple play events', () => {
-      const decoder = new VideoFileDecoder() as any;
-      const video = createMockVideo();
+      const decoder = new VideoFileDecoder() as any
+      const video = createMockVideo()
 
-      decoder.setupSilentPlaybackGuard(video);
-      video._emit('play');
-      video._emit('play');
-      video._emit('play');
+      decoder.setupSilentPlaybackGuard(video)
+      video._emit('play')
+      video._emit('play')
+      video._emit('play')
 
-      expect(video.pause).toHaveBeenCalledTimes(3);
-    });
+      expect(video.pause).toHaveBeenCalledTimes(3)
+    })
 
     it('stores a teardown function', () => {
-      const decoder = new VideoFileDecoder() as any;
-      const video = createMockVideo();
+      const decoder = new VideoFileDecoder() as any
+      const video = createMockVideo()
 
-      decoder.setupSilentPlaybackGuard(video);
+      decoder.setupSilentPlaybackGuard(video)
 
-      expect(typeof decoder.silentGuardTeardown).toBe('function');
-    });
-  });
+      expect(typeof decoder.silentGuardTeardown).toBe('function')
+    })
+  })
 
   describe('destroy', () => {
     it('calls silentGuardTeardown and nullifies it', () => {
-      const decoder = new VideoFileDecoder() as any;
-      const video = createMockVideo();
+      const decoder = new VideoFileDecoder() as any
+      const video = createMockVideo()
 
-      decoder.videoElement = video;
-      decoder.setupSilentPlaybackGuard(video);
+      decoder.videoElement = video
+      decoder.setupSilentPlaybackGuard(video)
 
-      const playListenersBefore = video._listenerCount('play');
-      decoder.destroy();
+      const playListenersBefore = video._listenerCount('play')
+      decoder.destroy()
 
-      expect(video._listenerCount('play')).toBeLessThan(playListenersBefore);
-      expect(decoder.silentGuardTeardown).toBeNull();
-      expect(decoder.videoElement).toBeNull();
-    });
+      expect(video._listenerCount('play')).toBeLessThan(playListenersBefore)
+      expect(decoder.silentGuardTeardown).toBeNull()
+      expect(decoder.videoElement).toBeNull()
+    })
 
     it('is safe to call when no video element exists', () => {
-      const decoder = new VideoFileDecoder() as any;
-      decoder.videoElement = null;
-      expect(() => decoder.destroy()).not.toThrow();
-    });
-  });
-});
+      const decoder = new VideoFileDecoder() as any
+      decoder.videoElement = null
+      expect(() => decoder.destroy()).not.toThrow()
+    })
+  })
+})

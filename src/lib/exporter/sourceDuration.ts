@@ -15,13 +15,16 @@
  *   value clamped at 0. An override longer than the decoded duration is
  *   ignored: a probe can only tighten the end, never extend it.
  */
-export function resolveSourceDurationMs(decodedSeconds: number, overrideMs?: number | null): number {
-  const decodedMs = Number.isFinite(decodedSeconds) ? Math.max(0, decodedSeconds * 1000) : 0;
+export function resolveSourceDurationMs(
+  decodedSeconds: number,
+  overrideMs?: number | null,
+): number {
+  const decodedMs = Number.isFinite(decodedSeconds) ? Math.max(0, decodedSeconds * 1000) : 0
   if (typeof overrideMs !== 'number' || !Number.isFinite(overrideMs) || overrideMs <= 0) {
-    return decodedMs;
+    return decodedMs
   }
   if (decodedMs > 0 && overrideMs > decodedMs) {
-    return decodedMs;
+    return decodedMs
   }
-  return overrideMs;
+  return overrideMs
 }

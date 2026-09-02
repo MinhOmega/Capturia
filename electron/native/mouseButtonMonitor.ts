@@ -84,23 +84,36 @@ async function ensureHelperBinary(): Promise<string | null> {
     }
 
     const projectRoot = app.getAppPath()
-    const sourcePath = path.join(projectRoot, 'electron', 'native', 'macos', 'mouse-button-monitor.swift')
+    const sourcePath = path.join(
+      projectRoot,
+      'electron',
+      'native',
+      'macos',
+      'mouse-button-monitor.swift',
+    )
 
     try {
       await fs.mkdir(path.dirname(helperPath), { recursive: true })
       await new Promise<void>((resolve, reject) => {
-        const compile = spawn('xcrun', [
-          'swiftc',
-          '-parse-as-library',
-          '-O',
-          sourcePath,
-          '-framework', 'Foundation',
-          '-framework', 'AppKit',
-          '-o', helperPath,
-        ], {
-          cwd: projectRoot,
-          stdio: ['ignore', 'pipe', 'pipe'],
-        })
+        const compile = spawn(
+          'xcrun',
+          [
+            'swiftc',
+            '-parse-as-library',
+            '-O',
+            sourcePath,
+            '-framework',
+            'Foundation',
+            '-framework',
+            'AppKit',
+            '-o',
+            helperPath,
+          ],
+          {
+            cwd: projectRoot,
+            stdio: ['ignore', 'pipe', 'pipe'],
+          },
+        )
 
         let stderr = ''
         compile.stderr.on('data', (chunk) => {
@@ -123,7 +136,10 @@ async function ensureHelperBinary(): Promise<string | null> {
       return helperPath
     } catch (error) {
       helperUnavailable = true
-      console.warn('Failed to prepare native mouse button helper, click detection will use heuristic fallback.', error)
+      console.warn(
+        'Failed to prepare native mouse button helper, click detection will use heuristic fallback.',
+        error,
+      )
       return null
     }
   })()

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -6,70 +6,70 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Plus } from 'lucide-react';
-import { toast } from 'sonner';
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Plus } from 'lucide-react'
+import { toast } from 'sonner'
 import {
   addCustomFont,
   generateFontId,
   parseFontFamilyFromImport,
   isValidGoogleFontsUrl,
   type CustomFont,
-} from '@/lib/customFonts';
-import { useI18n } from '@/i18n';
+} from '@/lib/customFonts'
+import { useI18n } from '@/i18n'
 
 interface AddCustomFontDialogProps {
-  onFontAdded?: (font: CustomFont) => void;
+  onFontAdded?: (font: CustomFont) => void
 }
 
 export function AddCustomFontDialog({ onFontAdded }: AddCustomFontDialogProps) {
-  const { t } = useI18n();
-  const [open, setOpen] = useState(false);
-  const [importUrl, setImportUrl] = useState('');
-  const [fontName, setFontName] = useState('');
-  const [loading, setLoading] = useState(false);
+  const { t } = useI18n()
+  const [open, setOpen] = useState(false)
+  const [importUrl, setImportUrl] = useState('')
+  const [fontName, setFontName] = useState('')
+  const [loading, setLoading] = useState(false)
 
   const handleImportUrlChange = (url: string) => {
-    setImportUrl(url);
+    setImportUrl(url)
 
     // Auto-extract font name if valid Google Fonts URL
     if (isValidGoogleFontsUrl(url)) {
-      const extracted = parseFontFamilyFromImport(url);
+      const extracted = parseFontFamilyFromImport(url)
       if (extracted && !fontName) {
-        setFontName(extracted);
+        setFontName(extracted)
       }
     }
-  };
+  }
 
   const handleAdd = async () => {
     // Validate inputs
     if (!importUrl.trim()) {
-      toast.error(t('settings.font.error.enterUrl'));
-      return;
+      toast.error(t('settings.font.error.enterUrl'))
+      return
     }
 
     if (!isValidGoogleFontsUrl(importUrl)) {
-      toast.error(t('settings.font.error.invalidUrl'));
-      return;
+      toast.error(t('settings.font.error.invalidUrl'))
+      return
     }
 
     if (!fontName.trim()) {
-      toast.error(t('settings.font.error.enterName'));
-      return;
+      toast.error(t('settings.font.error.enterName'))
+      return
     }
 
-    setLoading(true);
+    setLoading(true)
 
     try {
       // Extract font family from URL
-      const fontFamily = parseFontFamilyFromImport(importUrl);
+      const fontFamily = parseFontFamilyFromImport(importUrl)
       if (!fontFamily) {
-        toast.error(t('settings.font.error.extract'));
-        setLoading(false);
-        return;
+        toast.error(t('settings.font.error.extract'))
+        setLoading(false)
+        return
       }
 
       // Create custom font object
@@ -78,34 +78,34 @@ export function AddCustomFontDialog({ onFontAdded }: AddCustomFontDialogProps) {
         name: fontName.trim(),
         fontFamily: fontFamily,
         importUrl: importUrl.trim(),
-      };
+      }
 
       // Add font (this will load and verify it) - throws if it fails
-      await addCustomFont(newFont);
+      await addCustomFont(newFont)
 
       // Notify parent
       if (onFontAdded) {
-        onFontAdded(newFont);
+        onFontAdded(newFont)
       }
 
-      toast.success(t('settings.font.added', { name: fontName }));
+      toast.success(t('settings.font.added', { name: fontName }))
 
       // Reset and close
-      setImportUrl('');
-      setFontName('');
-      setOpen(false);
+      setImportUrl('')
+      setFontName('')
+      setOpen(false)
     } catch (error) {
-      console.error('Failed to add custom font:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Failed to load font';
+      console.error('Failed to add custom font:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Failed to load font'
       toast.error(t('settings.font.failed'), {
         description: errorMessage.includes('timeout')
           ? t('settings.font.failed.timeout')
           : t('settings.font.failed.generic'),
-      });
+      })
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  };
+  }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -139,9 +139,7 @@ export function AddCustomFontDialog({ onFontAdded }: AddCustomFontDialogProps) {
               onChange={(e) => handleImportUrlChange(e.target.value)}
               className="bg-white/5 border-white/10 text-slate-200"
             />
-            <p className="text-xs text-slate-400">
-              {t('settings.font.importHint')}
-            </p>
+            <p className="text-xs text-slate-400">{t('settings.font.importHint')}</p>
           </div>
 
           <div className="space-y-2">
@@ -155,9 +153,7 @@ export function AddCustomFontDialog({ onFontAdded }: AddCustomFontDialogProps) {
               onChange={(e) => setFontName(e.target.value)}
               className="bg-white/5 border-white/10 text-slate-200"
             />
-            <p className="text-xs text-slate-400">
-              {t('settings.font.displayHint')}
-            </p>
+            <p className="text-xs text-slate-400">{t('settings.font.displayHint')}</p>
           </div>
 
           <div className="flex justify-end gap-2 mt-6">
@@ -179,5 +175,5 @@ export function AddCustomFontDialog({ onFontAdded }: AddCustomFontDialogProps) {
         </div>
       </DialogContent>
     </Dialog>
-  );
+  )
 }

@@ -2,7 +2,11 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
-import { MAX_IPC_CHUNK_BYTES, registerFileReadHandlers, resolveReadableVideoPath } from './fileReadHandlers'
+import {
+  MAX_IPC_CHUNK_BYTES,
+  registerFileReadHandlers,
+  resolveReadableVideoPath,
+} from './fileReadHandlers'
 import { approvedReadPaths } from './paths'
 
 type Handler = (event: unknown, ...args: unknown[]) => Promise<Record<string, unknown>>
@@ -68,7 +72,9 @@ describe('file read IPC handlers', () => {
     })
 
     it('rejects sidecars, relative paths and non-strings', () => {
-      expect(resolveReadableVideoPath(path.join(recordingsDir, 'clip.cursor.json'), recordingsDir)).toBeNull()
+      expect(
+        resolveReadableVideoPath(path.join(recordingsDir, 'clip.cursor.json'), recordingsDir),
+      ).toBeNull()
       expect(resolveReadableVideoPath('clip.webm', recordingsDir)).toBeNull()
       expect(resolveReadableVideoPath(undefined, recordingsDir)).toBeNull()
       expect(resolveReadableVideoPath('', recordingsDir)).toBeNull()
@@ -145,12 +151,18 @@ describe('file read IPC handlers', () => {
       const stub = createIpcMainStub()
       registerFileReadHandlers({ ipcMain: stub.ipcMain, recordingsDir })
 
-      expect((await stub.invoke('read-file-chunk', recordingPath, -1, 4)).message).toBe('Invalid chunk range')
-      expect((await stub.invoke('read-file-chunk', recordingPath, 0, 0)).message).toBe('Invalid chunk range')
-      expect((await stub.invoke('read-file-chunk', recordingPath, Number.NaN, 4)).message).toBe('Invalid chunk range')
-      expect((await stub.invoke('read-file-chunk', recordingPath, 0, MAX_IPC_CHUNK_BYTES + 1)).message).toBe(
-        'Requested chunk size exceeds limit',
+      expect((await stub.invoke('read-file-chunk', recordingPath, -1, 4)).message).toBe(
+        'Invalid chunk range',
       )
+      expect((await stub.invoke('read-file-chunk', recordingPath, 0, 0)).message).toBe(
+        'Invalid chunk range',
+      )
+      expect((await stub.invoke('read-file-chunk', recordingPath, Number.NaN, 4)).message).toBe(
+        'Invalid chunk range',
+      )
+      expect(
+        (await stub.invoke('read-file-chunk', recordingPath, 0, MAX_IPC_CHUNK_BYTES + 1)).message,
+      ).toBe('Requested chunk size exceeds limit')
     })
 
     it('refuses unapproved paths', async () => {

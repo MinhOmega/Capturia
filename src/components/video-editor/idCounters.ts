@@ -1,8 +1,8 @@
 /** Prefix used when minting annotation ids (`annotation-1`, `annotation-2`, ...). */
-export const ANNOTATION_ID_PREFIX = 'annotation-';
+export const ANNOTATION_ID_PREFIX = 'annotation-'
 
 function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 /**
@@ -11,9 +11,9 @@ function escapeRegExp(value: string): string {
  * ids already in use.
  */
 export function maxIdNum(items: ReadonlyArray<{ id: string }>, prefix: string): number {
-  const pattern = new RegExp(`^${escapeRegExp(prefix)}(\\d+)$`);
+  const pattern = new RegExp(`^${escapeRegExp(prefix)}(\\d+)$`)
   return items.reduce((max, item) => {
-    const match = item.id.match(pattern);
-    return match ? Math.max(max, parseInt(match[1], 10)) : max;
-  }, 0);
+    const match = item.id.match(pattern)
+    return match ? Math.max(max, parseInt(match[1], 10)) : max
+  }, 0)
 }

@@ -35,7 +35,12 @@ describe('cursor tracker IPC handlers', () => {
   it('registers the tracker channels', () => {
     const ipc = fakeIpcMain()
     registerCursorTrackerHandlers(buildContext(ipc))
-    expect(ipc.registered).toEqual(['cursor-tracker-start', 'cursor-tracker-pause', 'cursor-tracker-resume', 'cursor-tracker-stop'])
+    expect(ipc.registered).toEqual([
+      'cursor-tracker-start',
+      'cursor-tracker-pause',
+      'cursor-tracker-resume',
+      'cursor-tracker-stop',
+    ])
   })
 
   it('pause / resume without a tracker report failure', async () => {
@@ -58,16 +63,25 @@ describe('cursor tracker IPC handlers', () => {
       await ipc.invoke('cursor-tracker-start', { captureSize: { width: 1920, height: 1080 } })
 
       vi.advanceTimersByTime(200)
-      await expect(ipc.invoke('cursor-tracker-pause')).resolves.toEqual({ success: true, changed: true })
+      await expect(ipc.invoke('cursor-tracker-pause')).resolves.toEqual({
+        success: true,
+        changed: true,
+      })
       // Second pause is a no-op, not a second range.
-      await expect(ipc.invoke('cursor-tracker-pause')).resolves.toEqual({ success: true, changed: false })
+      await expect(ipc.invoke('cursor-tracker-pause')).resolves.toEqual({
+        success: true,
+        changed: false,
+      })
       vi.advanceTimersByTime(1_000)
-      await expect(ipc.invoke('cursor-tracker-resume')).resolves.toEqual({ success: true, changed: true })
+      await expect(ipc.invoke('cursor-tracker-resume')).resolves.toEqual({
+        success: true,
+        changed: true,
+      })
       vi.advanceTimersByTime(200)
 
-      const stopped = await ipc.invoke<{ track?: { samples: Array<{ timeMs: number }>; stats?: { sampleCount?: number } } }>(
-        'cursor-tracker-stop',
-      )
+      const stopped = await ipc.invoke<{
+        track?: { samples: Array<{ timeMs: number }>; stats?: { sampleCount?: number } }
+      }>('cursor-tracker-stop')
       const times = stopped.track?.samples.map((sample) => sample.timeMs) ?? []
       expect(times.length).toBeGreaterThan(0)
       // The recording lasted 1400 ms of wall clock but only 400 ms of timeline.
@@ -84,7 +98,10 @@ describe('cursor tracker IPC handlers', () => {
     const ipc = fakeIpcMain()
     const registration = registerCursorTrackerHandlers(buildContext(ipc))
     vi.spyOn(console, 'log').mockImplementation(() => undefined)
-    await expect(ipc.invoke('cursor-tracker-stop')).resolves.toEqual({ success: true, track: undefined })
+    await expect(ipc.invoke('cursor-tracker-stop')).resolves.toEqual({
+      success: true,
+      track: undefined,
+    })
     expect(registration.stopCursorTracker()).toBeUndefined()
   })
 
@@ -111,17 +128,21 @@ describe('cursor tracker IPC handlers', () => {
       ctx.session.selectedSource = { id: 'screen:1:0', display_id: '1' }
       registerCursorTrackerHandlers(ctx)
 
-      const started = await ipc.invoke<{ success: boolean; warningCode?: string }>('cursor-tracker-start', {
-        captureSize: { width: 1920, height: 1080 },
-      })
+      const started = await ipc.invoke<{ success: boolean; warningCode?: string }>(
+        'cursor-tracker-start',
+        {
+          captureSize: { width: 1920, height: 1080 },
+        },
+      )
       expect(started.success).toBe(true)
       // No native mouse monitor in the test: the tracker says so.
       expect(started.warningCode).toBe('mouse_button_fallback')
 
       vi.advanceTimersByTime(100)
-      const stopped = await ipc.invoke<{ success: boolean; track?: { samples: unknown[]; space?: { mode?: string } } }>(
-        'cursor-tracker-stop',
-      )
+      const stopped = await ipc.invoke<{
+        success: boolean
+        track?: { samples: unknown[]; space?: { mode?: string } }
+      }>('cursor-tracker-stop')
       expect(stopped.success).toBe(true)
       expect(stopped.track?.samples.length).toBeGreaterThan(0)
       expect(stopped.track?.space?.mode).toBe('source-display')
@@ -135,7 +156,10 @@ describe('normalizeSourceRef', () => {
   it('keeps id and stringifies display_id, else undefined', () => {
     expect(normalizeSourceRef(null)).toBeUndefined()
     expect(normalizeSourceRef({})).toBeUndefined()
-    expect(normalizeSourceRef({ id: 'screen:1:0', display_id: 1 })).toEqual({ id: 'screen:1:0', display_id: '1' })
+    expect(normalizeSourceRef({ id: 'screen:1:0', display_id: 1 })).toEqual({
+      id: 'screen:1:0',
+      display_id: '1',
+    })
     expect(normalizeSourceRef({ display_id: 2 })).toEqual({ id: undefined, display_id: '2' })
   })
 })

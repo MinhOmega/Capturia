@@ -15,8 +15,8 @@ const LINUX_SESSION_TYPE = (process.env['XDG_SESSION_TYPE'] || '').toLowerCase()
  */
 export const HEADLESS = process.env['HEADLESS'] === '1' || process.env['HEADLESS'] === 'true'
 
-let hudOverlayWindow: BrowserWindow | null = null;
-let permissionCheckerWindow: BrowserWindow | null = null;
+let hudOverlayWindow: BrowserWindow | null = null
+let permissionCheckerWindow: BrowserWindow | null = null
 
 /**
  * C-1: the editor's caption worker loads the Whisper model over file:// and a
@@ -42,7 +42,8 @@ function editorAdditionalArguments(): string[] {
 const CONTENT_PROTECTION_DISABLED = process.env['CAPTURIA_DISABLE_CONTENT_PROTECTION'] === '1'
 const CONTENT_PROTECTION_FORCED = process.env['CAPTURIA_FORCE_CONTENT_PROTECTION'] === '1'
 const CONTENT_PROTECTION_BREAKS_DISPLAY =
-  process.platform === 'darwin' && Number.parseInt(process.getSystemVersion().split('.')[0] ?? '0', 10) >= 26
+  process.platform === 'darwin' &&
+  Number.parseInt(process.getSystemVersion().split('.')[0] ?? '0', 10) >= 26
 
 /**
  * Keep a window out of screen captures (including Capturia's own recording)
@@ -178,23 +179,33 @@ function attachDevWindowLogging(win: BrowserWindow, label: string): void {
   // Electron 39 deprecates the positional `(event, level, message, line, sourceId)`
   // listener; the details now ride on the event object itself.
   win.webContents.on('console-message', (details) => {
-    const tags: Record<string, string> = { info: 'LOG', debug: 'LOG', warning: 'WARN', error: 'ERR' }
+    const tags: Record<string, string> = {
+      info: 'LOG',
+      debug: 'LOG',
+      warning: 'WARN',
+      error: 'ERR',
+    }
     const tag = tags[details.level] ?? 'LOG'
     const shortSource = details.sourceId ? details.sourceId.replace(/.*\//, '') : ''
     console.log(`[${label}:${tag}] ${details.message} (${shortSource}:${details.lineNumber})`)
   })
 
-  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
-    if (!isMainFrame) return
-    console.error(`[${label}:LOAD_FAIL] code=${errorCode} description=${errorDescription} url=${validatedURL}`)
-  })
+  win.webContents.on(
+    'did-fail-load',
+    (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      if (!isMainFrame) return
+      console.error(
+        `[${label}:LOAD_FAIL] code=${errorCode} description=${errorDescription} url=${validatedURL}`,
+      )
+    },
+  )
 }
 
 ipcMain.on('hud-overlay-hide', () => {
   if (hudOverlayWindow && !hudOverlayWindow.isDestroyed()) {
-    hudOverlayWindow.minimize();
+    hudOverlayWindow.minimize()
   }
-});
+})
 
 // Recording mode: keep the full-size transparent overlay window — the renderer
 // handles compact-bar layout via CSS.  Resizing/repositioning is unreliable on
@@ -202,37 +213,37 @@ ipcMain.on('hud-overlay-hide', () => {
 // or in the top-left corner.  Instead we just ensure always-on-top is enforced.
 
 ipcMain.on('hud-overlay-resize', () => {
-  if (!hudOverlayWindow || hudOverlayWindow.isDestroyed()) return;
+  if (!hudOverlayWindow || hudOverlayWindow.isDestroyed()) return
   // Re-apply always-on-top so the recording bar stays visible over other apps
-  hudOverlayWindow.setAlwaysOnTop(true, 'screen-saver');
-  hudOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-});
+  hudOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
+  hudOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+})
 
 ipcMain.on('hud-overlay-restore', () => {
-  if (!hudOverlayWindow || hudOverlayWindow.isDestroyed()) return;
+  if (!hudOverlayWindow || hudOverlayWindow.isDestroyed()) return
   // Un-minimize if the window was hidden during recording
   if (hudOverlayWindow.isMinimized()) {
-    hudOverlayWindow.restore();
+    hudOverlayWindow.restore()
   }
-  if (!HEADLESS) hudOverlayWindow.showInactive();
-  hudOverlayWindow.setAlwaysOnTop(true, 'screen-saver');
-  hudOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-});
+  if (!HEADLESS) hudOverlayWindow.showInactive()
+  hudOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
+  hudOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+})
 
 export function createHudOverlayWindow(): BrowserWindow {
-  const isLinux = process.platform === 'linux';
-  const isLinuxWayland = isLinux && LINUX_SESSION_TYPE === 'wayland';
-  const primaryDisplay = screen.getPrimaryDisplay();
-  const { workArea } = primaryDisplay;
+  const isLinux = process.platform === 'linux'
+  const isLinuxWayland = isLinux && LINUX_SESSION_TYPE === 'wayland'
+  const primaryDisplay = screen.getPrimaryDisplay()
+  const { workArea } = primaryDisplay
 
-  const horizontalMargin = 12;
-  const maxWindowWidth = 2200;
-  const availableWidth = Math.max(760, workArea.width - horizontalMargin);
-  const windowWidth = Math.min(maxWindowWidth, availableWidth);
-  const windowHeight = Math.min(420, Math.max(300, Math.round(workArea.height * 0.38)));
+  const horizontalMargin = 12
+  const maxWindowWidth = 2200
+  const availableWidth = Math.max(760, workArea.width - horizontalMargin)
+  const windowWidth = Math.min(maxWindowWidth, availableWidth)
+  const windowHeight = Math.min(420, Math.max(300, Math.round(workArea.height * 0.38)))
 
-  const x = Math.floor(workArea.x + (workArea.width - windowWidth) / 2);
-  const y = Math.floor(workArea.y + workArea.height - windowHeight - 8);
+  const x = Math.floor(workArea.x + (workArea.width - windowWidth) / 2)
+  const y = Math.floor(workArea.y + workArea.height - windowHeight - 8)
 
   const win = new BrowserWindow({
     width: windowWidth,
@@ -272,53 +283,53 @@ export function createHudOverlayWindow(): BrowserWindow {
   // `visibleOnFullScreen` (macOS) lets the HUD follow the user across Spaces and
   // stay visible over a fullscreen app instead of staying pinned to the Space it
   // was first opened on. Wayland compositors reject the workspace hint entirely.
-  win.setAlwaysOnTop(true, 'screen-saver');
-  win.setVisibleOnAllWorkspaces(!isLinuxWayland, { visibleOnFullScreen: true });
+  win.setAlwaysOnTop(true, 'screen-saver')
+  win.setVisibleOnAllWorkspaces(!isLinuxWayland, { visibleOnFullScreen: true })
   win.once('show', () => {
-    win.setAlwaysOnTop(true, 'screen-saver');
-    win.setVisibleOnAllWorkspaces(!isLinuxWayland, { visibleOnFullScreen: true });
-  });
+    win.setAlwaysOnTop(true, 'screen-saver')
+    win.setVisibleOnAllWorkspaces(!isLinuxWayland, { visibleOnFullScreen: true })
+  })
 
   // Safety net: if the WM drops always-on-top, re-apply immediately.
   win.on('always-on-top-changed', (_event, isAlwaysOnTop) => {
     if (!isAlwaysOnTop && !win.isDestroyed()) {
-      win.setAlwaysOnTop(true, 'screen-saver');
+      win.setAlwaysOnTop(true, 'screen-saver')
     }
-  });
+  })
 
   // Fallback for Linux: periodically toggle always-on-top to force WM re-evaluation.
   // Some compositors (especially Wayland/Mutter) silently drop the state.
   if (isLinux) {
     const alwaysOnTopTimer = setInterval(() => {
       if (win.isDestroyed()) {
-        clearInterval(alwaysOnTopTimer);
-        return;
+        clearInterval(alwaysOnTopTimer)
+        return
       }
       if (!win.isMinimized() && !isLinuxWayland) {
-        win.setAlwaysOnTop(false);
-        win.setAlwaysOnTop(true, 'screen-saver');
+        win.setAlwaysOnTop(false)
+        win.setAlwaysOnTop(true, 'screen-saver')
       }
-    }, 3000);
-    win.on('closed', () => clearInterval(alwaysOnTopTimer));
+    }, 3000)
+    win.on('closed', () => clearInterval(alwaysOnTopTimer))
   }
 
   win.webContents.on('did-finish-load', () => {
-    win?.webContents.send('main-process-message', (new Date).toLocaleString())
+    win?.webContents.send('main-process-message', new Date().toLocaleString())
   })
 
-  hudOverlayWindow = win;
+  hudOverlayWindow = win
 
   win.on('closed', () => {
     if (hudOverlayWindow === win) {
-      hudOverlayWindow = null;
+      hudOverlayWindow = null
     }
-  });
+  })
 
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL + '?windowType=hud-overlay')
   } else {
     win.loadFile(path.join(RENDERER_DIST, 'index.html'), {
-      query: { windowType: 'hud-overlay' }
+      query: { windowType: 'hud-overlay' },
     })
   }
 
@@ -326,7 +337,7 @@ export function createHudOverlayWindow(): BrowserWindow {
 }
 
 export function createEditorWindow(): BrowserWindow {
-  const isMac = process.platform === 'darwin';
+  const isMac = process.platform === 'darwin'
 
   const win = new BrowserWindow({
     width: 1200,
@@ -357,37 +368,37 @@ export function createEditorWindow(): BrowserWindow {
   attachDevWindowLogging(win, 'editor')
 
   // Maximize the window by default
-  win.maximize();
+  win.maximize()
 
   // The editor renders its own File/Edit/View menu bar in the custom titlebar,
   // so hide the native OS menu bar on Windows/Linux (it stays reachable via Alt).
   // macOS keeps its global menu bar.
   if (!isMac) {
-    win.setAutoHideMenuBar(true);
+    win.setAutoHideMenuBar(true)
   }
 
   // Show only once painted to avoid a white flash on cold Vite start.
   win.once('ready-to-show', () => {
-    if (!HEADLESS) win.show();
-  });
+    if (!HEADLESS) win.show()
+  })
 
   // Inject the dark background before any React paint so the sub-titlebar area
   // never flashes white on a cold Vite load.
   win.webContents.on('dom-ready', () => {
     win.webContents.insertCSS('html, body, #root { background: #09090b !important; }').catch(() => {
       // Best-effort cosmetic; ignore if the page is mid-teardown.
-    });
-  });
+    })
+  })
 
   win.webContents.on('did-finish-load', () => {
-    win?.webContents.send('main-process-message', (new Date).toLocaleString())
+    win?.webContents.send('main-process-message', new Date().toLocaleString())
   })
 
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL + '?windowType=editor')
   } else {
     win.loadFile(path.join(RENDERER_DIST, 'index.html'), {
-      query: { windowType: 'editor' }
+      query: { windowType: 'editor' },
     })
   }
 
@@ -397,7 +408,7 @@ export function createEditorWindow(): BrowserWindow {
 export function createSourceSelectorWindow(): BrowserWindow {
   const isLinuxWayland = process.platform === 'linux' && LINUX_SESSION_TYPE === 'wayland'
   const { width, height } = screen.getPrimaryDisplay().workAreaSize
-  
+
   const win = new BrowserWindow({
     width: 620,
     height: 420,
@@ -431,8 +442,8 @@ export function createSourceSelectorWindow(): BrowserWindow {
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL + '?windowType=source-selector')
   } else {
-    win.loadFile(path.join(RENDERER_DIST, 'index.html'), { 
-      query: { windowType: 'source-selector' } 
+    win.loadFile(path.join(RENDERER_DIST, 'index.html'), {
+      query: { windowType: 'source-selector' },
     })
   }
 

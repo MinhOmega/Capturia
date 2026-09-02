@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Button } from "../ui/button";
-import { ExternalLink, RefreshCw, ShieldAlert, ShieldCheck } from "lucide-react";
-import { useI18n } from "@/i18n";
-import { reportUserActionError } from "@/lib/userErrorFeedback";
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Button } from '../ui/button'
+import { ExternalLink, RefreshCw, ShieldAlert, ShieldCheck } from 'lucide-react'
+import { useI18n } from '@/i18n'
+import { reportUserActionError } from '@/lib/userErrorFeedback'
 import {
   getPermissionItem,
   isPermissionBlocked,
@@ -12,136 +12,150 @@ import {
   type CapturePermissionKey,
   type CapturePermissionSnapshot,
   type CapturePermissionStatus,
-} from "@/lib/permissions/capturePermissions";
-import { resolvePermissionActionMode } from "@/lib/permissions/permissionActions";
+} from '@/lib/permissions/capturePermissions'
+import { resolvePermissionActionMode } from '@/lib/permissions/permissionActions'
 
 const PERMISSION_ORDER: CapturePermissionKey[] = [
-  "screen",
-  "camera",
-  "microphone",
-  "input-monitoring",
-  "accessibility",
-];
+  'screen',
+  'camera',
+  'microphone',
+  'input-monitoring',
+  'accessibility',
+]
 
 function createFallbackItem(key: CapturePermissionKey): CapturePermissionItem {
   return {
     key,
-    status: "unknown",
-    requiredForRecording: key === "screen",
+    status: 'unknown',
+    requiredForRecording: key === 'screen',
     canOpenSettings: false,
-  };
+  }
 }
 
 function statusTextClass(status: CapturePermissionStatus): string {
-  if (status === "granted") return "text-emerald-300";
-  if (status === "denied" || status === "restricted") return "text-amber-300";
-  return "text-zinc-300";
+  if (status === 'granted') return 'text-emerald-300'
+  if (status === 'denied' || status === 'restricted') return 'text-amber-300'
+  return 'text-zinc-300'
 }
 
 function statusBadgeClass(status: CapturePermissionStatus): string {
-  if (status === "granted") return "bg-emerald-500/15 border-emerald-400/40";
-  if (status === "denied" || status === "restricted") return "bg-amber-500/15 border-amber-400/40";
-  return "bg-zinc-500/15 border-zinc-300/25";
+  if (status === 'granted') return 'bg-emerald-500/15 border-emerald-400/40'
+  if (status === 'denied' || status === 'restricted') return 'bg-amber-500/15 border-amber-400/40'
+  return 'bg-zinc-500/15 border-zinc-300/25'
 }
 
 function keyLabelSuffix(key: CapturePermissionKey): string {
-  if (key === "screen") return "ScreenCapture";
-  if (key === "camera") return "Camera";
-  if (key === "microphone") return "Microphone";
-  if (key === "input-monitoring") return "InputMonitoring";
-  return "Accessibility";
+  if (key === 'screen') return 'ScreenCapture'
+  if (key === 'camera') return 'Camera'
+  if (key === 'microphone') return 'Microphone'
+  if (key === 'input-monitoring') return 'InputMonitoring'
+  return 'Accessibility'
 }
 
 export function PermissionCheckerWindow() {
-  const { t } = useI18n();
-  const [loading, setLoading] = useState(true);
-  const [snapshot, setSnapshot] = useState<CapturePermissionSnapshot | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
+  const { t } = useI18n()
+  const [loading, setLoading] = useState(true)
+  const [snapshot, setSnapshot] = useState<CapturePermissionSnapshot | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
 
   const loadSnapshot = useCallback(
     async (silent = false) => {
-      if (!window.electronAPI) return;
+      if (!window.electronAPI) return
       if (!silent) {
-        setLoading(true);
+        setLoading(true)
       } else {
-        setRefreshing(true);
+        setRefreshing(true)
       }
       try {
-        const result = await window.electronAPI.getCapturePermissionSnapshot();
-        setSnapshot(result);
+        const result = await window.electronAPI.getCapturePermissionSnapshot()
+        setSnapshot(result)
       } catch (error) {
         reportUserActionError({
           t,
-          userMessage: t("launch.permission.refreshFailed"),
+          userMessage: t('launch.permission.refreshFailed'),
           error,
-          context: "permission-checker.load-snapshot",
-          dedupeKey: "permission-checker.load-snapshot",
-        });
+          context: 'permission-checker.load-snapshot',
+          dedupeKey: 'permission-checker.load-snapshot',
+        })
       } finally {
-        setLoading(false);
-        setRefreshing(false);
+        setLoading(false)
+        setRefreshing(false)
       }
     },
     [t],
-  );
+  )
 
   useEffect(() => {
-    void loadSnapshot(false);
-  }, [loadSnapshot]);
+    void loadSnapshot(false)
+  }, [loadSnapshot])
 
   useEffect(() => {
     const onFocus = () => {
-      void loadSnapshot(true);
-    };
-    window.addEventListener("focus", onFocus);
+      void loadSnapshot(true)
+    }
+    window.addEventListener('focus', onFocus)
     return () => {
-      window.removeEventListener("focus", onFocus);
-    };
-  }, [loadSnapshot]);
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [loadSnapshot])
 
   const orderedItems = useMemo(() => {
-    return PERMISSION_ORDER.map((key) => getPermissionItem(snapshot ?? { platform: "unknown", checkedAtMs: 0, canOpenSystemSettings: false, items: [] }, key) ?? createFallbackItem(key));
-  }, [snapshot]);
+    return PERMISSION_ORDER.map(
+      (key) =>
+        getPermissionItem(
+          snapshot ?? {
+            platform: 'unknown',
+            checkedAtMs: 0,
+            canOpenSystemSettings: false,
+            items: [],
+          },
+          key,
+        ) ?? createFallbackItem(key),
+    )
+  }, [snapshot])
 
   const readiness = useMemo(() => {
     if (!snapshot) {
-      return { ready: false, missingRequired: [createFallbackItem("screen")] };
+      return { ready: false, missingRequired: [createFallbackItem('screen')] }
     }
-    return resolveRecordingPermissionReadiness(snapshot);
-  }, [snapshot]);
+    return resolveRecordingPermissionReadiness(snapshot)
+  }, [snapshot])
 
   const handlePermissionAction = useCallback(
     async (item: CapturePermissionItem) => {
-      if (isPermissionGranted(item.status)) return;
+      if (isPermissionGranted(item.status)) return
       try {
-        const result = await window.electronAPI.requestCapturePermissionAccess(item.key);
+        const result = await window.electronAPI.requestCapturePermissionAccess(item.key)
         if (!result.success) {
           reportUserActionError({
             t,
-            userMessage: t("launch.permission.permissionActionFailed"),
-            error: result.message || "requestCapturePermissionAccess returned unsuccessful result",
-            context: "permission-checker.permission-action",
+            userMessage: t('launch.permission.permissionActionFailed'),
+            error: result.message || 'requestCapturePermissionAccess returned unsuccessful result',
+            context: 'permission-checker.permission-action',
             details: { key: item.key },
             dedupeKey: `permission-checker.permission-action:${item.key}`,
-          });
-          return;
+          })
+          return
         }
-        window.setTimeout(() => {
-          void loadSnapshot(true);
-        }, result.openedSettings ? 700 : 350);
+        window.setTimeout(
+          () => {
+            void loadSnapshot(true)
+          },
+          result.openedSettings ? 700 : 350,
+        )
       } catch (error) {
         reportUserActionError({
           t,
-          userMessage: t("launch.permission.permissionActionFailed"),
+          userMessage: t('launch.permission.permissionActionFailed'),
           error,
-          context: "permission-checker.permission-action",
+          context: 'permission-checker.permission-action',
           details: { key: item.key },
           dedupeKey: `permission-checker.permission-action:${item.key}`,
-        });
+        })
       }
     },
     [loadSnapshot, t],
-  );
+  )
 
   if (loading) {
     return (
@@ -155,10 +169,10 @@ export function PermissionCheckerWindow() {
       >
         <div className="flex items-center gap-3 text-zinc-300">
           <RefreshCw className="h-4 w-4 animate-spin" />
-          <span>{t("launch.permission.loading")}</span>
+          <span>{t('launch.permission.loading')}</span>
         </div>
       </div>
-    );
+    )
   }
 
   return (
@@ -174,16 +188,18 @@ export function PermissionCheckerWindow() {
       <div className="max-w-5xl mx-auto flex flex-col gap-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h1 className="text-xl font-semibold tracking-tight">{t("launch.permission.title")}</h1>
-            <p className="text-sm text-zinc-300 mt-2 max-w-4xl leading-relaxed">{t("launch.permission.intro")}</p>
+            <h1 className="text-xl font-semibold tracking-tight">{t('launch.permission.title')}</h1>
+            <p className="text-sm text-zinc-300 mt-2 max-w-4xl leading-relaxed">
+              {t('launch.permission.intro')}
+            </p>
           </div>
           <Button
             onClick={() => void loadSnapshot(true)}
             disabled={refreshing}
             className="bg-white/5 hover:bg-white/10 text-white border border-white/10 gap-2"
           >
-            <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-            {t("launch.permission.refresh")}
+            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+            {t('launch.permission.refresh')}
           </Button>
         </div>
 
@@ -196,20 +212,23 @@ export function PermissionCheckerWindow() {
           }}
         >
           {orderedItems.map((item) => {
-            const statusText = t(`launch.permission.status${item.status.replace(/(^|-)([a-z])/g, (_s, _dash, letter: string) => letter.toUpperCase())}`);
-            const labelKey = keyLabelSuffix(item.key);
-            const title = t(`launch.permission.row${labelKey}Title`);
-            const description = t(`launch.permission.row${labelKey}Description`);
-            const isGranted = isPermissionGranted(item.status);
-            const isBlocked = isPermissionBlocked(item.status);
-            const actionMode = resolvePermissionActionMode(item);
-            const actionText = actionMode === "granted"
-              ? t("launch.permission.actionGranted")
-              : actionMode === "request"
-              ? t("launch.permission.actionRequestAccess")
-              : actionMode === "open-settings"
-              ? t("launch.permission.actionOpenSettings")
-              : t("launch.permission.actionManualCheck");
+            const statusText = t(
+              `launch.permission.status${item.status.replace(/(^|-)([a-z])/g, (_s, _dash, letter: string) => letter.toUpperCase())}`,
+            )
+            const labelKey = keyLabelSuffix(item.key)
+            const title = t(`launch.permission.row${labelKey}Title`)
+            const description = t(`launch.permission.row${labelKey}Description`)
+            const isGranted = isPermissionGranted(item.status)
+            const isBlocked = isPermissionBlocked(item.status)
+            const actionMode = resolvePermissionActionMode(item)
+            const actionText =
+              actionMode === 'granted'
+                ? t('launch.permission.actionGranted')
+                : actionMode === 'request'
+                  ? t('launch.permission.actionRequestAccess')
+                  : actionMode === 'open-settings'
+                    ? t('launch.permission.actionOpenSettings')
+                    : t('launch.permission.actionManualCheck')
 
             return (
               <div
@@ -222,11 +241,11 @@ export function PermissionCheckerWindow() {
                     <h2 className="text-base font-semibold text-white">{title}</h2>
                     {item.requiredForRecording ? (
                       <span className="text-[11px] px-2 py-0.5 rounded-full border border-amber-300/40 bg-amber-300/15 text-amber-200">
-                        {t("launch.permission.required")}
+                        {t('launch.permission.required')}
                       </span>
                     ) : (
                       <span className="text-[11px] px-2 py-0.5 rounded-full border border-zinc-400/30 bg-zinc-500/10 text-zinc-300">
-                        {t("launch.permission.optional")}
+                        {t('launch.permission.optional')}
                       </span>
                     )}
                   </div>
@@ -243,8 +262,8 @@ export function PermissionCheckerWindow() {
                     disabled={isGranted || !item.canOpenSettings || !item.settingsTarget}
                     className={`min-w-[260px] ${
                       isBlocked
-                        ? "bg-amber-500/20 text-amber-100 border border-amber-400/40 hover:bg-amber-500/30"
-                        : "bg-white/5 text-white border border-white/10 hover:bg-white/10"
+                        ? 'bg-amber-500/20 text-amber-100 border border-amber-400/40 hover:bg-amber-500/30'
+                        : 'bg-white/5 text-white border border-white/10 hover:bg-white/10'
                     } disabled:bg-white/5 disabled:text-zinc-400 disabled:border-white/10`}
                   >
                     {!isGranted ? <ExternalLink className="h-4 w-4 mr-1" /> : null}
@@ -252,7 +271,7 @@ export function PermissionCheckerWindow() {
                   </Button>
                 </div>
               </div>
-            );
+            )
           })}
         </div>
 
@@ -267,15 +286,17 @@ export function PermissionCheckerWindow() {
           {readiness.ready ? (
             <div className="flex items-start gap-2 text-emerald-200">
               <ShieldCheck className="h-5 w-5 mt-0.5" />
-              <p className="text-sm leading-relaxed">{t("launch.permission.readyHint")}</p>
+              <p className="text-sm leading-relaxed">{t('launch.permission.readyHint')}</p>
             </div>
           ) : (
             <div className="flex items-start gap-2 text-amber-200">
               <ShieldAlert className="h-5 w-5 mt-0.5" />
-              <p className="text-sm leading-relaxed">{t("launch.permission.missingRequiredHint")}</p>
+              <p className="text-sm leading-relaxed">
+                {t('launch.permission.missingRequiredHint')}
+              </p>
             </div>
           )}
-          <p className="text-xs text-zinc-400 mt-2">{t("launch.permission.relaunchHint")}</p>
+          <p className="text-xs text-zinc-400 mt-2">{t('launch.permission.relaunchHint')}</p>
         </div>
 
         <div className="flex justify-end gap-2">
@@ -283,10 +304,10 @@ export function PermissionCheckerWindow() {
             className="bg-[#34B27B] hover:bg-[#34B27B]/85 text-white min-w-[140px]"
             onClick={() => window.close()}
           >
-            {t("launch.permission.continue")}
+            {t('launch.permission.continue')}
           </Button>
         </div>
       </div>
     </div>
-  );
+  )
 }

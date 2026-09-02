@@ -84,7 +84,12 @@ const CHANNELS_ADDED_AFTER_DECOMPOSITION = [
 const EXPECTED_CHANNELS = [...CHANNELS_BEFORE_DECOMPOSITION, ...CHANNELS_ADDED_AFTER_DECOMPOSITION]
 
 /** Registered only when `main.ts` passes the HUD window plumbing. */
-const HUD_CHANNELS = ['countdown-overlay-show', 'countdown-overlay-set-value', 'countdown-overlay-hide', 'open-notes']
+const HUD_CHANNELS = [
+  'countdown-overlay-show',
+  'countdown-overlay-set-value',
+  'countdown-overlay-hide',
+  'open-notes',
+]
 
 const HUD_WINDOWS = {
   createCountdownOverlayWindow: () => fakeWindow(),

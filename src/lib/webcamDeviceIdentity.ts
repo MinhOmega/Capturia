@@ -1,6 +1,6 @@
 export interface WebcamDeviceIdentity {
-  deviceId: string | undefined;
-  deviceName: string | undefined;
+  deviceId: string | undefined
+  deviceName: string | undefined
 }
 
 /**
@@ -24,13 +24,13 @@ export function webcamDeviceIdentityFrom(
   fallbackDeviceId: string | undefined,
   fallbackDeviceName: string | undefined,
 ): WebcamDeviceIdentity {
-  const track = stream?.getVideoTracks()[0];
+  const track = stream?.getVideoTracks()[0]
   if (!track) {
-    return { deviceId: fallbackDeviceId, deviceName: fallbackDeviceName };
+    return { deviceId: fallbackDeviceId, deviceName: fallbackDeviceName }
   }
 
   return {
     deviceId: track.getSettings?.().deviceId || fallbackDeviceId,
     deviceName: track.label || fallbackDeviceName,
-  };
+  }
 }

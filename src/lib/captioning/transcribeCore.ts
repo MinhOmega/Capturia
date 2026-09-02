@@ -1,5 +1,5 @@
-import type { TrimRegion } from '@/components/video-editor/types';
-import type { CaptionSegment, TranscribeMono16kResult } from './transcribe';
+import type { TrimRegion } from '@/components/video-editor/types'
+import type { CaptionSegment, TranscribeMono16kResult } from './transcribe'
 
 /**
  * Pure transcription algorithm for the captioning Web Worker: takes a built Whisper
@@ -9,18 +9,15 @@ import type { CaptionSegment, TranscribeMono16kResult } from './transcribe';
  */
 
 /** A Transformers.js automatic-speech-recognition pipeline call. */
-export type TranscriberFn = (
-  audio: Float32Array,
-  opts: Record<string, unknown>,
-) => Promise<unknown>;
+export type TranscriberFn = (audio: Float32Array, opts: Record<string, unknown>) => Promise<unknown>
 
 export interface RunTranscriptionOptions {
   /** Whisper language code passed to the pipeline; omitted = auto-detect. */
-  language?: string;
+  language?: string
 }
 
 function segmentOverlapsTrim(startMs: number, endMs: number, trims: TrimRegion[]): boolean {
-  return trims.some((t) => startMs < t.endMs && endMs > t.startMs);
+  return trims.some((t) => startMs < t.endMs && endMs > t.startMs)
 }
 
 /** Same trim-out rule as {@link segmentsFromTranscriberChunks}; for retry passes that used empty trims. */
@@ -28,40 +25,40 @@ function dropSegmentsOverlappingTrimRegions(
   segments: CaptionSegment[],
   trimRegions: TrimRegion[],
 ): CaptionSegment[] {
-  if (trimRegions.length === 0) return segments;
+  if (trimRegions.length === 0) return segments
   return segments.filter((s) => {
-    const startMs = Math.round(s.startSec * 1000);
-    const endMs = Math.round(s.endSec * 1000);
-    return !segmentOverlapsTrim(startMs, endMs, trimRegions);
-  });
+    const startMs = Math.round(s.startSec * 1000)
+    const endMs = Math.round(s.endSec * 1000)
+    return !segmentOverlapsTrim(startMs, endMs, trimRegions)
+  })
 }
 
-export const TRANSCRIBE_SAMPLE_RATE = 16_000;
+export const TRANSCRIBE_SAMPLE_RATE = 16_000
 
 /** Whisper runs with internal 30s chunks; keep each forward pass bounded for WASM memory. */
-export const TRANSCRIBE_SLICE_SAMPLES = 12 * 60 * TRANSCRIBE_SAMPLE_RATE;
+export const TRANSCRIBE_SLICE_SAMPLES = 12 * 60 * TRANSCRIBE_SAMPLE_RATE
 
 /** Very short slices are skipped in the multi-slice loop unless padded (see `padTailSliceForTranscribe`). */
-export const MIN_TRANSCRIBE_SLICE_SAMPLES = 800;
+export const MIN_TRANSCRIBE_SLICE_SAMPLES = 800
 
 /**
  * Pad a short tail slice so Whisper still runs; timestamps are clamped with `realDurationSec` so
  * padding does not extend perceived audio on the timeline.
  */
 function padTailSliceForTranscribe(samples: Float32Array): {
-  slice: Float32Array;
-  realDurationSec: number;
+  slice: Float32Array
+  realDurationSec: number
 } {
-  const realDurationSec = samples.length / TRANSCRIBE_SAMPLE_RATE;
+  const realDurationSec = samples.length / TRANSCRIBE_SAMPLE_RATE
   if (samples.length >= MIN_TRANSCRIBE_SLICE_SAMPLES) {
-    return { slice: samples, realDurationSec };
+    return { slice: samples, realDurationSec }
   }
-  const padded = new Float32Array(MIN_TRANSCRIBE_SLICE_SAMPLES);
-  padded.set(samples);
-  return { slice: padded, realDurationSec };
+  const padded = new Float32Array(MIN_TRANSCRIBE_SLICE_SAMPLES)
+  padded.set(samples)
+  return { slice: padded, realDurationSec }
 }
 
-type TranscriberChunk = { timestamp?: [number | null, number | null]; text?: unknown };
+type TranscriberChunk = { timestamp?: [number | null, number | null]; text?: unknown }
 
 /** Converts raw Whisper chunk output into sorted, deduped, trim-filtered caption segments. */
 export function segmentsFromTranscriberChunks(
@@ -71,66 +68,66 @@ export function segmentsFromTranscriberChunks(
   audioDurationSec: number,
 ): CaptionSegment[] {
   const sorted = [...chunks].sort((x, y) => {
-    const ax = x.timestamp?.[0];
-    const ay = y.timestamp?.[0];
-    const na = typeof ax === 'number' ? ax : -1;
-    const nb = typeof ay === 'number' ? ay : -1;
-    return na - nb;
-  });
+    const ax = x.timestamp?.[0]
+    const ay = y.timestamp?.[0]
+    const na = typeof ax === 'number' ? ax : -1
+    const nb = typeof ay === 'number' ? ay : -1
+    return na - nb
+  })
 
-  const segments: CaptionSegment[] = [];
+  const segments: CaptionSegment[] = []
 
   for (let idx = 0; idx < sorted.length; idx++) {
-    const c = sorted[idx]!;
-    const ts = c.timestamp;
-    if (!ts) continue;
-    let a = ts[0];
-    let b = ts[1];
-    if (a == null) a = 0;
-    a = Math.max(0, a);
+    const c = sorted[idx]!
+    const ts = c.timestamp
+    if (!ts) continue
+    let a = ts[0]
+    let b = ts[1]
+    if (a == null) a = 0
+    a = Math.max(0, a)
     if (b == null) {
-      let nextStart: number | null = null;
+      let nextStart: number | null = null
       for (let j = idx + 1; j < sorted.length; j++) {
-        const na = sorted[j]?.timestamp?.[0];
+        const na = sorted[j]?.timestamp?.[0]
         if (typeof na === 'number') {
-          nextStart = na;
-          break;
+          nextStart = na
+          break
         }
       }
-      b = nextStart ?? audioDurationSec;
+      b = nextStart ?? audioDurationSec
     }
     if (b <= a) {
-      b = Math.min(a + 0.25, audioDurationSec);
+      b = Math.min(a + 0.25, audioDurationSec)
     }
-    b = Math.min(b, audioDurationSec);
+    b = Math.min(b, audioDurationSec)
 
     const text = String(c.text ?? '')
       .replace(/\s+/g, ' ')
-      .trim();
-    if (!text) continue;
+      .trim()
+    if (!text) continue
 
-    const startSec = a + timeOffsetSec;
-    const sliceEnd = timeOffsetSec + audioDurationSec;
-    const endSec = Math.min(Math.max(startSec + 0.08, b + timeOffsetSec), sliceEnd);
-    const startMs = Math.round(startSec * 1000);
-    const endMs = Math.round(endSec * 1000);
-    if (segmentOverlapsTrim(startMs, endMs, trims)) continue;
+    const startSec = a + timeOffsetSec
+    const sliceEnd = timeOffsetSec + audioDurationSec
+    const endSec = Math.min(Math.max(startSec + 0.08, b + timeOffsetSec), sliceEnd)
+    const startMs = Math.round(startSec * 1000)
+    const endMs = Math.round(endSec * 1000)
+    if (segmentOverlapsTrim(startMs, endMs, trims)) continue
 
-    segments.push({ startSec, endSec, text });
+    segments.push({ startSec, endSec, text })
   }
 
-  segments.sort((u, v) => u.startSec - v.startSec || u.endSec - v.endSec);
-  const rawDeduped: CaptionSegment[] = [];
+  segments.sort((u, v) => u.startSec - v.startSec || u.endSec - v.endSec)
+  const rawDeduped: CaptionSegment[] = []
   for (const seg of segments) {
-    const prev = rawDeduped[rawDeduped.length - 1];
+    const prev = rawDeduped[rawDeduped.length - 1]
     if (prev && prev.text === seg.text && seg.startSec <= prev.endSec) {
-      prev.endSec = Math.max(prev.endSec, seg.endSec);
-      prev.startSec = Math.min(prev.startSec, seg.startSec);
-      continue;
+      prev.endSec = Math.max(prev.endSec, seg.endSec)
+      prev.startSec = Math.min(prev.startSec, seg.startSec)
+      continue
     }
-    rawDeduped.push(seg);
+    rawDeduped.push(seg)
   }
-  return rawDeduped;
+  return rawDeduped
 }
 
 /** Runs the transcriber on one audio slice, chunking only long clips. */
@@ -139,48 +136,48 @@ async function runTranscriberOnSlice(
   samples: Float32Array,
   opts: { forceFullSequences: boolean; timestampMode: 'word' | 'phrase'; language?: string },
 ): Promise<unknown> {
-  const durationSec = samples.length / TRANSCRIBE_SAMPLE_RATE;
+  const durationSec = samples.length / TRANSCRIBE_SAMPLE_RATE
   // Only chunk long clips; short-audio chunking regressed some Whisper.js runs (empty chunks).
-  const chunking = durationSec > 30 ? { chunk_length_s: 30, stride_length_s: 5 } : {};
+  const chunking = durationSec > 30 ? { chunk_length_s: 30, stride_length_s: 5 } : {}
   // Pin the language when the app knows it: auto-detection flips between languages
   // on short or noisy chunks, and `task: 'transcribe'` stops Whisper translating.
-  const languageOpts = opts.language ? { language: opts.language, task: 'transcribe' } : {};
+  const languageOpts = opts.language ? { language: opts.language, task: 'transcribe' } : {}
   return transcriber(samples, {
     return_timestamps: opts.timestampMode === 'word' ? 'word' : true,
     force_full_sequences: opts.forceFullSequences,
     ...chunking,
     ...languageOpts,
-  });
+  })
 }
 
 /** Flattens the various shapes a Transformers.js ASR result can take into a chunk list. */
 function getChunksFromTranscriberResult(result: unknown): TranscriberChunk[] {
-  if (result == null) return [];
+  if (result == null) return []
   if (Array.isArray(result)) {
-    const out: TranscriberChunk[] = [];
+    const out: TranscriberChunk[] = []
     for (const item of result) {
-      const chunks = (item as { chunks?: unknown })?.chunks;
-      if (Array.isArray(chunks)) out.push(...chunks);
+      const chunks = (item as { chunks?: unknown })?.chunks
+      if (Array.isArray(chunks)) out.push(...chunks)
     }
-    return out;
+    return out
   }
-  const chunks = (result as { chunks?: unknown })?.chunks;
-  return Array.isArray(chunks) ? chunks : [];
+  const chunks = (result as { chunks?: unknown })?.chunks
+  return Array.isArray(chunks) ? chunks : []
 }
 
 /** Prefer `chunks`; if the model only returned top-level `text`, synthesize one span for timing. */
 export function extractChunksFromAsrResult(result: unknown): TranscriberChunk[] {
-  const fromChunks = getChunksFromTranscriberResult(result);
-  if (fromChunks.length > 0) return fromChunks;
-  const single = Array.isArray(result) ? result[0] : result;
+  const fromChunks = getChunksFromTranscriberResult(result)
+  if (fromChunks.length > 0) return fromChunks
+  const single = Array.isArray(result) ? result[0] : result
   const text =
     typeof (single as { text?: unknown })?.text === 'string'
       ? String((single as { text: string }).text).trim()
-      : '';
+      : ''
   if (text) {
-    return [{ timestamp: [0, null], text }];
+    return [{ timestamp: [0, null], text }]
   }
-  return [];
+  return []
 }
 
 /**
@@ -201,34 +198,34 @@ export async function runTranscription(
     timestampMode: 'word' | 'phrase',
   ): Promise<CaptionSegment[]> => {
     try {
-      const activeTrims = ignoreTrims ? [] : trims;
-      const sliceOpts = { forceFullSequences, timestampMode, language: options.language };
+      const activeTrims = ignoreTrims ? [] : trims
+      const sliceOpts = { forceFullSequences, timestampMode, language: options.language }
       if (samples.length <= TRANSCRIBE_SLICE_SAMPLES) {
-        const { slice, realDurationSec } = padTailSliceForTranscribe(samples);
-        const result = await runTranscriberOnSlice(transcriber, slice, sliceOpts);
+        const { slice, realDurationSec } = padTailSliceForTranscribe(samples)
+        const result = await runTranscriberOnSlice(transcriber, slice, sliceOpts)
         return segmentsFromTranscriberChunks(
           extractChunksFromAsrResult(result),
           0,
           activeTrims,
           realDurationSec,
-        );
+        )
       }
 
-      const all: CaptionSegment[] = [];
+      const all: CaptionSegment[] = []
       for (let offset = 0; offset < samples.length; offset += TRANSCRIBE_SLICE_SAMPLES) {
-        const end = Math.min(offset + TRANSCRIBE_SLICE_SAMPLES, samples.length);
-        const sliceRaw = samples.subarray(offset, end);
-        const isFinalSlice = end >= samples.length;
-        if (sliceRaw.length === 0) continue;
-        if (sliceRaw.length < MIN_TRANSCRIBE_SLICE_SAMPLES && !isFinalSlice) continue;
+        const end = Math.min(offset + TRANSCRIBE_SLICE_SAMPLES, samples.length)
+        const sliceRaw = samples.subarray(offset, end)
+        const isFinalSlice = end >= samples.length
+        if (sliceRaw.length === 0) continue
+        if (sliceRaw.length < MIN_TRANSCRIBE_SLICE_SAMPLES && !isFinalSlice) continue
 
         const { slice, realDurationSec } =
           sliceRaw.length < MIN_TRANSCRIBE_SLICE_SAMPLES && isFinalSlice
             ? padTailSliceForTranscribe(sliceRaw)
-            : { slice: sliceRaw, realDurationSec: sliceRaw.length / TRANSCRIBE_SAMPLE_RATE };
+            : { slice: sliceRaw, realDurationSec: sliceRaw.length / TRANSCRIBE_SAMPLE_RATE }
 
-        const result = await runTranscriberOnSlice(transcriber, slice, sliceOpts);
-        const tOff = offset / TRANSCRIBE_SAMPLE_RATE;
+        const result = await runTranscriberOnSlice(transcriber, slice, sliceOpts)
+        const tOff = offset / TRANSCRIBE_SAMPLE_RATE
         all.push(
           ...segmentsFromTranscriberChunks(
             extractChunksFromAsrResult(result),
@@ -236,37 +233,37 @@ export async function runTranscription(
             activeTrims,
             realDurationSec,
           ),
-        );
+        )
       }
-      return all;
+      return all
     } catch (e) {
-      console.warn('[captioning] Whisper pass failed:', e);
-      return [];
+      console.warn('[captioning] Whisper pass failed:', e)
+      return []
     }
-  };
+  }
 
-  const attemptModes: Array<'word' | 'phrase'> = ['word', 'phrase'];
+  const attemptModes: Array<'word' | 'phrase'> = ['word', 'phrase']
   for (const timestampMode of attemptModes) {
-    let segments = await transcribeOne(false, true, timestampMode);
+    let segments = await transcribeOne(false, true, timestampMode)
     if (segments.length === 0) {
-      segments = await transcribeOne(false, false, timestampMode);
+      segments = await transcribeOne(false, false, timestampMode)
     }
     if (segments.length === 0 && trims.length > 0) {
       segments = dropSegmentsOverlappingTrimRegions(
         await transcribeOne(true, true, timestampMode),
         trims,
-      );
+      )
       if (segments.length === 0) {
         segments = dropSegmentsOverlappingTrimRegions(
           await transcribeOne(true, false, timestampMode),
           trims,
-        );
+        )
       }
     }
     if (segments.length > 0) {
-      return { segments, granularity: timestampMode };
+      return { segments, granularity: timestampMode }
     }
   }
 
-  return { segments: [], granularity: 'phrase' };
+  return { segments: [], granularity: 'phrase' }
 }

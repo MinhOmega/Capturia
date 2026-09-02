@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { getAudioEditGainMultiplierAtTime, normalizeAudioEditRegions, resolvePreviewAudioState } from './audioEditRegions'
+import {
+  getAudioEditGainMultiplierAtTime,
+  normalizeAudioEditRegions,
+  resolvePreviewAudioState,
+} from './audioEditRegions'
 import type { AudioEditRegion } from '@/components/video-editor/types'
 
 function edit(id: string, startMs: number, endMs: number, gain = 0): AudioEditRegion {
@@ -16,11 +20,7 @@ function edit(id: string, startMs: number, endMs: number, gain = 0): AudioEditRe
 describe('normalizeAudioEditRegions', () => {
   it('preserves different gains while merging adjacent equal-gain edits', () => {
     const normalized = normalizeAudioEditRegions(
-      [
-        edit('e1', 100, 280, 0.3),
-        edit('e2', 260, 410, 0),
-        edit('e3', 410, 450, 0),
-      ],
+      [edit('e1', 100, 280, 0.3), edit('e2', 260, 410, 0), edit('e3', 410, 450, 0)],
       1_000,
     )
     expect(normalized).toHaveLength(2)
@@ -34,7 +34,10 @@ describe('normalizeAudioEditRegions', () => {
 })
 
 describe('getAudioEditGainMultiplierAtTime', () => {
-  const regions = normalizeAudioEditRegions([edit('e1', 100, 300, 0.4), edit('e2', 200, 260, 0)], 1_000)
+  const regions = normalizeAudioEditRegions(
+    [edit('e1', 100, 300, 0.4), edit('e2', 200, 260, 0)],
+    1_000,
+  )
 
   it('returns 1 when outside any edit range', () => {
     expect(getAudioEditGainMultiplierAtTime(80, regions)).toBe(1)

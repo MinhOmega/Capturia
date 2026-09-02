@@ -32,7 +32,9 @@ describe('isPathWithinDir', () => {
 
   it('rejects traversal out of the directory', () => {
     expect(isPathWithinDir(path.join(RECORDINGS_DIR, '..', 'a.webm'), RECORDINGS_DIR)).toBe(false)
-    expect(isPathWithinDir(path.join(RECORDINGS_DIR, 'sub', '..', '..', 'x.webm'), RECORDINGS_DIR)).toBe(false)
+    expect(
+      isPathWithinDir(path.join(RECORDINGS_DIR, 'sub', '..', '..', 'x.webm'), RECORDINGS_DIR),
+    ).toBe(false)
   })
 
   it('rejects sibling directories sharing a prefix', () => {
@@ -44,7 +46,9 @@ describe('isPathWithinDir', () => {
     expect(isPathWithinDir('C:\\Users\\me\\rec\\a.webm', 'C:\\Users\\me\\rec', win)).toBe(true)
     expect(isPathWithinDir('c:\\users\\ME\\rec\\a.webm', 'C:\\Users\\me\\rec', win)).toBe(true)
     expect(isPathWithinDir('C:\\Users\\me\\rec\\..\\a.webm', 'C:\\Users\\me\\rec', win)).toBe(false)
-    expect(isPathWithinDir('C:\\Users\\me\\rec-other\\a.webm', 'C:\\Users\\me\\rec', win)).toBe(false)
+    expect(isPathWithinDir('C:\\Users\\me\\rec-other\\a.webm', 'C:\\Users\\me\\rec', win)).toBe(
+      false,
+    )
     expect(isPathWithinDir('C:/Users/me/rec/a.webm', 'C:\\Users\\me\\rec', win)).toBe(true)
   })
 })
@@ -97,23 +101,41 @@ describe('isReadablePathAllowed', () => {
   })
 
   it('allows video files inside the recordings dir', () => {
-    expect(isReadablePathAllowed(path.join(RECORDINGS_DIR, 'recording-1.webm'), { recordingsDir: RECORDINGS_DIR })).toBe(true)
-    expect(isReadablePathAllowed(path.join(RECORDINGS_DIR, 'recording-1.cursor.json'), { recordingsDir: RECORDINGS_DIR })).toBe(true)
+    expect(
+      isReadablePathAllowed(path.join(RECORDINGS_DIR, 'recording-1.webm'), {
+        recordingsDir: RECORDINGS_DIR,
+      }),
+    ).toBe(true)
+    expect(
+      isReadablePathAllowed(path.join(RECORDINGS_DIR, 'recording-1.cursor.json'), {
+        recordingsDir: RECORDINGS_DIR,
+      }),
+    ).toBe(true)
   })
 
   it('rejects traversal out of the recordings dir', () => {
-    expect(isReadablePathAllowed(path.join(RECORDINGS_DIR, '..', 'secret.webm'), { recordingsDir: RECORDINGS_DIR })).toBe(false)
+    expect(
+      isReadablePathAllowed(path.join(RECORDINGS_DIR, '..', 'secret.webm'), {
+        recordingsDir: RECORDINGS_DIR,
+      }),
+    ).toBe(false)
     expect(isReadablePathAllowed('/etc/passwd', { recordingsDir: RECORDINGS_DIR })).toBe(false)
     expect(isReadablePathAllowed('/etc/passwd.webm', { recordingsDir: RECORDINGS_DIR })).toBe(false)
   })
 
   it('rejects relative paths and empty input', () => {
-    expect(isReadablePathAllowed('recordings/a.webm', { recordingsDir: RECORDINGS_DIR })).toBe(false)
+    expect(isReadablePathAllowed('recordings/a.webm', { recordingsDir: RECORDINGS_DIR })).toBe(
+      false,
+    )
     expect(isReadablePathAllowed('', { recordingsDir: RECORDINGS_DIR })).toBe(false)
   })
 
   it('rejects non-media extensions even inside the recordings dir', () => {
-    expect(isReadablePathAllowed(path.join(RECORDINGS_DIR, 'notes.txt'), { recordingsDir: RECORDINGS_DIR })).toBe(false)
+    expect(
+      isReadablePathAllowed(path.join(RECORDINGS_DIR, 'notes.txt'), {
+        recordingsDir: RECORDINGS_DIR,
+      }),
+    ).toBe(false)
   })
 
   it('allows explicitly approved files outside the recordings dir', () => {
@@ -123,7 +145,11 @@ describe('isReadablePathAllowed', () => {
     expect(isApprovedPath(external)).toBe(true)
     expect(isReadablePathAllowed(external, { recordingsDir: RECORDINGS_DIR })).toBe(true)
     // approval is per-file, not per-directory
-    expect(isReadablePathAllowed(path.resolve('/home/u/Videos/other.mov'), { recordingsDir: RECORDINGS_DIR })).toBe(false)
+    expect(
+      isReadablePathAllowed(path.resolve('/home/u/Videos/other.mov'), {
+        recordingsDir: RECORDINGS_DIR,
+      }),
+    ).toBe(false)
   })
 
   it('does not let an approved path with a bad extension through', () => {
@@ -134,9 +160,17 @@ describe('isReadablePathAllowed', () => {
 
   it('works with an isolated registry and win32 paths', () => {
     const reg = new ApprovedPathRegistry(path.win32)
-    const opts = { recordingsDir: 'C:\\Users\\me\\AppData\\Capturia\\recordings', registry: reg, platformPath: path.win32 }
-    expect(isReadablePathAllowed('C:\\Users\\me\\AppData\\Capturia\\recordings\\rec.mp4', opts)).toBe(true)
-    expect(isReadablePathAllowed('C:\\Users\\me\\AppData\\Capturia\\recordings\\..\\..\\x.mp4', opts)).toBe(false)
+    const opts = {
+      recordingsDir: 'C:\\Users\\me\\AppData\\Capturia\\recordings',
+      registry: reg,
+      platformPath: path.win32,
+    }
+    expect(
+      isReadablePathAllowed('C:\\Users\\me\\AppData\\Capturia\\recordings\\rec.mp4', opts),
+    ).toBe(true)
+    expect(
+      isReadablePathAllowed('C:\\Users\\me\\AppData\\Capturia\\recordings\\..\\..\\x.mp4', opts),
+    ).toBe(false)
     expect(isReadablePathAllowed('D:\\Videos\\clip.mp4', opts)).toBe(false)
     reg.approveFile('D:\\Videos\\clip.mp4')
     expect(isReadablePathAllowed('d:\\videos\\CLIP.mp4', opts)).toBe(true)
@@ -162,7 +196,9 @@ describe('normalizeVideoSourcePath', () => {
   })
 
   it('normalizes win32 paths with the win32 implementation', () => {
-    expect(normalizeVideoSourcePath('C:/Users/me/../me/clip.mp4', path.win32)).toBe('C:\\Users\\me\\clip.mp4')
+    expect(normalizeVideoSourcePath('C:/Users/me/../me/clip.mp4', path.win32)).toBe(
+      'C:\\Users\\me\\clip.mp4',
+    )
   })
 })
 
@@ -174,7 +210,9 @@ describe('localMediaUrlToPath', () => {
   })
 
   it('strips the leading slash before a drive letter on win32', () => {
-    expect(localMediaUrlToPath('local-media://host/C:/Users/me/clip.webm', path.win32)).toBe('C:\\Users\\me\\clip.webm')
+    expect(localMediaUrlToPath('local-media://host/C:/Users/me/clip.webm', path.win32)).toBe(
+      'C:\\Users\\me\\clip.webm',
+    )
   })
 
   it('returns null for unparsable URLs or bad escapes', () => {
@@ -183,14 +221,20 @@ describe('localMediaUrlToPath', () => {
   })
 
   it('collapses traversal so the policy sees the real target', () => {
-    expect(localMediaUrlToPath('local-media://host/tmp/rec/../../etc/passwd', path.posix)).toBe('/etc/passwd')
+    expect(localMediaUrlToPath('local-media://host/tmp/rec/../../etc/passwd', path.posix)).toBe(
+      '/etc/passwd',
+    )
   })
 })
 
 describe('resolveRecordingOutputPath', () => {
   it('joins a plain file name under the recordings dir', () => {
-    expect(resolveRecordingOutputPath(RECORDINGS_DIR, 'recording-123.webm')).toBe(path.join(RECORDINGS_DIR, 'recording-123.webm'))
-    expect(resolveRecordingOutputPath(RECORDINGS_DIR, '  recording-1.mp4 ')).toBe(path.join(RECORDINGS_DIR, 'recording-1.mp4'))
+    expect(resolveRecordingOutputPath(RECORDINGS_DIR, 'recording-123.webm')).toBe(
+      path.join(RECORDINGS_DIR, 'recording-123.webm'),
+    )
+    expect(resolveRecordingOutputPath(RECORDINGS_DIR, '  recording-1.mp4 ')).toBe(
+      path.join(RECORDINGS_DIR, 'recording-1.mp4'),
+    )
   })
 
   it.each([
@@ -206,7 +250,9 @@ describe('resolveRecordingOutputPath', () => {
     'C:\\Windows\\evil.webm',
     '/abs.webm',
   ])('rejects %j', (name) => {
-    expect(() => resolveRecordingOutputPath(RECORDINGS_DIR, name)).toThrow(/Invalid recording file name/)
+    expect(() => resolveRecordingOutputPath(RECORDINGS_DIR, name)).toThrow(
+      /Invalid recording file name/,
+    )
   })
 
   it('rejects non-string names', () => {
@@ -234,7 +280,9 @@ describe('external URL allowlist', () => {
   it('rejects everything else', () => {
     expect(isAllowedExternalUrl('file:///etc/passwd')).toBe(false)
     expect(isAllowedExternalUrl('javascript:alert(1)')).toBe(false)
-    expect(isAllowedExternalUrl('x-apple.systempreferences:com.apple.preference.security')).toBe(false)
+    expect(isAllowedExternalUrl('x-apple.systempreferences:com.apple.preference.security')).toBe(
+      false,
+    )
     expect(isAllowedExternalUrl('smb://server/share')).toBe(false)
     expect(isAllowedExternalUrl('not a url')).toBe(false)
     expect(isAllowedExternalUrl('')).toBe(false)

@@ -37,16 +37,29 @@ describe('permission IPC handlers', () => {
     setPlatform('linux')
     const ipc = fakeIpcMain()
     registerPermissionHandlers(buildContext(ipc))
-    const snapshot = await ipc.invoke<{ canOpenSystemSettings: boolean; items: Array<{ key: string; status: string }> }>(
-      'get-capture-permission-snapshot',
-    )
+    const snapshot = await ipc.invoke<{
+      canOpenSystemSettings: boolean
+      items: Array<{ key: string; status: string }>
+    }>('get-capture-permission-snapshot')
     expect(snapshot.canOpenSystemSettings).toBe(false)
-    expect(snapshot.items.map((item) => item.key)).toEqual(['screen', 'camera', 'microphone', 'accessibility', 'input-monitoring'])
+    expect(snapshot.items.map((item) => item.key)).toEqual([
+      'screen',
+      'camera',
+      'microphone',
+      'accessibility',
+      'input-monitoring',
+    ])
     expect(snapshot.items.every((item) => item.status === 'granted')).toBe(true)
 
-    await expect(ipc.invoke('request-capture-permission-access', 'screen')).resolves.toMatchObject({ success: false })
-    await expect(ipc.invoke('open-permission-settings', 'camera')).resolves.toMatchObject({ success: false })
-    await expect(ipc.invoke('open-screen-capture-settings')).resolves.toMatchObject({ success: false })
+    await expect(ipc.invoke('request-capture-permission-access', 'screen')).resolves.toMatchObject({
+      success: false,
+    })
+    await expect(ipc.invoke('open-permission-settings', 'camera')).resolves.toMatchObject({
+      success: false,
+    })
+    await expect(ipc.invoke('open-screen-capture-settings')).resolves.toMatchObject({
+      success: false,
+    })
     await expect(ipc.invoke('get-screen-capture-access-status')).resolves.toEqual({
       status: 'granted',
       canOpenSystemSettings: false,
@@ -59,12 +72,18 @@ describe('permission IPC handlers', () => {
     const ipc = fakeIpcMain()
     registerPermissionHandlers(buildContext(ipc))
 
-    await expect(ipc.invoke('open-permission-settings', 'microphone')).resolves.toEqual({ success: true })
+    await expect(ipc.invoke('open-permission-settings', 'microphone')).resolves.toEqual({
+      success: true,
+    })
     expect(shell.openExternal).toHaveBeenCalledWith(
       'x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone',
     )
-    await expect(ipc.invoke('open-permission-settings', 'wifi')).resolves.toMatchObject({ success: false })
-    await expect(ipc.invoke('request-capture-permission-access', 'wifi')).resolves.toMatchObject({ success: false })
+    await expect(ipc.invoke('open-permission-settings', 'wifi')).resolves.toMatchObject({
+      success: false,
+    })
+    await expect(ipc.invoke('request-capture-permission-access', 'wifi')).resolves.toMatchObject({
+      success: false,
+    })
   })
 
   it('open-permission-checker focuses an existing window or creates one', async () => {
@@ -72,7 +91,10 @@ describe('permission IPC handlers', () => {
     const existing = fakeWindow()
     const createPermissionCheckerWindow = vi.fn(() => fakeWindow())
     registerPermissionHandlers(
-      buildContext(ipc, { getPermissionCheckerWindow: () => existing, createPermissionCheckerWindow }),
+      buildContext(ipc, {
+        getPermissionCheckerWindow: () => existing,
+        createPermissionCheckerWindow,
+      }),
     )
     await expect(ipc.invoke('open-permission-checker')).resolves.toEqual({ success: true })
     expect(existing.focus).toHaveBeenCalled()
@@ -98,17 +120,32 @@ describe('permission IPC handlers', () => {
     ])
     const ipc = fakeIpcMain()
     registerPermissionHandlers(buildContext(ipc))
-    const sources = await ipc.invoke<Array<Record<string, unknown>>>('get-sources', { types: ['bogus'] })
-    expect(sources).toEqual([{ id: 'window:1:0', name: 'Terminal', display_id: '', thumbnail: 'data:thumb', appIcon: null }])
+    const sources = await ipc.invoke<Array<Record<string, unknown>>>('get-sources', {
+      types: ['bogus'],
+    })
+    expect(sources).toEqual([
+      {
+        id: 'window:1:0',
+        name: 'Terminal',
+        display_id: '',
+        thumbnail: 'data:thumb',
+        appIcon: null,
+      },
+    ])
     expect(desktopCapturer.getSources).toHaveBeenCalledWith(
-      expect.objectContaining({ types: ['screen', 'window'], thumbnailSize: { width: 320, height: 180 } }),
+      expect.objectContaining({
+        types: ['screen', 'window'],
+        thumbnailSize: { width: 320, height: 180 },
+      }),
     )
   })
 })
 
 describe('source geometry helpers', () => {
   it('normalizeGetSourcesOptions keeps only screen/window types and positive sizes', () => {
-    expect(normalizeGetSourcesOptions({ types: ['window'], thumbnailSize: { width: 10.7, height: -1 } })).toEqual({
+    expect(
+      normalizeGetSourcesOptions({ types: ['window'], thumbnailSize: { width: 10.7, height: -1 } }),
+    ).toEqual({
       types: ['window'],
       thumbnailSize: { width: 10, height: 180 },
       fetchWindowIcons: true,

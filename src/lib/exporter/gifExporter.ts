@@ -1,47 +1,62 @@
-import GIF from 'gif.js';
-import type { ExportProgress, ExportResult, GifFrameRate, GifSizePreset, GIF_SIZE_PRESETS } from './types';
-import { VideoFileDecoder } from './videoDecoder';
-import { isBackgroundLoadError } from './backgroundErrors';
-import { FrameRenderer } from './frameRenderer';
-import type { ZoomRegion, CropRegion, TrimRegion, AnnotationRegion, VideoSegment } from '@/components/video-editor/types';
-import { effectiveToSourceMsWithSegments, getEffectiveDurationMsWithSegments } from '@/lib/trim/timeMapping';
-import type { SubtitleCue } from '@/lib/analysis/types';
-import type { CursorStyleConfig, CursorTrack } from '@/lib/cursor';
-import { getPlatform } from '@/utils/platformUtils';
-import { resolveSourceDurationMs } from './sourceDuration';
+import GIF from 'gif.js'
+import type {
+  ExportProgress,
+  ExportResult,
+  GifFrameRate,
+  GifSizePreset,
+  GIF_SIZE_PRESETS,
+} from './types'
+import { VideoFileDecoder } from './videoDecoder'
+import { isBackgroundLoadError } from './backgroundErrors'
+import { FrameRenderer } from './frameRenderer'
+import type {
+  ZoomRegion,
+  CropRegion,
+  TrimRegion,
+  AnnotationRegion,
+  VideoSegment,
+} from '@/components/video-editor/types'
+import {
+  effectiveToSourceMsWithSegments,
+  getEffectiveDurationMsWithSegments,
+} from '@/lib/trim/timeMapping'
+import type { SubtitleCue } from '@/lib/analysis/types'
+import type { CursorStyleConfig, CursorTrack } from '@/lib/cursor'
+import { getPlatform } from '@/utils/platformUtils'
+import { resolveSourceDurationMs } from './sourceDuration'
 
-const GIF_WORKER_URL = new URL('gif.js/dist/gif.worker.js', import.meta.url).toString();
+const GIF_WORKER_URL = new URL('gif.js/dist/gif.worker.js', import.meta.url).toString()
 
 interface GifExporterConfig {
-  videoUrl: string;
-  width: number;
-  height: number;
-  frameRate: GifFrameRate;
-  loop: boolean;
-  sizePreset: GifSizePreset;
-  wallpaper: string;
-  zoomRegions: ZoomRegion[];
-  trimRegions?: TrimRegion[];
-  showShadow: boolean;
-  shadowIntensity: number;
-  showBlur: boolean;
+  videoUrl: string
+  width: number
+  height: number
+  frameRate: GifFrameRate
+  loop: boolean
+  sizePreset: GifSizePreset
+  wallpaper: string
+  zoomRegions: ZoomRegion[]
+  trimRegions?: TrimRegion[]
+  showShadow: boolean
+  shadowIntensity: number
+  showBlur: boolean
   /** Zoom motion blur amount 0..1 (0 = off). */
-  motionBlurAmount?: number;
-  borderRadius?: number;
-  padding?: number;
-  videoPadding?: number;
-  cropRegion: CropRegion;
-  annotationRegions?: AnnotationRegion[];
-  subtitleCues?: SubtitleCue[];
-  previewWidth?: number;
-  previewHeight?: number;
-  cursorTrack?: CursorTrack | null;
-  cursorStyle?: Partial<CursorStyleConfig>;
-  onProgress?: (progress: ExportProgress) => void;
-  playbackSpeed?: number;
-  segments?: VideoSegment[];
+  motionBlurAmount?: number
+  borderRadius?: number
+  padding?: number
+  videoPadding?: number
+  cropRegion: CropRegion
+  annotationRegions?: AnnotationRegion[]
+  subtitleCues?: SubtitleCue[]
+  previewWidth?: number
+  previewHeight?: number
+  cursorTrack?: CursorTrack | null
+  cursorStyle?: Partial<CursorStyleConfig>
+  onProgress?: (progress: ExportProgress) => void
+  playbackSpeed?: number
+  segments?: VideoSegment[]
   /** Probed real duration of the source (ms); preferred over `video.duration`. */
-  sourceDurationMs?: number;
+  sourceDurationMs?: number
 }
 
 /**
@@ -67,42 +82,42 @@ export function calculateOutputDimensions(
   sizePresets: typeof GIF_SIZE_PRESETS,
   targetAspectRatio?: number,
 ): { width: number; height: number } {
-  const preset = sizePresets[sizePreset];
-  const maxHeight = preset.maxHeight;
-  const fitsWithoutScaling = sourceHeight <= maxHeight || sizePreset === 'original';
+  const preset = sizePresets[sizePreset]
+  const maxHeight = preset.maxHeight
+  const fitsWithoutScaling = sourceHeight <= maxHeight || sizePreset === 'original'
 
   if (targetAspectRatio === undefined) {
     if (fitsWithoutScaling) {
-      return { width: sourceWidth, height: sourceHeight };
+      return { width: sourceWidth, height: sourceHeight }
     }
-    const aspectRatio = sourceWidth / sourceHeight;
-    const newHeight = maxHeight;
-    const newWidth = Math.round(newHeight * aspectRatio);
+    const aspectRatio = sourceWidth / sourceHeight
+    const newHeight = maxHeight
+    const newWidth = Math.round(newHeight * aspectRatio)
     // Ensure dimensions are even (required for some encoders)
     return {
       width: newWidth % 2 === 0 ? newWidth : newWidth + 1,
       height: newHeight % 2 === 0 ? newHeight : newHeight + 1,
-    };
+    }
   }
 
-  const sourceAspect = sourceWidth / sourceHeight;
+  const sourceAspect = sourceWidth / sourceHeight
   const aspectRatio =
-    Number.isFinite(targetAspectRatio) && targetAspectRatio > 0 ? targetAspectRatio : sourceAspect;
-  const toEven = (value: number) => Math.max(2, Math.floor(value / 2) * 2);
+    Number.isFinite(targetAspectRatio) && targetAspectRatio > 0 ? targetAspectRatio : sourceAspect
+  const toEven = (value: number) => Math.max(2, Math.floor(value / 2) * 2)
 
   if (fitsWithoutScaling) {
     if (aspectRatio >= sourceAspect) {
-      const width = toEven(sourceWidth);
-      return { width, height: toEven(width / aspectRatio) };
+      const width = toEven(sourceWidth)
+      return { width, height: toEven(width / aspectRatio) }
     }
-    const height = toEven(sourceHeight);
-    return { width: toEven(height * aspectRatio), height };
+    const height = toEven(sourceHeight)
+    return { width: toEven(height * aspectRatio), height }
   }
 
   return {
     width: toEven(Math.round(maxHeight * aspectRatio)),
     height: toEven(maxHeight),
-  };
+  }
 }
 
 /**
@@ -110,22 +125,23 @@ export function calculateOutputDimensions(
  * one worker and never more than eight (diminishing returns past that).
  */
 export function resolveGifWorkerCount(hardwareConcurrency: number | undefined): number {
-  const cores = Number.isFinite(hardwareConcurrency) && (hardwareConcurrency as number) > 0
-    ? Math.floor(hardwareConcurrency as number)
-    : 4;
-  return Math.max(1, Math.min(8, cores - 1));
+  const cores =
+    Number.isFinite(hardwareConcurrency) && (hardwareConcurrency as number) > 0
+      ? Math.floor(hardwareConcurrency as number)
+      : 4
+  return Math.max(1, Math.min(8, cores - 1))
 }
 
 export class GifExporter {
-  private config: GifExporterConfig;
-  private decoder: VideoFileDecoder | null = null;
-  private renderer: FrameRenderer | null = null;
-  private gif: GIF | null = null;
-  private cancelled = false;
-  private sourceTrimRanges: TrimRegion[] = [];
+  private config: GifExporterConfig
+  private decoder: VideoFileDecoder | null = null
+  private renderer: FrameRenderer | null = null
+  private gif: GIF | null = null
+  private cancelled = false
+  private sourceTrimRanges: TrimRegion[] = []
 
   constructor(config: GifExporterConfig) {
-    this.config = config;
+    this.config = config
   }
 
   /**
@@ -134,48 +150,50 @@ export class GifExporter {
   private getEffectiveDuration(totalDuration: number): number {
     // Use segment-aware calculation if segments are provided
     if (this.config.segments?.length) {
-      return getEffectiveDurationMsWithSegments(this.config.segments) / 1000;
+      return getEffectiveDurationMsWithSegments(this.config.segments) / 1000
     }
 
-    const trimRegions = this.config.trimRegions || [];
+    const trimRegions = this.config.trimRegions || []
     const totalTrimDuration = trimRegions.reduce((sum, region) => {
-      return sum + (region.endMs - region.startMs) / 1000;
-    }, 0);
-    const speed = Math.max(0.25, this.config.playbackSpeed ?? 1);
-    return (totalDuration - totalTrimDuration) / speed;
+      return sum + (region.endMs - region.startMs) / 1000
+    }, 0)
+    const speed = Math.max(0.25, this.config.playbackSpeed ?? 1)
+    return (totalDuration - totalTrimDuration) / speed
   }
 
   /**
    * Map effective time (excluding trims) to source time (including trims)
    */
   private mapEffectiveToSourceTime(effectiveTimeMs: number): number {
-    let sourceTimeMs = effectiveTimeMs;
+    let sourceTimeMs = effectiveTimeMs
 
     for (const trim of this.sourceTrimRanges) {
       // If the source time hasn't reached this trim region yet, we're done
       if (sourceTimeMs < trim.startMs) {
-        break;
+        break
       }
 
       // Add the duration of this trim region to the source time
-      const trimDuration = trim.endMs - trim.startMs;
-      sourceTimeMs += trimDuration;
+      const trimDuration = trim.endMs - trim.startMs
+      sourceTimeMs += trimDuration
     }
 
-    return sourceTimeMs;
+    return sourceTimeMs
   }
 
   async export(): Promise<ExportResult> {
     try {
-      this.cleanup();
-      this.cancelled = false;
+      this.cleanup()
+      this.cancelled = false
 
-      const platform = await getPlatform();
+      const platform = await getPlatform()
 
       // Initialize decoder and load video
-      this.decoder = new VideoFileDecoder();
-      const videoInfo = await this.decoder.loadVideo(this.config.videoUrl);
-      this.sourceTrimRanges = [...(this.config.trimRegions || [])].sort((a, b) => a.startMs - b.startMs);
+      this.decoder = new VideoFileDecoder()
+      const videoInfo = await this.decoder.loadVideo(this.config.videoUrl)
+      this.sourceTrimRanges = [...(this.config.trimRegions || [])].sort(
+        (a, b) => a.startMs - b.startMs,
+      )
 
       // Initialize frame renderer
       this.renderer = new FrameRenderer({
@@ -199,13 +217,13 @@ export class GifExporter {
         cursorTrack: this.config.cursorTrack,
         cursorStyle: this.config.cursorStyle,
         platform,
-      });
-      await this.renderer.initialize();
+      })
+      await this.renderer.initialize()
 
       // Initialize GIF encoder
       // Loop: 0 = infinite loop, 1 = play once (no loop)
-      const repeat = this.config.loop ? 0 : 1;
-      
+      const repeat = this.config.loop ? 0 : 1
+
       this.gif = new GIF({
         workers: resolveGifWorkerCount(navigator.hardwareConcurrency),
         quality: 10,
@@ -216,100 +234,101 @@ export class GifExporter {
         background: '#000000',
         transparent: null,
         dither: 'FloydSteinberg',
-      });
+      })
 
       // Get the video element for frame extraction
-      const videoElement = this.decoder.getVideoElement();
+      const videoElement = this.decoder.getVideoElement()
       if (!videoElement) {
-        throw new Error('Video element not available');
+        throw new Error('Video element not available')
       }
 
       // Calculate effective duration and frame count (excluding trim regions)
-      const sourceDurationSec = resolveSourceDurationMs(videoInfo.duration, this.config.sourceDurationMs) / 1000;
-      const effectiveDuration = this.getEffectiveDuration(sourceDurationSec);
-      const totalFrames = Math.ceil(effectiveDuration * this.config.frameRate);
-      
-      // Calculate frame delay in milliseconds (gif.js uses ms)
-      const frameDelay = Math.round(1000 / this.config.frameRate);
+      const sourceDurationSec =
+        resolveSourceDurationMs(videoInfo.duration, this.config.sourceDurationMs) / 1000
+      const effectiveDuration = this.getEffectiveDuration(sourceDurationSec)
+      const totalFrames = Math.ceil(effectiveDuration * this.config.frameRate)
 
-      console.log('[GifExporter] Original duration:', videoInfo.duration, 's');
-      console.log('[GifExporter] Effective duration:', effectiveDuration, 's');
-      console.log('[GifExporter] Total frames to export:', totalFrames);
-      console.log('[GifExporter] Frame rate:', this.config.frameRate, 'FPS');
-      console.log('[GifExporter] Frame delay:', frameDelay, 'ms');
-      console.log('[GifExporter] Loop:', this.config.loop ? 'infinite' : 'once');
+      // Calculate frame delay in milliseconds (gif.js uses ms)
+      const frameDelay = Math.round(1000 / this.config.frameRate)
+
+      console.log('[GifExporter] Original duration:', videoInfo.duration, 's')
+      console.log('[GifExporter] Effective duration:', effectiveDuration, 's')
+      console.log('[GifExporter] Total frames to export:', totalFrames)
+      console.log('[GifExporter] Frame rate:', this.config.frameRate, 'FPS')
+      console.log('[GifExporter] Frame delay:', frameDelay, 'ms')
+      console.log('[GifExporter] Loop:', this.config.loop ? 'infinite' : 'once')
 
       // Process frames
-      const timeStep = 1 / this.config.frameRate;
-      let frameIndex = 0;
+      const timeStep = 1 / this.config.frameRate
+      let frameIndex = 0
 
       // Helper to compute source time for a given frame index
       const getSourceTimeMs = (idx: number): number => {
         if (this.config.segments?.length) {
-          return effectiveToSourceMsWithSegments((idx * timeStep) * 1000, this.config.segments);
+          return effectiveToSourceMsWithSegments(idx * timeStep * 1000, this.config.segments)
         }
-        const speed = Math.max(0.25, this.config.playbackSpeed ?? 1);
-        return this.mapEffectiveToSourceTime((idx * timeStep) * 1000 * speed);
-      };
+        const speed = Math.max(0.25, this.config.playbackSpeed ?? 1)
+        return this.mapEffectiveToSourceTime(idx * timeStep * 1000 * speed)
+      }
 
       // Seek to the first frame upfront
       if (frameIndex < totalFrames && !this.cancelled) {
-        const firstVideoTime = getSourceTimeMs(frameIndex) / 1000;
-        const seekedPromise = new Promise<void>(resolve => {
-          videoElement.addEventListener('seeked', () => resolve(), { once: true });
-        });
-        videoElement.currentTime = firstVideoTime;
-        await seekedPromise;
-        await new Promise<void>(resolve => {
-          videoElement.requestVideoFrameCallback(() => resolve());
-        });
+        const firstVideoTime = getSourceTimeMs(frameIndex) / 1000
+        const seekedPromise = new Promise<void>((resolve) => {
+          videoElement.addEventListener('seeked', () => resolve(), { once: true })
+        })
+        videoElement.currentTime = firstVideoTime
+        await seekedPromise
+        await new Promise<void>((resolve) => {
+          videoElement.requestVideoFrameCallback(() => resolve())
+        })
       }
 
       while (frameIndex < totalFrames && !this.cancelled) {
-        const i = frameIndex;
-        const timestamp = i * (1_000_000 / this.config.frameRate);
-        const sourceTimeMs = getSourceTimeMs(i);
+        const i = frameIndex
+        const timestamp = i * (1_000_000 / this.config.frameRate)
+        const sourceTimeMs = getSourceTimeMs(i)
 
         // Pipeline: start seeking to the NEXT frame while we render the current one
-        let nextSeekPromise: Promise<void> | null = null;
+        let nextSeekPromise: Promise<void> | null = null
         if (i + 1 < totalFrames) {
-          const nextVideoTime = getSourceTimeMs(i + 1) / 1000;
-          const needsNextSeek = Math.abs(videoElement.currentTime - nextVideoTime) > 0.001;
+          const nextVideoTime = getSourceTimeMs(i + 1) / 1000
+          const needsNextSeek = Math.abs(videoElement.currentTime - nextVideoTime) > 0.001
           if (needsNextSeek) {
             // We'll start the seek after capturing the current frame data
           }
         }
 
         // Create a VideoFrame from the video element
-        const videoFrame = new VideoFrame(videoElement, { timestamp });
+        const videoFrame = new VideoFrame(videoElement, { timestamp })
 
         // Start seeking to next frame AFTER we've captured the current VideoFrame
         if (i + 1 < totalFrames) {
-          const nextVideoTime = getSourceTimeMs(i + 1) / 1000;
+          const nextVideoTime = getSourceTimeMs(i + 1) / 1000
           if (Math.abs(videoElement.currentTime - nextVideoTime) > 0.001) {
-            const seeked = new Promise<void>(resolve => {
-              videoElement.addEventListener('seeked', () => resolve(), { once: true });
-            });
-            videoElement.currentTime = nextVideoTime;
-            nextSeekPromise = seeked;
+            const seeked = new Promise<void>((resolve) => {
+              videoElement.addEventListener('seeked', () => resolve(), { once: true })
+            })
+            videoElement.currentTime = nextVideoTime
+            nextSeekPromise = seeked
           }
         }
 
         // Render the frame with all effects (CPU work overlaps seek I/O)
-        const sourceTimestamp = sourceTimeMs * 1000;
-        await this.renderer!.renderFrame(videoFrame, sourceTimestamp);
-        videoFrame.close();
+        const sourceTimestamp = sourceTimeMs * 1000
+        await this.renderer!.renderFrame(videoFrame, sourceTimestamp)
+        videoFrame.close()
 
         // Get the rendered canvas and add to GIF
-        const canvas = this.renderer!.getCanvas();
-        this.gif!.addFrame(canvas, { delay: frameDelay, copy: true });
+        const canvas = this.renderer!.getCanvas()
+        this.gif!.addFrame(canvas, { delay: frameDelay, copy: true })
 
         // Wait for next frame seek to complete
         if (nextSeekPromise) {
-          await nextSeekPromise;
+          await nextSeekPromise
         }
 
-        frameIndex++;
+        frameIndex++
 
         if (this.config.onProgress) {
           this.config.onProgress({
@@ -317,12 +336,12 @@ export class GifExporter {
             totalFrames,
             percentage: (frameIndex / totalFrames) * 100,
             estimatedTimeRemaining: 0,
-          });
+          })
         }
       }
 
       if (this.cancelled) {
-        return { success: false, error: 'Export cancelled' };
+        return { success: false, error: 'Export cancelled' }
       }
 
       // Update progress to show we're now in the finalizing phase
@@ -333,14 +352,14 @@ export class GifExporter {
           percentage: 100,
           estimatedTimeRemaining: 0,
           phase: 'finalizing',
-        });
+        })
       }
 
       // Render the GIF
       const blob = await new Promise<Blob>((resolve, _reject) => {
         this.gif!.on('finished', (blob: Blob) => {
-          resolve(blob);
-        });
+          resolve(blob)
+        })
 
         // Track rendering progress
         this.gif!.on('progress', (progress: number) => {
@@ -352,59 +371,64 @@ export class GifExporter {
               estimatedTimeRemaining: 0,
               phase: 'finalizing',
               renderProgress: Math.round(progress * 100),
-            });
+            })
           }
-        });
+        })
 
         // gif.js doesn't have a typed 'error' event, but we can catch errors in the try/catch
-        this.gif!.render();
-      });
+        this.gif!.render()
+      })
 
-      return { success: true, blob };
+      return { success: true, blob }
     } catch (error) {
       if (isBackgroundLoadError(error)) {
         // Not retryable: the background will not load on a second attempt either.
-        console.error('GIF Export error: background failed to load:', error.displayUrl);
-        return { success: false, error: error.message, errorKind: 'background-load', backgroundUrl: error.displayUrl };
+        console.error('GIF Export error: background failed to load:', error.displayUrl)
+        return {
+          success: false,
+          error: error.message,
+          errorKind: 'background-load',
+          backgroundUrl: error.displayUrl,
+        }
       }
-      console.error('GIF Export error:', error);
+      console.error('GIF Export error:', error)
       return {
         success: false,
         error: error instanceof Error ? error.message : String(error),
-      };
+      }
     } finally {
-      this.cleanup();
+      this.cleanup()
     }
   }
 
   cancel(): void {
-    this.cancelled = true;
+    this.cancelled = true
     if (this.gif) {
-      this.gif.abort();
+      this.gif.abort()
     }
-    this.cleanup();
+    this.cleanup()
   }
 
   private cleanup(): void {
     if (this.decoder) {
       try {
-        this.decoder.destroy();
+        this.decoder.destroy()
       } catch (e) {
-        console.warn('Error destroying decoder:', e);
+        console.warn('Error destroying decoder:', e)
       }
-      this.decoder = null;
+      this.decoder = null
     }
 
     if (this.renderer) {
       try {
-        this.renderer.destroy();
+        this.renderer.destroy()
       } catch (e) {
-        console.warn('Error destroying renderer:', e);
+        console.warn('Error destroying renderer:', e)
       }
-      this.renderer = null;
+      this.renderer = null
     }
 
-    this.gif = null;
-    this.sourceTrimRanges = [];
+    this.gif = null
+    this.sourceTrimRanges = []
   }
 }
