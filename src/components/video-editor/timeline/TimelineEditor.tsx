@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTimelineContext } from 'dnd-timeline'
 import { Button } from '@/components/ui/button'
-import { Plus, Scissors, ZoomIn, MessageSquare, ChevronDown, Check } from 'lucide-react'
+import { Plus, Scissors, ZoomIn, MessageSquare, ChevronDown, Check, EyeOff } from 'lucide-react'
 import { toast } from 'sonner'
 import { findFreeGapAt } from '../regionPlacement'
 import { cn } from '@/lib/utils'
@@ -33,6 +33,8 @@ import { type AspectRatio, getAspectRatioLabel, ASPECT_RATIOS } from '@/utils/as
 import { formatShortcut } from '@/utils/platformUtils'
 import { useShortcuts } from '@/contexts/ShortcutsContext'
 import { formatBinding, matchesShortcut } from '@/lib/shortcuts'
+import { getSelectionCycleAnnotations } from '@/lib/annotations/renderOrder'
+import { BLUR_REGIONS_ENABLED } from '../featureFlags'
 import { useAudioPeaks } from '@/hooks/useAudioPeaks'
 import BackgroundWaveform from './BackgroundWaveform'
 import { TutorialHelp } from '../TutorialHelp'
@@ -41,6 +43,7 @@ import { useI18n } from '@/i18n'
 const ZOOM_ROW_ID = 'row-zoom'
 const TRIM_ROW_ID = 'row-trim'
 const ANNOTATION_ROW_ID = 'row-annotation'
+const BLUR_ROW_ID = 'row-blur'
 const SUBTITLE_ROW_ID = 'row-subtitle'
 const AUDIO_ROW_ID = 'row-audio'
 const FALLBACK_RANGE_MS = 1000
@@ -63,6 +66,8 @@ interface TimelineEditorProps {
   onSelectSegment?: (id: string | null) => void
   annotationRegions?: AnnotationRegion[]
   onAnnotationAdded?: (span: Span) => void
+  /** Blur regions live in `annotationRegions` (type 'blur') and get their own row. */
+  onBlurAdded?: (span: Span) => void
   onAnnotationSpanChange?: (id: string, span: Span) => void
   onAnnotationDelete?: (id: string) => void
   selectedAnnotationId?: string | null
@@ -95,6 +100,7 @@ interface TimelineEditorProps {
 interface RowHints {
   zoom: string
   annotation: string
+  blur: string
   subtitle: string
 }
 
@@ -114,7 +120,7 @@ interface TimelineRenderItem {
   zoomDepth?: number
   zoomScale?: number
   zoomAutoFocus?: boolean
-  variant: 'zoom' | 'trim' | 'annotation' | 'subtitle' | 'audio-edit'
+  variant: 'zoom' | 'trim' | 'annotation' | 'blur' | 'subtitle' | 'audio-edit'
 }
 
 const SCALE_CANDIDATES = [
@@ -823,6 +829,7 @@ function Timeline({
 
   const zoomItems = items.filter((item) => item.rowId === ZOOM_ROW_ID)
   const annotationItems = items.filter((item) => item.rowId === ANNOTATION_ROW_ID)
+  const blurItems = items.filter((item) => item.rowId === BLUR_ROW_ID)
   const subtitleItems = items.filter((item) => item.rowId === SUBTITLE_ROW_ID)
   const audioEditItems = items.filter((item) => item.rowId === AUDIO_ROW_ID)
 
@@ -955,6 +962,24 @@ function Timeline({
         ))}
       </Row>
 
+      {BLUR_REGIONS_ENABLED && (
+        <Row id={BLUR_ROW_ID} isEmpty={blurItems.length === 0} hint={rowHints?.blur}>
+          {blurItems.map((item) => (
+            <Item
+              id={item.id}
+              key={item.id}
+              rowId={item.rowId}
+              span={item.span}
+              isSelected={item.id === selectedAnnotationId}
+              onSelect={() => onSelectAnnotation?.(item.id)}
+              variant="blur"
+            >
+              {item.label}
+            </Item>
+          ))}
+        </Row>
+      )}
+
       <Row id={SUBTITLE_ROW_ID} isEmpty={subtitleItems.length === 0} hint={rowHints?.subtitle}>
         {subtitleItems.map((item) => (
           <Item
@@ -1045,6 +1070,7 @@ export default function TimelineEditor({
   onSelectSegment,
   annotationRegions = [],
   onAnnotationAdded,
+  onBlurAdded,
   onAnnotationSpanChange,
   onAnnotationDelete,
   selectedAnnotationId,
@@ -1108,9 +1134,12 @@ export default function TimelineEditor({
       annotation: t('timeline.hints.pressAnnotation', {
         key: formatBinding(keyShortcuts.addAnnotation, isMacPlatform),
       }),
+      blur: t('timeline.hints.pressBlur', {
+        key: formatBinding(keyShortcuts.addBlur, isMacPlatform),
+      }),
       subtitle: t('timeline.hints.noSubtitles'),
     }),
-    [t, keyShortcuts.addZoom, keyShortcuts.addAnnotation, isMacPlatform],
+    [t, keyShortcuts.addZoom, keyShortcuts.addAnnotation, keyShortcuts.addBlur, isMacPlatform],
   )
   const timelineContainerRef = useRef<HTMLDivElement>(null)
   const currentTimeMsRef = useRef(currentTimeMs)
@@ -1405,6 +1434,19 @@ export default function TimelineEditor({
     onAnnotationAdded({ start: startPos, end: endPos })
   }, [videoDuration, totalMs, currentTimeMs, onAnnotationAdded])
 
+  const handleAddBlur = useCallback(() => {
+    if (!BLUR_REGIONS_ENABLED || !onBlurAdded) return
+    if (!videoDuration || videoDuration === 0 || totalMs === 0) return
+
+    const defaultDuration = Math.min(1000, totalMs)
+    if (defaultDuration <= 0) return
+
+    // Like annotations, blur regions may overlap each other.
+    const startPos = Math.max(0, Math.min(currentTimeMs, totalMs))
+    const endPos = Math.min(startPos + defaultDuration, totalMs)
+    onBlurAdded({ start: startPos, end: endPos })
+  }, [videoDuration, totalMs, currentTimeMs, onBlurAdded])
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
@@ -1426,13 +1468,15 @@ export default function TimelineEditor({
       if (matchesShortcut(e, keyShortcuts.addAnnotation, isMacPlatform)) {
         handleAddAnnotation()
       }
+      if (BLUR_REGIONS_ENABLED && matchesShortcut(e, keyShortcuts.addBlur, isMacPlatform)) {
+        handleAddBlur()
+      }
 
-      // Tab: Cycle through overlapping annotations at current time
+      // Tab: Cycle through overlapping annotations at current time (blur
+      // regions are left out; they are picked from their own row).
       if (e.key === 'Tab' && annotationRegions.length > 0) {
         const currentTimeMs = Math.round(currentTime * 1000)
-        const overlapping = annotationRegions
-          .filter((a) => currentTimeMs >= a.startMs && currentTimeMs <= a.endMs)
-          .sort((a, b) => a.zIndex - b.zIndex) // Sort by z-index
+        const overlapping = getSelectionCycleAnnotations(annotationRegions, currentTimeMs)
 
         if (overlapping.length > 0) {
           e.preventDefault()
@@ -1473,6 +1517,7 @@ export default function TimelineEditor({
     handleAddZoom,
     toggleScissorsMode,
     handleAddAnnotation,
+    handleAddBlur,
     deleteSelectedKeyframe,
     deleteSelectedZoom,
     deleteSelectedSegment,
@@ -1625,6 +1670,16 @@ export default function TimelineEditor({
     const annotations: TimelineRenderItem[] = annotationRegions.map((region) => {
       let label: string
 
+      if (region.type === 'blur') {
+        return {
+          id: region.id,
+          rowId: BLUR_ROW_ID,
+          span: { start: region.startMs, end: region.endMs },
+          label: t('timeline.blur'),
+          variant: 'blur',
+        }
+      }
+
       if (region.type === 'text') {
         // Show text preview
         const preview = region.content.trim() || t('timeline.emptyText')
@@ -1746,6 +1801,17 @@ export default function TimelineEditor({
           >
             <MessageSquare className="w-4 h-4" />
           </Button>
+          {BLUR_REGIONS_ENABLED && (
+            <Button
+              onClick={handleAddBlur}
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-slate-400 hover:text-[#8B5CF6] hover:bg-[#8B5CF6]/10 transition-all"
+              title={t('timeline.addBlur')}
+            >
+              <EyeOff className="w-4 h-4" />
+            </Button>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <DropdownMenu>
