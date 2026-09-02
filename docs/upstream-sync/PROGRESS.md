@@ -339,3 +339,11 @@ tests (upstream shipped blur regions disabled and untested). Feature note:
 Gate: lint 0 errors / 116 warnings (unchanged); tsc + test types clean; i18n 652 en keys (zh-CN,
 vi in parity); `biome format .` clean; vitest **122 files / 1277 tests** (+4 / +49). Manual smoke
 list in the feature note — no display on the lead box.
+
+## 2026-08-27 — wave 5: native batch merged
+
+SCK helper: system audio (mixed single track, clock-driven, pause-aware), mic device selection,
+word-boundary device matching, CoreGraphics init before window filters, prebuilt
+`window-bounds-helper` replacing runtime `swiftc`. Swift uncompiled; checklist items 11–17 in
+`docs/native-helper.md`. Gate after merge: lint 0 errors; tsc + test types clean; i18n PASS;
+format clean; vitest see below.
