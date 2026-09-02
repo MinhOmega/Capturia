@@ -10,6 +10,17 @@
   caret-color: #111827;
 }
 
+/* Teleprompter mode: the note is read-only, so hide the caret; mirroring is for
+ * reading through a beam-splitter glass and flips the whole scroll container. */
+.notes-content[data-teleprompter='true'] .tiptap {
+  caret-color: transparent;
+  cursor: default;
+}
+
+.notes-content[data-mirrored='true'] {
+  transform: scaleX(-1);
+}
+
 .tiptap :first-child {
   margin-top: 0;
 }

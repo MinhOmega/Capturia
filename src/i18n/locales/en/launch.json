@@ -162,7 +162,21 @@
 			"bulletList": "Bullet list",
 			"numberedList": "Numbered list",
 			"blockquote": "Blockquote",
-			"codeBlock": "Code block"
+			"codeBlock": "Code block",
+			"teleprompter": "Teleprompter mode",
+			"play": "Start auto-scroll",
+			"pause": "Pause auto-scroll",
+			"restart": "Restart from top",
+			"speed": "Scroll speed",
+			"fontSize": "Font size",
+			"decreaseFontSize": "Decrease font size",
+			"increaseFontSize": "Increase font size",
+			"mirror": "Mirror horizontally"
 		}
+	},
+	"notesTeleprompter": {
+		"speedReadout": "{{value}} px/s",
+		"fontSizeReadout": "{{value}} px",
+		"spaceHint": "Space plays or pauses while the note is not focused"
 	}
 }

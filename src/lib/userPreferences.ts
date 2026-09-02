@@ -9,6 +9,11 @@ import {
   isHudOrientation,
 } from '@/hooks/useHudLayout'
 import type { ExportFormat, ExportQuality } from '@/lib/exporter/types'
+import {
+  DEFAULT_NOTES_TELEPROMPTER_SETTINGS,
+  type NotesTeleprompterSettings,
+  normalizeNotesTeleprompterSettings,
+} from '@/lib/notesTeleprompter'
 import { ASPECT_RATIOS, type AspectRatio } from '@/utils/aspectRatioUtils'
 
 export const USER_PREFERENCES_STORAGE_KEY = 'capturia.userPreferences'
@@ -40,6 +45,8 @@ export interface UserPreferences {
   previewPlaybackRate: number
   /** Launch HUD layout: controls in one row, or stacked in a tray column */
   hudOrientation: HudOrientation
+  /** Notes window teleprompter: scroll speed (px/s) and font size (px) */
+  notesTeleprompter: NotesTeleprompterSettings
 }
 
 export const DEFAULT_PREFS: UserPreferences = {
@@ -51,6 +58,7 @@ export const DEFAULT_PREFS: UserPreferences = {
   seekStepSeconds: DEFAULT_PLAYBACK_SETTINGS.seekStepSeconds,
   previewPlaybackRate: DEFAULT_PLAYBACK_SETTINGS.previewPlaybackRate,
   hudOrientation: DEFAULT_HUD_ORIENTATION,
+  notesTeleprompter: { ...DEFAULT_NOTES_TELEPROMPTER_SETTINGS },
 }
 
 /** Parses stored preferences without throwing on malformed JSON. */
@@ -115,6 +123,7 @@ export function loadUserPreferences(): UserPreferences {
     hudOrientation: isHudOrientation(raw.hudOrientation)
       ? raw.hudOrientation
       : DEFAULT_PREFS.hudOrientation,
+    notesTeleprompter: normalizeNotesTeleprompterSettings(raw.notesTeleprompter),
   }
 }
 
