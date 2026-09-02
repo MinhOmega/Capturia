@@ -153,3 +153,15 @@ Gate: lint 0 errors / 116 warnings; tsc + test types clean; i18n 618 en keys; vi
 **101 files / 1084 tests**.
 
 In flight: D-5 WSOLA audio (`w4-audio`), F11+F10+F7 electron infra (`w4-infra`).
+
+## 2026-08-27 — wave 4: D-5 merged (`f6ce317`)
+
+Audio now exported at every speed: WSOLA stretcher per speed segment, output locked to the
+rendered frame count on both decode paths, 1× path unchanged. Speed-audio warning removed.
+Review: `reviews/W4-D5-wsola-audio.md`.
+
+Gate: lint 0 errors / 116 warnings; tsc + test types clean; i18n 617 en keys; vitest
+**104 files / 1113 tests**.
+
+In flight: F11+F10+F7 electron infra (`w4-infra`). Queued: A-3 native pause/resume + B2-5 cursor
+kinds (Swift, macOS build needed), F8 dependency upgrades, F9 signing, T-last format.
