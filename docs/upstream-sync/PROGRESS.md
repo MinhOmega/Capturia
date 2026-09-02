@@ -201,3 +201,26 @@ types clean; i18n 621 en keys; vitest **115 files / 1195 tests**.
 
 Spawned in parallel: Swift batch A-3 + B2-5 (`w4-swift`, macOS build needed), F8 + F9
 (`w4-deps`). Then T-last format and the final report.
+
+## 2026-09-03 — wave 4: F8 dependency upgrades + F9 release signing (branch `w4-deps`, pending review)
+
+Five commits, one per step, gate green after each. Before → after: `@types/node` 22.20.1 (kept,
+`.nvmrc` pinned 22.23.2 and `release.yml` now reads it), electron-builder 24.13.3 → 26.15.3
+(`linux.desktop` → `desktop.entry`; `npmRebuild`/`buildDependenciesFromSource` false;
+`asarUnpack **/*.node`; `mac.notarize:false`; `install-app-deps` CI step dropped), vite 5.4.21 →
+7.3.6 with vitest 4.0.16 → 4.1.11, `@vitejs/plugin-react` 4.7.0 → 5.2.0, `vite-plugin-electron`
+0.28.8 → 0.29.1, esbuild 0.27.7 explicit, TS declaration ^5.9.3 (lock now has one `vite`, one
+`esbuild`), Electron 39.2.7 → 41.10.7. Dead devDeps removed: `@types/uuid`, `fix-webm-duration`.
+No `src/**` or `electron/**` source change was needed; `vite.config.ts` only gained a note on the
+Wayland `--disable-gpu` guard (kept until re-tested on 41).
+
+F9: `release.yml` `validate` fails on tag pushes when `package.json` version differs from the tag;
+mac legs sign through electron-builder (`CSC_LINK`/`CSC_KEY_PASSWORD`/`CSC_NAME`), then
+`codesign --verify`, `notarytool submit --wait`, `stapler staple/validate`, `spctl` — all gated on
+the six secrets, skipped on forks. `*.zsync`/publish block deferred (B8/M12).
+
+Verified: lint 0 errors / 116 warnings; tsc + test types clean; i18n PASS; vitest **115 files /
+1195 tests**; `vite build`; `electron-builder --dir --linux` (25 s); Electron 41 e2e launch smoke
+under xvfb (1 passed). **Unverified**: signing/notarization on a macOS runner, Electron 41 on
+X11/Wayland/macOS desktops, the four installer legs on CI. Review note:
+`reviews/W4-F8-F9-deps-signing.md`.

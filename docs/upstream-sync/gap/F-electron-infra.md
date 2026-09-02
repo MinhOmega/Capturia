@@ -61,18 +61,18 @@ files - every preload change is a 3-file edit), `package.json`, `electron-builde
 | B1 | Node/npm pinning | c84c2447; `.nvmrc`, `engines`, `packageManager` | **MISSING** | S | Pin `node 22.x` / `npm 10.x`, `.nvmrc`, `node-version-file: .nvmrc` in workflows |
 | B2 | ESLint -> Biome | b472c768; `biome.json` (fork base already had Biome; Capturia's initial commit re-added ESLint) | **PRESENT-DIFFERENT** | M | **Switch** (section 4) - lint rules first, formatter in a single end-of-sync commit |
 | B3 | husky + lint-staged | `.husky/pre-commit`, `lint-staged` in package.json | **MISSING** | S | Port with Biome |
-| B4 | vite 7 / vitest 4.1 / electron 41 / plugin-react 5 / TS 5.9 | 41a26f3e, 659affa8 | **PARTIAL** - Capturia lock has **two vite copies** (`vite@5.4.21` + `vitest/node_modules/vite@7.3.0`), the exact mismatch upstream fixed | M (3 PRs) | Section 4.2 |
+| B4 | vite 7 / vitest 4.1 / electron 41 / plugin-react 5 / TS 5.9 | 41a26f3e, 659affa8 | **DONE (F8, 2026-09-03)** - vite 7.3.6 / vitest 4.1.11 / plugin-react 5.2.0 / vite-plugin-electron 0.29.1 / esbuild 0.27.7 explicit / TS ^5.9.3 / Electron 41.10.7; one `vite` and one `esbuild` in the lock | M (3 PRs) | Section 4.2. Electron 41.10 embeds Node 24.18, `@types/node` stays 22 (conservative) |
 | B5 | Remove `electron-icon-builder`, `electron-rebuild` | 018ba08e | **MISSING** - both present, unreferenced (grep verified) | S | Remove (kills the 22-vuln audit chain) |
-| B6 | sharp prebuilt / `buildDependenciesFromSource:false` | c6331bad | **N/A** (no sharp) | S | Set `buildDependenciesFromSource:false`, `npmRebuild:false` (Capturia has zero native npm modules; `install-app-deps` in CI is a no-op) |
-| B7 | Hardened runtime / entitlements / notarization | 78901a80, build.yml `build-macos` job | **PARTIAL** - Capturia has hardened runtime + entitlements (e59de4d) but no signing/notarization in CI | M | Port the secrets-gated sign/notarize/staple steps into Capturia's mac matrix legs; `scripts/build_macos.sh` optional |
-| B8 | AppImage update info / `publish` block | 7e298d3b; main `electron-builder.json5:19-39` | **MISSING** | S | Only with M12; upload `*.zsync` in `release.yml` |
+| B6 | sharp prebuilt / `buildDependenciesFromSource:false` | c6331bad | **DONE (F8)** - `sharp` *is* in the lock (optional dep of `@xenova/transformers`) and gets packaged; `npmRebuild:false`, `buildDependenciesFromSource:false`, `asarUnpack: **/*.node`, `install-app-deps` step dropped from both workflows | S | electron-builder 26.15.3; `--dir --linux` verified locally (rebuild skipped) |
+| B7 | Hardened runtime / entitlements / notarization | 78901a80, build.yml `build-macos` job | **DONE (F9, unverified on a runner)** - `release.yml` mac legs: secrets-gated `CSC_LINK`/`CSC_KEY_PASSWORD` signing through electron-builder, `codesign --verify`, `notarytool submit --wait`, `stapler staple/validate`, `spctl`; skipped entirely when any secret is absent; `mac.notarize:false` explicit | M | `scripts/build_macos.sh` not ported (workflow is the single path) |
+| B8 | AppImage update info / `publish` block | 7e298d3b; main `electron-builder.json5:19-39` | **MISSING (deferred by F9)** - needs a `publish` block, not a one-liner | S | Only with M12; upload `*.zsync` in `release.yml` |
 | B9 | Arch/Hyprland: `pacman` target | 31f0483c | **MISSING** | S | Optional; needs `libarchive-tools` on the Linux runner |
 | B10 | Nix flake | 64cdc0dd | N/A | - | Note only |
 | B11 | `scripts/before-pack.cjs` | 3e3a8168 | N/A (caption model fetch; D's call) | - | Note only |
 | B12 | `.github/workflows/ci.yml` (lint+typecheck+test+build+semantic-pr), `actions/setup` composite | 17aa4a2a, da4e1cab | **PARTIAL** - Capturia `build.yml` `validate` job = tsc + vitest (no lint, because lint is red) | S | Add composite setup action + lint job once Biome baseline is fixed; semantic-pr optional |
 | B13 | `tsconfig.test.json` + "Typecheck (tests)" job | 35462ee8 (v1.8) | **MISSING** - test files never typechecked | S | Port; expect an initial error backlog, use the ratchet pattern then zero |
 | B14 | Playwright e2e (`tests/e2e/gif-export.spec.ts`, xvfb, swiftshader, `HEADLESS`) | 9f6ef0f5, 61d89831, **d4c50c9a removed the CI job as flaky**; still runnable locally | **MISSING** | M | Port spec adapted to Capturia's `save-exported-video` IPC as a local/nightly check, **not** a PR gate |
-| B15 | Release-candidate pipeline (prerelease/promote, `release/vX.Y.Z` branches) | da4e1cab | N/A | - | Keep Capturia's tag-driven `release.yml`; borrow the `package.json version == tag` guard (`build.yml:294-301`) |
+| B15 | Release-candidate pipeline (prerelease/promote, `release/vX.Y.Z` branches) | da4e1cab | N/A - guard **DONE (F9)** | - | Capturia's tag-driven `release.yml` kept; the `package.json version == tag` guard now runs in its `validate` job on tag pushes |
 | B16 | CODEOWNERS, `.editorconfig` | - | **MISSING** | S | Add `* @MinhOmega`, `.editorconfig` |
 
 ---
@@ -385,6 +385,14 @@ Plan:
 | electron-icon-builder, electron-rebuild | present | removed | remove (B5) |
 | @electron/rebuild | - | ^4.0.4 | not needed (no native npm modules) |
 | husky, lint-staged, @biomejs/biome, @playwright/test | - | yes | T1 / B14 |
+
+**Status 2026-09-03 (F8 batch)**: all four steps landed, one commit each, local gate green after
+each (lint 0 errors, tsc, test types, i18n, vitest 115/1195, `vite build`). Installed:
+electron-builder 26.15.3, vite 7.3.6, vitest 4.1.11, plugin-react 5.2.0, vite-plugin-electron 0.29.1,
+esbuild 0.27.7, Electron 41.10.7 (Node 24.18 / Chromium 146). electron-builder 26 change that bit:
+`linux.desktop` keys must sit under `desktop.entry`. `@rolldown/pluginutils` (pure JS) is the only
+rolldown artefact. Electron 41 e2e launch smoke passed under xvfb; X11/Wayland/macOS runtime smoke is
+still manual (`reviews/W4-F8-F9-deps-signing.md`).
 
 Order (each its own PR, CI matrix green before the next): (1) B5 removals + Node pin +
 `@types/node` 22; (2) electron-builder 26 (verify all 4 installer legs, NSIS block, mac
