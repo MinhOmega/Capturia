@@ -11,6 +11,7 @@
 	"exportWarningAudioTrackUnavailable": "无法读取源音轨，本次导出已自动改为无音频。",
 	"exportWarningAudioCodecUnsupported": "此系统不支持 AAC 音频编码，视频已导出但不含音频。",
 	"exportWarningDecoderFallback": "快速 WebCodecs 解码器无法读取此录像，本次导出已改用较慢的兼容解码器。",
+	"recordingCameraDisconnected": "摄像头已断开，录制将在没有摄像头画面的情况下继续。",
 	"exportWarningDecodeEndedEarly": "源视频在报告的结尾之前停止解码，导出结果可能比预期略短。",
 	"saveGifFailed": "保存 GIF 失败",
 	"saveVideoFailed": "保存视频失败",

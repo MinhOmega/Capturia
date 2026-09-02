@@ -596,9 +596,10 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
     overlayOptions: { shape: CameraOverlayShape; sizePercent: number },
   ): Promise<CompositionResources> => {
     const openWebcam = async (deviceId: string | undefined): Promise<MediaStream> => {
+      // No size hint on purpose: asking for 1280x720 made some drivers rotate a
+      // portrait camera into landscape. The native frame is centre-cropped into
+      // the overlay box by `drawVideoCover`, so any orientation renders undistorted.
       const videoConstraints: MediaTrackConstraints = {
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
         frameRate: { ideal: 30, max: 60 },
       }
       if (deviceId) {
@@ -727,12 +728,26 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
     let lastDrawTime = 0
     const frameIntervalMs = 1000 / compositeFrameRate
 
+    // Camera unplugged mid-recording: the <video> keeps showing its last frame, so
+    // without this flag the overlay would freeze on it. Drop the overlay, keep
+    // recording the plain desktop and tell the user once. `track.stop()` from our
+    // own cleanup does not fire `ended`, so this only reacts to a real loss.
+    let webcamLost = false
+    const webcamTrack = webcamStream.getVideoTracks()[0]
+    const handleWebcamEnded = () => {
+      if (!running || webcamLost) return
+      webcamLost = true
+      console.warn('[capture] camera track ended mid-recording; continuing without the overlay.')
+      toast.warning(t('editor.recordingCameraDisconnected'))
+    }
+    webcamTrack?.addEventListener('ended', handleWebcamEnded)
+
     const drawCompositedFrame = () => {
       if (desktopVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
         ctx.drawImage(desktopVideo, 0, 0, sourceWidth, sourceHeight)
       }
 
-      if (webcamVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+      if (!webcamLost && webcamVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
         const x = overlay.x
         const y = overlay.y
         const w = overlay.width
@@ -811,6 +826,7 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
       frameRate: compositeFrameRate,
       cleanup: () => {
         running = false
+        webcamTrack?.removeEventListener('ended', handleWebcamEnded)
         cancelAnimationFrame(rafToken)
         if (
           videoFrameCallbackToken !== null &&
