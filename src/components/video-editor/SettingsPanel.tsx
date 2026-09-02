@@ -78,7 +78,7 @@ import type { BlurData } from './types'
 import {
   DEFAULT_WALLPAPER,
   isSameBuiltInWallpaper,
-  resolveImageWallpaperUrl,
+  resolveWallpaperThumbUrl,
   WALLPAPER_PATHS,
 } from '@/lib/wallpaper'
 import {
@@ -466,13 +466,17 @@ export function SettingsPanel({
     }
   }
 
-  // Thumbnails need a loadable URL; the value handed to onWallpaperChange stays
-  // the canonical "/wallpapers/wallpaperN.jpg" so projects persist portably.
+  // The grid paints the small pre-generated thumbs (see WALLPAPER_THUMB_PATHS),
+  // never the originals; the value handed to onWallpaperChange stays the
+  // canonical "/wallpapers/wallpaperN.jpg" so projects persist portably and
+  // only the selected wallpaper is decoded at full size (by the preview).
   useEffect(() => {
     let mounted = true
     ;(async () => {
       try {
-        const resolved = await Promise.all(WALLPAPER_PATHS.map((p) => resolveImageWallpaperUrl(p)))
+        const resolved = await Promise.all(
+          WALLPAPER_PATHS.map(async (p) => (await resolveWallpaperThumbUrl(p)) ?? p),
+        )
         if (mounted) setWallpaperPaths(resolved)
       } catch {
         if (mounted) setWallpaperPaths([...WALLPAPER_PATHS])
