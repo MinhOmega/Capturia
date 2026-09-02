@@ -59,6 +59,8 @@
 	"recordSourceRequired": "请先选择一个录制来源。",
 	"recordStartFailed": "开始录制失败。",
 	"recordStopFailed": "结束录制失败。",
+	"pauseFailed": "无法暂停录制，仍在继续录制。",
+	"resumeFailed": "无法继续录制，仍处于暂停状态。",
 	"recordSaveFailed": "保存录制失败。",
 	"openVideoFailed": "打开视频文件失败。",
 	"openSourceSelectorFailed": "打开来源选择器失败。",
