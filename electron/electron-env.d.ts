@@ -70,6 +70,8 @@ type TranscriptWordMetadata = {
   startMs: number
   endMs: number
   confidence?: number
+  synthetic?: boolean
+  phraseIndex?: number
 }
 
 type RoughCutSuggestionMetadata = {
@@ -79,6 +81,24 @@ type RoughCutSuggestionMetadata = {
   reason: 'silence' | 'filler'
   confidence: number
   label: string
+}
+
+type CaptionModelStatusPayload = {
+  modelId: string
+  present: boolean
+  dir: string
+  downloadedBytes: number
+  totalBytes: number
+  missingFiles: string[]
+}
+
+type CaptionModelProgressPayload = {
+  modelId: string
+  file: string
+  fileIndex: number
+  fileCount: number
+  downloadedBytes: number
+  totalBytes: number
 }
 
 type VideoAnalysisMetadata = {
@@ -266,6 +286,8 @@ interface Window {
         startedAt?: number
         finishedAt?: number
         error?: string
+        /** Native transcriber failure code (e.g. `unsupported_platform`) when status is `failed`. */
+        code?: string
       }
     }>
     getVideoAnalysisResult: (jobId: string) => Promise<{
@@ -278,6 +300,8 @@ interface Window {
         startedAt?: number
         finishedAt?: number
         error?: string
+        /** Native transcriber failure code (e.g. `unsupported_platform`) when status is `failed`. */
+        code?: string
       }
       result?: VideoAnalysisMetadata
     }>
@@ -314,6 +338,24 @@ interface Window {
       message?: string;
       error?: string;
     }>;
+    // C-1: in-browser Whisper caption fallback (model cache in userData + sidecar write)
+    /** `file://` URL (trailing slash) of the resources dir, from `--asset-base-url`. Empty outside the editor window. */
+    assetBaseUrl: string;
+    /** `file://` URL (trailing slash) of `userData/caption-models/`, from `--caption-model-dir`. Empty outside the editor window. */
+    captionModelDirUrl: string;
+    getCaptionModelDir: () => Promise<{ success: boolean; dir?: string; message?: string }>;
+    getCaptionModelStatus: (modelId?: string) => Promise<{
+      success: boolean;
+      status?: CaptionModelStatusPayload;
+      message?: string;
+    }>;
+    downloadCaptionModel: (modelId?: string) => Promise<{ success: boolean; aborted?: boolean; message?: string }>;
+    cancelCaptionModelDownload: () => Promise<{ success: boolean }>;
+    onCaptionModelProgress: (callback: (progress: CaptionModelProgressPayload) => void) => () => void;
+    saveVideoAnalysisSidecar: (
+      videoPath: string,
+      analysis: VideoAnalysisMetadata,
+    ) => Promise<{ success: boolean; path?: string; message?: string }>;
     // W3-c: global shortcuts, application menu, lifecycle flush, diagnostics
     updateGlobalShortcut: (
       action: GlobalShortcutActionName,

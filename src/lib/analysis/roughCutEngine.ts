@@ -7,12 +7,28 @@ function normalizeWord(word: TranscriptWord): TranscriptWord | null {
   if (!text) return null;
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs)) return null;
   if (endMs <= startMs) return null;
-  return {
+  const normalized: TranscriptWord = {
     text,
     startMs: Math.max(0, Math.round(startMs)),
     endMs: Math.max(0, Math.round(endMs)),
     confidence: Number.isFinite(word.confidence) ? Number(word.confidence) : undefined,
   };
+  if (word.synthetic) {
+    normalized.synthetic = true;
+    if (Number.isFinite(word.phraseIndex)) normalized.phraseIndex = Number(word.phraseIndex);
+  }
+  return normalized;
+}
+
+/**
+ * Synthetic words are interpolated from one phrase segment, so a gap between two of
+ * them says nothing about the audio. Only gaps at phrase boundaries (or between real
+ * words) can be silences.
+ */
+export function isGapInsideSyntheticPhrase(previous: TranscriptWord, current: TranscriptWord): boolean {
+  return Boolean(previous.synthetic && current.synthetic)
+    && previous.phraseIndex !== undefined
+    && previous.phraseIndex === current.phraseIndex;
 }
 
 function normalizeTextToken(value: string): string {
@@ -88,6 +104,7 @@ export function generateRoughCutSuggestions(
     const current = words[index];
     const gap = current.startMs - previous.endMs;
     if (gap < options.minSilenceMs) continue;
+    if (isGapInsideSyntheticPhrase(previous, current)) continue;
 
     suggestions.push({
       id: `silence-${index}`,
