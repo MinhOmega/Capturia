@@ -27,6 +27,7 @@ import { reportUserActionError } from "@/lib/userErrorFeedback";
 import { BACKGROUND_IMAGE_ACCEPT, isSupportedBackgroundImageType } from "./backgroundImageUpload";
 import { BACKGROUND_GRADIENT_PRESETS } from "./backgroundPresets";
 import { DEFAULT_WALLPAPER, isSameBuiltInWallpaper, resolveImageWallpaperUrl, WALLPAPER_PATHS } from "@/lib/wallpaper";
+import { CAPTION_ENGINE_SETTINGS, type CaptionEngineSetting } from "@/lib/captioning/captionEngineSetting";
 
 const GRADIENTS = BACKGROUND_GRADIENT_PRESETS;
 const ZOOM_FOCUS_MODES: readonly ZoomFocusMode[] = ['manual', 'auto'];
@@ -199,6 +200,9 @@ interface SettingsPanelProps {
   analysisRunning?: boolean;
   subtitleCueCount?: number;
   roughCutSuggestionCount?: number;
+  /** C-1: which engine "Generate Subtitles" uses (native macOS speech / on-device Whisper). */
+  captionEngine?: CaptionEngineSetting;
+  onCaptionEngineChange?: (engine: CaptionEngineSetting) => void;
   seekStepSeconds?: number;
   onSeekStepSecondsChange?: (step: number) => void;
   // Timeline section (W2-b)
@@ -363,6 +367,8 @@ export function SettingsPanel({
   analysisRunning = false,
   subtitleCueCount = 0,
   roughCutSuggestionCount = 0,
+  captionEngine = 'auto',
+  onCaptionEngineChange,
   seekStepSeconds = 5,
   onSeekStepSecondsChange,
   showTimelineWaveform = false,
@@ -805,6 +811,34 @@ export function SettingsPanel({
             <span>{t("timeline.subtitle")}: {subtitleCueCount}</span>
             <span>{t("settings.applyRoughCut")}: {roughCutSuggestionCount}</span>
           </div>
+          {onCaptionEngineChange && (
+            <div className="mt-2 px-1">
+              <div className="flex items-center justify-between text-[10px] text-slate-500">
+                <span>{t("settings.captionsEngine")}</span>
+              </div>
+              <div className="mt-1 grid grid-cols-3 gap-1" role="radiogroup" aria-label={t("settings.captionsEngine")}>
+                {CAPTION_ENGINE_SETTINGS.map((engine) => (
+                  <button
+                    key={engine}
+                    type="button"
+                    role="radio"
+                    aria-checked={captionEngine === engine}
+                    disabled={analysisRunning}
+                    onClick={() => onCaptionEngineChange(engine)}
+                    title={t(`settings.captionsEngine${engine === 'auto' ? 'Auto' : engine === 'native' ? 'Native' : 'Whisper'}Hint`)}
+                    className={cn(
+                      "h-7 rounded-md border text-[10px] transition-all disabled:opacity-50",
+                      captionEngine === engine
+                        ? "bg-[#34B27B]/15 text-[#34B27B] border-[#34B27B]/30"
+                        : "bg-white/5 text-slate-300 border-white/10 hover:bg-white/10 hover:border-white/20 hover:text-white",
+                    )}
+                  >
+                    {t(`settings.captionsEngine${engine === 'auto' ? 'Auto' : engine === 'native' ? 'Native' : 'Whisper'}`)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {segmentSelected && selectedSegment && (
