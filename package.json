@@ -109,7 +109,7 @@
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.21",
     "electron": "^39.2.7",
-    "electron-builder": "^24.13.3",
+    "electron-builder": "^26.15.3",
     "fast-check": "^4.5.2",
     "husky": "^9.1.7",
     "jsdom": "^29.1.1",
