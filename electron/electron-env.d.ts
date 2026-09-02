@@ -387,6 +387,8 @@ interface Window {
     loadProjectState: (
       videoPath: string,
     ) => Promise<{ success: boolean; notFound?: boolean; state?: unknown; error?: string }>
+    /** `process.platform` snapshotted by the preload (`darwin` | `win32` | `linux`). */
+    platform: string
     getPlatform: () => Promise<string>
     getShortcuts: () => Promise<Record<string, unknown> | null>
     saveShortcuts: (shortcuts: unknown) => Promise<{ success: boolean; error?: string }>
