@@ -17,6 +17,11 @@ import {
 import type { SpeedTimelineSegment } from './timelineSegments'
 import { downmixPlanarChannelsForExport } from '@/lib/audio/downmix'
 import { WsolaTimeStretcher, isTimeStretchPassthroughSpeed } from '@/lib/audio/audioTimeStretch'
+import {
+  mixTrackStreams,
+  type PlanarAudioChunk,
+  resolveMixChannelCount,
+} from '@/lib/audio/multiTrackMix'
 import { PlanarChunkQueue } from '@/lib/audio/planarChunkQueue'
 import { isBackgroundLoadError } from './backgroundErrors'
 import { FrameRenderer } from './frameRenderer'
@@ -149,6 +154,33 @@ const DEFAULT_AUDIO_GAIN = 1
 const MAX_AUDIO_GAIN = 2
 const EXPORT_WARNING_AUDIO_TRACK_UNAVAILABLE = 'editor.exportWarningAudioTrackUnavailable'
 const EXPORT_WARNING_AUDIO_CODEC_UNSUPPORTED = 'editor.exportWarningAudioCodecUnsupported'
+/** Some of the source's audio tracks could not be decoded or mixed and were left out. */
+const EXPORT_WARNING_AUDIO_TRACKS_SKIPPED = 'editor.exportWarningAudioTracksSkipped'
+
+/** One decoded span of source audio, shaped like mediabunny's `WrappedAudioBuffer`. */
+interface SourceAudioBuffer {
+  buffer: AudioBuffer
+  /** Source time of the first sample, in seconds. */
+  timestamp: number
+  /** Seconds covered by `buffer`. */
+  duration: number
+}
+
+/** Adapts a decoder sink's buffers to the planar chunks the multi-track mixer consumes. */
+async function* planarChunksFromBuffers(
+  buffers: AsyncIterable<SourceAudioBuffer>,
+): AsyncGenerator<PlanarAudioChunk, void, undefined> {
+  for await (const wrapped of buffers) {
+    const { buffer } = wrapped
+    yield {
+      timestampSec: wrapped.timestamp,
+      sampleRate: buffer.sampleRate,
+      planes: Array.from({ length: buffer.numberOfChannels }, (_, channel) =>
+        buffer.getChannelData(channel),
+      ),
+    }
+  }
+}
 const EXPORT_WARNING_DECODER_FALLBACK = 'editor.exportWarningDecoderFallback'
 const EXPORT_WARNING_DECODE_ENDED_EARLY = 'editor.exportWarningDecodeEndedEarly'
 
@@ -552,6 +584,14 @@ export class VideoExporter {
   private audioTotalFrames = 0
   private sourceAudioInput: Input | null = null
   private sourceAudioTrack: InputAudioTrack | null = null
+  /**
+   * Every decodable audio track that shares the primary track's sample rate,
+   * primary first. One entry (or none, in tests that stub the primary) keeps
+   * the single-sink path byte-identical; two or more are summed per range.
+   */
+  private sourceAudioTracks: InputAudioTrack[] = []
+  /** Audio stream count the WebCodecs demuxer reported (diagnostics only). */
+  private sourceAudioStreamCount: number | null = null
   private readonly warnings = new Set<string>()
   private readonly audioProcessing: NormalizedExportAudioProcessingConfig
 
@@ -643,6 +683,7 @@ export class VideoExporter {
 
     this.sourceAudioInput = null
     this.sourceAudioTrack = null
+    this.sourceAudioTracks = []
   }
 
   private async resolveSourceAudioTrack(): Promise<boolean> {
@@ -657,6 +698,7 @@ export class VideoExporter {
       if (audioTrack) {
         this.sourceAudioInput = input
         this.sourceAudioTrack = audioTrack
+        this.sourceAudioTracks = await this.collectMixableAudioTracks(input, audioTrack)
         return true
       }
       input.dispose()
@@ -673,6 +715,7 @@ export class VideoExporter {
       if (audioTrack) {
         this.sourceAudioInput = input
         this.sourceAudioTrack = audioTrack
+        this.sourceAudioTracks = await this.collectMixableAudioTracks(input, audioTrack)
         return true
       }
       input.dispose()
@@ -684,6 +727,120 @@ export class VideoExporter {
       )
       this.disposeSourceAudioInput()
       return false
+    }
+  }
+
+  /**
+   * Lists every audio track of the container that can be summed with the
+   * primary one: decodable and at the same sample rate. Tracks that fail
+   * either test are left out with `EXPORT_WARNING_AUDIO_TRACKS_SKIPPED` so a
+   * silent-mic export is never a surprise. Files with a single track return
+   * just the primary and take the unchanged single-sink path.
+   */
+  private async collectMixableAudioTracks(
+    input: Input,
+    primary: InputAudioTrack,
+  ): Promise<InputAudioTrack[]> {
+    let tracks: InputAudioTrack[]
+    try {
+      tracks = await input.getAudioTracks()
+    } catch (error) {
+      console.warn('[VideoExporter] Unable to list source audio tracks; using the primary.', error)
+      return [primary]
+    }
+
+    const mixable: InputAudioTrack[] = [primary]
+    let skipped = 0
+    for (const track of tracks) {
+      if (track === primary || track.id === primary.id) continue
+      let decodable = false
+      try {
+        decodable = await track.canDecode()
+      } catch {
+        decodable = false
+      }
+      if (!decodable) {
+        skipped += 1
+        console.warn(
+          `[VideoExporter] Skipping source audio track ${track.id}: codec ${track.codec ?? 'unknown'} cannot be decoded.`,
+        )
+        continue
+      }
+      if (track.sampleRate !== primary.sampleRate) {
+        skipped += 1
+        console.warn(
+          `[VideoExporter] Skipping source audio track ${track.id}: sample rate ${track.sampleRate} differs from the primary track (${primary.sampleRate}).`,
+        )
+        continue
+      }
+      mixable.push(track)
+    }
+
+    if (skipped > 0) this.addWarning(EXPORT_WARNING_AUDIO_TRACKS_SKIPPED)
+    if (this.sourceAudioStreamCount !== null && this.sourceAudioStreamCount !== tracks.length) {
+      console.warn(
+        `[VideoExporter] Demuxer reported ${this.sourceAudioStreamCount} audio stream(s) but the container lists ${tracks.length}.`,
+      )
+    }
+    if (mixable.length > 1) {
+      console.info(`[VideoExporter] Mixing ${mixable.length} source audio tracks`, {
+        sampleRate: primary.sampleRate,
+        channels: mixable.map((track) => track.numberOfChannels),
+        skipped,
+        demuxerAudioStreamCount: this.sourceAudioStreamCount,
+      })
+    }
+    return mixable
+  }
+
+  /**
+   * Source audio read for one time span, as `AudioBufferSink.buffers` would
+   * deliver it. A single track is read straight from its sink; several tracks
+   * are read in lockstep and summed by `mixTrackStreams` (see
+   * `src/lib/audio/multiTrackMix.ts`), so the rest of the audio chain never
+   * sees the difference.
+   */
+  private createSourceAudioReader(): (
+    startSec: number,
+    endSec: number,
+  ) => AsyncIterable<SourceAudioBuffer> {
+    const tracks =
+      this.sourceAudioTracks.length > 1
+        ? this.sourceAudioTracks
+        : [this.sourceAudioTrack as InputAudioTrack]
+    if (tracks.length === 1) {
+      const sink = new AudioBufferSink(tracks[0])
+      return (startSec, endSec) => sink.buffers(startSec, endSec)
+    }
+
+    const sinks = tracks.map((track) => new AudioBufferSink(track))
+    const sampleRate = tracks[0].sampleRate
+    const channels = resolveMixChannelCount(tracks.map((track) => track.numberOfChannels))
+    return (startSec, endSec) =>
+      this.mixedSourceAudioBuffers(sinks, startSec, endSec, sampleRate, channels)
+  }
+
+  private async *mixedSourceAudioBuffers(
+    sinks: AudioBufferSink[],
+    startSec: number,
+    endSec: number,
+    sampleRate: number,
+    channels: 1 | 2,
+  ): AsyncGenerator<SourceAudioBuffer, void, undefined> {
+    const sources = sinks.map((sink) => planarChunksFromBuffers(sink.buffers(startSec, endSec)))
+    const mixed = mixTrackStreams(sources, {
+      sampleRate,
+      channels,
+      isCancelled: () => this.cancelled,
+    })
+    for await (const chunk of mixed) {
+      const length = chunk.planes[0]?.length ?? 0
+      if (length === 0) continue
+      const buffer = new AudioBuffer({ length, numberOfChannels: channels, sampleRate })
+      for (let channel = 0; channel < channels; channel += 1) {
+        buffer.getChannelData(channel).set(chunk.planes[channel])
+      }
+      yield { buffer, timestamp: chunk.timestampSec, duration: length / sampleRate }
     }
   }
 
@@ -826,7 +983,7 @@ export class VideoExporter {
       return
     }
 
-    const sink = new AudioBufferSink(this.sourceAudioTrack)
+    const readBuffers = this.createSourceAudioReader()
 
     for (let rangeIndex = 0; rangeIndex < keptRanges.length; rangeIndex += 1) {
       const range = keptRanges[rangeIndex]
@@ -838,7 +995,7 @@ export class VideoExporter {
       const endSeconds = range.endMs / 1000
       const decodeStartSeconds = Math.max(0, startSeconds - 0.1)
 
-      for await (const wrapped of sink.buffers(decodeStartSeconds, endSeconds)) {
+      for await (const wrapped of readBuffers(decodeStartSeconds, endSeconds)) {
         if (this.cancelled) {
           return
         }
@@ -1373,8 +1530,11 @@ export class VideoExporter {
       const decodePath = this.resolveDecodePath()
       this.samplingMode = decodePath === 'webcodecs' ? 'webcodecs' : 'seek-only'
       let videoInfo: { width: number; height: number; duration: number }
+      this.sourceAudioStreamCount = null
       if (decodePath === 'webcodecs') {
-        videoInfo = await this.loadStreamingDecoderMetadata()
+        const metadata = await this.loadStreamingDecoderMetadata()
+        this.sourceAudioStreamCount = metadata.audioStreamCount
+        videoInfo = metadata
       } else {
         this.decoder = new VideoFileDecoder()
         videoInfo = await this.decoder.loadVideo(this.config.videoUrl)
@@ -1589,6 +1749,8 @@ export class VideoExporter {
         samplingMode: this.samplingMode,
         seekCount: this.seekCount,
         maxObservedTimingDriftMs: Number(this.maxObservedTimingDriftMs.toFixed(2)),
+        audioTracksMixed: this.sourceAudioTracks.length,
+        demuxerAudioStreamCount: this.sourceAudioStreamCount,
       })
 
       return { success: true, blob, warnings: this.getWarnings() }
