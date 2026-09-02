@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { CursorTrack } from '@/lib/cursor/types';
 import type { ZoomRegion } from '../types';
-import { ZOOM_DEPTH_SCALES } from '../types';
+import { DEFAULT_ROTATION_3D, ROTATION_3D_PRESETS, ZOOM_DEPTH_SCALES } from '../types';
 import { buildCursorTelemetry } from './cursorFollowUtils';
 import {
   CONNECTED_ZOOM_PAN_DURATION_MS,
@@ -257,5 +257,62 @@ describe('findDominantRegion - auto-follow (focusMode "auto")', () => {
     // The outgoing auto region's end focus is the cursor at 2500 ms, not its static focus.
     expect(midPan.transition?.startFocus.cx).toBeCloseTo(0.6, 6);
     expect(midPan.transition?.endFocus.cx).toBeCloseTo(0.6, 6);
+  });
+});
+
+describe('findDominantRegion - 3D rotation presets (B1-e)', () => {
+  const iso = region({ id: 'iso', startMs: 1000, endMs: 4000, depth: 2, rotationPreset: 'iso' });
+  const right = region({ id: 'right', startMs: 5200, endMs: 9000, depth: 4, rotationPreset: 'right' });
+  const flat = region({ id: 'flat', startMs: 12_000, endMs: 14_000 });
+
+  it('is identity outside every region and for a region without a preset', () => {
+    // 10 s is past iso's ease-out and before flat's lead-in (~1022 ms before 12 s).
+    const idle = findDominantRegion([iso, flat], 10_000);
+    expect(idle.region).toBeNull();
+    expect(idle.rotation3D).toEqual(DEFAULT_ROTATION_3D);
+    expect(findDominantRegion([iso, flat], 13_000).rotation3D).toEqual(DEFAULT_ROTATION_3D);
+  });
+
+  it('reports the full preset while the region is active (ramp is the caller\'s job via strength)', () => {
+    const plateau = findDominantRegion([iso], 2500);
+    expect(plateau.strength).toBe(1);
+    expect(plateau.rotation3D).toEqual(ROTATION_3D_PRESETS.iso);
+    const rampingIn = findDominantRegion([iso], iso.startMs - 500);
+    expect(rampingIn.strength).toBeGreaterThan(0);
+    expect(rampingIn.strength).toBeLessThan(1);
+    expect(rampingIn.rotation3D).toEqual(ROTATION_3D_PRESETS.iso);
+  });
+
+  it('lerps the tilt between two presets with the connected-pan progress, then holds the next preset', () => {
+    const regions = [iso, right, flat];
+    const start = findDominantRegion(regions, iso.endMs, { connectZooms: true });
+    expect(start.rotation3D.rotationY).toBeCloseTo(ROTATION_3D_PRESETS.iso.rotationY, 6);
+    expect(start.rotation3D.rotationX).toBeCloseTo(ROTATION_3D_PRESETS.iso.rotationX, 6);
+
+    const mid = findDominantRegion(regions, iso.endMs + 500, { connectZooms: true });
+    expect(mid.transition).not.toBeNull();
+    const p = mid.transition?.progress ?? 0;
+    expect(p).toBeGreaterThan(0);
+    expect(p).toBeLessThan(1);
+    expect(mid.rotation3D.rotationX).toBeCloseTo(-10 + (0 - -10) * p, 6);
+    expect(mid.rotation3D.rotationY).toBeCloseTo(-16 + (22 - -16) * p, 6);
+    expect(mid.rotation3D.rotationZ).toBe(0);
+
+    const end = findDominantRegion(regions, iso.endMs + CONNECTED_ZOOM_PAN_DURATION_MS, { connectZooms: true });
+    expect(end.rotation3D.rotationY).toBeCloseTo(22, 6);
+    expect(end.rotation3D.rotationX).toBeCloseTo(0, 6);
+
+    const hold = findDominantRegion(regions, iso.endMs + CONNECTED_ZOOM_PAN_DURATION_MS + 1, { connectZooms: true });
+    expect(hold.transition).toBeNull();
+    expect(hold.rotation3D).toEqual(ROTATION_3D_PRESETS.right);
+  });
+
+  it('a flat region next to a tilted one pans the tilt back to identity', () => {
+    const flatNext = region({ id: 'flat-next', startMs: 5200, endMs: 9000, depth: 4 });
+    const mid = findDominantRegion([iso, flatNext], iso.endMs + 500, { connectZooms: true });
+    const p = mid.transition?.progress ?? 0;
+    expect(mid.rotation3D.rotationY).toBeCloseTo(-16 * (1 - p), 6);
+    const hold = findDominantRegion([iso, flatNext], iso.endMs + CONNECTED_ZOOM_PAN_DURATION_MS + 1, { connectZooms: true });
+    expect(hold.rotation3D).toEqual(DEFAULT_ROTATION_3D);
   });
 });

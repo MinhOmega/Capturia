@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { CursorTrack } from '@/lib/cursor/types';
 import type { ZoomRegion } from '../types';
-import { ZOOM_DEPTH_SCALES } from '../types';
+import { DEFAULT_ROTATION_3D, ROTATION_3D_PRESETS, ZOOM_DEPTH_SCALES } from '../types';
 import { ZOOM_IN_OVERLAP_MS, ZOOM_SPRING_MAX_STEP_MS } from './constants';
 import { buildCursorTelemetry, type CursorTelemetryPoint } from './cursorFollowUtils';
 import {
@@ -238,5 +238,51 @@ describe('measureZoomMotionIntensity', () => {
       .toBeCloseTo(0.05, 6);
     expect(measureZoomMotionIntensity({ scale: 1, x: 0, y: 0 }, { scale: 1, x: 0, y: 72 }, geometry.stageSize))
       .toBeCloseTo(0.1, 6);
+  });
+});
+
+describe('resolveZoomCameraTarget - 3D tilt ramps with the eased zoom progress (B1-e)', () => {
+  const tilted: ZoomRegion[] = [
+    { id: 'iso', startMs: 1500, endMs: 4000, depth: 2, focus: { cx: 0.3, cy: 0.4 }, rotationPreset: 'iso' },
+    { id: 'left', startMs: 5200, endMs: 8000, depth: 4, focus: { cx: 0.7, cy: 0.6 }, rotationPreset: 'left' },
+  ];
+
+  it('is identity when unzoomed, when forced unzoomed and for regions without a preset', () => {
+    expect(resolveZoomCameraTarget(tilted, 0, geometry).rotation3D).toEqual(DEFAULT_ROTATION_3D);
+    expect(resolveZoomCameraTarget(tilted, 2500, geometry, { forceUnzoomed: true }).rotation3D).toEqual(DEFAULT_ROTATION_3D);
+    expect(resolveZoomCameraTarget(regions, 2500, geometry).rotation3D).toEqual(DEFAULT_ROTATION_3D);
+  });
+
+  it('holds the full preset on the plateau and scales it by progress on the ramp', () => {
+    const plateau = resolveZoomCameraTarget(tilted, 2500, geometry);
+    expect(plateau.progress).toBe(1);
+    expect(plateau.rotation3D).toEqual(ROTATION_3D_PRESETS.iso);
+
+    const ramp = resolveZoomCameraTarget(tilted, 1500 - 400, geometry);
+    expect(ramp.progress).toBeGreaterThan(0);
+    expect(ramp.progress).toBeLessThan(1);
+    expect(ramp.rotation3D.rotationX).toBeCloseTo(-10 * ramp.progress, 9);
+    expect(ramp.rotation3D.rotationY).toBeCloseTo(-16 * ramp.progress, 9);
+
+    const rampOut = resolveZoomCameraTarget([tilted[0]], 4000 + 500, geometry);
+    expect(rampOut.progress).toBeGreaterThan(0);
+    expect(rampOut.progress).toBeLessThan(1);
+    expect(rampOut.rotation3D.rotationY).toBeCloseTo(-16 * rampOut.progress, 9);
+  });
+
+  it('pans the tilt between two presets during a connected transition', () => {
+    const mid = resolveZoomCameraTarget(tilted, 4500, geometry);
+    expect(mid.transition).toBe(true);
+    expect(mid.progress).toBe(1);
+    expect(mid.rotation3D.rotationX).toBeGreaterThan(-10);
+    expect(mid.rotation3D.rotationX).toBeLessThan(0);
+    expect(mid.rotation3D.rotationY).toBeGreaterThan(-22);
+    expect(mid.rotation3D.rotationY).toBeLessThan(-16);
+  });
+
+  it('survives the full step (auto-follow focus rewrite keeps the rotation)', () => {
+    const state = createZoomCameraState();
+    const { target } = stepZoomCamera(state, tilted, 2500, geometry, { animating: true });
+    expect(target.rotation3D).toEqual(ROTATION_3D_PRESETS.iso);
   });
 });
