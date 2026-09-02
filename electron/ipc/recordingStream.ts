@@ -96,7 +96,7 @@ export type RecordingStreamIpcResult = { success: boolean; error?: string }
  * not a bare file name inside the recordings directory.
  */
 export function registerRecordingStreamHandlers(
-  ipcMain: IpcMain,
+  ipcMain: Pick<IpcMain, 'handle'>,
   registry: RecordingStreamRegistry,
   resolveRecordingOutputPath: (fileName: string) => string,
 ): void {
