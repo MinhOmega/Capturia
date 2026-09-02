@@ -16,6 +16,6 @@
     // Mocks legitimately shadow parameters they never read.
     "noUnusedParameters": false
   },
-  "include": ["src", "electron", "vitest.config.ts"],
+  "include": ["src", "electron", "e2e", "vitest.config.ts", "playwright.config.ts"],
   "exclude": []
 }

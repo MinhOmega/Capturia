@@ -42,8 +42,10 @@
     "build:win": "npm run build:native && tsc && vite build && electron-builder --win --publish never",
     "build:linux": "npm run build:native && tsc && vite build && electron-builder --linux --publish never",
     "build:deb": "npm run build:native && tsc && vite build && electron-builder -c electron-builder.json5 --linux deb -c.linux.target=deb --publish never",
+    "build:vite": "vite build",
     "test": "vitest --run",
     "test:watch": "vitest",
+    "test:e2e": "playwright test",
     "typecheck:test": "tsc -p tsconfig.test.json --noEmit",
     "i18n:check": "node scripts/i18n-check.mjs",
     "prepare": "husky"
@@ -98,6 +100,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.10",
+    "@playwright/test": "^1.62.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.6",
