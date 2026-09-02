@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { downmixPlanarChannelsForExport, getStereoDownmixWeights } from './downmix'
+import {
+  conformPlanarChannels,
+  downmixPlanarChannelsForExport,
+  getStereoDownmixWeights,
+} from './downmix'
 
 describe('downmixPlanarChannelsForExport', () => {
   it('preserves non-front Windows system audio channels when exporting stereo', () => {
@@ -65,6 +69,34 @@ describe('downmixPlanarChannelsForExport', () => {
     expect(() => downmixPlanarChannelsForExport([new Float32Array(1)], 3)).toThrow(
       /Unsupported target channel count/,
     )
+  })
+})
+
+describe('conformPlanarChannels', () => {
+  it('returns the same planes when the channel count already matches', () => {
+    const planes = [new Float32Array([0.1, 0.2]), new Float32Array([0.3, 0.4])]
+    expect(conformPlanarChannels(planes, 2)).toBe(planes)
+  })
+
+  it('duplicates mono to stereo and folds surround to two planes', () => {
+    const mono = conformPlanarChannels([new Float32Array([0.5, -0.5])], 2)
+    expect(mono.length).toBe(2)
+    expect(Array.from(mono[0])).toEqual([0.5, -0.5])
+    expect(Array.from(mono[1])).toEqual([0.5, -0.5])
+
+    const surround = Array.from(
+      { length: 6 },
+      (_, channel) => new Float32Array([channel === 1 ? 0.8 : 0]),
+    )
+    const stereo = conformPlanarChannels(surround, 2)
+    expect(stereo.length).toBe(2)
+    expect(stereo[0][0]).toBe(0)
+    expect(stereo[1][0]).toBeGreaterThan(0)
+  })
+
+  it('yields empty planes for an empty input', () => {
+    const out = conformPlanarChannels([], 2)
+    expect(out.map((plane) => plane.length)).toEqual([0, 0])
   })
 })
 
