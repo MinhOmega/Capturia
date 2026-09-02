@@ -1,5 +1,22 @@
 name: Release Desktop Apps
 
+# Tag-driven release: push a `v*` tag whose version equals package.json, the four
+# installer legs build, and the artifacts are attached to a GitHub release.
+#
+# macOS signing + notarization is optional and gated on repository secrets; when any
+# of them is missing the mac legs still build an unsigned DMG (forks keep working).
+# Required to enable it (all six):
+#   MAC_CERTIFICATE_P12          base64 of the "Developer ID Application" .p12 export
+#   MAC_CERTIFICATE_PASSWORD     password of that .p12
+#   MAC_CSC_NAME                 identity name, e.g. "Developer ID Application: Name (TEAMID)"
+#   APPLE_ID                     Apple ID used for notarytool
+#   APPLE_TEAM_ID                10-character team id
+#   APPLE_APP_SPECIFIC_PASSWORD  app-specific password for that Apple ID
+# electron-builder imports the certificate itself (CSC_LINK/CSC_KEY_PASSWORD) and signs
+# the .app + DMG with the hardened runtime and build/entitlements.mac*.plist; the
+# workflow then notarizes and staples the DMG (electron-builder.json5 has
+# `mac.notarize: false` so it never tries on its own).
+
 on:
   push:
     tags:
@@ -25,6 +42,24 @@ jobs:
         with:
           node-version-file: .nvmrc
           cache: npm
+
+      # A release built from a tag must carry that tag's version (upstream build.yml:294-301).
+      # Pre-release tags (v1.6.0-rc.1) compare against the full pre-release version.
+      - name: Check package.json version matches the tag
+        if: github.ref_type == 'tag'
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::Release tag must look like v1.5.0 or v1.5.0-rc.1; got '${TAG}'"
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+          PACKAGE_VERSION="$(node -p 'require("./package.json").version')"
+          if [[ "$PACKAGE_VERSION" != "$VERSION" ]]; then
+            echo "::error::package.json version ${PACKAGE_VERSION} does not match ${VERSION} from tag ${TAG}"
+            exit 1
+          fi
+          echo "package.json version ${PACKAGE_VERSION} matches tag ${TAG}"
 
       - name: Install dependencies
         run: npm ci
@@ -72,8 +107,78 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Signing is on only when every secret is present; a fork without them builds unsigned.
+      - name: Resolve macOS signing
+        id: signing
+        if: startsWith(matrix.id, 'macos-')
+        env:
+          MAC_CERTIFICATE_P12: ${{ secrets.MAC_CERTIFICATE_P12 }}
+          MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+          MAC_CSC_NAME: ${{ secrets.MAC_CSC_NAME }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          if [[ -n "$MAC_CERTIFICATE_P12" && -n "$MAC_CERTIFICATE_PASSWORD" && -n "$MAC_CSC_NAME" && -n "$APPLE_ID" && -n "$APPLE_TEAM_ID" && -n "$APPLE_APP_SPECIFIC_PASSWORD" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            # electron-builder signs the .app (hardened runtime + entitlements, every Mach-O
+            # in Contents/ including the Swift helpers under Resources/native/) and the DMG
+            # when CSC_LINK / CSC_KEY_PASSWORD are set; it imports the .p12 into a temporary
+            # keychain itself. Only exported when enabled: electron-builder treats an empty
+            # CSC_LINK as a value, not as "unset".
+            {
+              echo "CSC_LINK=$MAC_CERTIFICATE_P12"
+              echo "CSC_KEY_PASSWORD=$MAC_CERTIFICATE_PASSWORD"
+              echo "CSC_NAME=$MAC_CSC_NAME"
+            } >> "$GITHUB_ENV"
+            echo "macOS signing + notarization: enabled"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            # Never pick up a stray identity from the runner keychain when signing is off.
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+            echo "macOS signing + notarization: skipped (secrets not configured)"
+          fi
+
       - name: Build app
         run: ${{ matrix.build_script }}
+
+      - name: Locate macOS artifacts
+        id: mac_artifacts
+        if: startsWith(matrix.id, 'macos-')
+        run: |
+          APP_BUNDLE="$(find release -maxdepth 3 -name '*.app' -type d | head -n1)"
+          DMG_PATH="$(find release -maxdepth 2 -name '*.dmg' -type f | head -n1)"
+          if [[ -z "$APP_BUNDLE" || -z "$DMG_PATH" ]]; then
+            echo "::error::No .app / .dmg found under release/"
+            find release -maxdepth 3 -print || true
+            exit 1
+          fi
+          echo "app_bundle=$APP_BUNDLE" >> "$GITHUB_OUTPUT"
+          echo "dmg_path=$DMG_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Verify code signature
+        if: steps.signing.outputs.enabled == 'true'
+        run: |
+          codesign --verify --deep --strict --verbose=2 "${{ steps.mac_artifacts.outputs.app_bundle }}"
+          codesign --display --entitlements - "${{ steps.mac_artifacts.outputs.app_bundle }}"
+          codesign --verify --verbose=2 "${{ steps.mac_artifacts.outputs.dmg_path }}"
+
+      - name: Notarize DMG
+        if: steps.signing.outputs.enabled == 'true'
+        timeout-minutes: 20
+        run: |
+          xcrun notarytool submit "${{ steps.mac_artifacts.outputs.dmg_path }}" \
+            --apple-id "${{ secrets.APPLE_ID }}" \
+            --team-id "${{ secrets.APPLE_TEAM_ID }}" \
+            --password "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" \
+            --wait
+
+      - name: Staple and validate DMG
+        if: steps.signing.outputs.enabled == 'true'
+        run: |
+          xcrun stapler staple "${{ steps.mac_artifacts.outputs.dmg_path }}"
+          xcrun stapler validate "${{ steps.mac_artifacts.outputs.dmg_path }}"
+          spctl -a -vv -t install "${{ steps.mac_artifacts.outputs.dmg_path }}"
 
       - name: Upload Windows installers
         if: matrix.id == 'windows'
