@@ -71,3 +71,18 @@ F11 `handlers.ts` decomposition, T-last Biome format.
 Webcam sidecar + editor composite (A11/B1-f), Windows WGC helper (A27/C9), cursor themes (C10,
 licence), blur regions (X1), gradient editor (B1 B2), source-copy fast path (D13),
 `electron-updater`, click-through HUD (A24), vertical tray (A25b).
+
+## Wave 5 (deep pass + backlog) — 2026-08-27
+
+Round 1 (parallel, non-overlapping): re-audit (read-only, output `/tmp/capturia-reaudit.md`),
+M12 electron-updater + D13 source-copy fast path, A24 HUD click-through/JS drag/content-fit +
+A25b vertical tray, B1-d gradient editor + X1 blur regions (flag default on, own QA).
+Round 2 (after round 1 merges): A11 + B1-f webcam sidecar + editor composite, C10 cursor
+themes (original assets), audit findings, post-v1.7.0 fixes to ported code.
+Round 3: reference neutralisation pass (comments, public docs), PR branch with neutral history
+excluding `docs/upstream-sync/`, draft PR to `main`.
+Not scheduled: A27/C9 Windows WGC helper (4.5k lines C++, no MSVC here) — documented as a
+follow-up with the required toolchain.
+
+Wording rule from wave 5 on: commits, comments and docs describe behaviour in Capturia's own
+terms and do not name or link the source project or its commit hashes.

@@ -271,3 +271,8 @@ Branch is local only (never pushed). Open before release: manual smoke checklist
 `reviews/W*.md`, the macOS checklist in `docs/native-helper.md` (Swift uncompiled), a release
 candidate tag to exercise the four installer legs and the gated signing, and the
 `decodePath` default flip after the export smoke passes.
+
+## 2026-08-27 — wave 5 round 1 started
+
+Agents: `w5-audit` (deep re-audit), `w5-updater-fastpath` (M12 + D13), `w5-hud` (A24 + A25b),
+`w5-editor` (B1-d gradient editor + X1 blur regions). PR preparation plan recorded in PLAN.md.
