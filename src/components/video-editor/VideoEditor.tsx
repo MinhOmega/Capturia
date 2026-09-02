@@ -93,6 +93,20 @@ import { normalizeSubtitleCues } from "@/lib/analysis/subtitleTrack";
 import { normalizeRoughCutSuggestions } from "@/lib/analysis/roughCutEngine";
 import { applyRoughCutSuggestionsToAudioEdits } from "@/lib/analysis/roughCutApply";
 import {
+  createDefaultCaptionEngines,
+  runCaptionGeneration,
+  type TranscriptionPhase,
+  whisperWebAvailable,
+} from "@/lib/analysis/transcriptionEngine";
+import {
+  type CaptionEngineSetting,
+  type CaptionModelStatus,
+  ensureCaptionModel,
+  formatMegabytes,
+  loadCaptionEngineSetting,
+  saveCaptionEngineSetting,
+} from "@/lib/captioning";
+import {
   clearStaleSelectedZoomIdForAspect,
   getSelectedZoomIdForAspect,
   getZoomRegionsForAspect,
@@ -456,9 +470,10 @@ export default function VideoEditor() {
   const [cursorStyle, setCursorStyle] = useState<CursorStyleConfig>(DEFAULT_CURSOR_STYLE);
   const [subtitleCues, setSubtitleCues] = useState<SubtitleCue[]>([]);
   const [roughCutSuggestions, setRoughCutSuggestions] = useState<RoughCutSuggestion[]>([]);
-  const [analysisJobId, setAnalysisJobId] = useState<string | null>(null);
   const [analysisInProgress, setAnalysisInProgress] = useState(false);
-  const analysisPollingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // C-1: one in-flight "Generate subtitles" run (native or Whisper); aborted on unmount / video change.
+  const analysisAbortRef = useRef<AbortController | null>(null);
+  const [captionEngine, setCaptionEngine] = useState<CaptionEngineSetting>(() => loadCaptionEngineSetting());
   const [cursorAnalysisProgress, setCursorAnalysisProgress] = useState<number | null>(null);
   const cursorAnalyzerRef = useRef<VideoMouseAnalyzer | null>(null);
 
@@ -2032,19 +2047,22 @@ export default function VideoEditor() {
     }
   }, [cursorAnalysisProgress, videoPath, duration, t]);
 
-  const stopAnalysisPolling = useCallback(() => {
-    if (analysisPollingTimerRef.current) {
-      clearInterval(analysisPollingTimerRef.current);
-      analysisPollingTimerRef.current = null;
-    }
+  const cancelCaptionGeneration = useCallback(() => {
+    analysisAbortRef.current?.abort();
+    analysisAbortRef.current = null;
+  }, []);
+
+  const handleCaptionEngineChange = useCallback((value: CaptionEngineSetting) => {
+    setCaptionEngine(value);
+    saveCaptionEngineSetting(value);
   }, []);
 
   useEffect(() => {
     return () => {
-      stopAnalysisPolling();
+      cancelCaptionGeneration();
       cursorAnalyzerRef.current?.cancel();
     };
-  }, [stopAnalysisPolling]);
+  }, [cancelCaptionGeneration]);
 
   const applyAnalysis = useCallback((analysis?: VideoAnalysisMetadata) => {
     if (!analysis) {
@@ -2112,10 +2130,39 @@ export default function VideoEditor() {
   }, [applyAnalysis, videoFilePath, duration]);
 
   useEffect(() => {
-    stopAnalysisPolling();
+    cancelCaptionGeneration();
     setAnalysisInProgress(false);
-    setAnalysisJobId(null);
-  }, [stopAnalysisPolling, videoFilePath]);
+  }, [cancelCaptionGeneration, videoFilePath]);
+
+  /**
+   * Asks before the one-time Whisper model download. Resolves true on "Download",
+   * false on "Not now" / dismiss / abort.
+   */
+  const confirmCaptionModelDownload = useCallback(
+    (status: CaptionModelStatus, signal: AbortSignal) =>
+      new Promise<boolean>((resolve) => {
+        let settled = false;
+        const promptId = `caption-model-prompt-${Date.now()}`;
+        const settle = (accepted: boolean) => {
+          if (settled) return;
+          settled = true;
+          signal.removeEventListener('abort', onAbort);
+          toast.dismiss(promptId);
+          resolve(accepted);
+        };
+        const onAbort = () => settle(false);
+        signal.addEventListener('abort', onAbort, { once: true });
+        toast(t('editor.captionModelPromptTitle'), {
+          id: promptId,
+          description: t('editor.captionModelPromptDescription', { size: formatMegabytes(status.totalBytes) }),
+          duration: Infinity,
+          action: { label: t('editor.captionModelPromptDownload'), onClick: () => settle(true) },
+          cancel: { label: t('editor.captionModelPromptNotNow'), onClick: () => settle(false) },
+          onDismiss: () => settle(false),
+        });
+      }),
+    [t],
+  );
 
   const handleGenerateSubtitles = useCallback(async () => {
     if (analysisInProgress) {
@@ -2130,107 +2177,122 @@ export default function VideoEditor() {
 
     const video = videoPlaybackRef.current?.video;
     const sourceWidth = video?.videoWidth || 1920;
+    // Native recognizer locales the app supports; Whisper derives its language code from this.
+    const analysisLocale = locale === 'zh-CN' ? 'zh-CN' : locale === 'vi' ? 'vi-VN' : 'en-US';
+
+    cancelCaptionGeneration();
+    const controller = new AbortController();
+    analysisAbortRef.current = controller;
+    setAnalysisInProgress(true);
+
+    const progressToastId = `caption-progress-${Date.now()}`;
+    const phaseMessage: Record<TranscriptionPhase, string> = {
+      native: t('editor.captionPhaseNative'),
+      audio: t('editor.captionPhaseAudio'),
+      model: t('editor.captionPhaseModel'),
+      transcribe: t('editor.captionPhaseTranscribe'),
+    };
+    const cancelAction = { label: t('common.cancel'), onClick: () => controller.abort() };
+    toast.loading(t('editor.analysisRunning'), { id: progressToastId, action: cancelAction });
 
     try {
-      const result = await window.electronAPI.startVideoAnalysis({
-        videoPath: targetPath,
-        locale: locale === 'zh-CN' ? 'zh-CN' : 'en-US',
-        durationMs: Math.max(0, Math.round(duration * 1000)),
-        videoWidth: sourceWidth,
-        subtitleWidthRatio: 0.82,
+      const outcome = await runCaptionGeneration({
+        setting: captionEngine,
+        whisperAvailable: whisperWebAvailable(),
+        engines: createDefaultCaptionEngines(),
+        request: {
+          videoPath: targetPath,
+          videoUrl: videoPath || targetPath,
+          locale: analysisLocale,
+          durationMs: Math.max(0, Math.round(duration * 1000)),
+          videoWidth: sourceWidth,
+          subtitleWidthRatio: 0.82,
+          signal: controller.signal,
+          onStatus: (phase) => {
+            toast.loading(phaseMessage[phase], { id: progressToastId, action: cancelAction });
+          },
+        },
+        ensureModel: () =>
+          ensureCaptionModel({
+            signal: controller.signal,
+            confirmDownload: (status) => confirmCaptionModelDownload(status, controller.signal),
+            onProgress: (progress) => {
+              toast.loading(
+                t('editor.captionModelDownloading', {
+                  done: formatMegabytes(progress.downloadedBytes),
+                  total: formatMegabytes(progress.totalBytes),
+                }),
+                { id: progressToastId, action: cancelAction },
+              );
+            },
+          }),
+        persistAnalysis: async (path, analysis) => {
+          const saved = await window.electronAPI.saveVideoAnalysisSidecar(path, analysis);
+          if (!saved.success) {
+            throw new Error(saved.message || 'Failed to save analysis sidecar');
+          }
+        },
       });
 
-      if (!result.success || !result.jobId) {
-        toast.error(t('editor.analysisStartFailed'), {
-          description: result.message,
-        });
-        return;
+      toast.dismiss(progressToastId);
+      switch (outcome.state) {
+        case 'completed': {
+          applyAnalysis(outcome.analysis);
+          toast.success(t('editor.analysisCompleted'), {
+            description: t(outcome.engine === 'whisper-web' ? 'editor.captionEngineWhisper' : 'editor.captionEngineNative'),
+          });
+          if (outcome.fallbackFrom) {
+            toast.info(t('editor.captionFallbackUsed'));
+          }
+          if (outcome.truncated) {
+            toast.warning(t('editor.captionAudioTruncated'));
+          }
+          if (outcome.persistError) {
+            toast.warning(t('editor.captionSidecarSaveFailed', { message: outcome.persistError }));
+          }
+          if (!outcome.analysis.subtitleCues.length) {
+            toast.info(t('editor.analysisNoSubtitles'));
+          }
+          if (!outcome.analysis.roughCutSuggestions.length) {
+            toast.info(t('editor.analysisNoSuggestions'));
+          }
+          break;
+        }
+        case 'declined':
+          toast.info(t('editor.captionModelDeclined'));
+          break;
+        case 'aborted':
+          toast.info(t('editor.captionCancelled'));
+          break;
+        case 'failed':
+          toast.error(t('editor.analysisStartFailed'), {
+            description: outcome.message || t('common.error.unexpected'),
+          });
+          break;
       }
-
-      stopAnalysisPolling();
-      setAnalysisInProgress(true);
-      setAnalysisJobId(result.jobId);
-      toast.info(t('editor.analysisRunning'));
     } catch (error) {
+      toast.dismiss(progressToastId);
       toast.error(t('editor.analysisStartFailed'), {
         description: error instanceof Error ? error.message : String(error),
       });
-    }
-  }, [analysisInProgress, duration, locale, stopAnalysisPolling, t, videoFilePath, videoPath]);
-
-  useEffect(() => {
-    if (!analysisJobId) {
-      return;
-    }
-
-    let cancelled = false;
-    let polling = false;
-
-    const finishWithError = (message?: string) => {
-      if (cancelled) return;
-      stopAnalysisPolling();
-      setAnalysisInProgress(false);
-      setAnalysisJobId(null);
-      toast.error(t('editor.analysisStartFailed'), {
-        description: message || t('common.error.unexpected'),
-      });
-    };
-
-    const pollOnce = async () => {
-      if (polling || cancelled) return;
-      polling = true;
-      try {
-        const statusResult = await window.electronAPI.getVideoAnalysisStatus(analysisJobId);
-        if (!statusResult.success || !statusResult.status) {
-          finishWithError(statusResult.message);
-          return;
-        }
-
-        const jobStatus = statusResult.status.status;
-        if (jobStatus === 'failed') {
-          finishWithError(statusResult.status.error || statusResult.message);
-          return;
-        }
-
-        if (jobStatus !== 'completed') {
-          return;
-        }
-
-        const result = await window.electronAPI.getVideoAnalysisResult(analysisJobId);
-        if (!result.success || !result.result) {
-          finishWithError(result.message);
-          return;
-        }
-
-        stopAnalysisPolling();
-        setAnalysisInProgress(false);
-        setAnalysisJobId(null);
-        applyAnalysis(result.result);
-
-        toast.success(t('editor.analysisCompleted'));
-        if (!result.result.subtitleCues?.length) {
-          toast.info(t('editor.analysisNoSubtitles'));
-        }
-        if (!result.result.roughCutSuggestions?.length) {
-          toast.info(t('editor.analysisNoSuggestions'));
-        }
-      } catch (error) {
-        finishWithError(error instanceof Error ? error.message : String(error));
-      } finally {
-        polling = false;
+    } finally {
+      if (analysisAbortRef.current === controller) {
+        analysisAbortRef.current = null;
       }
-    };
-
-    void pollOnce();
-    analysisPollingTimerRef.current = setInterval(() => {
-      void pollOnce();
-    }, 900);
-
-    return () => {
-      cancelled = true;
-      stopAnalysisPolling();
-    };
-  }, [analysisJobId, applyAnalysis, stopAnalysisPolling, t]);
+      setAnalysisInProgress(false);
+    }
+  }, [
+    analysisInProgress,
+    applyAnalysis,
+    cancelCaptionGeneration,
+    captionEngine,
+    confirmCaptionModelDownload,
+    duration,
+    locale,
+    t,
+    videoFilePath,
+    videoPath,
+  ]);
 
   const handleApplyRoughCut = useCallback(() => {
     if (!roughCutSuggestions.length) {
@@ -3325,6 +3387,8 @@ export default function VideoEditor() {
                 onGenerateSubtitles={handleGenerateSubtitles}
                 onApplyRoughCut={handleApplyRoughCut}
                 analysisRunning={analysisInProgress}
+                captionEngine={captionEngine}
+                onCaptionEngineChange={handleCaptionEngineChange}
                 subtitleCueCount={subtitleCues.length}
                 roughCutSuggestionCount={roughCutSuggestions.length}
                 seekStepSeconds={seekStepSeconds}
