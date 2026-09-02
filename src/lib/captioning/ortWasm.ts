@@ -41,13 +41,13 @@ export function buildOrtWasmPaths(baseUrl: string): OrtWasmPaths {
  * Minimal module that uses a SIMD instruction (`i8x16.splat`): validates only
  * when the engine implements WebAssembly SIMD. Same probe ORT runs internally.
  */
-const WASM_SIMD_PROBE = new Uint8Array([
+const WASM_SIMD_PROBE: Uint8Array<ArrayBuffer> = new Uint8Array([
   0, 97, 115, 109, 1, 0, 0, 0, 1, 4, 1, 96, 0, 0, 3, 2, 1, 0, 10, 30, 1, 28, 0, 65, 0, 253, 15, 253,
   12, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 253, 186, 1, 26, 11,
 ])
 
 export function isWasmSimdSupported(
-  validate: (bytes: Uint8Array) => boolean = (bytes) => WebAssembly.validate(bytes),
+  validate: (bytes: Uint8Array<ArrayBuffer>) => boolean = (bytes) => WebAssembly.validate(bytes),
 ): boolean {
   try {
     return validate(WASM_SIMD_PROBE)
@@ -57,7 +57,9 @@ export function isWasmSimdSupported(
 }
 
 /** Throws a descriptive error when the runtime cannot run the bundled SIMD build. */
-export function assertWasmSimdSupport(validate?: (bytes: Uint8Array) => boolean): void {
+export function assertWasmSimdSupport(
+  validate?: (bytes: Uint8Array<ArrayBuffer>) => boolean,
+): void {
   if (!isWasmSimdSupported(validate)) {
     throw new Error(
       'In-app captions need WebAssembly SIMD, which this runtime does not support (only the SIMD ONNX Runtime build is bundled).',
