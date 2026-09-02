@@ -25,5 +25,6 @@ export function duplicateAnnotationRegion(
     size: { ...source.size },
     style: { ...source.style },
     figureData: source.figureData ? { ...source.figureData } : undefined,
+    blurData: source.blurData ? { ...source.blurData } : undefined,
   }
 }

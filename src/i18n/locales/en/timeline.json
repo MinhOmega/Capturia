@@ -27,11 +27,14 @@
 	"addZoom": "Add Zoom (Z)",
 	"addTrim": "Add Trim (T)",
 	"addAnnotation": "Add Annotation (A)",
+	"blur": "Blur",
+	"addBlur": "Add Blur Region (B)",
 	"resizeLeft": "Resize left",
 	"resizeRight": "Resize right",
 	"hints": {
 		"pressZoom": "Press {{key}} to add zoom",
 		"pressAnnotation": "Press {{key}} to add annotation",
+		"pressBlur": "Press {{key}} to add a blur region",
 		"noSubtitles": "Generate subtitles from the settings panel"
 	}
 }

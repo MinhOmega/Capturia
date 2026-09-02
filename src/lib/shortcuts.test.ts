@@ -275,6 +275,7 @@ describe('mergeWithDefaults', () => {
     const full: ShortcutsConfig = {
       addZoom: { key: '1' },
       addAnnotation: { key: '2' },
+      addBlur: { key: 'b', shift: true },
       addKeyframe: { key: '3' },
       toggleScissors: { key: '4' },
       deleteSelected: { key: '5', ctrl: true },

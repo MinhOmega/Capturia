@@ -16,6 +16,26 @@ export function isAnnotationActiveAtTime(
   return currentTimeMs >= annotation.startMs && currentTimeMs <= annotation.endMs
 }
 
+/**
+ * Blur regions are excluded from click-through and Tab selection cycling:
+ * they are picked from their own timeline row, so cycling through the
+ * overlapping annotations at the playhead never lands on one.
+ */
+export function isSelectionCyclable(annotation: AnnotationRegion): boolean {
+  return annotation.type !== 'blur'
+}
+
+/**
+ * The annotations the click-through / Tab cycle walks at `currentTimeMs`:
+ * `getRenderableAnnotations` minus blur regions, in the same paint order.
+ */
+export function getSelectionCycleAnnotations(
+  annotations: AnnotationRegion[] | undefined,
+  currentTimeMs: number,
+): AnnotationRegion[] {
+  return getRenderableAnnotations(annotations, currentTimeMs).filter(isSelectionCyclable)
+}
+
 export function getRenderableAnnotations(
   annotations: AnnotationRegion[] | undefined,
   currentTimeMs: number,
