@@ -346,4 +346,4 @@ SCK helper: system audio (mixed single track, clock-driven, pause-aware), mic de
 word-boundary device matching, CoreGraphics init before window filters, prebuilt
 `window-bounds-helper` replacing runtime `swiftc`. Swift uncompiled; checklist items 11–17 in
 `docs/native-helper.md`. Gate after merge: lint 0 errors; tsc + test types clean; i18n PASS;
-format clean; vitest see below.
+format clean; vitest **129 files / 1423 tests**; i18n 666 en keys.
