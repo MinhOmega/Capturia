@@ -29,10 +29,14 @@ The native failure code reaches the renderer through the job status
 
 1. `extractMono16k.ts`: load the recording as a `File` (`readBinaryFile` /
    OPFS streaming via `localSourceFile.ts`), decode with `decodeAudioData`;
-   if that fails (WebM/Matroska with video, fragmented MP4) fall back to
-   mediabunny `Input` + `AudioBufferSink` (`extractMono16kMediabunny.ts`).
-   Output: mono 16 kHz float PCM, capped at 4 h (30 min for sources above the
-   in-memory limit).
+   if that fails (WebM/Matroska with video, fragmented MP4) run the demuxer
+   chain `demuxMonoPcm`: `web-demuxer` + `AudioDecoder`
+   (`extractMono16kWebDemuxer.ts`, same wasm as the export streaming decoder,
+   `public/wasm/web-demuxer.wasm`) first, then mediabunny `Input` +
+   `AudioBufferSink` (`extractMono16kMediabunny.ts`) for containers the wasm
+   demuxer rejects. An abort stops the chain; any other first-path failure is
+   logged and the second path decides. Output: mono 16 kHz float PCM, capped
+   at 4 h (30 min for sources above the in-memory limit).
 2. `leadingSilence.ts`: drop the silent prefix (re-added to all timestamps).
 3. `transcribe.ts` -> `transcribe.worker.ts`: `pipeline('automatic-speech-recognition',
    'Xenova/whisper-tiny')`, `numThreads = 1`, language pinned from the app
