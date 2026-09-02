@@ -318,3 +318,22 @@ Six commits on `29d0ff3`; note in `reviews/W5-M12-D13-updater-fastpath.md`.
   cannot auto-update (falls back to the release page); fast path unverified against a real SCK
   file; renderer toggle/progress UI for the updater belongs to the settings/HUD owners.
 
+## 2026-09-03 — wave 5 round 1: R5-NOTES (A-12) Notes teleprompter mode (agent branch, pending review)
+
+Four commits on `832f5be`; note in `reviews/W5-A12-notes-teleprompter.md`.
+
+- **A-12** `src/lib/notesTeleprompter.ts` (pure): bounds (speed 10–150 px/s, font 14–48 px),
+  settings normalisation, capped frame delta, fractional position tracking, end detection,
+  relative-position scaling, and the playback step with a 2 s hold after a manual scroll.
+  `NotesToolbar`: teleprompter toggle; while on, formatting is disabled and a row with
+  play/pause, restart, speed slider + readout, font −/+ + readout and mirror appears.
+  `NotesWindow`: read-only editor while on, RAF loop, wheel/touch hold, drift-detected
+  scrollbar hold, replay from the top after the end, reading position kept across font steps
+  and the mode toggle, Space toggles playback outside the note and the controls.
+  Preference `notesTeleprompter: { speed, fontSize }`; mirror is session-only. i18n: 15 keys
+  (`launch.tooltips.notesToolbar.*`, `launch.notesTeleprompter.*`) in en / zh-CN / vi.
+- Gate: lint 0 errors / 116 warnings; tsc + test types clean; i18n 647 en keys; vitest
+  **125 files / 1388 tests** (was 123 / 1347); `biome format .` clean.
+- Open: no live Electron run (RAF timing, tiptap `setEditable` interplay with autofocus, real
+  wheel/scrollbar behaviour); see the smoke list in the note.
+
