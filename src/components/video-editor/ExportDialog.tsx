@@ -85,6 +85,8 @@ export function ExportDialog({
     isExporting && progress && progress.percentage >= 100 && exportFormat === 'gif'
   const isFinalizing = progress?.phase === 'finalizing'
   const isPreparing = progress?.phase === 'preparing'
+  // Source-copy fast path: the file is handed over verbatim, no frames rendered.
+  const isCopying = progress?.phase === 'copying'
   const renderProgress = progress?.renderProgress
   const updatedAtMs = progress?.updatedAtMs ?? nowMs
   const staleMs = Math.max(0, nowMs - updatedAtMs)
@@ -125,6 +127,7 @@ export function ExportDialog({
   const getStatusMessage = () => {
     if (error) return t('dialogs.export.statusTryAgain')
     if (isPreparing) return t('dialogs.export.statusPreparing')
+    if (isCopying) return t('dialogs.export.statusCopying')
     if (isCompiling) {
       if (renderProgress !== undefined && renderProgress > 0) {
         return t('dialogs.export.statusCompilingPct', { progress: renderProgress })
@@ -270,7 +273,9 @@ export function ExportDialog({
                       ? t('dialogs.export.phaseFinalizing')
                       : isPreparing
                         ? t('dialogs.export.phasePreparing')
-                        : t('dialogs.export.phaseRendering')}
+                        : isCopying
+                          ? t('dialogs.export.phaseCopying')
+                          : t('dialogs.export.phaseRendering')}
                 </span>
                 <span className="font-mono text-slate-200">
                   {isCompiling || (isFinalizing && exportFormat === 'gif') ? (

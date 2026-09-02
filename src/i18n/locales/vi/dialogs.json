@@ -36,6 +36,8 @@
 		"revealFailed": "Không thể hiển thị tệp trong thư mục",
 		"phasePreparing": "Đang chuẩn bị",
 		"statusPreparing": "Đang chuẩn bị video nguồn...",
+		"phaseCopying": "Đang sao chép",
+		"statusCopying": "Không có chỉnh sửa nào làm thay đổi video, đang sao chép nguyên bản tệp nguồn...",
 		"saveAgain": "Lưu lại",
 		"unsavedExportHint": "Đã xuất xong nhưng không thể lưu tệp. Hãy chọn vị trí khác để giữ lại.",
 		"diag": {
