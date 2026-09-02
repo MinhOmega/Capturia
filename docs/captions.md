@@ -50,10 +50,15 @@ The native failure code reaches the renderer through the job status
 
 **Bundled with the app (Vite, `vite.config.ts` plugin `capturia-ort-wasm`)**
 
-- `dist/ort/ort-wasm.wasm` (9.2 MB) and `dist/ort/ort-wasm-simd.wasm` (10.0 MB)
-  from `onnxruntime-web@1.14.0` (the version `@xenova/transformers@2.17.2`
-  pins). Threaded variants are not shipped: no `SharedArrayBuffer` under
-  `file://`. In dev they are served from `/ort/`.
+- `dist/ort/ort-wasm-simd.wasm` (10.0 MB) from `onnxruntime-web@1.14.0` (the
+  version `@xenova/transformers@2.17.2` pins). Nothing else: the threaded
+  variants need `SharedArrayBuffer` (unavailable under `file://`) and the
+  non-SIMD build is never selected because Electron's Chromium always has
+  WebAssembly SIMD. The worker sets `env.backends.onnx.wasm.simd = true` and a
+  per-file `wasmPaths` map that names only this binary
+  (`src/lib/captioning/ortWasm.ts`), and probes SIMD support first so a runtime
+  without it fails with a readable error instead of a 404. In dev the file is
+  served from `/ort/`.
 - The Transformers.js worker bundle (`worker.format = 'es'`, code-split for the
   dynamic import). Node builtins `fs`/`path`/`url` are aliased to
   `src/lib/vite-stubs/empty-node-module.ts`; `onnxruntime-node` to
@@ -117,7 +122,7 @@ preload as `electronAPI.assetBaseUrl` and `electronAPI.captionModelDirUrl`:
 - `--caption-model-dir=file:///.../userData/caption-models/`
 
 The worker sets `env.allowRemoteModels = false`, `env.localModelPath = <that URL>`
-and `env.backends.onnx.wasm.wasmPaths = <page URL>/ort/`. Transformers.js then
+and `env.backends.onnx.wasm.wasmPaths = { 'ort-wasm-simd.wasm': <page URL>/ort/ort-wasm-simd.wasm }`. Transformers.js then
 `fetch()`es `file://` URLs; this relies on the editor window's
 `webSecurity: false` (already set for local media playback). `useBrowserCache`
 is off so the model is not duplicated into Cache Storage.
