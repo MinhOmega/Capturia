@@ -2,7 +2,15 @@ import { useMemo } from 'react'
 import { useItem } from 'dnd-timeline'
 import type { Span } from 'dnd-timeline'
 import { cn } from '@/lib/utils'
-import { ZoomIn, Scissors, MessageSquare, Captions, VolumeX, MousePointer2 } from 'lucide-react'
+import {
+  ZoomIn,
+  Scissors,
+  MessageSquare,
+  Captions,
+  VolumeX,
+  MousePointer2,
+  EyeOff,
+} from 'lucide-react'
 import glassStyles from './ItemGlass.module.css'
 import { useI18n } from '@/i18n'
 import { formatTooltipMs } from './snapping'
@@ -23,7 +31,7 @@ interface ItemProps {
   zoomScale?: number
   /** Zoom follows the recorded cursor (focusMode 'auto'): shows the cursor marker. */
   zoomAutoFocus?: boolean
-  variant?: 'zoom' | 'trim' | 'annotation' | 'subtitle' | 'audio-edit'
+  variant?: 'zoom' | 'trim' | 'annotation' | 'blur' | 'subtitle' | 'audio-edit'
   editable?: boolean
 }
 
@@ -61,6 +69,7 @@ export default function Item({
   const isTrim = variant === 'trim'
   const isSubtitle = variant === 'subtitle'
   const isAudioEdit = variant === 'audio-edit'
+  const isBlur = variant === 'blur'
 
   const glassClass = isZoom
     ? glassStyles.glassGreen
@@ -70,7 +79,9 @@ export default function Item({
         ? glassStyles.glassRed
         : isSubtitle
           ? glassStyles.glassBlue
-          : glassStyles.glassYellow
+          : isBlur
+            ? glassStyles.glassPurple
+            : glassStyles.glassYellow
 
   const endCapColor = isZoom
     ? '#21916A'
@@ -80,7 +91,9 @@ export default function Item({
         ? '#ef4444'
         : isSubtitle
           ? '#2E6EE6'
-          : '#B4A046'
+          : isBlur
+            ? '#8B5CF6'
+            : '#B4A046'
 
   // Start–end label shown on hover / when selected (T13)
   const timeLabel = useMemo(
@@ -172,6 +185,11 @@ export default function Item({
                   <span className="text-[11px] font-semibold tracking-tight">
                     {children || t('timeline.audioMutedSegment')}
                   </span>
+                </>
+              ) : isBlur ? (
+                <>
+                  <EyeOff className="w-3.5 h-3.5" />
+                  <span className="text-[11px] font-semibold tracking-tight">{children}</span>
                 </>
               ) : (
                 <>

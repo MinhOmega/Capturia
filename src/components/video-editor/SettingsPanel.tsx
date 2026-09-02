@@ -25,6 +25,7 @@ import {
   WandSparkles,
   Info,
   MousePointer2,
+  ChevronDown,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import * as SliderPrimitive from '@radix-ui/react-slider'
@@ -70,6 +71,10 @@ import { GITHUB_ISSUES_URL, GITHUB_REPO_URL } from '@/lib/supportLinks'
 import { reportUserActionError } from '@/lib/userErrorFeedback'
 import { BACKGROUND_IMAGE_ACCEPT, isSupportedBackgroundImageType } from './backgroundImageUpload'
 import { BACKGROUND_GRADIENT_PRESETS } from './backgroundPresets'
+import { GradientEditor } from './GradientEditor'
+import { BlurSettingsPanel } from './BlurSettingsPanel'
+import { BLUR_REGIONS_ENABLED } from './featureFlags'
+import type { BlurData } from './types'
 import {
   DEFAULT_WALLPAPER,
   isSameBuiltInWallpaper,
@@ -232,6 +237,7 @@ interface SettingsPanelProps {
   onAnnotationTypeChange?: (id: string, type: AnnotationType) => void
   onAnnotationStyleChange?: (id: string, style: Partial<AnnotationRegion['style']>) => void
   onAnnotationFigureDataChange?: (id: string, figureData: FigureData) => void
+  onAnnotationBlurDataChange?: (id: string, blurData: BlurData) => void
   onAnnotationDuplicate?: (id: string) => void
   onAnnotationDelete?: (id: string) => void
   hasAudioTrack?: boolean
@@ -403,6 +409,7 @@ export function SettingsPanel({
   onAnnotationTypeChange,
   onAnnotationStyleChange,
   onAnnotationFigureDataChange,
+  onAnnotationBlurDataChange,
   onAnnotationDuplicate,
   onAnnotationDelete,
   hasAudioTrack = true,
@@ -496,6 +503,7 @@ export function SettingsPanel({
 
   const [selectedColor, setSelectedColor] = useState('#ADADAD')
   const [gradient, setGradient] = useState<string>(GRADIENTS[0])
+  const [showGradientEditor, setShowGradientEditor] = useState(false)
   const [showCropDropdown, setShowCropDropdown] = useState(false)
   const activeExportAspectRatios = exportAspectRatios
 
@@ -609,9 +617,29 @@ export function SettingsPanel({
     ? annotationRegions.find((a) => a.id === selectedAnnotationId)
     : null
 
+  // A selected blur region gets its own panel (shape, shade, block size).
+  if (
+    BLUR_REGIONS_ENABLED &&
+    selectedAnnotation?.type === 'blur' &&
+    onAnnotationBlurDataChange &&
+    onAnnotationDelete
+  ) {
+    return (
+      <BlurSettingsPanel
+        blurRegion={selectedAnnotation}
+        onBlurDataChange={(blurData) => onAnnotationBlurDataChange(selectedAnnotation.id, blurData)}
+        onDuplicate={
+          onAnnotationDuplicate ? () => onAnnotationDuplicate(selectedAnnotation.id) : undefined
+        }
+        onDelete={() => onAnnotationDelete(selectedAnnotation.id)}
+      />
+    )
+  }
+
   // If an annotation is selected, show annotation settings instead
   if (
     selectedAnnotation &&
+    selectedAnnotation.type !== 'blur' &&
     onAnnotationContentChange &&
     onAnnotationTypeChange &&
     onAnnotationStyleChange &&
@@ -1797,6 +1825,31 @@ export function SettingsPanel({
                         />
                       ))}
                     </div>
+                    <button
+                      type="button"
+                      aria-expanded={showGradientEditor}
+                      onClick={() => setShowGradientEditor((prev) => !prev)}
+                      className="mt-2 w-full h-7 rounded-md border border-white/10 bg-white/5 text-[10px] text-slate-300 hover:bg-white/10 hover:text-white transition-all flex items-center justify-center gap-1"
+                    >
+                      <ChevronDown
+                        className={cn(
+                          'w-3 h-3 transition-transform',
+                          showGradientEditor && 'rotate-180',
+                        )}
+                      />
+                      {t('settings.gradientEditor.toggle')}
+                    </button>
+                    {showGradientEditor && (
+                      <div className="mt-2">
+                        <GradientEditor
+                          value={selected}
+                          onChange={(css) => {
+                            setGradient(css)
+                            onWallpaperChange(css)
+                          }}
+                        />
+                      </div>
+                    )}
                   </TabsContent>
                 </div>
               </Tabs>

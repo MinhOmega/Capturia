@@ -27,11 +27,14 @@
 	"addZoom": "添加缩放 (Z)",
 	"addTrim": "添加裁剪 (T)",
 	"addAnnotation": "添加注释 (A)",
+	"blur": "模糊",
+	"addBlur": "添加模糊区域 (B)",
 	"resizeLeft": "向左调整",
 	"resizeRight": "向右调整",
 	"hints": {
 		"pressZoom": "按 {{key}} 添加缩放",
 		"pressAnnotation": "按 {{key}} 添加注释",
+		"pressBlur": "按 {{key}} 添加模糊区域",
 		"noSubtitles": "在设置面板中生成字幕"
 	}
 }

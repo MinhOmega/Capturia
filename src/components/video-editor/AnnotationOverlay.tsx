@@ -1,9 +1,11 @@
-import { useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Rnd } from 'react-rnd'
 import type { AnnotationRegion } from './types'
 import { cn } from '@/lib/utils'
 import { getTextAnimationState, textAnimationToCss } from '@/lib/annotationTextAnimation'
+import { getNormalizedMosaicBlockSize, renderMosaicRegion } from '@/lib/blurEffects'
 import { getArrowComponent } from './ArrowSvgs'
+import { BLUR_REGIONS_ENABLED } from './featureFlags'
 
 interface AnnotationOverlayProps {
   annotation: AnnotationRegion
@@ -12,6 +14,14 @@ interface AnnotationOverlayProps {
   containerHeight: number
   /** Source-time playhead in ms; drives the text entrance animation. */
   currentTimeMs?: number
+  /**
+   * Snapshot of the composited preview frame (same CSS size as the overlay
+   * container, or scaled uniformly). Blur regions copy the pixels under their
+   * box from it; other annotation kinds ignore it.
+   */
+  previewSourceCanvas?: HTMLCanvasElement | null
+  /** Bumped whenever `previewSourceCanvas` holds a new frame so the mosaic is resampled. */
+  previewFrameVersion?: number
   onPositionChange: (id: string, position: { x: number; y: number }) => void
   onSizeChange: (id: string, size: { width: number; height: number }) => void
   onClick: (id: string) => void
@@ -24,17 +34,106 @@ export function AnnotationOverlay({
   containerWidth,
   containerHeight,
   currentTimeMs,
+  previewSourceCanvas,
+  previewFrameVersion,
   onPositionChange,
   onSizeChange,
   onClick,
   zIndex,
 }: AnnotationOverlayProps) {
-  const x = (annotation.position.x / 100) * containerWidth
-  const y = (annotation.position.y / 100) * containerHeight
-  const width = (annotation.size.width / 100) * containerWidth
-  const height = (annotation.size.height / 100) * containerHeight
+  const committedX = (annotation.position.x / 100) * containerWidth
+  const committedY = (annotation.position.y / 100) * containerHeight
+  const committedWidth = (annotation.size.width / 100) * containerWidth
+  const committedHeight = (annotation.size.height / 100) * containerHeight
 
   const isDraggingRef = useRef(false)
+  const isBlur = annotation.type === 'blur'
+  const blurShape = annotation.blurData?.shape ?? 'rectangle'
+  const mosaicCanvasRef = useRef<HTMLCanvasElement | null>(null)
+
+  // Blur regions resample the frame while they are dragged/resized (Rnd only
+  // commits on drop), so the live box is tracked separately from the props.
+  const [liveRect, setLiveRect] = useState({
+    x: committedX,
+    y: committedY,
+    width: committedWidth,
+    height: committedHeight,
+  })
+  useEffect(() => {
+    setLiveRect({
+      x: committedX,
+      y: committedY,
+      width: committedWidth,
+      height: committedHeight,
+    })
+  }, [committedX, committedY, committedWidth, committedHeight])
+
+  const x = isBlur ? liveRect.x : committedX
+  const y = isBlur ? liveRect.y : committedY
+  const width = isBlur ? liveRect.width : committedWidth
+  const height = isBlur ? liveRect.height : committedHeight
+
+  const blurData = annotation.blurData
+  useEffect(() => {
+    if (!isBlur || !BLUR_REGIONS_ENABLED) return
+    void previewFrameVersion
+
+    const canvas = mosaicCanvasRef.current
+    const source = previewSourceCanvas
+    if (!canvas || !source || source.width <= 0 || source.height <= 0) return
+    if (containerWidth <= 0 || containerHeight <= 0) return
+
+    const drawWidth = Math.max(1, Math.round(width))
+    const drawHeight = Math.max(1, Math.round(height))
+    canvas.width = drawWidth
+    canvas.height = drawHeight
+
+    const context = canvas.getContext('2d', { willReadFrequently: true })
+    if (!context) return
+
+    // The snapshot may be a scaled copy of the overlay box (device pixel ratio).
+    const scaleX = source.width / containerWidth
+    const scaleY = source.height / containerHeight
+    const sourceX = Math.max(0, Math.min(source.width - 1, Math.round(x * scaleX)))
+    const sourceY = Math.max(0, Math.min(source.height - 1, Math.round(y * scaleY)))
+    const sourceWidth = Math.max(
+      1,
+      Math.min(source.width - sourceX, Math.round(drawWidth * scaleX)),
+    )
+    const sourceHeight = Math.max(
+      1,
+      Math.min(source.height - sourceY, Math.round(drawHeight * scaleY)),
+    )
+
+    context.clearRect(0, 0, drawWidth, drawHeight)
+    context.imageSmoothingEnabled = true
+    context.drawImage(
+      source,
+      sourceX,
+      sourceY,
+      sourceWidth,
+      sourceHeight,
+      0,
+      0,
+      drawWidth,
+      drawHeight,
+    )
+
+    const imageData = context.getImageData(0, 0, drawWidth, drawHeight)
+    renderMosaicRegion(imageData, blurData, getNormalizedMosaicBlockSize(blurData))
+    context.putImageData(imageData, 0, 0)
+  }, [
+    isBlur,
+    blurData,
+    containerWidth,
+    containerHeight,
+    height,
+    previewFrameVersion,
+    previewSourceCanvas,
+    width,
+    x,
+    y,
+  ])
 
   const renderArrow = () => {
     const direction = annotation.figureData?.arrowDirection || 'right'
@@ -126,17 +225,55 @@ export function AnnotationOverlay({
           <div className="w-full h-full flex items-center justify-center p-2">{renderArrow()}</div>
         )
 
+      case 'blur':
+        if (!BLUR_REGIONS_ENABLED) return null
+        return (
+          <div
+            className="w-full h-full relative overflow-hidden"
+            data-testid="blur-region"
+            style={{
+              // The pixel routine already keeps the frame outside the ellipse,
+              // but clipping keeps the selection tint and any DPR seam inside it too.
+              clipPath: blurShape === 'oval' ? 'ellipse(50% 50% at 50% 50%)' : undefined,
+              WebkitClipPath: blurShape === 'oval' ? 'ellipse(50% 50% at 50% 50%)' : undefined,
+            }}
+          >
+            <canvas
+              ref={mosaicCanvasRef}
+              className="absolute inset-0 w-full h-full"
+              style={{ imageRendering: 'pixelated' }}
+            />
+            {!previewSourceCanvas && (
+              <div
+                className="absolute inset-0"
+                style={{
+                  backgroundColor:
+                    annotation.blurData?.color === 'black'
+                      ? 'rgba(0, 0, 0, 0.55)'
+                      : 'rgba(255, 255, 255, 0.35)',
+                }}
+              />
+            )}
+          </div>
+        )
+
       default:
         return null
     }
   }
 
+  if (isBlur && !BLUR_REGIONS_ENABLED) return null
+
   return (
     <Rnd
-      position={{ x, y }}
-      size={{ width, height }}
+      position={{ x: committedX, y: committedY }}
+      size={{ width: committedWidth, height: committedHeight }}
       onDragStart={() => {
         isDraggingRef.current = true
+      }}
+      onDrag={(_e, d) => {
+        if (!isBlur) return
+        setLiveRect((prev) => ({ ...prev, x: d.x, y: d.y }))
       }}
       onDragStop={(_e, d) => {
         const xPercent = (d.x / containerWidth) * 100
@@ -147,6 +284,15 @@ export function AnnotationOverlay({
         setTimeout(() => {
           isDraggingRef.current = false
         }, 100)
+      }}
+      onResize={(_e, _direction, ref, _delta, position) => {
+        if (!isBlur) return
+        setLiveRect({
+          x: position.x,
+          y: position.y,
+          width: ref.offsetWidth,
+          height: ref.offsetHeight,
+        })
       }}
       onResizeStop={(_e, _direction, ref, _delta, position) => {
         const xPercent = (position.x / containerWidth) * 100
@@ -169,7 +315,7 @@ export function AnnotationOverlay({
         zIndex,
         pointerEvents: isSelected ? 'auto' : 'none',
         border: isSelected ? '2px solid rgba(52, 178, 123, 0.8)' : 'none',
-        backgroundColor: isSelected ? 'rgba(52, 178, 123, 0.1)' : 'transparent',
+        backgroundColor: isSelected && !isBlur ? 'rgba(52, 178, 123, 0.1)' : 'transparent',
         boxShadow: isSelected ? '0 0 0 1px rgba(52, 178, 123, 0.35)' : 'none',
       }}
       enableResizing={isSelected}
@@ -219,11 +365,13 @@ export function AnnotationOverlay({
     >
       <div
         className={cn(
-          'w-full h-full rounded-lg',
+          'w-full h-full',
+          !isBlur && 'rounded-lg',
           annotation.type === 'text' && 'bg-transparent',
           annotation.type === 'image' && 'bg-transparent',
           annotation.type === 'figure' && 'bg-transparent',
-          isSelected && 'shadow-lg',
+          annotation.type === 'blur' && 'bg-transparent',
+          isSelected && !isBlur && 'shadow-lg',
         )}
       >
         {renderContent()}

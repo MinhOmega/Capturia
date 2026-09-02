@@ -13,13 +13,16 @@ import {
 } from './regionClipboard'
 import {
   type AnnotationRegion,
+  createBlurAnnotationRegion,
   DEFAULT_ANNOTATION_POSITION,
   DEFAULT_ANNOTATION_SIZE,
   DEFAULT_ANNOTATION_STYLE,
+  DEFAULT_BLUR_DATA,
   DEFAULT_FIGURE_DATA,
   type VideoSegment,
   type ZoomRegion,
 } from './types'
+import { DUPLICATE_ANNOTATION_OFFSET_PERCENT } from '@/lib/annotations/duplicate'
 
 const zoom: ZoomRegion = {
   id: 'zoom-1',
@@ -293,5 +296,52 @@ describe('figureData guard on paste-onto-existing (F5)', () => {
     }
     const result = replaceAnnotationAttributes(figureTarget, figureAttrs)
     expect(result.figureData?.color).toBe('#123456')
+  })
+})
+
+describe('blur regions carry their blurData through copy/paste', () => {
+  const blur = createBlurAnnotationRegion({ id: 'blur-1', startMs: 0, endMs: 2000, zIndex: 9 })
+  const styledBlur: AnnotationRegion = {
+    ...blur,
+    blurData: { ...DEFAULT_BLUR_DATA, shape: 'oval', color: 'black', blockSize: 24 },
+  }
+
+  it('copies blurData as a deep copy', () => {
+    const copied = extractAnnotationAttributes(styledBlur)
+    expect(copied.type).toBe('blur')
+    expect(copied.blurData).toEqual(styledBlur.blurData)
+    expect(copied.blurData).not.toBe(styledBlur.blurData)
+  })
+
+  it('pastes blurData onto a blur target but never onto another kind', () => {
+    const copied = extractAnnotationAttributes(styledBlur)
+    const blurTarget: AnnotationRegion = { ...blur, id: 'blur-2' }
+    expect(replaceAnnotationAttributes(blurTarget, copied).blurData).toEqual(styledBlur.blurData)
+
+    const textTarget: AnnotationRegion = { ...annotation, id: 'annotation-9', type: 'text' }
+    const pasted = replaceAnnotationAttributes(textTarget, copied)
+    expect(pasted.type).toBe('text')
+    expect(pasted.blurData).toBeUndefined()
+  })
+
+  it('keeps the blur target settings when the copy has no blurData', () => {
+    const textAttrs = extractAnnotationAttributes({ ...annotation, type: 'text' })
+    expect(replaceAnnotationAttributes(styledBlur, textAttrs).blurData).toEqual(styledBlur.blurData)
+  })
+
+  it('builds a new blur region with the cloned settings', () => {
+    const copied = extractAnnotationAttributes(styledBlur)
+    const region = buildPastedAnnotation(
+      { id: 'blur-3', startMs: 500, endMs: 900, zIndex: 11 },
+      copied,
+      DUPLICATE_ANNOTATION_OFFSET_PERCENT,
+    )
+    expect(region.type).toBe('blur')
+    expect(region.blurData).toEqual(styledBlur.blurData)
+    expect(region.blurData).not.toBe(copied.blurData)
+    expect(region.position).toEqual({
+      x: blur.position.x + DUPLICATE_ANNOTATION_OFFSET_PERCENT,
+      y: blur.position.y + DUPLICATE_ANNOTATION_OFFSET_PERCENT,
+    })
   })
 })

@@ -2,6 +2,7 @@
 	"title": "Keyboard Shortcuts",
 	"addZoom": "Add Zoom",
 	"addAnnotation": "Add Annotation",
+	"addBlur": "Add Blur Region",
 	"addKeyframe": "Add Keyframe",
 	"addTrim": "Add Trim",
 	"deleteSelected": "Delete Selected",

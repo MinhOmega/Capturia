@@ -201,7 +201,7 @@ export interface AudioEditRegion {
   reason?: 'silence' | 'filler'
 }
 
-export type AnnotationType = 'text' | 'image' | 'figure'
+export type AnnotationType = 'text' | 'image' | 'figure' | 'blur'
 
 export type ArrowDirection =
   | 'up'
@@ -217,6 +217,31 @@ export interface FigureData {
   arrowDirection: ArrowDirection
   color: string
   strokeWidth: number
+}
+
+export type BlurShape = 'rectangle' | 'oval'
+/** Only `mosaic` is implemented; the field is kept so another blur type can be added without a schema change. */
+export type BlurType = 'mosaic'
+export type BlurColor = 'white' | 'black'
+
+export const MIN_BLUR_INTENSITY = 2
+export const MAX_BLUR_INTENSITY = 40
+export const DEFAULT_BLUR_INTENSITY = 12
+export const MIN_BLUR_BLOCK_SIZE = 4
+export const MAX_BLUR_BLOCK_SIZE = 48
+export const DEFAULT_BLUR_BLOCK_SIZE = 12
+
+/**
+ * Settings of a blur region (an annotation of type `blur`). `blockSize` is the
+ * mosaic cell size in preview pixels (scaled with the output on export);
+ * `intensity` drives how strongly the white/black shade tints the mosaic.
+ */
+export interface BlurData {
+  type: BlurType
+  shape: BlurShape
+  color: BlurColor
+  intensity: number
+  blockSize: number
 }
 
 export interface AnnotationPosition {
@@ -264,6 +289,8 @@ export interface AnnotationRegion {
   style: AnnotationTextStyle
   zIndex: number
   figureData?: FigureData
+  /** Present on `blur` regions only. Optional so projects saved before blur regions existed load unchanged. */
+  blurData?: BlurData
 }
 
 export const DEFAULT_ANNOTATION_POSITION: AnnotationPosition = {
@@ -292,6 +319,39 @@ export const DEFAULT_FIGURE_DATA: FigureData = {
   arrowDirection: 'right',
   color: '#34B27B',
   strokeWidth: 4,
+}
+
+export const DEFAULT_BLUR_DATA: BlurData = {
+  type: 'mosaic',
+  shape: 'rectangle',
+  color: 'white',
+  intensity: DEFAULT_BLUR_INTENSITY,
+  blockSize: DEFAULT_BLUR_BLOCK_SIZE,
+}
+
+/**
+ * A new blur region: a mosaic rectangle in the default annotation box. It has
+ * no content and carries the default text style because every annotation does
+ * (the shared position/size/span handlers rely on the common shape).
+ */
+export function createBlurAnnotationRegion(params: {
+  id: string
+  startMs: number
+  endMs: number
+  zIndex: number
+}): AnnotationRegion {
+  return {
+    id: params.id,
+    startMs: params.startMs,
+    endMs: params.endMs,
+    type: 'blur',
+    content: '',
+    position: { ...DEFAULT_ANNOTATION_POSITION },
+    size: { ...DEFAULT_ANNOTATION_SIZE },
+    style: { ...DEFAULT_ANNOTATION_STYLE },
+    zIndex: params.zIndex,
+    blurData: { ...DEFAULT_BLUR_DATA },
+  }
 }
 
 /**

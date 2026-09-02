@@ -2,6 +2,7 @@
 	"title": "快捷键",
 	"addZoom": "添加缩放",
 	"addAnnotation": "添加注释",
+	"addBlur": "添加模糊区域",
 	"addKeyframe": "添加关键帧",
 	"addTrim": "添加裁剪",
 	"deleteSelected": "删除选中",

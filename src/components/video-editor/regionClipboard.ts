@@ -4,6 +4,7 @@ import type {
   AnnotationSize,
   AnnotationTextStyle,
   AnnotationType,
+  BlurData,
   FigureData,
   PlaybackSpeed,
   Rotation3DPreset,
@@ -36,6 +37,7 @@ export type CopiedAnnotation = {
   style: AnnotationTextStyle
   size: AnnotationSize
   figureData?: FigureData
+  blurData?: BlurData
   // Content & placement - used only when pasting as a brand-new region.
   type: AnnotationType
   content: string
@@ -86,6 +88,7 @@ export function extractAnnotationAttributes(region: AnnotationRegion): CopiedAnn
     style: { ...region.style },
     size: { ...region.size },
     figureData: region.figureData ? { ...region.figureData } : undefined,
+    blurData: region.blurData ? { ...region.blurData } : undefined,
     type: region.type,
     content: region.content,
     textContent: region.textContent,
@@ -139,6 +142,8 @@ export function replaceAnnotationAttributes(
     // (e.g. pasting a figure's attributes onto a text annotation keeps the text figure-less).
     figureData:
       region.type === 'figure' && attrs.figureData ? { ...attrs.figureData } : region.figureData,
+    // Same rule for blur settings: only a blur target takes them.
+    blurData: region.type === 'blur' && attrs.blurData ? { ...attrs.blurData } : region.blurData,
   }
 }
 
@@ -176,5 +181,6 @@ export function buildPastedAnnotation(
     size: { ...attrs.size },
     style: { ...attrs.style },
     figureData: attrs.figureData ? { ...attrs.figureData } : undefined,
+    blurData: attrs.blurData ? { ...attrs.blurData } : undefined,
   }
 }
