@@ -6,8 +6,17 @@
   "productName": "Capturia",
   // Must stay byte-identical to COPYRIGHT in electron/about.ts (about.test.ts pins it).
   "copyright": "© 2025-2026 MinhOmega and contributors — MIT License",
-  "npmRebuild": true,
-  "buildDependenciesFromSource": true,
+  // Capturia loads no native npm module at runtime: the macOS helpers are standalone Swift
+  // binaries under extraResources, onnxruntime-node is stubbed out of the renderer bundle and
+  // sharp only arrives as an optional dependency of @xenova/transformers. Rebuilding those
+  // prebuilt (napi) modules against Electron's ABI is wasted CI time and sharp built from
+  // source needs a system libvips the runners do not have (upstream c6331bad).
+  "npmRebuild": false,
+  "buildDependenciesFromSource": false,
+  // Any .node that does get packaged cannot be dlopen'd from inside the asar.
+  "asarUnpack": [
+    "**/*.node"
+  ],
   "compression": "normal",
   "directories": {
     "output": "release/${version}"
@@ -30,6 +39,10 @@
   ],
 
   "mac": {
+    // Notarization is done by the release workflow (notarytool + stapler on the DMG), gated on
+    // the signing secrets. Explicit false so electron-builder 26 does not try to notarize on its
+    // own whenever APPLE_ID happens to be in the environment.
+    "notarize": false,
     "hardenedRuntime": true,
     "gatekeeperAssess": false,
     "entitlements": "build/entitlements.mac.plist",
@@ -81,8 +94,11 @@
       "--disable-gpu",
       "--disable-gpu-compositing"
     ],
+    // electron-builder 26 moved the flat key map under `desktop.entry` (24.x took the keys directly).
     "desktop": {
-      "StartupWMClass": "Capturia"
+      "entry": {
+        "StartupWMClass": "Capturia"
+      }
     }
   },
   "win": {
