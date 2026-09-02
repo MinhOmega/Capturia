@@ -271,3 +271,24 @@ Branch is local only (never pushed). Open before release: manual smoke checklist
 `reviews/W*.md`, the macOS checklist in `docs/native-helper.md` (Swift uncompiled), a release
 candidate tag to exercise the four installer legs and the gated signing, and the
 `decodePath` default flip after the export smoke passes.
+
+## 2026-09-03 — wave 5 round 1: B1-d gradient editor + X1 blur regions
+
+Both backlog items from `gap/B1-composite.md`, implemented as Capturia features with our own
+tests (upstream shipped blur regions disabled and untested). Feature note:
+`docs/editor-gradient-blur.md`.
+
+- Gradient editor: `src/lib/gradientBuilder.ts` (spec ↔ CSS, round-trips through the exporter's
+  `gradientParser`), `GradientEditor.tsx` under a "Custom gradient" toggle in the background
+  gradient tab. Persisted as the existing wallpaper string; stop cap 8 so every preset loads.
+- Blur regions behind `featureFlags.ts` `BLUR_REGIONS_ENABLED` (default on): `AnnotationType`
+  `'blur'`, optional `blurData` (mosaic only, rectangle/oval, light/dark shade, block size,
+  intensity), `blurEffects.ts` shared by the preview overlay (Pixi stage extract) and the export
+  pass (composite canvas, block size scaled with the output), own timeline row, `B` shortcut
+  (`addBlur`, `b` was free), `blur-N` ids, clipboard/duplicate/paste aware, excluded from
+  selection cycling via `getSelectionCycleAnnotations`. Undo covers them through the existing
+  `annotationRegions` snapshot (by inspection; VideoEditor's inline history has no unit harness).
+
+Gate: lint 0 errors / 116 warnings (unchanged); tsc + test types clean; i18n 652 en keys (zh-CN,
+vi in parity); `biome format .` clean; vitest **122 files / 1277 tests** (+4 / +49). Manual smoke
+list in the feature note — no display on the lead box.
