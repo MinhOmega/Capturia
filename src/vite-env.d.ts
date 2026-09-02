@@ -262,6 +262,11 @@ interface Window {
       cameraSizePercent?: number
       cameraDeviceId?: string
       cameraDeviceName?: string
+      /** Microphone chosen in the HUD picker (Chromium deviceId + label); helper matches by label. */
+      microphoneDeviceId?: string
+      microphoneDeviceName?: string
+      /** Capture system audio on the native path (mixed with the mic into one track). */
+      systemAudio?: boolean
       frameRate?: number
       maxLongEdge?: number
       bitrateScale?: number
@@ -276,8 +281,13 @@ interface Window {
       frameRate?: number
       sourceKind?: 'display' | 'window' | 'unknown'
       hasMicrophoneAudio?: boolean
+      hasSystemAudio?: boolean
       /** The running helper accepts `pause` / `resume`; false for an old binary. */
       canPause?: boolean
+      /** The running helper honours `systemAudio`; false for an old binary. */
+      canCaptureSystemAudio?: boolean
+      /** Non-fatal helper warning codes, e.g. `mic_device_not_found`. */
+      warnings?: string[]
     }>
     pauseNativeScreenRecording: () => Promise<{
       success: boolean
@@ -302,6 +312,7 @@ interface Window {
         capturedAt?: number
         systemCursorMode?: 'always' | 'never'
         hasMicrophoneAudio?: boolean
+        hasSystemAudio?: boolean
       }
     }>
     startCursorTracking: (options?: {

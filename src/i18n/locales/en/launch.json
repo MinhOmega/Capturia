@@ -135,6 +135,8 @@
 	},
 	"microphone": "Mic",
 	"microphoneFallback": "Microphone unavailable. Recording without audio.",
+	"microphoneDeviceNotFound": "Selected microphone not found. Recording with the default microphone.",
+	"systemAudioUnavailable": "System audio is not available with this native recorder build. Recording without system audio.",
 	"audio": {
 		"enableMicrophone": "Enable microphone",
 		"disableMicrophone": "Disable microphone",

@@ -55,6 +55,9 @@ type UseScreenRecorderOptions = {
   microphoneEnabled?: boolean
   /** Microphone chosen in the HUD picker (Chromium deviceId); empty = system default. */
   microphoneDeviceId?: string
+  systemAudioEnabled?: boolean
+  /** Label of that microphone for the native helper (looked up from the id when absent). */
+  microphoneDeviceName?: string
 }
 
 /** Length of the gain ramp at the start of a recording so the first mic packet does not click. */
@@ -147,6 +150,19 @@ function normalizeSelectedCaptureSource(input: unknown): SelectedCaptureSource |
   }
 }
 
+/** Label Chromium reports for an audio input id; the native helper matches devices by label. */
+async function lookupMicrophoneLabel(deviceId: string): Promise<string | undefined> {
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices()
+    return (
+      devices.find((device) => device.kind === 'audioinput' && device.deviceId === deviceId)
+        ?.label || undefined
+    )
+  } catch {
+    return undefined
+  }
+}
+
 async function pickPreferredCameraId(): Promise<string | undefined> {
   try {
     const devices = await navigator.mediaDevices.enumerateDevices()
@@ -175,7 +191,9 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
   const recordSystemCursor = options.recordSystemCursor ?? true
   const microphoneGain = normalizeMicrophoneGain(options.microphoneGain)
   const microphoneEnabled = options.microphoneEnabled ?? true
+  const systemAudioEnabled = options.systemAudioEnabled ?? false
   const microphoneDeviceId = options.microphoneDeviceId || undefined
+  const microphoneDeviceName = options.microphoneDeviceName || undefined
   const [recording, setRecording] = useState(false)
   const [recordingState, setRecordingPhase] = useState<RecordingPhase>('idle')
   // Mirrors `nativeRecordingActive` for rendering (refs don't re-render): the HUD hides
@@ -1034,6 +1052,9 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
           id: typeof selectedSource.id === 'string' ? selectedSource.id : undefined,
           display_id: selectedSource.display_id ?? undefined,
         }
+        const nativeMicrophoneDeviceName =
+          microphoneDeviceName ??
+          (microphoneDeviceId ? await lookupMicrophoneLabel(microphoneDeviceId) : undefined)
         const startNative = async (
           cameraEnabled: boolean,
           nativeMicrophoneEnabled = microphoneEnabled,
@@ -1043,6 +1064,9 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
             cursorMode,
             microphoneEnabled: nativeMicrophoneEnabled,
             microphoneGain,
+            microphoneDeviceId,
+            microphoneDeviceName: nativeMicrophoneDeviceName,
+            systemAudio: systemAudioEnabled,
             cameraEnabled,
             cameraShape,
             cameraSizePercent,
@@ -1127,6 +1151,14 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
           setNativeSessionActive(true)
           setNativePauseSupported(nativeStart.canPause === true)
           pauseTransitionInFlight.current = false
+          if (nativeStart.warnings?.includes('mic_device_not_found')) {
+            // The helper opened the default microphone instead of the picked one.
+            toast.warning(t('launch.microphoneDeviceNotFound'))
+          }
+          if (systemAudioEnabled && nativeStart.canCaptureSystemAudio !== true) {
+            // Helper built before system audio: the recording goes on without it.
+            toast.warning(t('launch.systemAudioUnavailable'))
+          }
 
           try {
             const trackingResult = await window.electronAPI.startCursorTracking({

@@ -135,6 +135,8 @@
 	},
 	"microphone": "麦克风",
 	"microphoneFallback": "麦克风不可用，将录制无声视频。",
+	"microphoneDeviceNotFound": "找不到所选麦克风，将使用默认麦克风录制。",
+	"systemAudioUnavailable": "当前原生录制组件不支持系统音频，将不录制系统声音。",
 	"audio": {
 		"enableMicrophone": "启用麦克风",
 		"disableMicrophone": "禁用麦克风",
