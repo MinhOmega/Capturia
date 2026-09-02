@@ -14,6 +14,7 @@ import {
   createNotesWindow,
 } from './windows'
 import { registerIpcHandlers } from './ipc/handlers'
+import { getRecordingsDir } from './paths'
 import { isReadablePathAllowed, localMediaUrlToPath } from './ipc/paths'
 import { shouldSwallowMainProcessError } from './main-process-errors'
 import { scheduleRecordingsCleanup } from './recordingsCleanup'
@@ -51,7 +52,8 @@ if (IS_LINUX_WAYLAND) {
   app.commandLine.appendSwitch('disable-gpu-compositing')
 }
 
-export const RECORDINGS_DIR = path.join(app.getPath('userData'), 'recordings')
+// Resolved once at startup; `electron/paths.ts` owns the layout (lazy, testable).
+const RECORDINGS_DIR = getRecordingsDir()
 
 
 async function ensureRecordingsDir() {
