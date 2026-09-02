@@ -146,6 +146,11 @@
 	},
 	"notes": "Ghi chú",
 	"openNotesFailed": "Không mở được cửa sổ Ghi chú.",
+	"dragHandle": "Kéo để di chuyển thanh khởi động",
+	"tray": {
+		"useVertical": "Chuyển sang khay dọc",
+		"useHorizontal": "Chuyển sang thanh ngang"
+	},
 	"tooltips": {
 		"openNotes": "Mở Ghi chú (không xuất hiện trong bản ghi)",
 		"notesToolbar": {

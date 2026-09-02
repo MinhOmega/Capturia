@@ -426,6 +426,28 @@ interface Window {
     hudOverlayClose: () => void
     hudOverlayResize: (width?: number, height?: number) => void
     hudOverlayRestore: () => void
+    // A24: HUD click-through / drag / content-fit. `applied: false` carries a reason
+    // ('wayland', 'countdown', 'no-window', 'wrong-sender', 'bad-args', 'no-rects').
+    setHudOverlayIgnoreMouseEvents: (
+      ignore: boolean,
+      interactiveRects?: Array<{ x: number; y: number; width: number; height: number }>,
+    ) => Promise<{ applied: boolean; reason?: string }>
+    moveHudOverlayBy: (
+      deltaX: number,
+      deltaY: number,
+    ) => Promise<{
+      applied: boolean
+      reason?: string
+      bounds?: { x: number; y: number; width: number; height: number }
+    }>
+    setHudOverlaySize: (
+      width: number,
+      height: number,
+    ) => Promise<{
+      applied: boolean
+      reason?: string
+      bounds?: { x: number; y: number; width: number; height: number }
+    }>
     setLocale: (locale: string) => Promise<void>
     // W1-c: approved-file reads for the exporter (localSourceFile.ts)
     readBinaryFile: (filePath: string) => Promise<{

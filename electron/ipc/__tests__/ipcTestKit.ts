@@ -19,6 +19,10 @@ export type FakeIpcMain = {
   /** Channels in registration order; duplicates are kept so a test can assert none. */
   registered: string[]
   invoke: <T = unknown>(channel: string, ...args: unknown[]) => Promise<T>
+  /** The event `invoke` passes to handlers; `event.sender` is the calling renderer. */
+  event: IpcMainInvokeEvent
+  /** Like `invoke`, but from an arbitrary sender (a window other than the expected one). */
+  invokeFrom: <T = unknown>(sender: unknown, channel: string, ...args: unknown[]) => Promise<T>
 }
 
 export function fakeIpcMain(): FakeIpcMain {
@@ -27,6 +31,11 @@ export function fakeIpcMain(): FakeIpcMain {
   const event = {
     sender: { isDestroyed: () => false, send: vi.fn() },
   } as unknown as IpcMainInvokeEvent
+  const call = async <T>(evt: IpcMainInvokeEvent, channel: string, args: unknown[]) => {
+    const handler = handlers.get(channel)
+    if (!handler) throw new Error(`no handler for ${channel}`)
+    return (await handler(evt, ...args)) as T
+  }
   return {
     ipcMain: {
       handle: (channel, handler) => {
@@ -35,11 +44,10 @@ export function fakeIpcMain(): FakeIpcMain {
       },
     },
     registered,
-    invoke: async <T>(channel: string, ...args: unknown[]): Promise<T> => {
-      const handler = handlers.get(channel)
-      if (!handler) throw new Error(`no handler for ${channel}`)
-      return (await handler(event, ...args)) as T
-    },
+    event,
+    invoke: <T>(channel: string, ...args: unknown[]) => call<T>(event, channel, args),
+    invokeFrom: <T>(sender: unknown, channel: string, ...args: unknown[]) =>
+      call<T>({ sender } as IpcMainInvokeEvent, channel, args),
   }
 }
 
@@ -100,9 +108,16 @@ export function createElectronMock() {
       getDisplayNearestPoint: vi.fn(() => ({
         id: 1,
         bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+        workArea: { x: 0, y: 0, width: 1920, height: 1080 },
         scaleFactor: 1,
       })),
       getPrimaryDisplay: vi.fn(() => ({
+        id: 1,
+        bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+        workArea: { x: 0, y: 0, width: 1920, height: 1080 },
+        scaleFactor: 1,
+      })),
+      getDisplayMatching: vi.fn(() => ({
         id: 1,
         bounds: { x: 0, y: 0, width: 1920, height: 1080 },
         workArea: { x: 0, y: 0, width: 1920, height: 1080 },

@@ -146,6 +146,11 @@
 	},
 	"notes": "Notes",
 	"openNotesFailed": "Failed to open the Notes window.",
+	"dragHandle": "Drag to move the launch bar",
+	"tray": {
+		"useVertical": "Switch to vertical tray",
+		"useHorizontal": "Switch to horizontal bar"
+	},
 	"tooltips": {
 		"openNotes": "Open Notes (hidden from the recording)",
 		"notesToolbar": {

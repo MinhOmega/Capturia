@@ -3,6 +3,11 @@ import {
   DEFAULT_EXPORT_SETTINGS,
   DEFAULT_PLAYBACK_SETTINGS,
 } from '@/components/video-editor/editorDefaults'
+import {
+  DEFAULT_HUD_ORIENTATION,
+  type HudOrientation,
+  isHudOrientation,
+} from '@/hooks/useHudLayout'
 import type { ExportFormat, ExportQuality } from '@/lib/exporter/types'
 import { ASPECT_RATIOS, type AspectRatio } from '@/utils/aspectRatioUtils'
 
@@ -33,6 +38,8 @@ export interface UserPreferences {
   seekStepSeconds: number
   /** Preview playback rate */
   previewPlaybackRate: number
+  /** Launch HUD layout: controls in one row, or stacked in a tray column */
+  hudOrientation: HudOrientation
 }
 
 export const DEFAULT_PREFS: UserPreferences = {
@@ -43,6 +50,7 @@ export const DEFAULT_PREFS: UserPreferences = {
   exportFolder: null,
   seekStepSeconds: DEFAULT_PLAYBACK_SETTINGS.seekStepSeconds,
   previewPlaybackRate: DEFAULT_PLAYBACK_SETTINGS.previewPlaybackRate,
+  hudOrientation: DEFAULT_HUD_ORIENTATION,
 }
 
 /** Parses stored preferences without throwing on malformed JSON. */
@@ -104,6 +112,9 @@ export function loadUserPreferences(): UserPreferences {
     )
       ? raw.previewPlaybackRate
       : DEFAULT_PREFS.previewPlaybackRate,
+    hudOrientation: isHudOrientation(raw.hudOrientation)
+      ? raw.hudOrientation
+      : DEFAULT_PREFS.hudOrientation,
   }
 }
 
