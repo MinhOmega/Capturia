@@ -4,120 +4,97 @@ import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 
-type Bounds = { x: number; y: number; width: number; height: number }
+/**
+ * Global bounds of a captured window on macOS, read through the prebuilt
+ * `window-bounds-helper` binary (`electron/native/macos/window-bounds-helper.swift`,
+ * compiled by `scripts/build-native-macos-helper.mjs` and shipped under
+ * `Contents/Resources/native/`). The helper used to be compiled at runtime from
+ * Swift source written into `userData`; that put a compiler run inside
+ * Capturia's TCC scope and silently failed on Macs without the Xcode command
+ * line tools. Nothing here spawns `swiftc` any more: a missing binary is
+ * reported once and `getWindowBoundsById` answers `null`, which the cursor
+ * tracker treats as "use the heuristic mapping".
+ */
+
+export type WindowBounds = { x: number; y: number; width: number; height: number }
 
 const execFileAsync = promisify(execFile)
 
+export const WINDOW_BOUNDS_HELPER_NAME = 'window-bounds-helper'
+
 let helperBinaryPathPromise: Promise<string | null> | null = null
-let helperUnavailable = false
 
-const WINDOW_BOUNDS_SWIFT_SOURCE = `
-import Foundation
-import CoreGraphics
-
-func printError(_ message: String) {
-    FileHandle.standardError.write((message + "\\n").data(using: .utf8)!)
+/**
+ * Where the packaged app and a dev checkout keep the helper. Same layout as the
+ * other native helpers (`sckRecorder.ts`): `Resources/native/<name>` when
+ * packaged, `electron/native/bin/<name>` in development.
+ */
+export function resolveWindowBoundsHelperPath(env: {
+  isPackaged: boolean
+  resourcesPath: string
+  appPath: string
+}): string {
+  return env.isPackaged
+    ? path.join(env.resourcesPath, 'native', WINDOW_BOUNDS_HELPER_NAME)
+    : path.join(env.appPath, 'electron', 'native', 'bin', WINDOW_BOUNDS_HELPER_NAME)
 }
 
-guard CommandLine.arguments.count >= 2, let windowId = UInt32(CommandLine.arguments[1]) else {
-    printError("missing_window_id")
-    exit(64)
-}
-
-let infoList = CGWindowListCopyWindowInfo([.optionIncludingWindow], windowId) as? [[String: Any]]
-guard let first = infoList?.first else {
-    printError("window_not_found")
-    exit(66)
-}
-
-guard let bounds = first[kCGWindowBounds as String] as? [String: Any] else {
-    printError("bounds_missing")
-    exit(65)
-}
-
-let x = (bounds["X"] as? NSNumber)?.doubleValue ?? 0
-let y = (bounds["Y"] as? NSNumber)?.doubleValue ?? 0
-let width = (bounds["Width"] as? NSNumber)?.doubleValue ?? 0
-let height = (bounds["Height"] as? NSNumber)?.doubleValue ?? 0
-
-let payload: [String: Double] = [
-    "x": x,
-    "y": y,
-    "width": width,
-    "height": height,
-]
-
-if let data = try? JSONSerialization.data(withJSONObject: payload, options: []) {
-    FileHandle.standardOutput.write(data)
-} else {
-    printError("json_encode_failed")
-    exit(70)
-}
-`
-
-function isFiniteBounds(value: unknown): value is Bounds {
-  if (!value || typeof value !== 'object') return false
-  const row = value as Partial<Bounds>
-  return (
-    Number.isFinite(row.x) &&
-    Number.isFinite(row.y) &&
-    Number.isFinite(row.width) &&
-    Number.isFinite(row.height) &&
-    Number(row.width) > 0 &&
-    Number(row.height) > 0
-  )
+/**
+ * `{"x":..,"y":..,"width":..,"height":..}` from the helper's stdout, or `null`
+ * for anything that is not a finite, positively sized rectangle.
+ */
+export function parseWindowBoundsOutput(stdout: string): WindowBounds | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(stdout)
+  } catch {
+    return null
+  }
+  if (!parsed || typeof parsed !== 'object') return null
+  const row = parsed as Partial<Record<keyof WindowBounds, unknown>>
+  const x = Number(row.x)
+  const y = Number(row.y)
+  const width = Number(row.width)
+  const height = Number(row.height)
+  if (![x, y, width, height].every((value) => Number.isFinite(value))) return null
+  if (width <= 0 || height <= 0) return null
+  return { x, y, width: Math.max(1, width), height: Math.max(1, height) }
 }
 
 async function ensureWindowBoundsHelperBinary(): Promise<string | null> {
-  if (process.platform !== 'darwin' || helperUnavailable) {
+  if (process.platform !== 'darwin') {
     return null
   }
-
   if (helperBinaryPathPromise) {
     return helperBinaryPathPromise
   }
 
   helperBinaryPathPromise = (async () => {
+    const binaryPath = resolveWindowBoundsHelperPath({
+      isPackaged: app.isPackaged,
+      resourcesPath: process.resourcesPath,
+      appPath: app.getAppPath(),
+    })
     try {
-      const toolDir = path.join(app.getPath('userData'), 'native-tools')
-      const sourcePath = path.join(toolDir, 'window-bounds-helper.swift')
-      const binaryPath = path.join(toolDir, 'window-bounds-helper')
-
-      await fs.mkdir(toolDir, { recursive: true })
-
-      let binaryExists = true
-      try {
-        const stat = await fs.stat(binaryPath)
-        binaryExists = stat.isFile()
-      } catch {
-        binaryExists = false
-      }
-
-      if (!binaryExists) {
-        await fs.writeFile(sourcePath, WINDOW_BOUNDS_SWIFT_SOURCE, 'utf-8')
-        await execFileAsync('swiftc', ['-O', sourcePath, '-o', binaryPath], {
-          timeout: 15_000,
-          maxBuffer: 1024 * 1024,
-        })
-        await fs.chmod(binaryPath, 0o755).catch(() => {})
-      }
-
+      await fs.access(binaryPath, fs.constants.X_OK)
       return binaryPath
-    } catch (error) {
-      helperUnavailable = true
+    } catch {
       console.warn(
-        'Failed to prepare window bounds helper, window cursor mapping falls back to heuristic.',
-        error,
+        `[window-bounds] helper missing at ${binaryPath}; window cursor mapping falls back to the heuristic. ` +
+          (app.isPackaged
+            ? 'The packaged app is incomplete (extraResources).'
+            : 'Run `npm run build:native` on a Mac with the Xcode command line tools.'),
       )
       return null
     }
   })()
 
-  const result = await helperBinaryPathPromise
-  if (!result) {
-    helperBinaryPathPromise = null
-  }
-  return result
+  return helperBinaryPathPromise
+}
+
+/** Test seam: forget the cached helper lookup. */
+export function resetWindowBoundsHelperCacheForTests(): void {
+  helperBinaryPathPromise = null
 }
 
 export function parseWindowIdFromSourceId(sourceId?: string | null): number | undefined {
@@ -129,7 +106,7 @@ export function parseWindowIdFromSourceId(sourceId?: string | null): number | un
   return Math.floor(value)
 }
 
-export async function getWindowBoundsById(windowId: number): Promise<Bounds | null> {
+export async function getWindowBoundsById(windowId: number): Promise<WindowBounds | null> {
   if (process.platform !== 'darwin') return null
   if (!Number.isFinite(windowId) || windowId <= 0) return null
 
@@ -141,16 +118,7 @@ export async function getWindowBoundsById(windowId: number): Promise<Bounds | nu
       timeout: 1_200,
       maxBuffer: 64 * 1024,
     })
-
-    const parsed = JSON.parse(stdout) as unknown
-    if (!isFiniteBounds(parsed)) return null
-
-    return {
-      x: Number(parsed.x),
-      y: Number(parsed.y),
-      width: Math.max(1, Number(parsed.width)),
-      height: Math.max(1, Number(parsed.height)),
-    }
+    return parseWindowBoundsOutput(String(stdout))
   } catch {
     return null
   }
