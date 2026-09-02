@@ -37,6 +37,18 @@
       "to": "assets/wallpapers"
     }
   ],
+  // Where electron-updater looks for `latest*.yml`. Having a publish provider is also what
+  // makes electron-builder write those feeds (plus `.blockmap`s) next to the installers and the
+  // `package-type` marker install-channel.ts reads. Nothing is uploaded by electron-builder
+  // itself: every build script passes `--publish never`; release.yml attaches the artifacts.
+  "publish": [
+    {
+      "provider": "github",
+      "owner": "MinhOmega",
+      "repo": "Capturia",
+      "releaseType": "release"
+    }
+  ],
 
   "mac": {
     // Notarization is done by the release workflow (notarytool + stapler on the DMG), gated on
@@ -54,9 +66,16 @@
       "NSSpeechRecognitionUsageDescription": "Capturia needs speech recognition access to generate subtitles from recordings.",
       "NSCameraUseContinuityCameraDeviceType": true
     },
+    // The DMG is what people download; the ZIP is what electron-updater (Squirrel.Mac) installs
+    // from, so both ship. An unsigned .app cannot be auto-updated: Squirrel refuses it, and the
+    // updater then falls back to the release page.
     "target": [
       {
         "target": "dmg",
+        "arch": ["x64", "arm64"]
+      },
+      {
+        "target": "zip",
         "arch": ["x64", "arm64"]
       }
     ],
