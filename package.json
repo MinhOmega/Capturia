@@ -79,6 +79,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "dnd-timeline": "^2.2.0",
+    "electron-updater": "^6.8.9",
     "emoji-picker-react": "^4.16.1",
     "gif.js": "^0.2.0",
     "gsap": "^3.13.0",
