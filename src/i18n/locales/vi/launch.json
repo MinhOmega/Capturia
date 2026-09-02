@@ -59,6 +59,8 @@
 	"recordSourceRequired": "Vui lòng chọn nguồn trước khi ghi hình.",
 	"recordStartFailed": "Không thể bắt đầu ghi hình.",
 	"recordStopFailed": "Không thể dừng ghi hình một cách an toàn.",
+	"pauseFailed": "Không thể tạm dừng ghi hình; vẫn đang ghi.",
+	"resumeFailed": "Không thể tiếp tục ghi hình; vẫn đang tạm dừng.",
 	"recordSaveFailed": "Không thể lưu bản ghi.",
 	"openVideoFailed": "Không thể mở tệp video.",
 	"openSourceSelectorFailed": "Không thể mở trình chọn nguồn.",

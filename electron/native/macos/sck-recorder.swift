@@ -259,6 +259,17 @@ final class StopSignal {
             self.continuation = continuation
         }
     }
+
+    /// Same effect as SIGINT, callable from the stdin command reader thread. The
+    /// signal sources deliver on the main queue, so the continuation is only ever
+    /// touched from there.
+    func trigger() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.continuation?.resume()
+            self.continuation = nil
+        }
+    }
 }
 
 final class CameraCaptureProvider: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
@@ -491,6 +502,16 @@ final class ScreenStreamWriter: NSObject, SCStreamOutput {
     private var lastRelativePTS: CMTime?
     private(set) var frameCount = 0
 
+    // Pause state (upstream OpenScreen 73870c65): while paused every sample is
+    // dropped; after a resume every sample is retimed by the accumulated pause
+    // duration so the output timeline has no gap. Guarded by `stateQueue` because
+    // the stdin reader thread, the SCK sample queue and the audio queue all touch it.
+    private let stateQueue = DispatchQueue(label: "com.capturia.sck-recorder.pause-state")
+    private var isPaused = false
+    private var pauseStartedAt: CMTime?
+    private var totalPausedDuration = CMTime.zero
+    private let hostClock = CMClockGetHostTimeClock()
+
     init(
         outputURL: URL,
         width: Int,
@@ -582,6 +603,11 @@ final class ScreenStreamWriter: NSObject, SCStreamOutput {
         guard CMSampleBufferDataIsReady(sampleBuffer) else { return }
         guard let screenPixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
 
+        let pauseState = currentPauseState()
+        if pauseState.paused {
+            return
+        }
+
         let pts = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
         if firstPTS == nil {
             firstPTS = pts
@@ -599,10 +625,52 @@ final class ScreenStreamWriter: NSObject, SCStreamOutput {
             outputPixelBuffer = screenPixelBuffer
         }
 
-        let relative = CMTimeSubtract(pts, firstPTS)
+        // Relative to the first frame, minus everything spent paused so far.
+        let relative = CMTimeSubtract(CMTimeSubtract(pts, firstPTS), pauseState.offset)
+        guard relative >= .zero else { return }
+        if let lastRelativePTS, relative <= lastRelativePTS {
+            // Never hand the writer a non-increasing timestamp (clock jitter right
+            // after a resume); the next frame carries the timeline on.
+            return
+        }
         if adaptor.append(outputPixelBuffer, withPresentationTime: relative) {
             frameCount += 1
             lastRelativePTS = relative
+        }
+    }
+
+    /// Returns true when the writer is paused after the call (idempotent).
+    func pause() -> Bool {
+        stateQueue.sync {
+            if !isPaused {
+                isPaused = true
+                pauseStartedAt = CMClockGetTime(hostClock)
+            }
+            return isPaused
+        }
+    }
+
+    /// Returns true when the writer is recording after the call (idempotent).
+    func resume() -> Bool {
+        stateQueue.sync {
+            if isPaused {
+                if let pauseStartedAt {
+                    let now = CMClockGetTime(hostClock)
+                    totalPausedDuration = CMTimeAdd(
+                        totalPausedDuration,
+                        CMTimeSubtract(now, pauseStartedAt)
+                    )
+                }
+                isPaused = false
+                pauseStartedAt = nil
+            }
+            return !isPaused
+        }
+    }
+
+    private func currentPauseState() -> (paused: Bool, offset: CMTime) {
+        stateQueue.sync {
+            (isPaused, totalPausedDuration)
         }
     }
 
@@ -645,11 +713,17 @@ final class ScreenStreamWriter: NSObject, SCStreamOutput {
             guard audioInput.isReadyForMoreMediaData else { return }
             guard let firstPTS else { return }
 
+            let pauseState = self.currentPauseState()
+            if pauseState.paused { return }
+
+            // Shift by the first video PTS plus the accumulated pause offset so the
+            // mic track stays aligned with the retimed video frames.
+            let timelineOffset = CMTimeAdd(firstPTS, pauseState.offset)
             let originalPTS = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-            let relativePTS = CMTimeSubtract(originalPTS, firstPTS)
+            let relativePTS = CMTimeSubtract(originalPTS, timelineOffset)
             guard relativePTS >= .zero else { return }
 
-            guard let shiftedSampleBuffer = self.shiftSampleBufferTiming(sampleBuffer, by: firstPTS) else { return }
+            guard let shiftedSampleBuffer = self.shiftSampleBufferTiming(sampleBuffer, by: timelineOffset) else { return }
             let processedSampleBuffer = self.applyMicrophoneGainAndLimiter(to: shiftedSampleBuffer)
             _ = audioInput.append(processedSampleBuffer)
         }
@@ -1070,6 +1144,15 @@ final class SCKRecorder {
         )
     }
 
+    /// Thread-safe: called from the stdin reader thread. False when no writer exists yet.
+    func pause() -> Bool {
+        writer?.pause() ?? false
+    }
+
+    func resume() -> Bool {
+        writer?.resume() ?? false
+    }
+
     func stop() async throws -> RecordingStopSummary {
         guard let stream, let writer else {
             throw RecorderError.streamNotStarted
@@ -1260,10 +1343,45 @@ struct NativeRecorderMain {
             let info = try await recorder.start()
 
             print("SCK_RECORDER_READY width=\(info.width) height=\(info.height) fps=\(args.fps) source=\(info.sourceKind) mic=\(info.hasMicrophoneAudio ? 1 : 0)")
+            // Capability line: lets the Electron side detect a helper built without
+            // the stdin protocol (an old binary never prints it -> pause unsupported).
+            print("SCK_RECORDER_CAPS pause")
             fflush(stdout)
 
             let stopSignal = StopSignal()
+
+            // stdin command loop (upstream main.swift:667-676): `pause`, `resume`, `stop`.
+            // Runs on a plain Thread because readLine() blocks. When stdin is closed
+            // or was never a pipe, readLine() returns nil at once and the thread ends;
+            // SIGINT/SIGTERM keep working as the stop path either way.
+            let commandReader = Thread {
+                while let line = readLine() {
+                    let command = line.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                    switch command {
+                    case "pause":
+                        if recorder.pause() {
+                            print("SCK_RECORDER_PAUSED")
+                            fflush(stdout)
+                        }
+                    case "resume":
+                        if recorder.resume() {
+                            print("SCK_RECORDER_RESUMED")
+                            fflush(stdout)
+                        }
+                    case "stop":
+                        stopSignal.trigger()
+                        return
+                    default:
+                        break
+                    }
+                }
+            }
+            commandReader.name = "com.capturia.sck-recorder.stdin"
+            commandReader.start()
+
             await stopSignal.wait()
+            // A stop while paused must not lose the pause offset bookkeeping; the
+            // writer simply finishes with the samples it has.
 
             let summary = try await recorder.stop()
             print("SCK_RECORDER_DONE frames=\(summary.frameCount) observed_fps=\(summary.observedFrameRate)")

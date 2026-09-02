@@ -12,6 +12,8 @@ vi.mock('../native/sckRecorder', () => ({
   isNativeMacRecorderActive: vi.fn(() => false),
   startNativeMacRecorder: vi.fn(async () => ({ success: false, message: 'not in test' })),
   stopNativeMacRecorder: vi.fn(async () => ({ success: true })),
+  pauseNativeMacRecorder: vi.fn(async () => ({ success: false, supported: false, message: 'Native recorder is not active.' })),
+  resumeNativeMacRecorder: vi.fn(async () => ({ success: false, supported: false, message: 'Native recorder is not active.' })),
 }))
 vi.mock('../recordingsCleanup', () => ({ scheduleRecordingsCleanup: vi.fn() }))
 vi.mock('../recording/webm-duration', () => ({
@@ -56,8 +58,28 @@ describe('recording files IPC handlers', () => {
       'get-recorded-video-path',
       'set-recording-state',
       'native-screen-recorder-start',
+      'pause-native-recording',
+      'resume-native-recording',
       'native-screen-recorder-stop',
     ])
+  })
+
+  it('pause / resume forward the helper answer and degrade to unsupported on a throw', async () => {
+    const sck = await import('../native/sckRecorder')
+    const ipc = fakeIpcMain()
+    registerRecordingFilesHandlers(buildContext(ipc, { recordingsDir }))
+
+    // Old helper (no caps line): unsupported, not an error.
+    await expect(ipc.invoke('pause-native-recording')).resolves.toMatchObject({ success: false, supported: false })
+
+    vi.mocked(sck.pauseNativeMacRecorder).mockResolvedValueOnce({ success: true, supported: true })
+    await expect(ipc.invoke('pause-native-recording')).resolves.toEqual({ success: true, supported: true })
+
+    vi.mocked(sck.resumeNativeMacRecorder).mockResolvedValueOnce({ success: false, supported: true, message: 'timeout' })
+    await expect(ipc.invoke('resume-native-recording')).resolves.toEqual({ success: false, supported: true, message: 'timeout' })
+
+    vi.mocked(sck.resumeNativeMacRecorder).mockRejectedValueOnce(new Error('boom'))
+    await expect(ipc.invoke('resume-native-recording')).resolves.toEqual({ success: false, supported: false, message: 'boom' })
   })
 
   it('select-source stores the source, notifies the HUD and closes the picker', async () => {

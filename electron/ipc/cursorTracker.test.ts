@@ -32,10 +32,52 @@ describe('cursor tracker IPC handlers', () => {
     vi.restoreAllMocks()
   })
 
-  it('registers the two tracker channels', () => {
+  it('registers the tracker channels', () => {
     const ipc = fakeIpcMain()
     registerCursorTrackerHandlers(buildContext(ipc))
-    expect(ipc.registered).toEqual(['cursor-tracker-start', 'cursor-tracker-stop'])
+    expect(ipc.registered).toEqual(['cursor-tracker-start', 'cursor-tracker-pause', 'cursor-tracker-resume', 'cursor-tracker-stop'])
+  })
+
+  it('pause / resume without a tracker report failure', async () => {
+    const ipc = fakeIpcMain()
+    registerCursorTrackerHandlers(buildContext(ipc))
+    await expect(ipc.invoke('cursor-tracker-pause')).resolves.toMatchObject({ success: false })
+    await expect(ipc.invoke('cursor-tracker-resume')).resolves.toMatchObject({ success: false })
+  })
+
+  it('compacts paused time out of the track: no sample inside the pause, later ones shifted back', async () => {
+    setPlatform('linux')
+    process.env['XDG_SESSION_TYPE'] = 'x11'
+    vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    vi.useFakeTimers()
+    try {
+      const ipc = fakeIpcMain()
+      const ctx = buildContext(ipc)
+      ctx.session.selectedSource = { id: 'screen:1:0', display_id: '1' }
+      registerCursorTrackerHandlers(ctx)
+      await ipc.invoke('cursor-tracker-start', { captureSize: { width: 1920, height: 1080 } })
+
+      vi.advanceTimersByTime(200)
+      await expect(ipc.invoke('cursor-tracker-pause')).resolves.toEqual({ success: true, changed: true })
+      // Second pause is a no-op, not a second range.
+      await expect(ipc.invoke('cursor-tracker-pause')).resolves.toEqual({ success: true, changed: false })
+      vi.advanceTimersByTime(1_000)
+      await expect(ipc.invoke('cursor-tracker-resume')).resolves.toEqual({ success: true, changed: true })
+      vi.advanceTimersByTime(200)
+
+      const stopped = await ipc.invoke<{ track?: { samples: Array<{ timeMs: number }>; stats?: { sampleCount?: number } } }>(
+        'cursor-tracker-stop',
+      )
+      const times = stopped.track?.samples.map((sample) => sample.timeMs) ?? []
+      expect(times.length).toBeGreaterThan(0)
+      // The recording lasted 1400 ms of wall clock but only 400 ms of timeline.
+      expect(Math.max(...times)).toBeLessThanOrEqual(400)
+      // Samples taken after the resume were shifted back into 200..400.
+      expect(times.some((timeMs) => timeMs > 200)).toBe(true)
+      expect(stopped.track?.stats?.sampleCount).toBe(times.length)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('stop without start returns no track', async () => {

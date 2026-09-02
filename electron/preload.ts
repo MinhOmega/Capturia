@@ -142,6 +142,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   stopNativeScreenRecording: (options?: { discard?: boolean }) => {
     return ipcRenderer.invoke('native-screen-recorder-stop', options)
   },
+  // A5: native pause/resume over the helper's stdin. `supported: false` = old helper.
+  pauseNativeScreenRecording: () => {
+    return ipcRenderer.invoke('pause-native-recording')
+  },
+  resumeNativeScreenRecording: () => {
+    return ipcRenderer.invoke('resume-native-recording')
+  },
   startCursorTracking: (options?: {
     source?: { id?: string; display_id?: string | number | null }
     captureSize?: { width?: number; height?: number }
@@ -150,6 +157,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   stopCursorTracking: () => {
     return ipcRenderer.invoke('cursor-tracker-stop')
+  },
+  // Pause ranges are compacted out of the cursor track on stop (both recorder paths).
+  pauseCursorTracking: () => {
+    return ipcRenderer.invoke('cursor-tracker-pause')
+  },
+  resumeCursorTracking: () => {
+    return ipcRenderer.invoke('cursor-tracker-resume')
   },
   onStopRecordingFromTray: (callback: () => void) => {
     const listener = () => callback()

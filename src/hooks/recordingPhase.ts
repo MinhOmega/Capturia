@@ -118,11 +118,16 @@ export function planNativeStopSideEffects(input: {
   };
 }
 
-/** Pause is only offered on the MediaRecorder path while recording or paused. */
+/**
+ * Pause is offered while recording or paused: always on the MediaRecorder path, and
+ * on the native path only when the running helper announced pause support (a helper
+ * built before the stdin protocol never does, so the button stays hidden).
+ */
 export function canPauseRecording(input: {
   phase: RecordingPhase;
   nativeRecordingActive: boolean;
+  nativePauseSupported?: boolean;
 }): boolean {
-  if (input.nativeRecordingActive) return false;
+  if (input.nativeRecordingActive && input.nativePauseSupported !== true) return false;
   return input.phase === "recording" || input.phase === "paused";
 }
