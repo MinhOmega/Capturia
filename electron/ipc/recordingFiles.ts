@@ -4,6 +4,8 @@ import {
   forceTerminateNativeMacRecorder,
   getNativeMacRecorderOutputPath,
   isNativeMacRecorderActive,
+  pauseNativeMacRecorder,
+  resumeNativeMacRecorder,
   startNativeMacRecorder,
   stopNativeMacRecorder,
 } from '../native/sckRecorder'
@@ -288,12 +290,33 @@ export function registerRecordingFilesHandlers(ctx: IpcContext): RecordingFilesR
         frameRate: result.ready.frameRate,
         sourceKind: result.ready.sourceKind,
         hasMicrophoneAudio: result.ready.hasMicrophoneAudio,
+        // False for a helper built before the stdin protocol: the HUD hides Pause.
+        canPause: result.capabilities?.pause === true,
       }
     } catch (error) {
       return {
         success: false,
         message: error instanceof Error ? error.message : String(error),
       }
+    }
+  })
+
+  // A5: pause / resume the native helper over its stdin. Both answer
+  // `{ success, supported }`; `supported: false` means the running helper has no
+  // pause command (old binary) and the renderer must keep recording normally.
+  ipcMain.handle('pause-native-recording', async () => {
+    try {
+      return await pauseNativeMacRecorder()
+    } catch (error) {
+      return { success: false, supported: false, message: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
+  ipcMain.handle('resume-native-recording', async () => {
+    try {
+      return await resumeNativeMacRecorder()
+    } catch (error) {
+      return { success: false, supported: false, message: error instanceof Error ? error.message : String(error) }
     }
   })
 

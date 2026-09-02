@@ -3,12 +3,80 @@ import os from 'node:os'
 import path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import {
+  compactCursorTrackPauseRanges,
+  normalizeCursorTrackPauseRanges,
   readCursorTrackSidecar,
   resolveCursorSidecarPath,
   sanitizeCursorTrack,
   sanitizeVideoMetadata,
   writeCursorTrackSidecar,
 } from './cursorTrack'
+
+const sampleAt = (timeMs: number) => ({ timeMs, x: 0.5, y: 0.5 })
+const clickAt = (timeMs: number) => ({ type: 'click' as const, startMs: timeMs, endMs: timeMs, point: { x: 0.5, y: 0.5 } })
+
+describe('compactCursorTrackPauseRanges (A5 port of compactPendingCursorTelemetryPauseRanges)', () => {
+  it('returns the input untouched when there are no usable ranges', () => {
+    const track = { samples: [sampleAt(0), sampleAt(100)], events: [clickAt(50)] }
+    expect(compactCursorTrackPauseRanges(track, [])).toBe(track)
+    expect(compactCursorTrackPauseRanges(track, [{ startMs: 10, endMs: 10 }])).toBe(track)
+    expect(compactCursorTrackPauseRanges(track, [{ startMs: Number.NaN, endMs: 20 }])).toBe(track)
+  })
+
+  it('drops samples inside a pause and shifts later samples back by the pause length', () => {
+    const track = {
+      samples: [sampleAt(0), sampleAt(100), sampleAt(200), sampleAt(300), sampleAt(500), sampleAt(700)],
+      events: [],
+    }
+    const compacted = compactCursorTrackPauseRanges(track, [{ startMs: 150, endMs: 350 }])
+    // 200 and 300 are inside the pause; 500 -> 300, 700 -> 500.
+    expect(compacted.samples.map((sample) => sample.timeMs)).toEqual([0, 100, 300, 500])
+    // Input is not mutated.
+    expect(track.samples.map((sample) => sample.timeMs)).toEqual([0, 100, 200, 300, 500, 700])
+  })
+
+  it('accumulates several pauses and merges overlapping / unordered ranges', () => {
+    const track = { samples: [sampleAt(0), sampleAt(1000), sampleAt(2000), sampleAt(3000), sampleAt(4000)], events: [] }
+    const compacted = compactCursorTrackPauseRanges(track, [
+      { startMs: 2500, endMs: 2600 },
+      { startMs: 900, endMs: 1100 },
+      { startMs: 2550, endMs: 2700 },
+      { endMs: 1500, startMs: 1050 }, // reversed + overlapping -> merged into 900..1500
+    ])
+    expect(normalizeCursorTrackPauseRanges([
+      { startMs: 2500, endMs: 2600 },
+      { startMs: 900, endMs: 1100 },
+      { startMs: 2550, endMs: 2700 },
+      { endMs: 1500, startMs: 1050 },
+    ])).toEqual([{ startMs: 900, endMs: 1500 }, { startMs: 2500, endMs: 2700 }])
+    // 1000 inside first pause -> dropped; 2000 -> 1400; 3000 -> 3000-600-200 = 2200; 4000 -> 3200.
+    expect(compacted.samples.map((sample) => sample.timeMs)).toEqual([0, 1400, 2200, 3200])
+  })
+
+  it('drops events inside a pause, shifts later ones and clamps a selection that spans the pause', () => {
+    const track = {
+      samples: [sampleAt(0)],
+      events: [
+        clickAt(50),
+        clickAt(250), // inside
+        { type: 'selection' as const, startMs: 180, endMs: 450, point: { x: 0.5, y: 0.5 } }, // spans the pause
+        clickAt(600),
+      ],
+    }
+    const compacted = compactCursorTrackPauseRanges(track, [{ startMs: 200, endMs: 400 }])
+    expect(compacted.events).toEqual([
+      clickAt(50),
+      { type: 'selection', startMs: 180, endMs: 250, point: { x: 0.5, y: 0.5 } },
+      clickAt(400),
+    ])
+  })
+
+  it('a pause that runs until the stop instant drops the trailing samples', () => {
+    const track = { samples: [sampleAt(0), sampleAt(100), sampleAt(900), sampleAt(1000)], events: [] }
+    const compacted = compactCursorTrackPauseRanges(track, [{ startMs: 500, endMs: 1000 }])
+    expect(compacted.samples.map((sample) => sample.timeMs)).toEqual([0, 100])
+  })
+})
 
 describe('cursorTrack (pure)', () => {
   let dir: string
@@ -43,14 +111,28 @@ describe('cursorTrack (pure)', () => {
     })
     expect(track).toBeDefined()
     expect(track?.source).toBe('recorded')
+    // Legacy `ibeam` sidecars map onto the widened kind set.
     expect(track?.samples).toEqual([
-      { timeMs: 10, x: 0.25, y: 0.5, click: false, visible: true, cursorKind: 'ibeam' },
+      { timeMs: 10, x: 0.25, y: 0.5, click: false, visible: true, cursorKind: 'text' },
       { timeMs: 50, x: 1, y: 0, click: true, visible: true, cursorKind: 'arrow' },
     ])
     expect(track?.events).toEqual([{ type: 'click', startMs: 20, endMs: 20, point: { x: 1, y: 0.5 } }])
     expect(track?.space).toEqual({ mode: 'source-display', displayId: '7', bounds: { x: 0, y: 0, width: 100, height: 50 } })
     expect(track?.stats).toEqual({ sampleCount: 2, clickCount: 3 })
     expect(track?.capture).toEqual({ sourceId: 'screen:1:0', width: 1920, height: undefined })
+  })
+
+  it('sanitizeCursorTrack keeps the widened cursor kinds and maps unknown ones to arrow', () => {
+    const track = sanitizeCursorTrack({
+      samples: [
+        { timeMs: 0, x: 0, y: 0, cursorKind: 'pointer' },
+        { timeMs: 1, x: 0, y: 0, cursorKind: 'resize-nwse' },
+        { timeMs: 2, x: 0, y: 0, cursorKind: 'ibeam' },
+        { timeMs: 3, x: 0, y: 0, cursorKind: 'something-new' },
+        { timeMs: 4, x: 0, y: 0 },
+      ],
+    })
+    expect(track?.samples.map((sample) => sample.cursorKind)).toEqual(['pointer', 'resize-nwse', 'text', 'arrow', 'arrow'])
   })
 
   it('sanitizeCursorTrack returns undefined for empty input', () => {
