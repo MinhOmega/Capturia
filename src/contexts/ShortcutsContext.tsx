@@ -15,7 +15,7 @@ import {
   STOP_RECORDING_ACCELERATOR_STORAGE_KEY,
   type ShortcutsConfig,
 } from '@/lib/shortcuts'
-import { isMac as getIsMac } from '@/utils/platformUtils'
+import { isMacSync } from '@/utils/platformUtils'
 
 /** Outcome of `persistShortcuts`: which step failed, so the dialog can keep the draft open. */
 export type PersistShortcutsResult =
@@ -59,14 +59,12 @@ function mirrorStopRecordingAccelerator(accelerator: string): void {
 
 export function ShortcutsProvider({ children }: { children: ReactNode }) {
   const [shortcuts, setShortcuts] = useState<ShortcutsConfig>(DEFAULT_SHORTCUTS)
-  const [isMac, setIsMac] = useState(false)
+  // Read synchronously from the preload snapshot so the first render already
+  // shows the right modifier glyphs instead of flipping from Ctrl to ⌘.
+  const [isMac] = useState(() => isMacSync())
   const [isConfigOpen, setIsConfigOpen] = useState(false)
 
   useEffect(() => {
-    getIsMac()
-      .then(setIsMac)
-      .catch(() => {})
-
     window.electronAPI
       .getShortcuts?.()
       .then((saved) => {

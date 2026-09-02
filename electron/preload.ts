@@ -10,6 +10,11 @@ function readArgUrl(prefix: string): string {
 const assetBaseUrl = readArgUrl('--asset-base-url=')
 const captionModelDirUrl = readArgUrl('--caption-model-dir=')
 
+// `process.platform` is the same Node global here as in main, so one
+// synchronous snapshot spares the renderer an IPC round-trip per read and lets
+// its first render already know whether it is on macOS (src/utils/platformUtils.ts).
+const PLATFORM: string = process.platform
+
 contextBridge.exposeInMainWorld('electronAPI', {
   hudOverlayHide: () => {
     ipcRenderer.send('hud-overlay-hide')
@@ -333,6 +338,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   loadProjectState: (videoPath: string) => {
     return ipcRenderer.invoke('load-project-state', videoPath)
   },
+  /** Snapshot of `process.platform`; `getPlatform()` remains as the async fallback. */
+  platform: PLATFORM,
   getPlatform: () => {
     return ipcRenderer.invoke('get-platform')
   },
