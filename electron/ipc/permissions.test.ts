@@ -1,3 +1,4 @@
+import type { BrowserWindow } from 'electron'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildContext, fakeIpcMain, fakeWindow } from './__tests__/ipcTestKit'
 import {
@@ -191,7 +192,7 @@ describe('own-window exclusion', () => {
       ownWindow('window:100:0'),
       ownWindow('window:102:0'),
       ownWindow('window:103:0', true),
-    ])
+    ] as unknown as BrowserWindow[])
     const ipc = fakeIpcMain()
     registerPermissionHandlers(buildContext(ipc))
     const sources = await ipc.invoke<Array<{ id: string }>>('get-sources', {
@@ -214,7 +215,7 @@ describe('own-window exclusion', () => {
     ])
     const previous = process.env.CAPTURIA_DIAGNOSTIC
     process.env.CAPTURIA_DIAGNOSTIC = '1'
-    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
     try {
       const ipc = fakeIpcMain()
       registerPermissionHandlers(buildContext(ipc))
