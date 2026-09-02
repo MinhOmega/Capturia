@@ -3072,6 +3072,9 @@ export default function VideoEditor() {
               segments,
               sourceDurationMs: probedSourceDurationMs,
               decodePath: readExportDecodePathOverride(),
+              // Source-copy fast path inputs (sourceCopyFastPath.ts).
+              aspectRatio: currentRatio,
+              quality,
               onProgress: (progress: ExportProgress) => {
                 setExportProgress(progress)
               },

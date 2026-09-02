@@ -36,6 +36,8 @@
 		"revealFailed": "Failed to reveal file in folder",
 		"phasePreparing": "Preparing",
 		"statusPreparing": "Preparing source video...",
+		"phaseCopying": "Copying",
+		"statusCopying": "No edits change the video, copying the source as-is...",
 		"saveAgain": "Save again",
 		"unsavedExportHint": "The export finished but could not be saved. Choose another location to keep it.",
 		"diag": {
