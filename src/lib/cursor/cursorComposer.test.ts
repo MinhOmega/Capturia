@@ -1,5 +1,19 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { CURSOR_GLYPH_SCALE, resolveCursorGlyphDrawPlan } from './cursorGlyphs';
+import { CURSOR_KINDS } from './cursorKinds';
 import { DEFAULT_CURSOR_STYLE, type CursorTrack } from './types';
+
+/** Visible, unscaled, effect-free cursor state for the glyph tests. */
+const GLYPH_STATE = {
+  visible: true,
+  x: 0.5,
+  y: 0.5,
+  scale: 1,
+  highlightAlpha: 0,
+  rippleScale: 1,
+  rippleAlpha: 0,
+  cursorKind: 'arrow' as const,
+};
 import {
   CURSOR_REFERENCE_WIDTH,
   createCursorMotionBlurState,
@@ -418,22 +432,37 @@ describe('cursorComposer', () => {
     expect(state.cursorKind).toBe('arrow');
   });
 
-  it('resolves ibeam cursor kind from recorded samples', () => {
+  it('resolves the cursor kind from recorded samples, mapping the legacy ibeam name to text', () => {
     const track: CursorTrack = {
       source: 'recorded',
       samples: [
         { timeMs: 0, x: 0.2, y: 0.2, visible: true, cursorKind: 'arrow' },
-        { timeMs: 120, x: 0.3, y: 0.3, visible: true, cursorKind: 'ibeam' },
+        // Old sidecars carry `ibeam`; the widened set calls it `text`.
+        { timeMs: 120, x: 0.3, y: 0.3, visible: true, cursorKind: 'ibeam' as unknown as 'text' },
+        { timeMs: 240, x: 0.4, y: 0.4, visible: true, cursorKind: 'pointer' },
+        { timeMs: 360, x: 0.5, y: 0.5, visible: true, cursorKind: 'resize-nwse' },
       ],
     };
+    const style = { ...DEFAULT_CURSOR_STYLE, smoothingMs: 0 };
 
-    const state = resolveCursorState({
-      timeMs: 100,
-      track,
-      style: { ...DEFAULT_CURSOR_STYLE, smoothingMs: 0 },
-    });
+    expect(resolveCursorState({ timeMs: 100, track, style }).cursorKind).toBe('text');
+    expect(resolveCursorState({ timeMs: 220, track, style }).cursorKind).toBe('pointer');
+    expect(resolveCursorState({ timeMs: 340, track, style }).cursorKind).toBe('resize-nwse');
+  });
 
-    expect(state.cursorKind).toBe('ibeam');
+  it('smoothing votes the dominant kind inside the window (arrow on ties)', () => {
+    const track: CursorTrack = {
+      source: 'recorded',
+      samples: [
+        { timeMs: 0, x: 0.2, y: 0.2, visible: true, cursorKind: 'pointer' },
+        { timeMs: 20, x: 0.2, y: 0.2, visible: true, cursorKind: 'pointer' },
+        { timeMs: 40, x: 0.2, y: 0.2, visible: true, cursorKind: 'pointer' },
+        { timeMs: 60, x: 0.2, y: 0.2, visible: true, cursorKind: 'text' },
+      ],
+    };
+    expect(
+      resolveCursorState({ timeMs: 30, track, style: { ...DEFAULT_CURSOR_STYLE, smoothingMs: 60 } }).cursorKind,
+    ).toBe('pointer');
   });
 
   it('returns default position when cursor track has no samples', () => {
@@ -554,7 +583,7 @@ describe('cursorComposer', () => {
       source: 'recorded',
       samples: [
         { timeMs: 0, x: 0.12, y: 0.2, visible: true, cursorKind: 'arrow' },
-        { timeMs: 1000, x: 0.9, y: 0.8, visible: true, cursorKind: 'ibeam' },
+        { timeMs: 1000, x: 0.9, y: 0.8, visible: true, cursorKind: 'text' },
       ],
     };
 
@@ -665,7 +694,9 @@ describe('cursorComposer', () => {
     expect(scaleCalls[0]).toEqual({ x: 2, y: 2 });
   });
 
-  it('draws ibeam glyph with center hotspot alignment', () => {
+  it('draws the text glyph as a stroked I-beam at the hotspot when Path2D is unavailable', () => {
+    // Plain Node has no Path2D: the composer must still draw something sensible.
+    expect(typeof Path2D).toBe('undefined');
     const translateCalls: Array<{ x: number; y: number }> = [];
     const moveCalls: Array<{ x: number; y: number }> = [];
     const context = {
@@ -699,23 +730,132 @@ describe('cursorComposer', () => {
     drawCompositedCursor(
       context,
       { x: 100, y: 60 },
-      {
-        visible: true,
-        x: 0.5,
-        y: 0.5,
-        scale: 1,
-        highlightAlpha: 0,
-        rippleScale: 1,
-        rippleAlpha: 0,
-        cursorKind: 'ibeam',
-      },
+      { ...GLYPH_STATE, cursorKind: 'text' },
       { ...DEFAULT_CURSOR_STYLE, shadow: 0 },
     );
 
     expect(translateCalls[0]).toEqual({ x: 100, y: 60 });
-    expect(translateCalls[1].x).toBeCloseTo(0, 6);
-    expect(translateCalls[1].y).toBeCloseTo(0, 6);
     expect(moveCalls[0]).toEqual({ x: 0, y: -10 });
   });
+});
 
+/**
+ * A `Path2D` stand-in that only remembers its path data, so a Node test can
+ * observe which SVG paths the composer fills / strokes and with what transform.
+ */
+class FakePath2D {
+  constructor(public readonly d: string) {}
+}
+
+interface GlyphRecording {
+  ctx: CanvasRenderingContext2D;
+  ops: string[];
+}
+
+function createGlyphRecordingContext(): GlyphRecording {
+  const ops: string[] = [];
+  const fmt = (n: number) => n.toFixed(4);
+  const ctx = {
+    save: () => ops.push('save'),
+    restore: () => ops.push('restore'),
+    translate: (x: number, y: number) => ops.push(`translate ${fmt(x)} ${fmt(y)}`),
+    scale: (x: number, y: number) => ops.push(`scale ${fmt(x)} ${fmt(y)}`),
+    beginPath: () => ops.push('beginPath'),
+    moveTo: (x: number, y: number) => ops.push(`moveTo ${fmt(x)} ${fmt(y)}`),
+    lineTo: (x: number, y: number) => ops.push(`lineTo ${fmt(x)} ${fmt(y)}`),
+    arcTo: () => ops.push('arcTo'),
+    closePath: () => ops.push('closePath'),
+    clip: () => ops.push('clip'),
+    arc: () => ops.push('arc'),
+    fill: (path?: FakePath2D | string, rule?: string) =>
+      ops.push(path instanceof FakePath2D ? `fillPath ${rule ?? 'nonzero'} ${path.d.slice(0, 24)}` : 'fill'),
+    stroke: (path?: FakePath2D) => ops.push(path instanceof FakePath2D ? `strokePath ${path.d.slice(0, 24)}` : 'stroke'),
+    createRadialGradient: () => ({ addColorStop: () => undefined }),
+    globalAlpha: 1,
+    fillStyle: '',
+    strokeStyle: '',
+    lineWidth: 1,
+    lineCap: 'butt',
+    lineJoin: 'miter',
+    shadowColor: '',
+    shadowBlur: 0,
+    shadowOffsetX: 0,
+    shadowOffsetY: 0,
+    filter: 'none',
+  } as unknown as CanvasRenderingContext2D;
+  return { ctx, ops };
+}
+
+describe('bundled SVG cursor glyphs (B2-5)', () => {
+  beforeAll(() => {
+    (globalThis as { Path2D?: unknown }).Path2D = FakePath2D;
+  });
+  afterAll(() => {
+    delete (globalThis as { Path2D?: unknown }).Path2D;
+  });
+
+  it('draws every non-arrow kind from its SVG paths with the hotspot at the cursor point', () => {
+    for (const kind of CURSOR_KINDS) {
+      if (kind === 'arrow') continue;
+      const recorded = createGlyphRecordingContext();
+      drawCompositedCursor(recorded.ctx, { x: 100, y: 60 }, { ...GLYPH_STATE, cursorKind: kind }, { ...DEFAULT_CURSOR_STYLE, shadow: 0 });
+      const plan = resolveCursorGlyphDrawPlan(kind);
+      expect(plan, kind).not.toBeNull();
+      expect(recorded.ops[1], kind).toBe('translate 100.0000 60.0000');
+      // viewBox -> glyph scale, then the hotspot is moved onto the origin.
+      expect(recorded.ops, kind).toContain(`scale ${CURSOR_GLYPH_SCALE.toFixed(4)} ${CURSOR_GLYPH_SCALE.toFixed(4)}`);
+      expect(recorded.ops, kind).toContain(`translate ${(-plan!.hotspot.x).toFixed(4)} ${(-plan!.hotspot.y).toFixed(4)}`);
+      expect(recorded.ops.some((op) => op.startsWith('fillPath') || op.startsWith('strokePath')), kind).toBe(true);
+      // No hand-drawn fallback polygon.
+      expect(recorded.ops, kind).not.toContain('moveTo 0.0000 -10.0000');
+    }
+  });
+
+  it('keeps the arrow on its tuned Path2D (tip at the origin, no SVG plan)', () => {
+    expect(resolveCursorGlyphDrawPlan('arrow')).toBeNull();
+    const recorded = createGlyphRecordingContext();
+    drawCompositedCursor(recorded.ctx, { x: 10, y: 10 }, GLYPH_STATE, { ...DEFAULT_CURSOR_STYLE, shadow: 0 });
+    expect(recorded.ops.filter((op) => op.startsWith('fillPath'))).toHaveLength(2);
+    expect(recorded.ops).not.toContain(`scale ${CURSOR_GLYPH_SCALE.toFixed(4)} ${CURSOR_GLYPH_SCALE.toFixed(4)}`);
+  });
+
+  it('preview and export issue the same glyph operations, differing only by the content scale', () => {
+    const style = { ...DEFAULT_CURSOR_STYLE, shadow: 0 };
+    const cameraScale = { x: 1.3, y: 1.3 };
+    const cropRegion = { x: 0.1, y: 0.1, width: 0.8, height: 0.8 };
+    const render = (canvasWidth: number) => {
+      const recorded = createGlyphRecordingContext();
+      drawCompositedCursor(
+        recorded.ctx,
+        { x: canvasWidth / 2, y: canvasWidth / 4 },
+        { ...GLYPH_STATE, scale: 2.2, cursorKind: 'pointer' },
+        style,
+        resolveCursorContentScale({ cameraScale, maskRect: { width: canvasWidth * 0.8 }, cropRegion }),
+      );
+      return recorded.ops;
+    };
+    const preview = render(960);
+    const exported = render(3840);
+    // ops: save, translate(point), save, scale(cursor scale), then the glyph plan.
+    expect(preview[1].startsWith('translate ')).toBe(true);
+    expect(preview[3].startsWith('scale ')).toBe(true);
+    const glyphScaleOf = (ops: string[]) => Number(ops[3].split(' ')[1]);
+    const shape = (ops: string[]) => ops.map((op, i) => (i === 1 || i === 3 ? op.split(' ')[0] : op));
+    // Same op sequence (including the SVG paths and the hotspot translate)...
+    expect(shape(preview)).toEqual(shape(exported));
+    // ...and the glyph scale follows the canvas width 1:1 (4x wider canvas -> 4x glyph).
+    expect(glyphScaleOf(exported) / glyphScaleOf(preview)).toBeCloseTo(4, 6);
+  });
+
+  it('a legacy ibeam state draws the text glyph', () => {
+    const recorded = createGlyphRecordingContext();
+    drawCompositedCursor(
+      recorded.ctx,
+      { x: 0, y: 0 },
+      { ...GLYPH_STATE, cursorKind: 'ibeam' as unknown as 'text' },
+      { ...DEFAULT_CURSOR_STYLE, shadow: 0 },
+    );
+    const plan = resolveCursorGlyphDrawPlan('text');
+    expect(recorded.ops).toContain(`translate ${(-plan!.hotspot.x).toFixed(4)} ${(-plan!.hotspot.y).toFixed(4)}`);
+  });
 });
