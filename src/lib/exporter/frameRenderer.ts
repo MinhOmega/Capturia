@@ -1,6 +1,8 @@
 import { Application, Container, Sprite, Graphics, Texture, VideoSource } from 'pixi.js';
 import { MotionBlurFilter } from 'pixi-filters/motion-blur';
-import type { ZoomRegion, CropRegion, AnnotationRegion } from '@/components/video-editor/types';
+import type { ZoomRegion, CropRegion, AnnotationRegion, Rotation3D } from '@/components/video-editor/types';
+import { DEFAULT_ROTATION_3D, isRotation3DIdentity } from '@/components/video-editor/types';
+import { createThreeDPass, type ThreeDPass } from './threeDPass';
 import {
   applyZoomTransform,
   createMotionBlurState,
@@ -129,6 +131,13 @@ export class FrameRenderer {
   private compositeCtx: CanvasRenderingContext2D | null = null;
   private rasterCanvas: HTMLCanvasElement | null = null;
   private rasterCtx: CanvasRenderingContext2D | null = null;
+  // 3D tilt (rotationPreset): the foreground (video + cursor) is drawn on its
+  // own transparent canvas, run through the WebGL pass and then stamped (with
+  // the shadow) onto the background. Null when WebGL2 is unavailable -> flat.
+  private threeDPass: ThreeDPass | null = null;
+  private foregroundCanvas: HTMLCanvasElement | null = null;
+  private foregroundCtx: CanvasRenderingContext2D | null = null;
+  private currentRotation3D: Rotation3D = DEFAULT_ROTATION_3D;
   private readonly isLinux: boolean;
   private config: FrameRenderConfig;
   private animationState: AnimationState;
@@ -224,6 +233,25 @@ export class FrameRenderer {
       if (!this.rasterCtx) {
         throw new Error('Failed to get 2D context for raster canvas');
       }
+    }
+
+    // 3D tilt pass. Only used on frames whose rotation is non-identity; when
+    // WebGL2 is unavailable the export stays flat instead of failing.
+    try {
+      this.threeDPass = createThreeDPass(this.config.width, this.config.height);
+      this.foregroundCanvas = document.createElement('canvas');
+      this.foregroundCanvas.width = this.config.width;
+      this.foregroundCanvas.height = this.config.height;
+      this.foregroundCtx = this.foregroundCanvas.getContext('2d', { willReadFrequently: this.isLinux });
+      if (!this.foregroundCtx) {
+        throw new Error('Failed to get 2D context for foreground canvas');
+      }
+    } catch (error) {
+      console.warn('[FrameRenderer] 3D pass unavailable, rotation presets will be ignored:', error);
+      this.threeDPass?.destroy();
+      this.threeDPass = null;
+      this.foregroundCanvas = null;
+      this.foregroundCtx = null;
     }
 
     // Setup shadow canvas if needed
@@ -469,11 +497,46 @@ export class FrameRenderer {
     // Render the PixiJS stage to its canvas (video only, transparent background)
     this.app.renderer.render(this.app.stage);
 
-    // Composite with shadows to final output canvas
-    this.compositeWithShadows();
+    const videoCanvas = this.isLinux
+      ? this.readbackVideoCanvas()
+      : (this.app.canvas as HTMLCanvasElement);
+    const willRotate =
+      this.threeDPass !== null &&
+      this.foregroundCanvas !== null &&
+      this.foregroundCtx !== null &&
+      !isRotation3DIdentity(this.currentRotation3D);
 
-    // Render cursor after video compositing so visual hierarchy is consistent with preview.
-    this.renderCursorLayer(effectTimeMs);
+    // Background (blur pre-baked at init) always stays flat.
+    this.drawBackground();
+
+    if (willRotate && this.threeDPass && this.foregroundCanvas && this.foregroundCtx) {
+      // 3D tilt: video + cursor on the transparent foreground canvas, rotated
+      // as one, then stamped onto the background with the shadow applied to
+      // the rotated silhouette (same as the preview, where the drop-shadow
+      // filter sits inside composite3D). Subtitles / annotations stay flat.
+      const fgCtx = this.foregroundCtx;
+      const w = this.foregroundCanvas.width;
+      const h = this.foregroundCanvas.height;
+      fgCtx.clearRect(0, 0, w, h);
+      fgCtx.drawImage(videoCanvas, 0, 0, w, h);
+      this.renderCursorLayer(effectTimeMs, fgCtx);
+
+      const passCanvas = this.threeDPass.apply(this.foregroundCanvas, this.currentRotation3D);
+      fgCtx.clearRect(0, 0, w, h);
+      if (this.isLinux) {
+        // drawImage(webglCanvas) is unreliable on Linux/Wayland (see readbackVideoCanvas).
+        const imageData = fgCtx.createImageData(w, h);
+        imageData.data.set(this.threeDPass.readPixels());
+        fgCtx.putImageData(imageData, 0, 0);
+      } else {
+        fgCtx.drawImage(passCanvas, 0, 0);
+      }
+      this.drawVideoLayer(this.foregroundCanvas);
+    } else {
+      // Flat path (unchanged): video with shadow, then the cursor on top.
+      this.drawVideoLayer(videoCanvas);
+      this.renderCursorLayer(effectTimeMs, this.compositeCtx);
+    }
 
     // Render subtitle captions above cursor/video but below annotations.
     this.renderSubtitleLayer(effectTimeMs);
@@ -573,8 +636,9 @@ export class FrameRenderer {
     ctx.closePath();
   }
 
-  private renderCursorLayer(timeMs: number): void {
-    if (!this.compositeCtx || !this.layoutCache || !this.cameraContainer) {
+  /** Draws the composited cursor onto `ctx` (composite or, when tilting, the foreground canvas). */
+  private renderCursorLayer(timeMs: number, ctx: CanvasRenderingContext2D | null): void {
+    if (!ctx || !this.layoutCache || !this.cameraContainer) {
       return;
     }
 
@@ -617,7 +681,7 @@ export class FrameRenderer {
     });
 
     drawCompositedCursor(
-      this.compositeCtx,
+      ctx,
       { x: drawProjected.x, y: drawProjected.y },
       drawCursorState,
       this.config.cursorStyle,
@@ -733,6 +797,8 @@ export class FrameRenderer {
     state.focusX = target.focus.cx;
     state.focusY = target.focus.cy;
     state.progress = target.progress;
+    // Already ramped by the eased progress inside the shared step (preview parity).
+    this.currentRotation3D = target.rotation3D;
   }
 
   // On Linux/Wayland the implicit GPU-to-2D texture-sharing path behind
@@ -760,28 +826,35 @@ export class FrameRenderer {
     return this.rasterCanvas;
   }
 
-  private compositeWithShadows(): void {
-    if (!this.compositeCanvas || !this.compositeCtx || !this.app) return;
+  /** Clears the composite canvas and draws the background (blur pre-baked at init). */
+  private drawBackground(): void {
+    if (!this.compositeCanvas || !this.compositeCtx) return;
 
-    const videoCanvas = this.isLinux
-      ? this.readbackVideoCanvas()
-      : (this.app.canvas as HTMLCanvasElement);
     const ctx = this.compositeCtx;
     const w = this.compositeCanvas.width;
     const h = this.compositeCanvas.height;
 
-    // Clear composite canvas
     ctx.clearRect(0, 0, w, h);
 
-    // Step 1: Draw background layer (blur already pre-baked during init)
     if (this.backgroundSprite) {
       const bgCanvas = this.backgroundSprite as any as HTMLCanvasElement;
       ctx.drawImage(bgCanvas, 0, 0, w, h);
     } else {
       console.warn('[FrameRenderer] No background sprite found during compositing!');
     }
+  }
 
-    // Draw video layer with shadows on top of background
+  /**
+   * Draws `videoCanvas` (the Pixi stage, or the tilted foreground) onto the
+   * composite canvas, through the drop-shadow filter when shadows are on.
+   */
+  private drawVideoLayer(videoCanvas: HTMLCanvasElement): void {
+    if (!this.compositeCanvas || !this.compositeCtx) return;
+
+    const ctx = this.compositeCtx;
+    const w = this.compositeCanvas.width;
+    const h = this.compositeCanvas.height;
+
     if (this.config.showShadow && this.config.shadowIntensity > 0 && this.shadowCanvas && this.shadowCtx) {
       const shadowCtx = this.shadowCtx;
       shadowCtx.clearRect(0, 0, w, h);
@@ -833,6 +906,12 @@ export class FrameRenderer {
     this.videoContainer = null;
     this.maskGraphics = null;
     this.motionBlurFilter = null;
+    if (this.threeDPass) {
+      this.threeDPass.destroy();
+      this.threeDPass = null;
+    }
+    this.foregroundCanvas = null;
+    this.foregroundCtx = null;
     this.shadowCanvas = null;
     this.shadowCtx = null;
     this.compositeCanvas = null;
