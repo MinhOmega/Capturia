@@ -36,6 +36,7 @@ import {
 import { getWindowBoundsById, parseWindowIdFromSourceId } from './windowBounds'
 import { registerFileReadHandlers } from './fileReadHandlers'
 import { type HudWindowsContext, registerHudWindowsHandlers } from './hudWindowsHandlers'
+import { registerCaptionHandlers } from './captionHandlers'
 import {
   isPointInsideBounds,
   normalizePointToBounds,
@@ -1191,6 +1192,7 @@ export function registerIpcHandlers(
   let cursorTracker: CursorTrackerRuntime | null = null
   const analysisService = new VideoAnalysisService()
   registerFileReadHandlers({ ipcMain, recordingsDir: RECORDINGS_DIR })
+  registerCaptionHandlers({ ipcMain, recordingsDir: RECORDINGS_DIR, userDataDir: app.getPath('userData') })
   if (hudWindows) registerHudWindowsHandlers({ ipcMain, ...hudWindows })
 
   // On-disk write streams for in-progress MediaRecorder recordings, keyed by output

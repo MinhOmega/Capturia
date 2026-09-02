@@ -3,7 +3,9 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import type { TranscriptWord } from '../../src/lib/analysis/types';
+import type { TranscriptWord, VideoTranscriptionResult } from '../../src/lib/analysis/types';
+
+export type { VideoTranscriptionResult };
 
 type HelperSuccessPayload = {
   success: true;
@@ -40,15 +42,6 @@ type HelperRunOutcome = {
 type TranscriptSegment = {
   startMs: number;
   durationMs: number;
-};
-
-export type VideoTranscriptionResult = {
-  success: boolean;
-  code?: string;
-  message?: string;
-  locale?: string;
-  text?: string;
-  words?: TranscriptWord[];
 };
 
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1_000;
