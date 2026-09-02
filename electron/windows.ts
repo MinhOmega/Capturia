@@ -9,8 +9,11 @@ const APP_ROOT = path.join(__dirname, '..')
 const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL']
 const RENDERER_DIST = path.join(APP_ROOT, 'dist')
 const LINUX_SESSION_TYPE = (process.env['XDG_SESSION_TYPE'] || '').toLowerCase()
-// e2e / CI: create windows but never show them.
-const HEADLESS = process.env['HEADLESS'] === 'true'
+/**
+ * e2e / CI (F7): create every window but never show, raise or bounce it.
+ * `HEADLESS=1` or `HEADLESS=true`; Playwright still attaches to hidden windows.
+ */
+export const HEADLESS = process.env['HEADLESS'] === '1' || process.env['HEADLESS'] === 'true'
 
 let hudOverlayWindow: BrowserWindow | null = null;
 let permissionCheckerWindow: BrowserWindow | null = null;
@@ -98,7 +101,7 @@ export function createNotesWindow(): BrowserWindow {
   applyContentProtection(win, 'Notes')
   win.once('ready-to-show', () => {
     applyContentProtection(win, 'Notes')
-    win.show()
+    if (!HEADLESS) win.show()
   })
 
   if (VITE_DEV_SERVER_URL) {
@@ -172,11 +175,13 @@ export function createCountdownOverlayWindow(): BrowserWindow {
 function attachDevWindowLogging(win: BrowserWindow, label: string): void {
   if (!VITE_DEV_SERVER_URL) return
 
-  win.webContents.on('console-message', (_event, level, message, line, sourceId) => {
-    const levelNames = ['LOG', 'WARN', 'ERR']
-    const tag = levelNames[level] ?? 'LOG'
-    const shortSource = sourceId ? sourceId.replace(/.*\//, '') : ''
-    console.log(`[${label}:${tag}] ${message} (${shortSource}:${line})`)
+  // Electron 39 deprecates the positional `(event, level, message, line, sourceId)`
+  // listener; the details now ride on the event object itself.
+  win.webContents.on('console-message', (details) => {
+    const tags: Record<string, string> = { info: 'LOG', debug: 'LOG', warning: 'WARN', error: 'ERR' }
+    const tag = tags[details.level] ?? 'LOG'
+    const shortSource = details.sourceId ? details.sourceId.replace(/.*\//, '') : ''
+    console.log(`[${label}:${tag}] ${details.message} (${shortSource}:${details.lineNumber})`)
   })
 
   win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
@@ -209,7 +214,7 @@ ipcMain.on('hud-overlay-restore', () => {
   if (hudOverlayWindow.isMinimized()) {
     hudOverlayWindow.restore();
   }
-  hudOverlayWindow.showInactive();
+  if (!HEADLESS) hudOverlayWindow.showInactive();
   hudOverlayWindow.setAlwaysOnTop(true, 'screen-saver');
   hudOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
 });
@@ -245,6 +250,7 @@ export function createHudOverlayWindow(): BrowserWindow {
     skipTaskbar: !isLinuxWayland,
     hasShadow: false,
     title: 'Capturia',
+    show: !HEADLESS,
     // On Linux/X11:
     //   focusable: false — stops WM from managing stacking, buttons still receive clicks
     //   type: 'dock' — maps to _NET_WM_WINDOW_TYPE_DOCK (highest X11 stacking level)
@@ -406,6 +412,7 @@ export function createSourceSelectorWindow(): BrowserWindow {
     skipTaskbar: !isLinuxWayland,
     title: 'Capturia Source Selector',
     backgroundColor: '#00000000',
+    show: !HEADLESS,
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
       nodeIntegration: false,
@@ -454,6 +461,7 @@ export function createPermissionCheckerWindow(): BrowserWindow {
     resizable: true,
     alwaysOnTop: true,
     backgroundColor: '#1c1c22',
+    show: !HEADLESS,
     webPreferences: {
       preload: path.join(__dirname, 'preload.mjs'),
       nodeIntegration: false,

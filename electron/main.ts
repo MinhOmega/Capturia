@@ -12,6 +12,7 @@ import {
   getPermissionCheckerWindow,
   createCountdownOverlayWindow,
   createNotesWindow,
+  HEADLESS,
 } from './windows'
 import { registerIpcHandlers } from './ipc/handlers'
 import { getRecordingsDir } from './paths'
@@ -139,8 +140,10 @@ function showMainWindow() {
     if (mainWindow.isMinimized()) {
       mainWindow.restore()
     }
-    mainWindow.show()
-    mainWindow.focus()
+    if (!HEADLESS) {
+      mainWindow.show()
+      mainWindow.focus()
+    }
     return
   }
   createWindow()
@@ -1015,7 +1018,8 @@ appReady?.then(async () => {
   // Force "regular" activation policy so the Dock icon appears. The HUD overlay
   // (transparent, frameless, skipTaskbar) is the first window, and AppKit would
   // otherwise classify us as an accessory app.
-  if (isMac) {
+  // HEADLESS (e2e): no Dock icon either, so nothing bounces or steals focus.
+  if (isMac && !HEADLESS) {
     app.dock?.show()
   }
 
