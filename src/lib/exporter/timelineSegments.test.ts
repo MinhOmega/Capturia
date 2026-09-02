@@ -101,6 +101,43 @@ describe('splitBySpeed', () => {
     ])
   })
 
+  it('keeps output disjoint when a later region overlaps an earlier one', () => {
+    // [2s,6s]@4 starts first and keeps its whole span; [4s,8s]@2 contributes only
+    // the part past the cursor. A naive split would emit [4,8] after [2,6] and the
+    // forward-only decode cursor would have to seek backwards to 4s.
+    expect(splitBySpeed(full, [speed(2000, 6000, 4), speed(4000, 8000, 2)])).toEqual([
+      { startSec: 0, endSec: 2, speed: 1 },
+      { startSec: 2, endSec: 6, speed: 4 },
+      { startSec: 6, endSec: 8, speed: 2 },
+      { startSec: 8, endSec: 10, speed: 1 },
+    ])
+  })
+
+  it('skips a region fully covered by an earlier one', () => {
+    expect(splitBySpeed(full, [speed(1000, 7000, 3), speed(2000, 5000, 10)])).toEqual([
+      { startSec: 0, endSec: 1, speed: 1 },
+      { startSec: 1, endSec: 7, speed: 3 },
+      { startSec: 7, endSec: 10, speed: 1 },
+    ])
+  })
+
+  it('never emits descending or overlapping sub-segments for arbitrary overlaps', () => {
+    const regions = [
+      speed(0, 4000, 2),
+      speed(3000, 5000, 8),
+      speed(3500, 3600, 50),
+      speed(4500, 9000, 4),
+      speed(9500, 12000, 16),
+    ]
+    const out = splitBySpeed([{ startSec: 1, endSec: 10 }], regions)
+    for (let i = 1; i < out.length; i++) {
+      expect(out[i].startSec).toBeGreaterThanOrEqual(out[i - 1].endSec)
+    }
+    for (const s of out) expect(s.endSec).toBeGreaterThan(s.startSec)
+    expect(out[0].startSec).toBe(1)
+    expect(out[out.length - 1].endSec).toBe(10)
+  })
+
   it('drops sub-segments narrower than the minimum width', () => {
     // A speed region ending a sliver before the segment end must not emit a 1x crumb.
     const result = splitBySpeed(full, [speed(0, 9_999.95, 2)])
