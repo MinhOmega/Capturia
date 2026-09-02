@@ -160,7 +160,21 @@
 			"bulletList": "无序列表",
 			"numberedList": "有序列表",
 			"blockquote": "引用",
-			"codeBlock": "代码块"
+			"codeBlock": "代码块",
+			"teleprompter": "提词器模式",
+			"play": "开始自动滚动",
+			"pause": "暂停自动滚动",
+			"restart": "从顶部重新开始",
+			"speed": "滚动速度",
+			"fontSize": "字号",
+			"decreaseFontSize": "减小字号",
+			"increaseFontSize": "增大字号",
+			"mirror": "水平镜像"
 		}
+	},
+	"notesTeleprompter": {
+		"speedReadout": "{{value}} 像素/秒",
+		"fontSizeReadout": "{{value}} 像素",
+		"spaceHint": "笔记未聚焦时按空格键播放或暂停"
 	}
 }

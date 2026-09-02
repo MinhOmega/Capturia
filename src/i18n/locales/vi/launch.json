@@ -160,7 +160,21 @@
 			"bulletList": "Danh sách dấu đầu dòng",
 			"numberedList": "Danh sách đánh số",
 			"blockquote": "Trích dẫn",
-			"codeBlock": "Khối mã"
+			"codeBlock": "Khối mã",
+			"teleprompter": "Chế độ máy nhắc chữ",
+			"play": "Bắt đầu tự cuộn",
+			"pause": "Tạm dừng tự cuộn",
+			"restart": "Bắt đầu lại từ đầu",
+			"speed": "Tốc độ cuộn",
+			"fontSize": "Cỡ chữ",
+			"decreaseFontSize": "Giảm cỡ chữ",
+			"increaseFontSize": "Tăng cỡ chữ",
+			"mirror": "Lật gương theo chiều ngang"
 		}
+	},
+	"notesTeleprompter": {
+		"speedReadout": "{{value}} px/giây",
+		"fontSizeReadout": "{{value}} px",
+		"spaceHint": "Nhấn phím cách để phát hoặc tạm dừng khi ghi chú không được chọn"
 	}
 }
