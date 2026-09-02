@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import type { CaptureBounds, CaptureBoundsMode } from '../../src/lib/cursor/captureSpace'
+import { type CursorKind, normalizeCursorKind } from '../../src/lib/cursor/cursorKinds'
 
 /**
  * Cursor-track payload: the shape recorded by the tracker, persisted next to a
@@ -30,7 +31,11 @@ export type CurrentVideoMetadata = {
       y: number
       click?: boolean
       visible?: boolean
-      cursorKind?: 'arrow' | 'ibeam'
+      /**
+       * A `CursorKind` after `sanitizeCursorTrack`; raw input may carry legacy
+       * names (`ibeam` -> `text`) or anything else (-> `arrow`).
+       */
+      cursorKind?: CursorKind | string
     }>
     events?: Array<{
       type: 'click' | 'selection'
@@ -110,7 +115,7 @@ export function sanitizeCursorTrack(input?: CurrentVideoMetadata['cursorTrack'] 
       const x = Number(sample.x)
       const y = Number(sample.y)
       if (!Number.isFinite(timeMs) || !Number.isFinite(x) || !Number.isFinite(y)) return null
-      const cursorKind: 'arrow' | 'ibeam' = sample.cursorKind === 'ibeam' ? 'ibeam' : 'arrow'
+      const cursorKind: CursorKind = normalizeCursorKind(sample.cursorKind)
       return {
         timeMs: Math.max(0, Math.round(timeMs)),
         x: Math.min(1, Math.max(0, x)),
@@ -305,4 +310,96 @@ export function sanitizeVideoMetadata(metadata?: CurrentVideoMetadata | null): C
   }
 
   return Object.keys(normalized).length > 0 ? normalized : null
+}
+
+export type CursorTrackPauseRange = { startMs: number; endMs: number }
+
+/** Sort, clamp and drop empty / non-finite ranges; overlapping ranges are merged. */
+export function normalizeCursorTrackPauseRanges(ranges: readonly CursorTrackPauseRange[]): CursorTrackPauseRange[] {
+  const sorted = ranges
+    .map((range) => ({
+      startMs: Math.max(0, Math.min(Number(range.startMs), Number(range.endMs))),
+      endMs: Math.max(0, Math.max(Number(range.startMs), Number(range.endMs))),
+    }))
+    .filter((range) => Number.isFinite(range.startMs) && Number.isFinite(range.endMs))
+    .filter((range) => range.endMs > range.startMs)
+    .sort((a, b) => a.startMs - b.startMs)
+
+  const merged: CursorTrackPauseRange[] = []
+  for (const range of sorted) {
+    const last = merged[merged.length - 1]
+    if (last && range.startMs <= last.endMs) {
+      last.endMs = Math.max(last.endMs, range.endMs)
+    } else {
+      merged.push({ ...range })
+    }
+  }
+  return merged
+}
+
+/**
+ * Map a recording-relative wall-clock time onto the paused-time-removed
+ * timeline: everything spent inside earlier ranges is subtracted, and a time
+ * inside a range collapses onto that range's start.
+ */
+function collapsePausedTime(timeMs: number, ranges: readonly CursorTrackPauseRange[]): number {
+  let paused = 0
+  for (const range of ranges) {
+    if (timeMs > range.endMs) {
+      paused += range.endMs - range.startMs
+      continue
+    }
+    if (timeMs >= range.startMs) {
+      paused += timeMs - range.startMs
+    }
+    break
+  }
+  return Math.max(0, timeMs - paused)
+}
+
+function isInsideRange(timeMs: number, ranges: readonly CursorTrackPauseRange[]): boolean {
+  return ranges.some((range) => timeMs >= range.startMs && timeMs <= range.endMs)
+}
+
+/**
+ * Port of upstream `compactPendingCursorTelemetryPauseRanges` (OpenScreen
+ * `electron/ipc/handlers.ts`): the tracker keeps sampling on the wall clock
+ * while a recording is paused, but the video timeline (MediaRecorder pause,
+ * or the native helper's retimed samples) has no gap. Samples inside a pause
+ * are dropped and later samples shift back by the paused duration. Capturia
+ * also carries click / selection events: an event entirely inside a pause is
+ * dropped, otherwise both of its ends are collapsed the same way.
+ *
+ * Pure; returns the input untouched when there is nothing to do.
+ */
+export function compactCursorTrackPauseRanges<T extends Pick<CursorTrackPayload, 'samples' | 'events'>>(
+  track: T,
+  ranges: readonly CursorTrackPauseRange[],
+): T {
+  const normalizedRanges = normalizeCursorTrackPauseRanges(ranges)
+  if (normalizedRanges.length === 0) return track
+
+  const samples = (Array.isArray(track.samples) ? track.samples : [])
+    .filter((sample) => !isInsideRange(Number(sample.timeMs), normalizedRanges))
+    .map((sample) => ({ ...sample, timeMs: collapsePausedTime(Number(sample.timeMs), normalizedRanges) }))
+    .sort((a, b) => a.timeMs - b.timeMs)
+
+  const events = Array.isArray(track.events)
+    ? track.events
+      .filter((event) => {
+        const startInside = isInsideRange(Number(event.startMs), normalizedRanges)
+        const endInside = isInsideRange(Number(event.endMs), normalizedRanges)
+        if (!startInside || !endInside) return true
+        // Both ends inside: keep only when the event spans across a resume.
+        return normalizedRanges.every((range) => !(event.startMs >= range.startMs && event.endMs <= range.endMs))
+      })
+      .map((event) => ({
+        ...event,
+        startMs: collapsePausedTime(Number(event.startMs), normalizedRanges),
+        endMs: collapsePausedTime(Number(event.endMs), normalizedRanges),
+      }))
+      .sort((a, b) => a.startMs - b.startMs)
+    : track.events
+
+  return { ...track, samples, events }
 }

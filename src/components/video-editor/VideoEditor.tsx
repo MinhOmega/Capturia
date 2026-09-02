@@ -90,7 +90,7 @@ import { computeFrameStepTime, FRAME_DURATION_SEC } from "@/lib/frameStep";
 import { GITHUB_ISSUES_URL } from "@/lib/supportLinks";
 import { reportUserActionError } from "@/lib/userErrorFeedback";
 import { useI18n } from "@/i18n";
-import { DEFAULT_CURSOR_STYLE, type CursorStyleConfig, type CursorTrack, type CursorTrackEvent } from "@/lib/cursor";
+import { DEFAULT_CURSOR_STYLE, normalizeCursorKind, type CursorStyleConfig, type CursorTrack, type CursorTrackEvent } from "@/lib/cursor";
 import { cropRegionEquals, getCenteredAspectCropRegion, normalizeAspectCropRegion, sanitizeCropRegion } from "@/lib/crop/aspectCrop";
 import { generateAutoZoomDrafts } from "@/lib/autoEdit/screenStudioAutoZoom";
 import type { RoughCutSuggestion, SubtitleCue } from "@/lib/analysis/types";
@@ -204,7 +204,7 @@ function normalizeCursorTrack(input: unknown): CursorTrack | null {
       const x = Number(row.x);
       const y = Number(row.y);
       if (!Number.isFinite(timeMs) || !Number.isFinite(x) || !Number.isFinite(y)) return null;
-      const cursorKind: "arrow" | "ibeam" = row.cursorKind === "ibeam" ? "ibeam" : "arrow";
+      const cursorKind = normalizeCursorKind(row.cursorKind);
       return {
         timeMs: Math.max(0, Math.round(timeMs)),
         x: Math.min(1, Math.max(0, x)),

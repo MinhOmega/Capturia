@@ -1,6 +1,8 @@
 import type { CropRegion, ZoomFocus, ZoomRegion } from '@/components/video-editor/types';
 import { DEFAULT_FOCUS } from '@/components/video-editor/videoPlayback/constants';
 import { findDominantRegion } from '@/components/video-editor/videoPlayback/zoomRegionUtils';
+import { canDrawCursorGlyphPaths, drawCursorGlyphPlan, resolveCursorGlyphDrawPlan } from './cursorGlyphs';
+import { normalizeCursorKind } from './cursorKinds';
 import {
   DEFAULT_CURSOR_STYLE,
   type CursorClipRect,
@@ -24,10 +26,6 @@ const CLICK_PULSE_MS = 420;
  * relative to the video.
  */
 export const CURSOR_REFERENCE_WIDTH = 1920;
-const CURSOR_GLYPH_HOTSPOT: Record<CursorKind, { x: number; y: number }> = {
-  arrow: { x: 0, y: 0 },
-  ibeam: { x: 0, y: 0 },
-};
 const SUPPORTED_MOVEMENT_STYLES: CursorMovementStyle[] = ['rapid', 'quick', 'default', 'slow', 'custom'];
 const POINTER_ACTIVITY_THRESHOLD = 0.0009;
 
@@ -106,7 +104,7 @@ function sampleIsVisible(sample: CursorSample): boolean {
 }
 
 function sampleCursorKind(sample: CursorSample): CursorKind {
-  return sample.cursorKind === 'ibeam' ? 'ibeam' : 'arrow';
+  return normalizeCursorKind(sample.cursorKind);
 }
 
 function getFallbackFocus(timeMs: number, zoomRegions?: ZoomRegion[], fallbackFocus?: ZoomFocus): ZoomFocus {
@@ -251,8 +249,8 @@ function smoothFromTrack(
   let sumY = 0;
   let weightSum = 0;
   let hasVisible = false;
-  let arrowWeight = 0;
-  let ibeamWeight = 0;
+  // Weighted vote over the window: the kind with the most weight wins (arrow on ties).
+  const kindWeights = new Map<CursorKind, number>();
 
   for (let i = startIndex; i < endIndex; i += 1) {
     const sample = samples[i];
@@ -262,22 +260,28 @@ function smoothFromTrack(
     sumY += sample.y * weight;
     weightSum += weight;
     hasVisible ||= sampleIsVisible(sample);
-    if (sampleCursorKind(sample) === 'ibeam') {
-      ibeamWeight += weight;
-    } else {
-      arrowWeight += weight;
-    }
+    const kind = sampleCursorKind(sample);
+    kindWeights.set(kind, (kindWeights.get(kind) ?? 0) + weight);
   }
 
   if (weightSum <= 0.0001) {
     return interpolateFromTrack(samples, timeMs);
   }
 
+  let cursorKind: CursorKind = 'arrow';
+  let bestWeight = kindWeights.get('arrow') ?? 0;
+  for (const [kind, weight] of kindWeights) {
+    if (weight > bestWeight) {
+      bestWeight = weight;
+      cursorKind = kind;
+    }
+  }
+
   return {
     x: clamp01(sumX / weightSum),
     y: clamp01(sumY / weightSum),
     visible: hasVisible,
-    cursorKind: ibeamWeight > arrowWeight ? 'ibeam' : 'arrow',
+    cursorKind,
   };
 }
 
@@ -869,8 +873,21 @@ function drawIBeamCursorGlyph(ctx: CanvasRenderingContext2D): void {
   ctx.restore();
 }
 
+/**
+ * Glyph dispatch, identical for preview and export: `arrow` keeps the tuned
+ * Path2D above; every other kind draws its bundled SVG (`cursorGlyphs.ts`).
+ * Without Path2D (plain Node) `text` falls back to the stroked I-beam and any
+ * other kind to the arrow polygon, so the composer never draws nothing.
+ */
 function drawCursorGlyph(ctx: CanvasRenderingContext2D, cursorKind: CursorKind): void {
-  if (cursorKind === 'ibeam') {
+  if (cursorKind !== 'arrow' && canDrawCursorGlyphPaths()) {
+    const plan = resolveCursorGlyphDrawPlan(cursorKind);
+    if (plan) {
+      drawCursorGlyphPlan(ctx, plan);
+      return;
+    }
+  }
+  if (cursorKind === 'text') {
     drawIBeamCursorGlyph(ctx);
     return;
   }
@@ -890,8 +907,10 @@ export function drawCompositedCursor(
   const normalized = normalizeCursorStyle(style);
   const safeContentScale = Math.max(0.1, Math.min(8, Number.isFinite(contentScale) ? contentScale : 1));
   const scale = state.scale * safeContentScale;
-  const cursorKind: CursorKind = state.cursorKind === 'ibeam' ? 'ibeam' : 'arrow';
-  const cursorHotspot = CURSOR_GLYPH_HOTSPOT[cursorKind];
+  const cursorKind: CursorKind = normalizeCursorKind(state.cursorKind);
+  // Every glyph is drawn with its hotspot at the origin: the arrow tip by
+  // construction, the SVG glyphs by `drawCursorGlyphPlan`. `point` is the OS
+  // hotspot, so no extra offset is needed here.
   const translatedX = point.x + normalized.offsetX;
   const translatedY = point.y + normalized.offsetY;
 
@@ -938,14 +957,11 @@ export function drawCompositedCursor(
     ctx.shadowBlur = 10 * scale;
     ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = 2 * scale;
-    // Align OS hotspot with synthetic glyph tip to avoid visible drift versus source cursor.
-    ctx.translate(-cursorHotspot.x * scale, -cursorHotspot.y * scale);
     ctx.scale(scale, scale);
     drawCursorGlyph(ctx, cursorKind);
     ctx.restore();
   } else {
     ctx.save();
-    ctx.translate(-cursorHotspot.x * scale, -cursorHotspot.y * scale);
     ctx.scale(scale, scale);
     drawCursorGlyph(ctx, cursorKind);
     ctx.restore();

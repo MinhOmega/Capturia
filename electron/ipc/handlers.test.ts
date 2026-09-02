@@ -69,6 +69,20 @@ const CHANNELS_BEFORE_DECOMPOSITION = [
   'save-shortcuts',
 ]
 
+/**
+ * Channels added after the decomposition, each with the batch that introduced it.
+ * Append here (never to the list above) so the pin keeps recording history.
+ */
+const CHANNELS_ADDED_AFTER_DECOMPOSITION = [
+  // W4 A5 native pause/resume (recordingFiles.ts) + tracker pause ranges (cursorTracker.ts)
+  'pause-native-recording',
+  'resume-native-recording',
+  'cursor-tracker-pause',
+  'cursor-tracker-resume',
+]
+
+const EXPECTED_CHANNELS = [...CHANNELS_BEFORE_DECOMPOSITION, ...CHANNELS_ADDED_AFTER_DECOMPOSITION]
+
 /** Registered only when `main.ts` passes the HUD window plumbing. */
 const HUD_CHANNELS = ['countdown-overlay-show', 'countdown-overlay-set-value', 'countdown-overlay-hide', 'open-notes']
 
@@ -108,13 +122,13 @@ describe('registerIpcHandlers (composition root)', () => {
   it('registers exactly the pre-decomposition channel set (plus HUD when wired)', () => {
     const ipc = fakeIpcMain()
     register(ipc, userDataDir, true)
-    expect([...ipc.registered].sort()).toEqual([...CHANNELS_BEFORE_DECOMPOSITION, ...HUD_CHANNELS].sort())
+    expect([...ipc.registered].sort()).toEqual([...EXPECTED_CHANNELS, ...HUD_CHANNELS].sort())
   })
 
   it('registers the same set without the HUD channels when no HUD plumbing is given', () => {
     const ipc = fakeIpcMain()
     register(ipc, userDataDir, false)
-    expect([...ipc.registered].sort()).toEqual([...CHANNELS_BEFORE_DECOMPOSITION].sort())
+    expect([...ipc.registered].sort()).toEqual([...EXPECTED_CHANNELS].sort())
   })
 
   it('never registers a channel twice', () => {

@@ -2,8 +2,9 @@ import { app } from 'electron'
 import { spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { type CursorKind, isCursorKind, normalizeCursorKind } from '../../src/lib/cursor/cursorKinds'
 
-export type NativeCursorKind = 'arrow' | 'ibeam'
+export type NativeCursorKind = CursorKind
 
 type CursorKindMonitorSession = {
   process: ChildProcess
@@ -17,14 +18,22 @@ let activeSession: CursorKindMonitorSession | null = null
 let activeConsumers = 0
 let latestCursorKind: NativeCursorKind = 'arrow'
 
-function parseCursorKindLine(line: string): NativeCursorKind | null {
+/**
+ * `CURSOR_KIND <kind>` lines from `cursor-kind-monitor.swift`. Accepts the
+ * widened kind set, the legacy `ibeam` name (old helper binary -> `text`) and
+ * the bare legacy `arrow` / `ibeam` words. Any other kind name after the
+ * prefix still counts as a kind line (-> `arrow`) so a newer helper never
+ * spams the log; lines without the prefix are not kind lines.
+ */
+export function parseCursorKindLine(line: string): NativeCursorKind | null {
   const normalized = line.trim().toLowerCase()
-  if (normalized === 'cursor_kind ibeam' || normalized === 'ibeam') {
-    return 'ibeam'
+  if (!normalized) return null
+  const match = /^cursor_kind\s+(\S+)\s*$/.exec(normalized)
+  if (match) {
+    return normalizeCursorKind(match[1])
   }
-  if (normalized === 'cursor_kind arrow' || normalized === 'arrow') {
-    return 'arrow'
-  }
+  if (normalized === 'ibeam') return 'text'
+  if (isCursorKind(normalized)) return normalized
   return null
 }
 

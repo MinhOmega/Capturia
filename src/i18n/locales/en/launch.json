@@ -59,6 +59,8 @@
 	"recordSourceRequired": "Please select a source before recording.",
 	"recordStartFailed": "Failed to start recording.",
 	"recordStopFailed": "Failed to stop recording cleanly.",
+	"pauseFailed": "Could not pause the recording; it is still recording.",
+	"resumeFailed": "Could not resume the recording; it is still paused.",
 	"recordSaveFailed": "Failed to save recording.",
 	"openVideoFailed": "Failed to open video file.",
 	"openSourceSelectorFailed": "Failed to open source selector.",

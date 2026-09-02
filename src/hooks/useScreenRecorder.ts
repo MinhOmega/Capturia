@@ -22,7 +22,10 @@ import { webcamDeviceIdentityFrom } from "@/lib/webcamDeviceIdentity";
 type UseScreenRecorderReturn = {
   recording: boolean;
   recordingState: RecordingPhase;
-  /** Pause/resume is only available on the MediaRecorder path; the native macOS recorder cannot pause yet. */
+  /**
+   * Pause/resume is available on the MediaRecorder path and, since A5, on the native
+   * macOS path when the running helper announced pause support (old helper: hidden).
+   */
   canPause: boolean;
   toggleRecording: () => void;
   pauseRecording: () => void;
@@ -182,6 +185,11 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
   // Mirrors `nativeRecordingActive` for rendering (refs don't re-render): the HUD hides
   // Pause while the native recorder owns the session.
   const [nativeSessionActive, setNativeSessionActive] = useState(false);
+  // Announced by the helper at start (`canPause`); false for a helper built before
+  // the stdin protocol, in which case the HUD keeps hiding Pause on the native path.
+  const [nativePauseSupported, setNativePauseSupported] = useState(false);
+  // A native pause/resume round-trips to the helper; ignore re-entrant clicks meanwhile.
+  const pauseTransitionInFlight = useRef(false);
   // Wraps the MediaRecorder and streams its chunks to disk (or buffers them in memory
   // when the stream IPC is unavailable). Null outside a MediaRecorder session.
   const recorderHandle = useRef<RecorderHandle | null>(null);
@@ -359,6 +367,7 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
     if (stopNative && nativeRecordingActive.current) {
       nativeRecordingActive.current = false;
       setNativeSessionActive(false);
+      setNativePauseSupported(false);
       nativeRecordingMetadata.current = null;
       void window.electronAPI?.stopNativeScreenRecording?.().catch((error) => {
         console.warn("Failed to stop native ScreenCaptureKit recorder during cleanup.", error);
@@ -397,30 +406,11 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
     const initialMetadata = nativeRecordingMetadata.current;
     nativeRecordingActive.current = false;
     setNativeSessionActive(false);
+    setNativePauseSupported(false);
+    pauseTransitionInFlight.current = false;
     nativeRecordingMetadata.current = null;
 
-    let capturedCursorTrack:
-      | {
-          source?: "recorded" | "synthetic";
-          samples: Array<{ timeMs: number; x: number; y: number; click?: boolean; visible?: boolean; cursorKind?: "arrow" | "ibeam" }>;
-          events?: Array<{
-            type: "click" | "selection";
-            startMs: number;
-            endMs: number;
-            point: { x: number; y: number };
-            startPoint?: { x: number; y: number };
-            endPoint?: { x: number; y: number };
-            bounds?: {
-              minX: number;
-              minY: number;
-              maxX: number;
-              maxY: number;
-              width: number;
-              height: number;
-            };
-          }>;
-        }
-      | undefined;
+    let capturedCursorTrack: CursorTrackMetadata | undefined;
 
     if (cursorTrackingActive.current) {
       cursorTrackingActive.current = false;
@@ -1062,6 +1052,8 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
           };
           nativeRecordingActive.current = true;
           setNativeSessionActive(true);
+          setNativePauseSupported(nativeStart.canPause === true);
+          pauseTransitionInFlight.current = false;
 
           try {
             const trackingResult = await window.electronAPI.startCursorTracking({
@@ -1274,35 +1266,7 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
         }
 
         try {
-          let capturedCursorTrack:
-            | {
-                source?: "recorded" | "synthetic";
-                samples: Array<{
-                  timeMs: number;
-                  x: number;
-                  y: number;
-                  click?: boolean;
-                  visible?: boolean;
-                  cursorKind?: "arrow" | "ibeam";
-                }>;
-                events?: Array<{
-                  type: "click" | "selection";
-                  startMs: number;
-                  endMs: number;
-                  point: { x: number; y: number };
-                  startPoint?: { x: number; y: number };
-                  endPoint?: { x: number; y: number };
-                  bounds?: {
-                    minX: number;
-                    minY: number;
-                    maxX: number;
-                    maxY: number;
-                    width: number;
-                    height: number;
-                  };
-                }>;
-              }
-            | undefined;
+          let capturedCursorTrack: CursorTrackMetadata | undefined;
 
           if (cursorTrackingActive.current) {
             cursorTrackingActive.current = false;
@@ -1441,19 +1405,85 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
     }
   };
 
+  // The cursor tracker samples on the wall clock; tell it about pauses so main can
+  // compact them out of the track (both recorder paths, see cursor-tracker-pause).
+  const notifyCursorTrackerPaused = (paused: boolean) => {
+    if (!cursorTrackingActive.current) return;
+    const call = paused ? window.electronAPI?.pauseCursorTracking : window.electronAPI?.resumeCursorTracking;
+    void call?.().catch((error) => {
+      console.warn(`Failed to ${paused ? "pause" : "resume"} cursor tracking.`, error);
+    });
+  };
+
+  /**
+   * Native path: ask the helper over stdin and only flip the phase once it acked.
+   * On failure the recording simply continues (or stays paused) and the user is told.
+   */
+  const toggleNativePause = async (pause: boolean) => {
+    if (pauseTransitionInFlight.current) return;
+    if (!nativePauseSupported) return;
+    if (pause && recordingState !== "recording") return;
+    if (!pause && recordingState !== "paused") return;
+    pauseTransitionInFlight.current = true;
+    try {
+      const api = pause ? window.electronAPI?.pauseNativeScreenRecording : window.electronAPI?.resumeNativeScreenRecording;
+      const result = await api?.();
+      if (!result?.success) {
+        if (result && !result.supported) {
+          // Helper turned out not to support pause after all: hide the button.
+          setNativePauseSupported(false);
+        }
+        reportUserActionError({
+          t,
+          userMessage: t(pause ? "launch.pauseFailed" : "launch.resumeFailed"),
+          error: result?.message || `${pause ? "pause" : "resume"}-native-recording returned no success`,
+          context: pause ? "recording.pause.native" : "recording.resume.native",
+          details: result,
+          dedupeKey: pause ? "recording.pause.native" : "recording.resume.native",
+        });
+        return;
+      }
+      if (!nativeRecordingActive.current) return; // stopped while the command was in flight
+      if (pause) {
+        pauseStartTime.current = Date.now();
+        setRecordingPhase("paused");
+      } else {
+        if (pauseStartTime.current > 0) {
+          cumulativePauseMs.current += Date.now() - pauseStartTime.current;
+          pauseStartTime.current = 0;
+        }
+        setRecordingPhase("recording");
+      }
+      notifyCursorTrackerPaused(pause);
+    } catch (error) {
+      console.warn(`Native ${pause ? "pause" : "resume"} failed.`, error);
+    } finally {
+      pauseTransitionInFlight.current = false;
+    }
+  };
+
   const pauseRecording = () => {
+    if (nativeRecordingActive.current) {
+      void toggleNativePause(true);
+      return;
+    }
     const recorder = recorderHandle.current?.recorder;
-    if (!recorder || nativeRecordingActive.current) return;
+    if (!recorder) return;
     if (recorder.state === "recording") {
       pauseStartTime.current = Date.now();
       recorder.pause();
       setRecordingPhase("paused");
+      notifyCursorTrackerPaused(true);
     }
   };
 
   const resumeRecording = () => {
+    if (nativeRecordingActive.current) {
+      void toggleNativePause(false);
+      return;
+    }
     const recorder = recorderHandle.current?.recorder;
-    if (!recorder || nativeRecordingActive.current) return;
+    if (!recorder) return;
     if (recorder.state === "paused") {
       if (pauseStartTime.current > 0) {
         cumulativePauseMs.current += Date.now() - pauseStartTime.current;
@@ -1461,6 +1491,7 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
       }
       recorder.resume();
       setRecordingPhase("recording");
+      notifyCursorTrackerPaused(false);
     }
   };
 
@@ -1563,7 +1594,11 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
     void startRecording();
   };
 
-  const canPause = canPauseRecording({ phase: recordingState, nativeRecordingActive: nativeSessionActive });
+  const canPause = canPauseRecording({
+    phase: recordingState,
+    nativeRecordingActive: nativeSessionActive,
+    nativePauseSupported,
+  });
 
   return {
     recording,

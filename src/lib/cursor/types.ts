@@ -1,6 +1,8 @@
 import type { ZoomFocus, ZoomRegion } from '@/components/video-editor/types';
+import type { CursorKind } from './cursorKinds';
 
-export type CursorKind = 'arrow' | 'ibeam';
+export type { CursorKind } from './cursorKinds';
+export { CURSOR_KINDS, isCursorKind, normalizeCursorKind } from './cursorKinds';
 export type CursorMovementStyle = 'rapid' | 'quick' | 'default' | 'slow' | 'custom';
 
 export interface CursorSample {
