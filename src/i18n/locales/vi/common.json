@@ -69,6 +69,12 @@
 			"savedMessage": "Đã lưu vào {{path}}",
 			"failedTitle": "Không thể lưu chẩn đoán",
 			"reveal": "Hiện trong thư mục"
+		},
+		"updates": {
+			"available": "Đã có Capturia {{latestVersion}}. Bạn đang dùng {{currentVersion}}.",
+			"current": "Capturia đã là phiên bản mới nhất ({{currentVersion}}).",
+			"failed": "Không thể kiểm tra cập nhật.",
+			"openRelease": "Mở trang phát hành"
 		}
 	},
 	"actions": {

@@ -35,3 +35,7 @@ electron/native/bin/*
 
 # Claude Code agent worktrees
 .claude/worktrees/
+
+# Playwright (npm run test:e2e)
+playwright-report/
+test-results/

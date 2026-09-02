@@ -274,6 +274,13 @@ new modules loadable in vitest (upstream's own note in `deviceNameMatching.ts:27
 handlers.ts "calls app.getPath() while being imported and cannot be loaded from a test").
 Do this one module per batch, never as a big-bang refactor.
 
+**Status (2026-09-03, F11):** done as listed, one commit per module. Actual layout:
+`electron/paths.ts` (lazy `getRecordingsDir`/`getProjectsDir`), `electron/ipc/context.ts`
+(`IpcContext`, `IpcSession`), `cursorTrack.ts` (pure) + `cursorTracker.ts` (runtime),
+`permissions.ts`, `recordingFiles.ts` (also owns the recording-stream registry and source
+selection), `exportFiles.ts`, `projectState.ts`, `analysis.ts`. `handlers.test.ts` pins the
+channel set; `__tests__/modules-import.test.ts` fails if any module touches `app` on import.
+
 ### 3.9 v1.8+ modules (M9-M16)
 - `main-process-errors.ts`: port `shouldSwallowMainProcessError` + test; in Capturia call it
   first in the `uncaughtException`/`unhandledRejection` handlers (`main.ts:372-377`) and
@@ -292,6 +299,8 @@ Do this one module per batch, never as a big-bang refactor.
   (`'info'|'warning'|'error'|'debug'`), `details.message`, `details.lineNumber`,
   `details.sourceId`). Fix before B4 (Electron 41) regardless of whether the old form still
   fires there - I did not verify removal in 41's changelog.
+  **Status (2026-09-03):** `update-checker.ts` + test ported (menu item, dialog, release page
+  via the URL allowlist); `console-message` moved to the details form in `windows.ts`.
 
 ### 3.10 Packaging / `electron-builder.json5` three-way diff
 | Key | base 87735c27 | Capturia | v1.7.0 | Action |
@@ -393,6 +402,10 @@ job as a ratchet ("fail only if the count grows") and walked it to zero - copy t
 ### 4.4 e2e
 See 3.11 point 5. Prerequisite: `HEADLESS` gate (L3), `data-testid` hooks, and the spec's
 IPC stubs re-targeted to `save-exported-video`. Do not gate PRs on it.
+**Status (2026-09-03):** skeleton landed — `playwright.config.ts`, `e2e/launch.spec.ts`
+(HUD + source selector; self-skips without a display / build), `npm run test:e2e`, nightly
+`e2e.yml` (ubuntu xvfb + macos-15). Not executed locally (no display). The export spec still
+needs the editor `data-testid` hooks (D) before it can be ported.
 
 ---
 
