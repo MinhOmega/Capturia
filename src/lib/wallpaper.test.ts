@@ -11,10 +11,12 @@ import {
   isSameBuiltInWallpaper,
   normalizeWallpaperValue,
   resolveImageWallpaperUrl,
+  resolveWallpaperThumbUrl,
   UnsafeAssetPathError,
   UnsafeImagePrefixError,
   WALLPAPER_COUNT,
   WALLPAPER_PATHS,
+  WALLPAPER_THUMB_PATHS,
 } from './wallpaper'
 
 describe('WALLPAPER_PATHS', () => {
@@ -26,6 +28,57 @@ describe('WALLPAPER_PATHS', () => {
 
   it('DEFAULT_WALLPAPER is WALLPAPER_PATHS[0]', () => {
     expect(DEFAULT_WALLPAPER).toBe(WALLPAPER_PATHS[0])
+  })
+})
+
+describe('WALLPAPER_THUMB_PATHS', () => {
+  it('has one thumb per wallpaper under /wallpapers/thumbs/', () => {
+    expect(WALLPAPER_THUMB_PATHS).toHaveLength(WALLPAPER_COUNT)
+    expect(WALLPAPER_THUMB_PATHS[0]).toBe('/wallpapers/thumbs/wallpaper1.jpg')
+    expect(WALLPAPER_THUMB_PATHS[WALLPAPER_COUNT - 1]).toBe(
+      `/wallpapers/thumbs/wallpaper${WALLPAPER_COUNT}.jpg`,
+    )
+  })
+
+  it('a thumb path is not mistaken for a canonical wallpaper value', () => {
+    expect(normalizeWallpaperValue(WALLPAPER_THUMB_PATHS[0])).toBe(WALLPAPER_THUMB_PATHS[0])
+    expect(isSameBuiltInWallpaper(WALLPAPER_THUMB_PATHS[0], WALLPAPER_PATHS[0])).toBe(false)
+  })
+})
+
+describe('resolveWallpaperThumbUrl', () => {
+  beforeEach(() => {
+    mockGetAssetPath.mockReset()
+    mockGetAssetPath.mockImplementation(
+      async (relativePath: string) => `file:///opt/app/resources/assets/${relativePath}`,
+    )
+  })
+
+  it('resolves the thumb of a canonical wallpaper through getAssetPath', async () => {
+    await expect(resolveWallpaperThumbUrl('/wallpapers/wallpaper3.jpg')).resolves.toBe(
+      'file:///opt/app/resources/assets/wallpapers/thumbs/wallpaper3.jpg',
+    )
+    expect(mockGetAssetPath).toHaveBeenCalledWith('wallpapers/thumbs/wallpaper3.jpg')
+  })
+
+  it('accepts a legacy packaged URL for a bundled wallpaper', async () => {
+    await expect(
+      resolveWallpaperThumbUrl(
+        'file:///Applications/App.app/Contents/Resources/assets/wallpapers/wallpaper2.jpg',
+      ),
+    ).resolves.toBe('file:///opt/app/resources/assets/wallpapers/thumbs/wallpaper2.jpg')
+  })
+
+  it('returns null for colours, gradients, uploads and foreign files', async () => {
+    for (const value of [
+      '#123456',
+      'linear-gradient(90deg, #000, #fff)',
+      'data:image/png;base64,AAAA',
+      'file:///home/me/wallpapers/wallpaper1.jpg',
+    ]) {
+      await expect(resolveWallpaperThumbUrl(value)).resolves.toBeNull()
+    }
+    expect(mockGetAssetPath).not.toHaveBeenCalled()
   })
 })
 
