@@ -52,7 +52,8 @@ import { scheduleRecordingsCleanup } from './recordingsCleanup'
 import { buildIssueReportUrl, GITHUB_ISSUES_URL } from '../src/lib/supportLinks'
 import { getMainLocale, mainT, setMainLocale } from './i18n'
 import { mainLogBuffer } from './diagnostics/main-log-buffer'
-import { getInstallChannel } from './install-channel'
+import { getInstallChannel, offersUpdateCheck } from './install-channel'
+import { buildTrayMenuTemplate } from './tray-menu'
 import {
   type AboutFacts,
   COPYRIGHT,
@@ -348,6 +349,16 @@ function trayText(
   return mainT(locale, keys[key], { source: source ?? '' })
 }
 
+/**
+ * The one rule every update affordance keys off: not on a package-manager
+ * channel (Store, Flatpak, Snap, Nix) and not mid-recording. Recording is part
+ * of the answer because a download would compete with the encoder, so the
+ * tray and the app menu are rebuilt whenever the recording flag flips.
+ */
+function canOfferUpdateCheck(): boolean {
+  return offersUpdateCheck(installChannel(), { recording: recordingActive })
+}
+
 function updateTrayMenu(recording: boolean = false) {
   if (!tray) return
   const locale = currentLocale()
@@ -355,27 +366,33 @@ function updateTrayMenu(recording: boolean = false) {
   const trayToolTip = recording
     ? trayText(locale, 'recording', selectedSourceName)
     : trayText(locale, 'app')
-  const menuTemplate = recording
-    ? [
-        {
-          label: trayText(locale, 'stop'),
-          click: () => emitStopRecordingRequest(),
-        },
-      ]
-    : [
-        {
-          label: trayText(locale, 'open'),
-          click: () => {
-            showMainWindow()
-          },
-        },
-        {
-          label: trayText(locale, 'quit'),
-          click: () => {
-            app.quit()
-          },
-        },
-      ]
+  const menuTemplate = buildTrayMenuTemplate({
+    recording,
+    offersUpdateCheck: offersUpdateCheck(installChannel(), { recording }),
+    nativeAboutPanel: usesNativeAboutPanel(process.platform),
+    labels: {
+      stopRecording: trayText(locale, 'stop'),
+      open: trayText(locale, 'open'),
+      checkForUpdates: menuLabel('actions.checkForUpdates', 'Check for Updates…'),
+      about: menuLabel('actions.about', 'About Capturia'),
+      saveDiagnostics: menuLabel('actions.saveDiagnostics', 'Save Diagnostics…'),
+      quit: trayText(locale, 'quit'),
+    },
+    actions: {
+      stopRecording: () => emitStopRecordingRequest(),
+      open: () => showMainWindow(),
+      checkForUpdates: () => {
+        void checkForUpdates()
+      },
+      about: () => {
+        void showAboutDialog()
+      },
+      saveDiagnostics: () => {
+        void runSaveDiagnostics()
+      },
+      quit: () => app.quit(),
+    },
+  })
   tray.setImage(trayIcon)
   tray.setToolTip(trayToolTip)
   tray.setContextMenu(Menu.buildFromTemplate(menuTemplate))
@@ -525,6 +542,19 @@ function menuLabel(key: string, fallback: string): string {
   return value === `common.${key}` ? fallback : value
 }
 
+/** "Check for Updates…" only where this install may offer one (see `canOfferUpdateCheck`). */
+function checkForUpdatesMenuItems(): Electron.MenuItemConstructorOptions[] {
+  if (!canOfferUpdateCheck()) return []
+  return [
+    {
+      label: menuLabel('actions.checkForUpdates', 'Check for Updates…'),
+      click: () => {
+        void checkForUpdates()
+      },
+    },
+  ]
+}
+
 function setupApplicationMenu(): void {
   const template: Electron.MenuItemConstructorOptions[] = []
 
@@ -533,12 +563,7 @@ function setupApplicationMenu(): void {
       label: app.name,
       submenu: [
         { role: 'about', label: menuLabel('actions.about', 'About Capturia') },
-        {
-          label: menuLabel('actions.checkForUpdates', 'Check for Updates…'),
-          click: () => {
-            void checkForUpdates()
-          },
-        },
+        ...checkForUpdatesMenuItems(),
         { type: 'separator' },
         { role: 'services', label: menuLabel('actions.services', 'Services') },
         { type: 'separator' },
@@ -649,12 +674,7 @@ function setupApplicationMenu(): void {
             void runSaveDiagnostics()
           },
         },
-        {
-          label: menuLabel('actions.checkForUpdates', 'Check for Updates…'),
-          click: () => {
-            void checkForUpdates()
-          },
-        },
+        ...checkForUpdatesMenuItems(),
         // macOS keeps About in the app menu; Windows/Linux look for it under Help.
         ...(isMac
           ? []
@@ -685,6 +705,10 @@ function setupApplicationMenu(): void {
 let updateCheckInFlight = false
 const UPDATE_CHECK_TIMEOUT_MS = 10_000
 const LAUNCH_UPDATE_CHECK_DELAY_MS = 10_000
+// Upper bound on a manual check. The updater's own probe takes no signal, so a
+// stalled feed (corporate proxy, CDN blackhole) would otherwise hang the check
+// forever and leave the in-flight latch set for the rest of the session.
+const MANUAL_UPDATE_CHECK_TIMEOUT_MS = 30_000
 
 type UpdatesTextKey =
   | 'available'
@@ -832,12 +856,31 @@ function scheduleLaunchUpdateCheck(): void {
   }, LAUNCH_UPDATE_CHECK_DELAY_MS)
 }
 
-/** Menu entry point: the updater when it can act, the release-page flow otherwise. */
+/**
+ * Menu / tray entry point: the updater when it can act, the release-page flow
+ * otherwise. Enforces `canOfferUpdateCheck` itself (the menus hide the entry,
+ * but the IPC and a stale tray menu must not be able to bypass it) and bounds
+ * the updater probe by `MANUAL_UPDATE_CHECK_TIMEOUT_MS`; on timeout the
+ * release-page flow (which carries its own 10 s bound) answers instead.
+ */
 async function checkForUpdates(): Promise<void> {
+  if (!canOfferUpdateCheck()) return
   const controller = await getAutoUpdater()
   if (controller) {
-    await controller.check('menu')
-    return
+    const outcome = await Promise.race([
+      controller.check('menu').then(() => 'done' as const),
+      new Promise<'timeout'>((resolve) => {
+        const timer = globalThis.setTimeout(
+          () => resolve('timeout'),
+          MANUAL_UPDATE_CHECK_TIMEOUT_MS,
+        )
+        timer.unref?.()
+      }),
+    ])
+    if (outcome === 'done') return
+    console.warn(
+      `[updates] updater probe exceeded ${MANUAL_UPDATE_CHECK_TIMEOUT_MS} ms; falling back to the release page`,
+    )
   }
   await checkForUpdatesViaReleasePage()
 }
@@ -1484,6 +1527,9 @@ appReady?.then(async () => {
     }
   })
   ipcMain.handle('check-for-updates', async () => {
+    // The renderer may hide its button on a package-manager channel or while
+    // recording, but the rule is enforced here, not in the renderer.
+    if (!canOfferUpdateCheck()) return { success: false, reason: 'unavailable' as const }
     void checkForUpdates()
     return { success: true }
   })
@@ -1512,6 +1558,9 @@ appReady?.then(async () => {
       selectedSourceName = sourceName
       if (!tray) createTray()
       updateTrayMenu(recording)
+      // `canOfferUpdateCheck()` answers "not mid-take" too; the app menu is
+      // built once at startup, so rebuild it or it keeps offering the check.
+      setupApplicationMenu()
       if (!recording) {
         if (mainWindow) mainWindow.restore()
       }
