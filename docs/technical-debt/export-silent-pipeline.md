@@ -41,6 +41,22 @@ This conflicts with product expectation: export stage must be silent.
    `DEFAULT_EXPORT_DECODE_PATH` (`'seek'`) applies. When the WebCodecs decoder fails
    before its first frame the exporter restarts on the seek path and reports
    `editor.exportWarningDecoderFallback`, so the guarded path is still the safety net.
+7. **Audio at non-1x speed (upstream sync batch D-5).** The audio track never touches a
+   media element on either decode path: it is read with mediabunny's `AudioBufferSink`
+   (kept ranges -> audio-edit gain -> loudness gain + limiter -> stereo downmix in
+   `createAudioSlice`) and written as PCM through `AudioBufferSource`. When any timeline
+   segment plays at a speed other than 1x, `exportTimeStretchedAudio` sends each
+   `SpeedTimelineSegment` (same adapter the video path uses) through its own
+   `WsolaTimeStretcher` (`src/lib/audio/audioTimeStretch.ts`, pitch-preserving, offline)
+   and clamps the output to the sample budget of the frames the video path rendered for
+   that segment (`buildVideoFrameCountsForTimeline` + `buildAudioSegmentSampleBudget`
+   over `frameClock` timestamps), padding underrun with silence. Timelines that are 1x
+   everywhere keep the previous slice-to-muxer path unchanged. Nothing here plays
+   audio, depends on wall-clock time or on `MediaRecorder`; the upstream real-time
+   `<audio>` capture path was deliberately not ported. Known limits: the hard limiter
+   runs before the stretch, so WSOLA overlap-add may overshoot it by a few percent on
+   transients; WSOLA quality below ~0.5x and above ~20x is speech-oriented (music
+   smears); output sample rate/channels are fixed by the first decoded slice.
 
 ## Remaining Debt
 
