@@ -142,3 +142,31 @@ Gate: lint 0 errors / 116 warnings; tsc + test types clean; i18n 613 en keys; vi
 **100 files / 1054 tests**; `vite build` OK.
 
 In flight: B1-e 3D iso/tilt (`w4-threed`), D-5 WSOLA audio (`w4-audio`).
+
+## 2026-09-03 — wave 4: F11 + F10 + F7 residue (branch `w4-electron-infra`, pending review)
+
+`electron/ipc/handlers.ts` (2346 lines) split into `register*Handlers(ctx)` modules —
+`context.ts` (shared `IpcContext` / `IpcSession`), `cursorTrack.ts` (pure sanitize + sidecar),
+`cursorTracker.ts` (live tracker, moved verbatim), `permissions.ts`, `recordingFiles.ts`,
+`exportFiles.ts`, `projectState.ts`, `analysis.ts`; `handlers.ts` is now a 76-line composition
+root. `electron/paths.ts` exposes a lazy `getRecordingsDir()` so `main.ts` no longer exports
+`RECORDINGS_DIR` and no IPC module touches `app` at import time (guarded by
+`electron/ipc/__tests__/modules-import.test.ts`). `handlers.test.ts` pins the full 48-channel
+set (+4 HUD) captured before the split; channel names, preload and `.d.ts` untouched.
+
+F10: `electron/update-checker.ts` (upstream v1.9 port, strict semver, official-URL check,
+pointed at `MinhOmega/Capturia`) behind a "Check for Updates…" menu item (mac app menu +
+Help); result dialog with "Open Release Page" through `normalizeExternalUrl`. No download,
+no `electron-updater`. New keys `common.electron.updates.*` (en/vi/zh-CN).
+E2E skeleton: `@playwright/test` devDep, `playwright.config.ts`, `e2e/launch.spec.ts`
+(HUD boots, source selector opens; self-skips without a display or without `dist-electron/`),
+`npm run build:vite` / `npm run test:e2e`, nightly `.github/workflows/e2e.yml` (ubuntu xvfb +
+macos-15). **Unverified here** (no display): the spec only ran as "1 skipped".
+
+F7 residue: `HEADLESS=1|true` gates every window `show`/`showInactive`/`focus` and the Dock;
+`console-message` listener on the Electron 39 details form. `--asset-base-url` is exposed by
+the preload (`electronAPI.assetBaseUrl`) but `src/lib/assetPath.ts` still resolves wallpapers
+through the `get-asset-base-path` IPC — consumer swap left to B1/F7 follow-up (renderer-only).
+
+Gate: lint 0 errors / 116 warnings; tsc + test types clean; i18n 617 en keys; vitest
+**111 files / 1136 tests**; `playwright test` 1 skipped (no display).
