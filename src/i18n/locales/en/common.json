@@ -74,7 +74,14 @@
 			"available": "Capturia {{latestVersion}} is available. You are using {{currentVersion}}.",
 			"current": "Capturia is up to date ({{currentVersion}}).",
 			"failed": "Could not check for updates.",
-			"openRelease": "Open Release Page"
+			"openRelease": "Open Release Page",
+			"downloadPrompt": "Capturia {{latestVersion}} is available. You are using {{currentVersion}}. Download it now?",
+			"downloadNow": "Download Now",
+			"later": "Later",
+			"downloaded": "Capturia {{latestVersion}} has been downloaded. Restart now to install it, or it will be installed the next time you quit.",
+			"restartNow": "Restart Now",
+			"onNextQuit": "On Next Quit",
+			"offline": "Could not reach the update server. Check your connection and try again."
 		}
 	},
 	"actions": {

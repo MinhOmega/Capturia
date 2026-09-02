@@ -118,6 +118,21 @@ type CaptionModelStatusPayload = {
   missingFiles: string[]
 }
 
+type UpdateProgressEvent =
+  | { phase: 'checking' }
+  | { phase: 'current'; version: string }
+  | { phase: 'available'; version: string }
+  | {
+      phase: 'downloading'
+      version: string
+      percent: number
+      transferred: number
+      total: number
+      bytesPerSecond: number
+    }
+  | { phase: 'downloaded'; version: string }
+  | { phase: 'error'; kind: 'offline' | 'no-release' | 'unsigned' | 'unknown'; message: string }
+
 type CaptionModelProgressPayload = {
   modelId: string
   file: string
@@ -443,6 +458,14 @@ interface Window {
       bounds?: { x: number; y: number; width: number; height: number }
     }>
     setLocale: (locale: string) => Promise<void>
+    // Auto-update (electron/auto-updater.ts): launch-check preference, manual
+    // check and download/install progress events.
+    getAutoUpdateCheck: () => Promise<{ success: boolean; enabled: boolean }>
+    setAutoUpdateCheck: (
+      enabled: boolean,
+    ) => Promise<{ success: boolean; enabled?: boolean; error?: string }>
+    checkForUpdates: () => Promise<{ success: boolean }>
+    onUpdateProgress: (callback: (event: UpdateProgressEvent) => void) => () => void
     // W1-c: approved-file reads for the exporter (localSourceFile.ts)
     readBinaryFile: (filePath: string) => Promise<{
       success: boolean

@@ -180,12 +180,17 @@ jobs:
           xcrun stapler validate "${{ steps.mac_artifacts.outputs.dmg_path }}"
           spctl -a -vv -t install "${{ steps.mac_artifacts.outputs.dmg_path }}"
 
+      # Each leg also carries its electron-updater feed (`latest*.yml`) and the
+      # differential-download sidecars (`.blockmap`, and `.zsync` where produced).
       - name: Upload Windows installers
         if: matrix.id == 'windows'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: release/**/*.exe
+          path: |
+            release/**/*.exe
+            release/**/*.blockmap
+            release/**/latest.yml
           if-no-files-found: error
           retention-days: 30
 
@@ -197,15 +202,22 @@ jobs:
           path: |
             release/**/*.AppImage
             release/**/*.deb
+            release/**/*.zsync
+            release/**/latest-linux*.yml
           if-no-files-found: error
           retention-days: 30
 
+      # The ZIP is what electron-updater installs from on macOS; the DMG is for people.
       - name: Upload macOS installers
         if: startsWith(matrix.id, 'macos-')
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: release/**/*.dmg
+          path: |
+            release/**/*.dmg
+            release/**/*.zip
+            release/**/*.blockmap
+            release/**/latest-mac.yml
           if-no-files-found: error
           retention-days: 30
 
@@ -214,10 +226,34 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+
+      # The Intel and Apple-silicon legs each wrote a one-entry latest-mac.yml;
+      # electron-updater reads a single feed per platform, so combine them.
+      - name: Merge macOS update feeds
+        run: |
+          set -euo pipefail
+          mapfile -t FEEDS < <(find artifacts -name latest-mac.yml -type f | sort)
+          if [[ ${#FEEDS[@]} -eq 0 ]]; then
+            echo "::error::No latest-mac.yml found in the macOS artifacts"
+            exit 1
+          fi
+          node scripts/merge-update-feeds.mjs feeds/latest-mac.yml "${FEEDS[@]}"
+          for feed in "${FEEDS[@]}"; do rm "$feed"; done
+          find artifacts/windows-installers -name latest.yml -exec mv {} feeds/ \;
+          find artifacts/linux-installers -name 'latest-linux*.yml' -exec mv {} feeds/ \;
+          ls -l feeds
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
@@ -226,6 +262,10 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
           files: |
             artifacts/**/*.dmg
+            artifacts/**/*.zip
             artifacts/**/*.exe
             artifacts/**/*.AppImage
             artifacts/**/*.deb
+            artifacts/**/*.blockmap
+            artifacts/**/*.zsync
+            feeds/*.yml

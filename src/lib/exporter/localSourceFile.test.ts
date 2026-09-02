@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { materializeLocalSourceFile, releaseLocalSourceFile } from './localSourceFile'
+import {
+  loadLocalSourceBlob,
+  materializeLocalSourceFile,
+  releaseLocalSourceFile,
+} from './localSourceFile'
 
 function stubElectronAPI(api: Record<string, unknown>) {
   vi.stubGlobal('window', { ...globalThis.window, electronAPI: api } as unknown)
@@ -457,5 +461,60 @@ describe('materializeLocalSourceFile (MIME inference)', () => {
     const file = await materializeLocalSourceFile(path, 'clip')
 
     expect(file.type).toBe(expected)
+  })
+})
+
+describe('loadLocalSourceBlob (source-copy fast path)', () => {
+  const bytes = new Uint8Array([9, 8, 7, 6])
+
+  it('returns the bytes as a Blob typed from the extension', async () => {
+    stubElectronAPI({
+      getReadableFileInfo: vi
+        .fn()
+        .mockResolvedValue({ success: true, size: bytes.byteLength, mtimeMs: 1, path: '/r/a.mp4' }),
+      readBinaryFile: vi
+        .fn()
+        .mockResolvedValue({ success: true, data: bytes.buffer, path: '/r/a.mp4' }),
+    })
+
+    const blob = await loadLocalSourceBlob('/r/a.mp4')
+    expect(blob).not.toBeNull()
+    expect(blob?.type).toBe('video/mp4')
+    expect(new Uint8Array(await blob!.arrayBuffer())).toEqual(bytes)
+  })
+
+  it('returns null above the in-memory threshold instead of streaming', async () => {
+    const readBinaryFile = vi.fn()
+    stubElectronAPI({
+      getReadableFileInfo: vi
+        .fn()
+        .mockResolvedValue({ success: true, size: 5_000, mtimeMs: 1, path: '/r/big.mp4' }),
+      readBinaryFile,
+      readFileChunk: vi.fn(),
+    })
+
+    await expect(loadLocalSourceBlob('/r/big.mp4', { thresholdBytes: 4_096 })).resolves.toBeNull()
+    expect(readBinaryFile).not.toHaveBeenCalled()
+  })
+
+  it('returns null when the file cannot be stat-ed or read', async () => {
+    stubElectronAPI({
+      getReadableFileInfo: vi.fn().mockResolvedValue({ success: false, message: 'not approved' }),
+      readBinaryFile: vi.fn(),
+    })
+    await expect(loadLocalSourceBlob('/r/x.mp4')).resolves.toBeNull()
+
+    stubElectronAPI({
+      getReadableFileInfo: vi
+        .fn()
+        .mockResolvedValue({ success: true, size: 4, mtimeMs: 1, path: '/r/x.mp4' }),
+      readBinaryFile: vi.fn().mockResolvedValue({ success: false, error: 'EIO' }),
+    })
+    await expect(loadLocalSourceBlob('/r/x.mp4')).resolves.toBeNull()
+  })
+
+  it('throws outside the desktop app', async () => {
+    vi.stubGlobal('window', { ...globalThis.window, electronAPI: undefined } as unknown)
+    await expect(loadLocalSourceBlob('/r/x.mp4')).rejects.toThrow(/desktop app/)
   })
 })
