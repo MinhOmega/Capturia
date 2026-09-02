@@ -9,8 +9,11 @@ import {
 } from './types';
 import { VideoFileDecoder } from './videoDecoder';
 import { StreamingVideoDecoder, type DecodedVideoInfo } from './streamingDecoder';
-import { buildDecodeTimelinePlan, type DecodeTimelinePlan } from './segmentAdapter';
+import { buildDecodeTimelinePlan, segmentsToSpeedTimeline, type DecodeTimelinePlan } from './segmentAdapter';
+import type { SpeedTimelineSegment } from './timelineSegments';
 import { downmixPlanarChannelsForExport } from '@/lib/audio/downmix';
+import { WsolaTimeStretcher, isTimeStretchPassthroughSpeed } from '@/lib/audio/audioTimeStretch';
+import { PlanarChunkQueue } from '@/lib/audio/planarChunkQueue';
 import { isBackgroundLoadError } from './backgroundErrors';
 import { FrameRenderer } from './frameRenderer';
 import { VideoMuxer } from './muxer';
@@ -84,16 +87,28 @@ type AudioFrameSlice = {
   startFrame: number;
   endFrame: number;
   gain: number;
+  /** Index into the kept-range list the slice was read for (ranges are visited in order). */
+  rangeIndex: number;
+  /** Absolute source time of `startFrame`, in ms. */
+  sourceStartMs: number;
 };
 
 /** Export encoders are configured for mono/stereo only; wider sources are downmixed. */
 const MAX_EXPORT_AUDIO_CHANNELS = 2;
+/** PCM frames per `AudioBuffer` handed to the muxer on the time-stretched path. */
+const TIME_STRETCH_OUTPUT_FRAMES = 4096;
+/** Source-domain silence is fed to the stretcher in chunks of this many frames. */
+const TIME_STRETCH_SILENCE_CHUNK_FRAMES = 8192;
+/**
+ * Per-segment frame quantisation used by `StreamingVideoDecoder` /
+ * `computeExportMetrics`: `ceil((dur - EPSILON) / speed * fps)`.
+ */
+const SEGMENT_FRAME_EPSILON_SEC = 0.001;
 
 const DEFAULT_AUDIO_GAIN = 1;
 const MAX_AUDIO_GAIN = 2;
 const EXPORT_WARNING_AUDIO_TRACK_UNAVAILABLE = 'editor.exportWarningAudioTrackUnavailable';
 const EXPORT_WARNING_AUDIO_CODEC_UNSUPPORTED = 'editor.exportWarningAudioCodecUnsupported';
-const EXPORT_WARNING_SPEED_AUDIO_UNAVAILABLE = 'editor.exportWarningSpeedAudioUnavailable';
 const EXPORT_WARNING_DECODER_FALLBACK = 'editor.exportWarningDecoderFallback';
 const EXPORT_WARNING_DECODE_ENDED_EARLY = 'editor.exportWarningDecodeEndedEarly';
 
@@ -362,6 +377,72 @@ export function buildKeptRanges(totalDurationMs: number, trimRegions: TrimRegion
   return kept.filter((range) => range.endMs > range.startMs);
 }
 
+/**
+ * Per-segment output frame counts the video path renders for `timeline`.
+ *
+ * - `'webcodecs'`: `StreamingVideoDecoder` emits `ceil((dur - eps) / speed * fps)`
+ *   frames per segment (see `computeExportMetrics`).
+ * - `'seek'`: `exportFramesBySeeking` renders `ceil(effectiveDuration * fps)`
+ *   frames and maps frame `k` at output time `k / fps` onto the timeline, so a
+ *   segment owns the frames whose output time falls inside its cumulative span.
+ *
+ * The last segment absorbs any rounding difference so the counts always sum to
+ * `totalFrames`, the number the video path actually produced.
+ */
+export function buildVideoFrameCountsForTimeline(
+  timeline: SpeedTimelineSegment[],
+  frameRate: number,
+  totalFrames: number,
+  decodePath: ExportDecodePath,
+): number[] {
+  if (timeline.length === 0) {
+    return [];
+  }
+  const fps = normalizeFrameRate(frameRate);
+  const counts: number[] = [];
+  let cumulativeSec = 0;
+  let cumulativeFrames = 0;
+  for (const segment of timeline) {
+    const durationSec = Math.max(0, segment.endSec - segment.startSec);
+    const speed = segment.speed > 0 ? segment.speed : 1;
+    let frames: number;
+    if (decodePath === 'webcodecs') {
+      frames = Math.max(0, Math.ceil(((durationSec - SEGMENT_FRAME_EPSILON_SEC) / speed) * fps));
+    } else {
+      const nextCumulativeSec = cumulativeSec + durationSec / speed;
+      const nextCumulativeFrames = Math.ceil(nextCumulativeSec * fps - 1e-6);
+      frames = Math.max(0, nextCumulativeFrames - cumulativeFrames);
+      cumulativeSec = nextCumulativeSec;
+    }
+    counts.push(frames);
+    cumulativeFrames += frames;
+  }
+  const previous = cumulativeFrames - counts[counts.length - 1];
+  counts[counts.length - 1] = Math.max(0, Math.floor(totalFrames) - previous);
+  return counts;
+}
+
+/**
+ * Output PCM frames each timeline segment must contribute so the audio track is
+ * exactly as long as the video: segment boundaries are the `frameClock`
+ * timestamps of the cumulative frame index, converted to samples, so the sum
+ * telescopes to `round(ts(totalFrames) * sampleRate)` with no per-segment drift.
+ */
+export function buildAudioSegmentSampleBudget(
+  frameCounts: number[],
+  frameRate: number,
+  sampleRate: number,
+): number[] {
+  const toSamples = (frameIndex: number) =>
+    Math.round((frameIndexToTimestampUs(frameIndex, frameRate) * sampleRate) / 1_000_000);
+  let cumulativeFrames = 0;
+  return frameCounts.map((frames) => {
+    const start = toSamples(cumulativeFrames);
+    cumulativeFrames += Math.max(0, frames);
+    return Math.max(0, toSamples(cumulativeFrames) - start);
+  });
+}
+
 export class VideoExporter {
   private config: VideoExporterConfig;
   private decoder: VideoFileDecoder | null = null;
@@ -400,6 +481,10 @@ export class VideoExporter {
   private audioCodec: ExportAudioCodec = 'aac';
   private sourceTrimRanges: TimeRangeMs[] = [];
   private sourceAudioEditRegions: AudioEditRegion[] = [];
+  /** Kept source spans (with speed) the video path renders; drives the audio retiming. */
+  private audioTimeline: SpeedTimelineSegment[] = [];
+  /** Frame count the video path renders for `audioTimeline`. */
+  private audioTotalFrames = 0;
   private sourceAudioInput: Input | null = null;
   private sourceAudioTrack: InputAudioTrack | null = null;
   private readonly warnings = new Set<string>();
@@ -651,22 +736,27 @@ export class VideoExporter {
     return sliced;
   }
 
+  /**
+   * Reads the source audio for each of `keptRanges` in order and hands the
+   * visitor gain-annotated slices (audio-edit regions applied per slice).
+   */
   private async forEachAudioFrameSlice(
     baseGain: number,
+    keptRanges: TimeRangeMs[],
     visitor: (slice: AudioFrameSlice) => Promise<void> | void,
   ): Promise<void> {
     if (!this.sourceAudioTrack || this.sourceDurationMs <= 0 || this.cancelled) {
       return;
     }
 
-    const keptRanges = buildKeptRanges(this.sourceDurationMs, this.config.trimRegions);
     if (keptRanges.length === 0) {
       return;
     }
 
     const sink = new AudioBufferSink(this.sourceAudioTrack);
 
-    for (const range of keptRanges) {
+    for (let rangeIndex = 0; rangeIndex < keptRanges.length; rangeIndex += 1) {
+      const range = keptRanges[rangeIndex];
       if (this.cancelled) {
         break;
       }
@@ -710,6 +800,8 @@ export class VideoExporter {
             startFrame,
             endFrame,
             gain: segment.gain,
+            rangeIndex,
+            sourceStartMs: bufferStartMs + (startFrame / sampleRate) * 1000,
           });
         }
       }
@@ -751,6 +843,15 @@ export class VideoExporter {
     }
     const muxer = this.muxer;
 
+    // Segments at 1x copy straight through; any other speed sends the whole
+    // timeline through the WSOLA path so every segment is clamped to the frame
+    // count the video path rendered for it.
+    const timeline = this.audioTimeline;
+    const needsTimeStretch = timeline.some((segment) => !isTimeStretchPassthroughSpeed(segment.speed));
+    const keptRanges: TimeRangeMs[] = needsTimeStretch
+      ? timeline.map((segment) => ({ startMs: segment.startSec * 1000, endMs: segment.endSec * 1000 }))
+      : buildKeptRanges(this.sourceDurationMs, this.config.trimRegions);
+
     const baseGain = clampAudioGain(this.config.audioGain);
     const stats: AudioEnergyStats = {
       sampleCount: 0,
@@ -759,7 +860,7 @@ export class VideoExporter {
     };
 
     if (this.audioProcessing.normalizeLoudness) {
-      await this.forEachAudioFrameSlice(baseGain, async (slice) => {
+      await this.forEachAudioFrameSlice(baseGain, keptRanges, async (slice) => {
         this.accumulateAudioEnergyStats(
           stats,
           slice.sourceBuffer,
@@ -777,20 +878,200 @@ export class VideoExporter {
     const globalGain = normalization.appliedGain;
     const limiterLinear = this.audioProcessing.limiterLinear;
 
-    await this.forEachAudioFrameSlice(baseGain, async (slice) => {
-      const sliceGain = slice.gain * globalGain;
+    if (!needsTimeStretch) {
+      await this.forEachAudioFrameSlice(baseGain, keptRanges, async (slice) => {
+        const sliceGain = slice.gain * globalGain;
+        const audioSlice = this.createAudioSlice(
+          slice.sourceBuffer,
+          slice.startFrame,
+          slice.endFrame,
+          sliceGain,
+          limiterLinear,
+        );
+        if (!audioSlice) {
+          return;
+        }
+        await muxer.addAudioBuffer(audioSlice);
+      });
+      return;
+    }
+
+    await this.exportTimeStretchedAudio(muxer, timeline, keptRanges, baseGain, globalGain, limiterLinear);
+  }
+
+  /**
+   * Offline, pitch-preserving audio for timelines with a non-1x segment.
+   *
+   * The slice pipeline (kept ranges -> audio-edit gain -> loudness gain +
+   * limiter -> downmix in `createAudioSlice`) stays the source; each timeline
+   * segment then owns one `WsolaTimeStretcher` whose output is clamped to the
+   * exact sample budget of the frames the video path rendered for that segment
+   * (padded with silence on underrun), collected through a `PlanarChunkQueue`
+   * and handed to the muxer as fixed-size `AudioBuffer`s.
+   */
+  private async exportTimeStretchedAudio(
+    muxer: VideoMuxer,
+    timeline: SpeedTimelineSegment[],
+    keptRanges: TimeRangeMs[],
+    baseGain: number,
+    globalGain: number,
+    limiterLinear: number,
+  ): Promise<void> {
+    const frameRate = this.config.frameRate;
+    const frameCounts = buildVideoFrameCountsForTimeline(
+      timeline,
+      frameRate,
+      this.audioTotalFrames,
+      this.samplingMode === 'webcodecs' ? 'webcodecs' : 'seek',
+    );
+
+    // Output format is fixed by the first decoded slice.
+    let sampleRate = 0;
+    let channels = 0;
+    let sampleBudget: number[] = [];
+    let outQueue: PlanarChunkQueue | null = null;
+
+    // Per-segment state.
+    let openIndex = -1;
+    let nextIndex = 0;
+    let stretcher: WsolaTimeStretcher | null = null;
+    let segmentExpected = 0;
+    let segmentEmitted = 0;
+
+    const silencePlanes = (count: number): Float32Array[] =>
+      Array.from({ length: channels }, () => new Float32Array(count));
+
+    const flushOutput = async (drainAll: boolean): Promise<void> => {
+      if (!outQueue) {
+        return;
+      }
+      while (
+        !this.cancelled
+        && (outQueue.length >= TIME_STRETCH_OUTPUT_FRAMES || (drainAll && outQueue.length > 0))
+      ) {
+        const take = Math.min(TIME_STRETCH_OUTPUT_FRAMES, outQueue.length);
+        const data = outQueue.take(take);
+        const buffer = new AudioBuffer({ length: take, numberOfChannels: channels, sampleRate });
+        for (let channel = 0; channel < channels; channel += 1) {
+          buffer.getChannelData(channel).set(data.subarray(channel * take, (channel + 1) * take));
+        }
+        await muxer.addAudioBuffer(buffer);
+      }
+    };
+
+    // Clamp each segment's emitted output to its budget (drops the WSOLA tail
+    // overshoot) so cumulative A/V timing matches the retimed video.
+    const emitStretched = (planes: Float32Array[]): void => {
+      const produced = planes[0]?.length ?? 0;
+      const allowed = Math.max(0, segmentExpected - segmentEmitted);
+      const take = Math.min(produced, allowed);
+      outQueue?.push(planes, take);
+      segmentEmitted += take;
+    };
+
+    // Source-domain silence through the open stretcher (compressed by its speed).
+    const feedSourceSilence = (count: number): void => {
+      if (!stretcher) {
+        return;
+      }
+      let remaining = count;
+      while (remaining > 0) {
+        const n = Math.min(TIME_STRETCH_SILENCE_CHUNK_FRAMES, remaining);
+        emitStretched(stretcher.push(silencePlanes(n)));
+        remaining -= n;
+      }
+    };
+
+    const startSegment = (index: number): void => {
+      openIndex = index;
+      nextIndex = index + 1;
+      segmentExpected = sampleBudget[index] ?? 0;
+      segmentEmitted = 0;
+      stretcher = new WsolaTimeStretcher({
+        sampleRate,
+        channels,
+        speed: timeline[index].speed,
+        expectedOutputSamples: segmentExpected,
+      });
+    };
+
+    const finalizeSegment = (): void => {
+      if (!stretcher) {
+        return;
+      }
+      emitStretched(stretcher.flush());
+      // Pad the deficit with silence when WSOLA under-fills a short high-speed
+      // segment (or the source ran out) so the segment keeps its exact length.
+      if (segmentEmitted < segmentExpected) {
+        const pad = segmentExpected - segmentEmitted;
+        outQueue?.push(silencePlanes(pad), pad);
+        segmentEmitted += pad;
+      }
+      stretcher = null;
+    };
+
+    await this.forEachAudioFrameSlice(baseGain, keptRanges, async (slice) => {
+      if (this.cancelled) {
+        return;
+      }
+      if (sampleRate === 0) {
+        sampleRate = slice.sourceBuffer.sampleRate;
+        channels = Math.min(slice.sourceBuffer.numberOfChannels, MAX_EXPORT_AUDIO_CHANNELS);
+        sampleBudget = buildAudioSegmentSampleBudget(frameCounts, frameRate, sampleRate);
+        outQueue = new PlanarChunkQueue(channels);
+      }
+
+      const index = slice.rangeIndex;
+      if (stretcher && openIndex !== index) {
+        finalizeSegment();
+      }
+      // Segments the source never reached (a gap in the audio track) are pure silence.
+      while (nextIndex < index) {
+        startSegment(nextIndex);
+        finalizeSegment();
+      }
+      if (!stretcher) {
+        startSegment(index);
+        // A source whose first sample lands after the segment start (codec
+        // priming, or an audio track that starts after the video) keeps its
+        // true source-time position: fill the head with silence, as the video
+        // path holds its first frame over the same span.
+        const headGapMs = slice.sourceStartMs - keptRanges[index].startMs;
+        const headGapFrames = Math.round((headGapMs / 1000) * sampleRate);
+        if (headGapFrames > 0) {
+          feedSourceSilence(headGapFrames);
+        }
+      }
+
       const audioSlice = this.createAudioSlice(
         slice.sourceBuffer,
         slice.startFrame,
         slice.endFrame,
-        sliceGain,
+        slice.gain * globalGain,
         limiterLinear,
       );
-      if (!audioSlice) {
+      if (!audioSlice || !stretcher) {
         return;
       }
-      await muxer.addAudioBuffer(audioSlice);
+      const planes = Array.from({ length: channels }, (_, channel) =>
+        audioSlice.getChannelData(Math.min(channel, audioSlice.numberOfChannels - 1)),
+      );
+      emitStretched(stretcher.push(planes));
+      await flushOutput(false);
     });
+
+    if (this.cancelled || sampleRate === 0) {
+      return;
+    }
+
+    // Close the segment still open at end-of-stream, then pad any segment that
+    // never received audio (source shorter than the timeline) with silence.
+    finalizeSegment();
+    while (nextIndex < timeline.length) {
+      startSegment(nextIndex);
+      finalizeSegment();
+    }
+    await flushOutput(true);
   }
 
   /**
@@ -878,6 +1159,8 @@ export class VideoExporter {
       this.samplingMode = 'seek-only';
       this.sourceDurationMs = 0;
       this.sourceAudioEditRegions = [];
+      this.audioTimeline = [];
+      this.audioTotalFrames = 0;
       this.warnings.clear();
 
       this.platform = await getPlatform();
@@ -899,16 +1182,6 @@ export class VideoExporter {
       let hasSourceAudio = await this.resolveSourceAudioTrack();
       if (this.config.audioEnabled && !hasSourceAudio) {
         this.addWarning(EXPORT_WARNING_AUDIO_TRACK_UNAVAILABLE);
-      }
-
-      // Audio is not supported when playback speed is not 1x (time-stretching not implemented).
-      const hasSegmentSpeed = this.config.segments?.some((s) => !s.deleted && s.speed !== 1) ?? false;
-      const exportSpeed = this.config.playbackSpeed ?? 1;
-      if (hasSourceAudio && (exportSpeed !== 1 || hasSegmentSpeed)) {
-        console.warn('[VideoExporter] Non-1x speed detected — exporting without audio');
-        hasSourceAudio = false;
-        this.sourceAudioTrack = null;
-        this.addWarning(EXPORT_WARNING_SPEED_AUDIO_UNAVAILABLE);
       }
 
       // MP4 audio needs AAC or, when that encoder is missing (e.g. Chromium on
@@ -988,6 +1261,17 @@ export class VideoExporter {
         effectiveDuration = this.getEffectiveDuration(this.sourceDurationMs / 1000);
         totalFrames = Math.ceil(effectiveDuration * this.config.frameRate);
       }
+
+      // The audio path retimes itself against the same kept-span timeline and
+      // the same frame count the video path renders, so A/V never drift.
+      this.audioTimeline = decodePlan?.segments
+        ?? segmentsToSpeedTimeline(
+          this.config.segments,
+          this.config.trimRegions,
+          this.sourceDurationMs / 1000,
+          this.config.playbackSpeed,
+        );
+      this.audioTotalFrames = totalFrames;
 
       console.log('[VideoExporter] Original duration:', videoInfo.duration, 's (using', this.sourceDurationMs / 1000, 's)');
       console.log('[VideoExporter] Effective duration:', effectiveDuration, 's');
