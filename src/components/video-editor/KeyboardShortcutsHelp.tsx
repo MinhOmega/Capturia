@@ -7,6 +7,7 @@ import {
   FIXED_SHORTCUTS,
   formatBinding,
 } from '@/lib/shortcuts'
+import { isShortcutActionVisible } from './featureFlags'
 
 export function KeyboardShortcutsHelp() {
   const { t } = useI18n()
@@ -33,7 +34,7 @@ export function KeyboardShortcutsHelp() {
 
         {/* Configurable shortcuts */}
         <div className="space-y-1.5 text-[10px]">
-          {SHORTCUT_ACTIONS.map((action) => (
+          {SHORTCUT_ACTIONS.filter(isShortcutActionVisible).map((action) => (
             <div key={action} className="flex items-center justify-between">
               <span className="text-slate-400">{t(SHORTCUT_LABEL_KEYS[action])}</span>
               <kbd className="px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[#34B27B] font-mono">

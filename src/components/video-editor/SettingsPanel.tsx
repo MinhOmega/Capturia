@@ -72,6 +72,9 @@ import { reportUserActionError } from '@/lib/userErrorFeedback'
 import { BACKGROUND_IMAGE_ACCEPT, isSupportedBackgroundImageType } from './backgroundImageUpload'
 import { BACKGROUND_GRADIENT_PRESETS } from './backgroundPresets'
 import { GradientEditor } from './GradientEditor'
+import { BlurSettingsPanel } from './BlurSettingsPanel'
+import { BLUR_REGIONS_ENABLED } from './featureFlags'
+import type { BlurData } from './types'
 import {
   DEFAULT_WALLPAPER,
   isSameBuiltInWallpaper,
@@ -234,6 +237,7 @@ interface SettingsPanelProps {
   onAnnotationTypeChange?: (id: string, type: AnnotationType) => void
   onAnnotationStyleChange?: (id: string, style: Partial<AnnotationRegion['style']>) => void
   onAnnotationFigureDataChange?: (id: string, figureData: FigureData) => void
+  onAnnotationBlurDataChange?: (id: string, blurData: BlurData) => void
   onAnnotationDuplicate?: (id: string) => void
   onAnnotationDelete?: (id: string) => void
   hasAudioTrack?: boolean
@@ -405,6 +409,7 @@ export function SettingsPanel({
   onAnnotationTypeChange,
   onAnnotationStyleChange,
   onAnnotationFigureDataChange,
+  onAnnotationBlurDataChange,
   onAnnotationDuplicate,
   onAnnotationDelete,
   hasAudioTrack = true,
@@ -612,9 +617,29 @@ export function SettingsPanel({
     ? annotationRegions.find((a) => a.id === selectedAnnotationId)
     : null
 
+  // A selected blur region gets its own panel (shape, shade, block size).
+  if (
+    BLUR_REGIONS_ENABLED &&
+    selectedAnnotation?.type === 'blur' &&
+    onAnnotationBlurDataChange &&
+    onAnnotationDelete
+  ) {
+    return (
+      <BlurSettingsPanel
+        blurRegion={selectedAnnotation}
+        onBlurDataChange={(blurData) => onAnnotationBlurDataChange(selectedAnnotation.id, blurData)}
+        onDuplicate={
+          onAnnotationDuplicate ? () => onAnnotationDuplicate(selectedAnnotation.id) : undefined
+        }
+        onDelete={() => onAnnotationDelete(selectedAnnotation.id)}
+      />
+    )
+  }
+
   // If an annotation is selected, show annotation settings instead
   if (
     selectedAnnotation &&
+    selectedAnnotation.type !== 'blur' &&
     onAnnotationContentChange &&
     onAnnotationTypeChange &&
     onAnnotationStyleChange &&

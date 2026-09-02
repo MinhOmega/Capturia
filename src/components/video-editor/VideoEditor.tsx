@@ -27,7 +27,9 @@ import {
   DEFAULT_CROP_REGION,
   DEFAULT_FIGURE_DATA,
   createTextAnnotationRegion,
+  createBlurAnnotationRegion,
   resolveTextAnnotationContent,
+  type BlurData,
   type Rotation3DPreset,
   type ZoomDepth,
   type ZoomFocus,
@@ -52,7 +54,9 @@ import {
   DEFAULT_TIMELINE_SETTINGS,
 } from './editorDefaults'
 import { EditorMenuBar } from './EditorMenuBar'
-import { ANNOTATION_ID_PREFIX, maxIdNum } from './idCounters'
+import { ANNOTATION_ID_PREFIX, BLUR_ID_PREFIX, maxIdNum } from './idCounters'
+import { BLUR_REGIONS_ENABLED } from './featureFlags'
+import { normalizeAnnotationBlurData } from '@/lib/blurEffects'
 import { findFreeGapAt } from './regionPlacement'
 import {
   buildPastedAnnotation,
@@ -593,6 +597,7 @@ export default function VideoEditor() {
   const nextZoomIdRef = useRef(1)
   const nextSegIdRef = useRef(2)
   const nextAnnotationIdRef = useRef(1)
+  const nextBlurIdRef = useRef(1) // Blur regions share the annotation list but mint 'blur-N' ids
   const nextAnnotationZIndexRef = useRef(1) // Track z-index for stacking order
   const projectRestoredRef = useRef(false) // Guards wallpaper init race (one-shot: reset after first effects)
   const videoLoadedRef = useRef(false) // Prevents loadVideo re-trigger on locale change
@@ -985,11 +990,15 @@ export default function VideoEditor() {
               // Auto-Focus all (W3-f): older saves have no flag and keep the default (off).
               if (typeof s.autoFocusAll === 'boolean') setAutoFocusAll(s.autoFocusAll)
 
-              // Restore annotation regions and sync counters
+              // Restore annotation regions and sync counters. Blur regions get
+              // their blurData normalised (ranges clamped, defaults filled);
+              // other regions come back untouched.
               if (Array.isArray(s.annotationRegions)) {
-                setAnnotationRegions(s.annotationRegions)
+                setAnnotationRegions(normalizeAnnotationBlurData(s.annotationRegions))
                 const maxAnno = maxIdNum(s.annotationRegions, ANNOTATION_ID_PREFIX)
                 if (maxAnno > 0) nextAnnotationIdRef.current = maxAnno + 1
+                const maxBlur = maxIdNum(s.annotationRegions, BLUR_ID_PREFIX)
+                if (maxBlur > 0) nextBlurIdRef.current = maxBlur + 1
                 const maxZ = s.annotationRegions.reduce(
                   (max: number, a: { zIndex?: number }) => Math.max(max, a.zIndex ?? 0),
                   0,
@@ -1914,6 +1923,40 @@ export default function VideoEditor() {
     [setSelectedZoomIdForActiveAspect],
   )
 
+  // Blur regions are annotations of type 'blur': same list, same span/position
+  // handlers and the same undo snapshot, with their own id counter.
+  const handleBlurAdded = useCallback(
+    (span: Span) => {
+      if (!BLUR_REGIONS_ENABLED) return
+      const segs = segmentsRef.current
+      const trims = normalizedTrimsRef.current
+      const startMs =
+        segs.length > 0
+          ? effectiveToSourceMsWithSegments(span.start, segs)
+          : trims.length > 0
+            ? effectiveToSourceMs(span.start, trims)
+            : span.start
+      const endMs =
+        segs.length > 0
+          ? effectiveToSourceMsWithSegments(span.end, segs)
+          : trims.length > 0
+            ? effectiveToSourceMs(span.end, trims)
+            : span.end
+      const id = `${BLUR_ID_PREFIX}${nextBlurIdRef.current++}`
+      const newRegion = createBlurAnnotationRegion({
+        id,
+        startMs: Math.round(startMs),
+        endMs: Math.round(endMs),
+        zIndex: nextAnnotationZIndexRef.current++,
+      })
+      setAnnotationRegions((prev) => [...prev, newRegion])
+      setSelectedAnnotationId(id)
+      setSelectedZoomIdForActiveAspect(null)
+      setSelectedSegmentId(null)
+    },
+    [setSelectedZoomIdForActiveAspect],
+  )
+
   const handleAnnotationSpanChange = useCallback((id: string, span: Span) => {
     const segs = segmentsRef.current
     const trims = normalizedTrimsRef.current
@@ -1957,7 +2000,10 @@ export default function VideoEditor() {
       const source = annotationRegions.find((region) => region.id === id)
       if (!source) return
       const duplicate = duplicateAnnotationRegion(source, {
-        id: `${ANNOTATION_ID_PREFIX}${nextAnnotationIdRef.current++}`,
+        id:
+          source.type === 'blur'
+            ? `${BLUR_ID_PREFIX}${nextBlurIdRef.current++}`
+            : `${ANNOTATION_ID_PREFIX}${nextAnnotationIdRef.current++}`,
         zIndex: nextAnnotationZIndexRef.current++,
       })
       setAnnotationRegions((prev) => [...prev, duplicate])
@@ -2025,6 +2071,12 @@ export default function VideoEditor() {
   const handleAnnotationFigureDataChange = useCallback((id: string, figureData: FigureData) => {
     setAnnotationRegions((prev) =>
       prev.map((region) => (region.id === id ? { ...region, figureData } : region)),
+    )
+  }, [])
+
+  const handleAnnotationBlurDataChange = useCallback((id: string, blurData: BlurData) => {
+    setAnnotationRegions((prev) =>
+      prev.map((region) => (region.id === id ? { ...region, blurData } : region)),
     )
   }, [])
 
@@ -2174,7 +2226,10 @@ export default function VideoEditor() {
 
     // Annotation: overlaps are allowed. The clone is nudged like Duplicate so it
     // does not sit exactly on the original when both are on screen.
-    const id = `${ANNOTATION_ID_PREFIX}${nextAnnotationIdRef.current++}`
+    const id =
+      copied.type === 'blur'
+        ? `${BLUR_ID_PREFIX}${nextBlurIdRef.current++}`
+        : `${ANNOTATION_ID_PREFIX}${nextAnnotationIdRef.current++}`
     const region = buildPastedAnnotation(
       {
         id,
@@ -3902,6 +3957,7 @@ export default function VideoEditor() {
                   onSelectSegment={handleSelectSegment}
                   annotationRegions={effectiveAnnotationRegions}
                   onAnnotationAdded={handleAnnotationAdded}
+                  onBlurAdded={handleBlurAdded}
                   onAnnotationSpanChange={handleAnnotationSpanChange}
                   onAnnotationDelete={handleAnnotationDelete}
                   selectedAnnotationId={selectedAnnotationId}
@@ -4000,6 +4056,7 @@ export default function VideoEditor() {
               onAnnotationTypeChange={handleAnnotationTypeChange}
               onAnnotationStyleChange={handleAnnotationStyleChange}
               onAnnotationFigureDataChange={handleAnnotationFigureDataChange}
+              onAnnotationBlurDataChange={handleAnnotationBlurDataChange}
               onAnnotationDuplicate={handleAnnotationDuplicate}
               onAnnotationDelete={handleAnnotationDelete}
               hasAudioTrack={sourceHasAudio}
