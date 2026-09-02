@@ -79,9 +79,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install app dependencies
-        run: npx electron-builder install-app-deps
-
       - name: Build app
         run: ${{ matrix.build_script }}
 
