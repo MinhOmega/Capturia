@@ -1,6 +1,7 @@
 export {
   CAPTION_MODEL_APPROX_BYTES,
   CAPTION_MODEL_ID,
+  CAPTION_MODEL_REVISION,
   MAX_CAPTION_AUDIO_SEC,
   whisperLanguageForLocale,
 } from './captionConstants'

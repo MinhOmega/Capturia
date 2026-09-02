@@ -61,12 +61,13 @@ The native failure code reaches the renderer through the job status
 
 **Downloaded on first use (`electron/ipc/captionHandlers.ts`)**
 
-`userData/caption-models/Xenova/whisper-tiny/`:
+`userData/caption-models/Xenova/whisper-tiny/`, fetched from
+`https://huggingface.co/Xenova/whisper-tiny/resolve/<CAPTION_MODEL_REVISION>/<file>`.
 
 | File | Size |
 |------|------|
-| `onnx/decoder_model_merged_quantized.onnx` | 30.7 MB (SHA-256 verified) |
-| `onnx/encoder_model_quantized.onnx` | 10.1 MB (SHA-256 verified) |
+| `onnx/decoder_model_merged_quantized.onnx` | 30.7 MB |
+| `onnx/encoder_model_quantized.onnx` | 10.1 MB |
 | `tokenizer.json`, `vocab.json`, `merges.txt`, `normalizer.json`, `config.json`, `generation_config.json`, `preprocessor_config.json`, `tokenizer_config.json`, `added_tokens.json`, `special_tokens_map.json`, `quantize_config.json` | ~4 MB total |
 
 Total ~45 MB. Downloads are sequential, written to `<file>.partial` and
@@ -74,6 +75,29 @@ renamed when complete, resumed with `Range` requests, retried with backoff on
 408/425/429/5xx (honouring `Retry-After`), and cancellable
 (`caption-model-download-cancel`). The renderer asks before the first download
 (toast "Download caption model?") and shows progress.
+
+**Pinned revision and integrity.** `CAPTION_MODEL_REVISION`
+(`src/lib/captioning/captionConstants.ts`) is the full commit SHA of the Hub
+repo the file list was captured against; `modelFileUrl` refuses anything that
+is not a 40-hex SHA, so a push to the repo's `main` cannot change the
+tokenizer or config under the app. **Every** file (ONNX graphs and the JSON /
+text metadata) carries a SHA-256 in `WHISPER_TINY_MODEL`; a mismatch deletes the
+`.partial` and fails the download with `Checksum mismatch for <file>`.
+
+To move to a newer revision:
+
+```
+curl -s 'https://huggingface.co/api/models/Xenova/whisper-tiny?blobs=true' \
+  | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d["sha"]);[print(s["rfilename"],s["size"],(s.get("lfs") or {}).get("sha256")) for s in d["siblings"]]'
+# then, for each file in WHISPER_TINY_MODEL:
+curl -sL -o f "https://huggingface.co/Xenova/whisper-tiny/resolve/<sha>/<file>" && sha256sum f
+```
+
+Update `CAPTION_MODEL_REVISION` and every `approximateBytes` /
+`expectedSha256`, then run `npx vitest --run electron/ipc/captionHandlers.test.ts`.
+The LFS `sha256` the API reports for the ONNX files must equal what you
+compute from the downloaded bytes; the JSON/text files are not LFS objects, so
+their digests can only be computed locally.
 
 ## IPC and preload
 
