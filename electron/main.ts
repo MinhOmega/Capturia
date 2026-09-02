@@ -34,6 +34,19 @@ import { getRecordingsDir } from './paths'
 import { isReadablePathAllowed, localMediaUrlToPath, normalizeExternalUrl } from './ipc/paths'
 import { shouldSwallowMainProcessError } from './main-process-errors'
 import { checkLatestRelease } from './update-checker'
+import {
+  type AutoUpdaterController,
+  availableDialogAction,
+  createAutoUpdater,
+  downloadedDialogAction,
+  getUpdaterEligibility,
+  parseUpdatePreferences,
+  serializeUpdatePreferences,
+  shouldRunLaunchCheck,
+  UPDATE_PREFERENCES_FILE_NAME,
+  type UpdateErrorKind,
+  type UpdateProgressEvent,
+} from './auto-updater'
 import { scheduleRecordingsCleanup } from './recordingsCleanup'
 import { buildIssueReportUrl, GITHUB_ISSUES_URL } from '../src/lib/supportLinks'
 import { getMainLocale, mainT, setMainLocale } from './i18n'
@@ -661,20 +674,174 @@ function setupApplicationMenu(): void {
 }
 
 // ── Check for updates (F10 / M12) ──────────────────────────────────────────
-// Menu-driven only: one GitHub API call, a verdict dialog, and at most an
-// "open release page" through the external-URL allowlist. No download, no
-// electron-updater (that needs a `publish` block + signed installers, B7/B8).
+// Two flows share the menu item. When this copy can update itself (packaged
+// dmg / nsis / AppImage, see `auto-updater.ts`) electron-updater drives a
+// download-then-restart flow with progress forwarded to the renderer. Every
+// other install keeps the release-page flow below: one GitHub API call, a
+// verdict dialog, and at most an "open release page" through the external-URL
+// allowlist. The updater also falls back to it when the build is unsigned or
+// the release carries no update feed.
 let updateCheckInFlight = false
 const UPDATE_CHECK_TIMEOUT_MS = 10_000
+const LAUNCH_UPDATE_CHECK_DELAY_MS = 10_000
 
-function updatesText(
-  key: 'available' | 'current' | 'failed' | 'openRelease',
-  vars?: Record<string, string>,
-): string {
+type UpdatesTextKey =
+  | 'available'
+  | 'current'
+  | 'failed'
+  | 'openRelease'
+  | 'downloadPrompt'
+  | 'downloadNow'
+  | 'later'
+  | 'downloaded'
+  | 'restartNow'
+  | 'onNextQuit'
+  | 'offline'
+
+function updatesText(key: UpdatesTextKey, vars?: Record<string, string>): string {
   return mainT(currentLocale(), `common.electron.updates.${key}`, vars)
 }
 
+let autoUpdaterController: AutoUpdaterController | null | undefined
+
+/**
+ * Lazily builds the electron-updater controller; `null` when this install
+ * cannot update itself. The module is imported only on eligible channels so
+ * dev runs and package-manager installs never pay for it.
+ */
+async function getAutoUpdater(): Promise<AutoUpdaterController | null> {
+  if (autoUpdaterController !== undefined) return autoUpdaterController
+  const eligibility = getUpdaterEligibility(installChannel(), app.isPackaged)
+  if (!eligibility.eligible) {
+    autoUpdaterController = null
+    return null
+  }
+  try {
+    const { autoUpdater } = await import('electron-updater')
+    autoUpdaterController = createAutoUpdater({
+      updater: autoUpdater,
+      currentVersion: app.getVersion(),
+      isRecording: () => recordingActive,
+      emit: broadcastUpdateProgress,
+      prompts: {
+        available: async (version) => {
+          const choice = await showMessageBox({
+            type: 'info',
+            title: PRODUCT_NAME,
+            message: updatesText('downloadPrompt', {
+              latestVersion: version,
+              currentVersion: app.getVersion(),
+            }),
+            buttons: [updatesText('downloadNow'), updatesText('later')],
+            defaultId: 0,
+            cancelId: 1,
+            noLink: true,
+          })
+          return availableDialogAction(choice.response)
+        },
+        downloaded: async (version) => {
+          const choice = await showMessageBox({
+            type: 'info',
+            title: PRODUCT_NAME,
+            message: updatesText('downloaded', { latestVersion: version }),
+            buttons: [updatesText('restartNow'), updatesText('onNextQuit')],
+            defaultId: 0,
+            cancelId: 1,
+            noLink: true,
+          })
+          return downloadedDialogAction(choice.response)
+        },
+        current: async (version) => {
+          await showMessageBox({
+            type: 'info',
+            title: PRODUCT_NAME,
+            message: updatesText('current', { currentVersion: version }),
+            buttons: [menuLabel('actions.close', 'Close')],
+            noLink: true,
+          })
+        },
+        failed: async (kind: UpdateErrorKind, message: string) => {
+          await showMessageBox({
+            type: 'warning',
+            title: PRODUCT_NAME,
+            message: updatesText(kind === 'offline' ? 'offline' : 'failed'),
+            detail: message,
+            buttons: [menuLabel('actions.close', 'Close')],
+            noLink: true,
+          })
+        },
+      },
+      fallbackToReleasePage: checkForUpdatesViaReleasePage,
+      log: (message, ...detail) => console.warn(message, ...detail),
+    })
+  } catch (error) {
+    console.warn('[updates] electron-updater unavailable; using the release page flow:', error)
+    autoUpdaterController = null
+  }
+  return autoUpdaterController
+}
+
+function broadcastUpdateProgress(event: UpdateProgressEvent): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue
+    win.webContents.send('update-progress', event)
+  }
+}
+
+const UPDATE_PREFERENCES_FILE = path.join(app.getPath('userData'), UPDATE_PREFERENCES_FILE_NAME)
+
+async function readAutoUpdateCheckPreference(): Promise<boolean> {
+  try {
+    return parseUpdatePreferences(await fs.readFile(UPDATE_PREFERENCES_FILE, 'utf-8'))
+      .autoUpdateCheck
+  } catch {
+    return parseUpdatePreferences(null).autoUpdateCheck
+  }
+}
+
+async function writeAutoUpdateCheckPreference(enabled: boolean): Promise<void> {
+  await fs.mkdir(path.dirname(UPDATE_PREFERENCES_FILE), { recursive: true })
+  await fs.writeFile(
+    UPDATE_PREFERENCES_FILE,
+    serializeUpdatePreferences({ autoUpdateCheck: enabled }),
+    'utf-8',
+  )
+}
+
+/** Launch check: 10 s after the first window, only when enabled and this copy can act on it. */
+function scheduleLaunchUpdateCheck(): void {
+  if (HEADLESS) return
+  globalThis.setTimeout(() => {
+    void (async () => {
+      const controller = await getAutoUpdater()
+      const autoUpdateCheck = await readAutoUpdateCheckPreference()
+      if (
+        !shouldRunLaunchCheck({
+          eligible: controller !== null,
+          autoUpdateCheck,
+          recording: recordingActive,
+        })
+      ) {
+        return
+      }
+      await controller?.check('launch')
+    })().catch((error) => {
+      console.warn('[updates] launch check failed:', error)
+    })
+  }, LAUNCH_UPDATE_CHECK_DELAY_MS)
+}
+
+/** Menu entry point: the updater when it can act, the release-page flow otherwise. */
 async function checkForUpdates(): Promise<void> {
+  const controller = await getAutoUpdater()
+  if (controller) {
+    await controller.check('menu')
+    return
+  }
+  await checkForUpdatesViaReleasePage()
+}
+
+async function checkForUpdatesViaReleasePage(): Promise<void> {
   if (updateCheckInFlight) return
   updateCheckInFlight = true
   try {
@@ -1300,6 +1467,25 @@ appReady?.then(async () => {
     updateTrayMenu(recordingActive)
     setupApplicationMenu()
   })
+
+  // Launch update check preference (main-owned so it is known before any
+  // renderer loads); the renderer only reads and toggles it.
+  ipcMain.handle('get-auto-update-check', async () => {
+    return { success: true, enabled: await readAutoUpdateCheckPreference() }
+  })
+  ipcMain.handle('set-auto-update-check', async (_, enabled: unknown) => {
+    try {
+      await writeAutoUpdateCheckPreference(enabled === true)
+      return { success: true, enabled: enabled === true }
+    } catch (error) {
+      console.warn('Failed to persist the auto-update preference:', error)
+      return { success: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  })
+  ipcMain.handle('check-for-updates', async () => {
+    void checkForUpdates()
+    return { success: true }
+  })
   setMainLocale(app.getLocale())
   configureAboutPanel()
   setupApplicationMenu()
@@ -1340,4 +1526,5 @@ appReady?.then(async () => {
     },
   )
   createWindow()
+  scheduleLaunchUpdateCheck()
 })
