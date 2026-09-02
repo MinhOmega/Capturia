@@ -1,5 +1,7 @@
+import { BLUR_REGIONS_ENABLED } from '@/components/video-editor/featureFlags'
 import type { AnnotationRegion, ArrowDirection } from '@/components/video-editor/types'
 import { getRenderableAnnotations } from '@/lib/annotations/renderOrder'
+import { getNormalizedMosaicBlockSize, renderMosaicRegion } from '@/lib/blurEffects'
 import {
   applyTextAnimationToCanvas,
   getRevealedText,
@@ -290,6 +292,41 @@ async function renderImage(
   ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight)
 }
 
+/**
+ * Mosaics the frame pixels under a blur region, in place on the composite
+ * canvas. The region is snapped to whole output pixels, the block size is
+ * scaled with the output (`scaleFactor` = output px per preview px), and the
+ * pixels run through the same `renderMosaicRegion` the preview overlay uses,
+ * so export and preview show the same mosaic at the output resolution.
+ */
+export function renderBlurRegion(
+  ctx: CanvasRenderingContext2D,
+  annotation: AnnotationRegion,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  scaleFactor: number,
+): void {
+  const canvasWidth = ctx.canvas.width
+  const canvasHeight = ctx.canvas.height
+  const left = Math.max(0, Math.round(x))
+  const top = Math.max(0, Math.round(y))
+  const right = Math.min(canvasWidth, Math.round(x + width))
+  const bottom = Math.min(canvasHeight, Math.round(y + height))
+  const sampleWidth = right - left
+  const sampleHeight = bottom - top
+  if (sampleWidth <= 0 || sampleHeight <= 0) return
+
+  const imageData = ctx.getImageData(left, top, sampleWidth, sampleHeight)
+  renderMosaicRegion(
+    imageData,
+    annotation.blurData,
+    getNormalizedMosaicBlockSize(annotation.blurData, scaleFactor),
+  )
+  ctx.putImageData(imageData, left, top)
+}
+
 const FONT_LOAD_TIMEOUT_MS = 5000
 
 /** The CSS font shorthand used both to load a family and to draw with it. */
@@ -394,6 +431,12 @@ export async function renderAnnotations(
             height,
             scaleFactor,
           )
+        }
+        break
+
+      case 'blur':
+        if (BLUR_REGIONS_ENABLED) {
+          renderBlurRegion(ctx, annotation, x, y, width, height, scaleFactor)
         }
         break
     }
