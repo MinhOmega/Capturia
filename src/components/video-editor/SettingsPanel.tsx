@@ -9,7 +9,8 @@ import ColorPicker from '@/components/ui/color-picker';
 import { Trash2, Download, Crop, X, Bug, Upload, Star, Film, Image, Sparkles, Palette, Captions, Scissors, ScanSearch, AudioWaveform, WandSparkles, Info, MousePointer2 } from "lucide-react";
 import { toast } from "sonner";
 import * as SliderPrimitive from "@radix-ui/react-slider";
-import type { ZoomDepth, ZoomFocus, ZoomFocusMode, CropRegion, AnnotationRegion, AnnotationType, FigureData } from "./types";
+import type { ZoomDepth, ZoomFocus, ZoomFocusMode, CropRegion, AnnotationRegion, AnnotationType, FigureData, Rotation3DPreset } from "./types";
+import { ROTATION_3D_PRESET_ORDER } from "./types";
 import { MAX_PLAYBACK_SPEED, MAX_ZOOM_SCALE, MIN_PLAYBACK_SPEED, MIN_ZOOM_SCALE, ZOOM_DEPTH_SCALES } from "./types";
 import { parseCustomPlaybackSpeedInput } from "./customPlaybackSpeed";
 import { getFocusBoundsForScale } from "./videoPlayback/focusUtils";
@@ -125,6 +126,10 @@ interface SettingsPanelProps {
   /** Focus mode of the selected zoom ('auto' = camera follows the recorded cursor). */
   selectedZoomFocusMode?: ZoomFocusMode | null;
   onZoomFocusModeChange?: (mode: ZoomFocusMode) => void;
+  /** 3D tilt preset of the selected zoom (null = flat). */
+  selectedZoomRotationPreset?: Rotation3DPreset | null;
+  /** null clears the preset (back to flat). */
+  onZoomRotationPresetChange?: (preset: Rotation3DPreset | null) => void;
   /** Global "Auto-Focus all" toggle: every zoom follows the cursor; the per-zoom control is locked. */
   autoFocusAll?: boolean;
   onToggleAutoFocusAll?: (enabled: boolean) => void;
@@ -296,6 +301,8 @@ export function SettingsPanel({
   onZoomFocusCoordinateCommit,
   selectedZoomFocusMode = null,
   onZoomFocusModeChange,
+  selectedZoomRotationPreset = null,
+  onZoomRotationPresetChange,
   autoFocusAll = false,
   onToggleAutoFocusAll,
   onZoomPreviewStart,
@@ -669,6 +676,45 @@ export function SettingsPanel({
                   <span>{t("settings.zoomFocusModeLockedDisclaimer")}</span>
                 </div>
               )}
+            </div>
+          )}
+          {zoomEnabled && onZoomRotationPresetChange && (
+            <div className="mt-3 space-y-1.5">
+              <span className="text-[11px] font-medium text-slate-400 block">{t("settings.zoom3dTitle")}</span>
+              <div
+                role="radiogroup"
+                aria-label={t("settings.zoom3dTitle")}
+                className="grid grid-cols-4 gap-0.5 rounded-lg border border-white/[0.06] bg-white/[0.035] p-0.5"
+              >
+                {([null, ...ROTATION_3D_PRESET_ORDER] as Array<Rotation3DPreset | null>).map((preset) => {
+                  const isActive = (selectedZoomRotationPreset ?? null) === preset;
+                  const label =
+                    preset === null
+                      ? t("settings.zoom3dNone")
+                      : preset === 'iso'
+                        ? t("settings.zoom3dIso")
+                        : preset === 'left'
+                          ? t("settings.zoom3dLeft")
+                          : t("settings.zoom3dRight");
+                  return (
+                    <Button
+                      key={preset ?? 'none'}
+                      type="button"
+                      role="radio"
+                      aria-checked={isActive}
+                      onClick={() => onZoomRotationPresetChange(preset)}
+                      className={cn(
+                        "h-6 w-full rounded-md border px-1 text-center transition-all duration-150 ease-out cursor-pointer",
+                        isActive
+                          ? "border-[#34B27B]/50 bg-[#34B27B] text-white hover:bg-[#34B27B]"
+                          : "border-transparent bg-transparent text-slate-400 hover:bg-white/[0.06] hover:text-slate-200",
+                      )}
+                    >
+                      <span className="text-[10px] font-semibold">{label}</span>
+                    </Button>
+                  );
+                })}
+              </div>
             </div>
           )}
           {zoomEnabled && onZoomPreviewStart && onZoomPreviewEnd && (

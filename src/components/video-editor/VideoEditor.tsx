@@ -25,6 +25,7 @@ import {
   DEFAULT_FIGURE_DATA,
   createTextAnnotationRegion,
   resolveTextAnnotationContent,
+  type Rotation3DPreset,
   type ZoomDepth,
   type ZoomFocus,
   type ZoomFocusMode,
@@ -1446,6 +1447,24 @@ export default function VideoEditor() {
           ? { ...region, focusMode, source: 'manual' }
           : region,
       ),
+    );
+  }, [selectedZoomId, setZoomRegionsForActiveAspect]);
+
+  // Per-zoom 3D tilt preset (None / Iso / Left / Right). null removes the
+  // field so the saved project stays identical to a flat region. One region
+  // update = one undo entry.
+  const handleZoomRotationPresetChange = useCallback((preset: Rotation3DPreset | null) => {
+    if (!selectedZoomId) return;
+    setZoomRegionsForActiveAspect((prev) =>
+      prev.map((region) => {
+        if (region.id !== selectedZoomId) return region;
+        if ((region.rotationPreset ?? null) === preset) return region;
+        if (preset === null) {
+          const { rotationPreset: _removed, ...rest } = region;
+          return { ...rest, source: 'manual' };
+        }
+        return { ...region, rotationPreset: preset, source: 'manual' };
+      }),
     );
   }, [selectedZoomId, setZoomRegionsForActiveAspect]);
 
@@ -3313,6 +3332,8 @@ export default function VideoEditor() {
                 onZoomFocusCoordinateCommit={endHistoryBatch}
                 selectedZoomFocusMode={selectedZoomRegion ? getZoomFocusMode(selectedZoomRegion) : null}
                 onZoomFocusModeChange={handleZoomFocusModeChange}
+                selectedZoomRotationPreset={selectedZoomRegion?.rotationPreset ?? null}
+                onZoomRotationPresetChange={handleZoomRotationPresetChange}
                 autoFocusAll={autoFocusAll}
                 onToggleAutoFocusAll={handleToggleAutoFocusAll}
                 onZoomPreviewStart={() => setIsPreviewingZoom(true)}
