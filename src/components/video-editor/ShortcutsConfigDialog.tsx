@@ -18,6 +18,7 @@ import {
   type ShortcutConflict,
   type ShortcutsConfig,
 } from '@/lib/shortcuts'
+import { isShortcutActionVisible } from './featureFlags'
 import { useShortcuts } from '@/contexts/ShortcutsContext'
 import { useI18n } from '@/i18n'
 
@@ -170,7 +171,7 @@ export function ShortcutsConfigDialog() {
               key: 'editor',
               titleKey: 'shortcuts.configurable',
               hintKey: null,
-              actions: EDITOR_SHORTCUT_ACTIONS,
+              actions: EDITOR_SHORTCUT_ACTIONS.filter(isShortcutActionVisible),
             },
             {
               key: 'global',

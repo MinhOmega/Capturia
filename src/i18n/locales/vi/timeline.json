@@ -27,11 +27,14 @@
 	"addZoom": "Thêm Thu phóng (Z)",
 	"addTrim": "Thêm Cắt (T)",
 	"addAnnotation": "Thêm Chú thích (A)",
+	"blur": "Làm mờ",
+	"addBlur": "Thêm Vùng làm mờ (B)",
 	"resizeLeft": "Kéo cạnh trái",
 	"resizeRight": "Kéo cạnh phải",
 	"hints": {
 		"pressZoom": "Nhấn {{key}} để thêm thu phóng",
 		"pressAnnotation": "Nhấn {{key}} để thêm chú thích",
+		"pressBlur": "Nhấn {{key}} để thêm vùng làm mờ",
 		"noSubtitles": "Tạo phụ đề từ bảng cài đặt"
 	}
 }

@@ -3,6 +3,7 @@
 export const SHORTCUT_ACTIONS = [
   'addZoom',
   'addAnnotation',
+  'addBlur',
   'addKeyframe',
   'toggleScissors',
   'deleteSelected',
@@ -70,6 +71,7 @@ export type ShortcutConflict =
 export const SHORTCUT_LABEL_KEYS: Record<ShortcutAction, string> = {
   addZoom: 'shortcuts.addZoom',
   addAnnotation: 'shortcuts.addAnnotation',
+  addBlur: 'shortcuts.addBlur',
   addKeyframe: 'shortcuts.addKeyframe',
   toggleScissors: 'shortcuts.toggleScissors',
   deleteSelected: 'shortcuts.deleteSelected',
@@ -89,6 +91,7 @@ export const SHORTCUT_LABEL_KEYS: Record<ShortcutAction, string> = {
 export const DEFAULT_SHORTCUTS: ShortcutsConfig = {
   addZoom: { key: 'z' },
   addAnnotation: { key: 'a' },
+  addBlur: { key: 'b' },
   addKeyframe: { key: 'f' },
   toggleScissors: { key: 's' },
   deleteSelected: { key: 'd', ctrl: true },
