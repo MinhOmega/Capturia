@@ -142,6 +142,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     cameraSizePercent?: number
     cameraDeviceId?: string
     cameraDeviceName?: string
+    microphoneDeviceId?: string
+    microphoneDeviceName?: string
     frameRate?: number
     maxLongEdge?: number
     bitrateScale?: number

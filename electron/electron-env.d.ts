@@ -249,6 +249,9 @@ interface Window {
       cameraSizePercent?: number
       cameraDeviceId?: string
       cameraDeviceName?: string
+      /** Microphone chosen in the HUD picker (Chromium deviceId + label); helper matches by label. */
+      microphoneDeviceId?: string
+      microphoneDeviceName?: string
       frameRate?: number
       maxLongEdge?: number
       bitrateScale?: number
@@ -265,6 +268,8 @@ interface Window {
       hasMicrophoneAudio?: boolean
       /** The running helper accepts `pause` / `resume`; false for an old binary. */
       canPause?: boolean
+      /** Non-fatal helper warning codes, e.g. `mic_device_not_found`. */
+      warnings?: string[]
     }>
     pauseNativeScreenRecording: () => Promise<{
       success: boolean

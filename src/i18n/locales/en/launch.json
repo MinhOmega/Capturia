@@ -135,6 +135,7 @@
 	},
 	"microphone": "Mic",
 	"microphoneFallback": "Microphone unavailable. Recording without audio.",
+	"microphoneDeviceNotFound": "Selected microphone not found. Recording with the default microphone.",
 	"audio": {
 		"enableMicrophone": "Enable microphone",
 		"disableMicrophone": "Disable microphone",
