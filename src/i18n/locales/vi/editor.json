@@ -10,7 +10,6 @@
 	"batchVideoExportSuccess": "Đã xuất {{count}} video tới {{path}}",
 	"exportWarningAudioTrackUnavailable": "Không đọc được luồng âm thanh nguồn nên video được xuất không có âm thanh.",
 	"exportWarningAudioCodecUnsupported": "Hệ thống này không hỗ trợ mã hóa âm thanh AAC. Video đã được xuất không có âm thanh.",
-	"exportWarningSpeedAudioUnavailable": "Âm thanh không khả dụng khi xuất với tốc độ phát khác 1x.",
 	"exportWarningDecoderFallback": "Bộ giải mã WebCodecs nhanh không đọc được bản ghi này nên video được xuất bằng bộ giải mã tương thích chậm hơn.",
 	"exportWarningDecodeEndedEarly": "Nguồn video ngừng giải mã trước điểm kết thúc được báo cáo nên video xuất ra có thể ngắn hơn dự kiến một chút.",
 	"saveGifFailed": "Không thể lưu GIF",
