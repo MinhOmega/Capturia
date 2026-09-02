@@ -67,3 +67,15 @@ Windows:
 
 CI:
 9. First tag push after merge: `validate` version guard, four installer legs, GitHub release assets.
+
+## Lead verification (merged tree, `68bd174`)
+
+- Fresh `npm install` against the new lockfile: single `vite@7.3.6`, `vitest@4.1.11`,
+  `electron@41.10.7`, `electron-builder@26.15.3`, `typescript@5.9.3`.
+- `npm run lint` 0 errors / 116 warnings; `tsc` + test types clean; `npm run i18n:check` PASS (621)
+- `npx vitest --run` **115 files / 1195 tests**; `npx vite build` OK (ORT wasm, es workers, preload)
+- Reviewed: signing enabled only when all six secrets are non-empty, exported via `$GITHUB_ENV`,
+  `CSC_IDENTITY_AUTO_DISCOVERY=false` otherwise; `notarize: false` explicit; `npmRebuild` /
+  `buildDependenciesFromSource` off with `asarUnpack **/*.node`; `linux.desktop.entry` migration.
+- Still unverified (needs CI / real desktops): the four installer legs, signing + notarization on a
+  macOS runner, Electron 41 on X11 / Wayland / macOS / Windows. Tag a release candidate to exercise.
