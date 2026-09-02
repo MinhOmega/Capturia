@@ -55,6 +55,7 @@ type UseScreenRecorderOptions = {
   microphoneEnabled?: boolean
   /** Microphone chosen in the HUD picker (Chromium deviceId); empty = system default. */
   microphoneDeviceId?: string
+  systemAudioEnabled?: boolean
   /** Label of that microphone for the native helper (looked up from the id when absent). */
   microphoneDeviceName?: string
 }
@@ -190,6 +191,7 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
   const recordSystemCursor = options.recordSystemCursor ?? true
   const microphoneGain = normalizeMicrophoneGain(options.microphoneGain)
   const microphoneEnabled = options.microphoneEnabled ?? true
+  const systemAudioEnabled = options.systemAudioEnabled ?? false
   const microphoneDeviceId = options.microphoneDeviceId || undefined
   const microphoneDeviceName = options.microphoneDeviceName || undefined
   const [recording, setRecording] = useState(false)
@@ -1064,6 +1066,7 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
             microphoneGain,
             microphoneDeviceId,
             microphoneDeviceName: nativeMicrophoneDeviceName,
+            systemAudio: systemAudioEnabled,
             cameraEnabled,
             cameraShape,
             cameraSizePercent,
@@ -1151,6 +1154,10 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
           if (nativeStart.warnings?.includes('mic_device_not_found')) {
             // The helper opened the default microphone instead of the picked one.
             toast.warning(t('launch.microphoneDeviceNotFound'))
+          }
+          if (systemAudioEnabled && nativeStart.canCaptureSystemAudio !== true) {
+            // Helper built before system audio: the recording goes on without it.
+            toast.warning(t('launch.systemAudioUnavailable'))
           }
 
           try {
