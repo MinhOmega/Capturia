@@ -137,8 +137,8 @@ is off so the model is not duplicated into Cache Storage.
   Chinese and noisy audio. `CAPTION_MODEL_ID` is a single constant so
   `whisper-base` (~150 MB) / `whisper-small` (~500 MB) can be offered later;
   `electron/ipc/captionHandlers.ts` `CAPTION_MODELS` is the registry.
-- Word-level timestamps need the `output_attentions` weights, which upstream
-  found unreliable, so Windows/Linux users mostly get phrase timing split
+- Word-level timestamps need the `output_attentions` weights, which proved
+  unreliable in practice, so Windows/Linux users mostly get phrase timing split
   proportionally by word length. Subtitles are fine; silence-based rough cuts
   are coarser (only phrase boundaries).
 - Inference runs single-threaded wasm on the CPU: roughly real-time / 2 on a

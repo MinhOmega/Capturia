@@ -93,11 +93,11 @@ are mapped to user messages in `src/lib/permissions/nativeRecorderErrors.ts`.
 
 One command per line, read on a dedicated thread: `pause`, `resume`, `stop`.
 `stop` is equivalent to SIGINT / SIGTERM, which `sckRecorder.ts` still uses for
-stopping (proven path); the stdin form exists for parity with upstream.
+stopping (proven path).
 
 ### Pause semantics
 
-Port of upstream OpenScreen `73870c65`. `ScreenStreamWriter` keeps
+`ScreenStreamWriter` keeps
 `pauseStartedAt` / `totalPausedDuration` on the host clock (`CMClockGetHostTimeClock`),
 guarded by a serial queue. While paused every video frame and microphone buffer is
 dropped. After a resume, every sample is retimed: video PTS becomes
@@ -144,15 +144,14 @@ The cursor tracker (`electron/ipc/cursorTracker.ts`) samples on the wall clock a
 keeps sampling while paused. The renderer calls `cursor-tracker-pause` /
 `cursor-tracker-resume` around every pause (native and MediaRecorder paths), and on
 stop the recorded ranges are removed with `compactCursorTrackPauseRanges`
-(`electron/ipc/cursorTrack.ts`, port of upstream
-`compactPendingCursorTelemetryPauseRanges`): samples inside a pause are dropped,
+(`electron/ipc/cursorTrack.ts`): samples inside a pause are dropped,
 later samples and click/selection events shift back by the paused duration.
 
 ## `cursor-kind-monitor` protocol
 
 Prints `CURSOR_KIND <kind>` whenever the kind changes (~60 Hz poll). Kinds are the
-`CURSOR_KINDS` list in `src/lib/cursor/cursorKinds.ts` (upstream OpenScreen's
-`NativeCursorType` set): `arrow`, `text`, `pointer`, `crosshair`, `open-hand`,
+`CURSOR_KINDS` list in `src/lib/cursor/cursorKinds.ts`, the vocabulary the
+helper and the renderer share: `arrow`, `text`, `pointer`, `crosshair`, `open-hand`,
 `closed-hand`, `resize-ew`, `resize-ns`, `resize-nesw`, `resize-nwse`, `move`,
 `not-allowed`, `wait`, `app-starting`, `help`, `up-arrow`.
 
@@ -166,8 +165,9 @@ prints `CURSOR_KIND ibeam`, which `parseCursorKindLine` maps to `text`.
 
 Rendering: `src/lib/cursor/cursorGlyphs.ts` draws every non-arrow kind from a
 bundled SVG in `src/assets/cursors/` (Capturia originals, MIT like the repo; the
-upstream `Cursor=*.svg` set was not copied because it is a Figma export with no
-licence of its own). The arrow keeps the tuned Path2D in `cursorComposer.ts`.
+third-party `Cursor=*.svg` set they replace was not reused because it is a Figma
+export with no licence of its own). The arrow keeps the tuned Path2D in
+`cursorComposer.ts`.
 Old sidecars with `cursorKind: "ibeam"` load as `text`; unknown kinds load as
 `arrow`.
 
