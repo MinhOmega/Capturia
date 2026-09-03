@@ -32,7 +32,12 @@ import {
 } from './windows'
 import { registerIpcHandlers } from './ipc/handlers'
 import { getRecordingsDir } from './paths'
-import { isReadablePathAllowed, localMediaUrlToPath, normalizeExternalUrl } from './ipc/paths'
+import {
+  approveFilePath,
+  isReadablePathAllowed,
+  localMediaUrlToPath,
+  normalizeExternalUrl,
+} from './ipc/paths'
 import { shouldSwallowMainProcessError } from './main-process-errors'
 import { checkLatestRelease } from './update-checker'
 import {
@@ -173,6 +178,35 @@ function createWindow() {
     return
   }
   mainWindow = createHudOverlayWindow()
+}
+
+/**
+ * Test-only startup hook. `CAPTURIA_E2E_VIDEO` names a recording the app should
+ * open the editor on directly, so an end-to-end spec never has to drive a real
+ * capture to reach the export UI.
+ *
+ * Honoured only in unpackaged builds, and only for a file that exists. The path
+ * is registered as readable so `local-media://` and `set-current-video-path`
+ * accept a fixture that lives outside the recordings directory; the renderer
+ * still has to ask for it, nothing here loads it behind the editor's back.
+ */
+function e2eStartupVideoPath(): string | null {
+  if (app.isPackaged) return null
+  const raw = process.env['CAPTURIA_E2E_VIDEO']?.trim()
+  if (!raw) return null
+  const resolved = path.resolve(raw)
+  try {
+    if (!statSync(resolved).isFile()) {
+      console.warn(`CAPTURIA_E2E_VIDEO is not a file: ${resolved}`)
+      return null
+    }
+  } catch (error) {
+    console.warn(`CAPTURIA_E2E_VIDEO cannot be read: ${resolved}`, error)
+    return null
+  }
+  approveFilePath(resolved)
+  console.log(`[e2e] editor start-up video approved: ${resolved}`)
+  return resolved
 }
 
 // Restore + show + focus the current main window (HUD or editor), or create the HUD.
@@ -1589,6 +1623,12 @@ appReady?.then(async () => {
       getHudOverlayWindow,
     },
   )
-  createWindow()
+  if (e2eStartupVideoPath()) {
+    // Straight into the editor; the spec hands the approved path to the
+    // renderer through `set-current-video-path`.
+    createEditorWindowWrapper()
+  } else {
+    createWindow()
+  }
   scheduleLaunchUpdateCheck()
 })
