@@ -46,6 +46,8 @@ export interface ZoomCameraTarget {
   transform: ZoomTransform
   /** Focus mode of the region the camera is heading to; null when unzoomed. */
   focusMode: ZoomFocusMode | null
+  /** Id of the region the camera is heading to; null when unzoomed. Drives the auto-follow freeze reset. */
+  regionId: string | null
   /** True while panning between two connected regions (the pan owns the focus). */
   transition: boolean
   /**
@@ -70,6 +72,7 @@ function unzoomedTarget(): ZoomCameraTarget {
     progress: 0,
     transform: { scale: 1, x: 0, y: 0 },
     focusMode: null,
+    regionId: null,
     transition: false,
     rotation3D: DEFAULT_ROTATION_3D,
   }
@@ -151,6 +154,7 @@ export function resolveZoomCameraTarget(
     progress,
     transform,
     focusMode: getZoomFocusMode(region),
+    regionId: region.id,
     transition: transition !== null,
     // Tilt ramps with the same eased progress as the scale; mid-pan
     // (progress 1) rotation3D is already the lerp between the two regions.
@@ -168,6 +172,12 @@ export interface ZoomCameraState {
   smoothedAutoFocus: ZoomFocus | null
   /** Eased progress of the previous step (tells zoom-in from zoom-out). */
   prevTargetProgress: number
+  /** Region the previous step was heading to; a change resets the zoom-out focus freeze. */
+  prevRegionId: string | null
+  /** True once the current region reached full zoom, so its zoom-out must not pan. */
+  reachedFullZoom: boolean
+  /** Focus held for the whole zoom-out; null while the camera is free to follow. */
+  frozenAutoFocus: ZoomFocus | null
 }
 
 export function createZoomCameraState(): ZoomCameraState {
@@ -177,6 +187,9 @@ export function createZoomCameraState(): ZoomCameraState {
     applied: { scale: 1, x: 0, y: 0 },
     smoothedAutoFocus: null,
     prevTargetProgress: 0,
+    prevRegionId: null,
+    reachedFullZoom: false,
+    frozenAutoFocus: null,
   }
 }
 
@@ -186,6 +199,9 @@ export function resetZoomCameraState(state: ZoomCameraState) {
   state.applied = { scale: 1, x: 0, y: 0 }
   state.smoothedAutoFocus = null
   state.prevTargetProgress = 0
+  state.prevRegionId = null
+  state.reachedFullZoom = false
+  state.frozenAutoFocus = null
 }
 
 /**
@@ -197,7 +213,14 @@ export function resetZoomCameraState(state: ZoomCameraState) {
  *   - zooming in: track the raw cursor so the zoom always aims at the current
  *     position, keeping the smoothed value in sync to avoid a snap when full
  *     zoom begins;
- *   - zooming out: keep smoothing for continuity.
+ *   - zooming out after full zoom was reached: the focus is frozen at the
+ *     value it had when the ease-out began, so the frame only shrinks. Left
+ *     free it would keep chasing the cursor and the picture would slide
+ *     sideways while it shrank, which reads as an unrequested pan.
+ *   - zooming out without ever reaching full zoom (a region cut short by the
+ *     next one): keep smoothing, there is no settled focus to hold.
+ * The freeze is released when the camera moves to another region or when
+ * content time goes backwards (a scrub), so a fresh pass re-follows the cursor.
  * When not `animating` (paused / seek / scrub) the focus snaps to `raw`,
  * matching the zoom spring's snap; the exporter always animates.
  * Manual regions reset the smoothed value so the next auto region starts
@@ -212,6 +235,13 @@ export function advanceAutoFollowFocus(
   const raw = target.focus
   const progress = target.progress
 
+  const wentBackwards = state.prevTimeMs !== null && timeMs < state.prevTimeMs
+  if (target.regionId !== state.prevRegionId || wentBackwards) {
+    state.reachedFullZoom = false
+    state.frozenAutoFocus = null
+  }
+  state.prevRegionId = target.regionId
+
   if (target.focusMode !== 'auto' || target.transition) {
     if (target.focusMode === 'manual') {
       state.smoothedAutoFocus = null
@@ -220,17 +250,30 @@ export function advanceAutoFollowFocus(
     return raw
   }
 
-  const isZoomingIn = progress < 0.999 && progress >= state.prevTargetProgress
+  const atFullZoom = progress >= 0.999
+  const isZoomingIn = !atFullZoom && progress >= state.prevTargetProgress
   const dtMs = state.prevTimeMs === null ? 0 : timeMs - state.prevTimeMs
   let focus = raw
 
-  if (progress >= 0.999 || !isZoomingIn) {
+  if (atFullZoom) {
+    state.reachedFullZoom = true
+    state.frozenAutoFocus = null
     const prev = state.smoothedAutoFocus ?? raw
     const smoothed = animating ? advanceFollowFocus(prev, raw, dtMs, AUTO_FOLLOW_PARAMS) : raw
     state.smoothedAutoFocus = smoothed
     focus = smoothed
-  } else {
+  } else if (isZoomingIn) {
     state.smoothedAutoFocus = raw
+  } else if (state.reachedFullZoom) {
+    const frozen = state.frozenAutoFocus ?? state.smoothedAutoFocus ?? raw
+    state.frozenAutoFocus = frozen
+    state.smoothedAutoFocus = frozen
+    focus = frozen
+  } else {
+    const prev = state.smoothedAutoFocus ?? raw
+    const smoothed = animating ? advanceFollowFocus(prev, raw, dtMs, AUTO_FOLLOW_PARAMS) : raw
+    state.smoothedAutoFocus = smoothed
+    focus = smoothed
   }
 
   state.prevTargetProgress = progress

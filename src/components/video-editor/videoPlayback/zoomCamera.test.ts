@@ -347,3 +347,114 @@ describe('resolveZoomCameraTarget - 3D tilt ramps with the eased zoom progress (
     expect(target.rotation3D).toEqual(ROTATION_3D_PRESETS.iso)
   })
 })
+
+describe('auto-follow zoom-out freezes the focus (P2-B1)', () => {
+  // Two unconnected auto-follow regions (gap 5000 ms > CONNECTED_ZOOM_GAP_MS).
+  const freezeRegions: ZoomRegion[] = [
+    {
+      id: 'first',
+      startMs: 1000,
+      endMs: 4000,
+      depth: 3,
+      focus: { cx: 0.5, cy: 0.5 },
+      focusMode: 'auto',
+    },
+    {
+      id: 'second',
+      startMs: 9000,
+      endMs: 12_000,
+      depth: 3,
+      focus: { cx: 0.5, cy: 0.5 },
+      focusMode: 'auto',
+    },
+  ]
+  // The cursor sweeps steadily left to right for the whole clip, so a camera
+  // that keeps following during the zoom-out shows up as a moving focus.
+  const sweep: CursorTrack = {
+    samples: [
+      { timeMs: 0, x: 0.2, y: 0.5 },
+      { timeMs: 14_000, x: 0.8, y: 0.5 },
+    ],
+  }
+  const sweepTelemetry = buildCursorTelemetry(sweep)
+
+  function runSteps(times: number[], animating: (t: number) => boolean = () => true) {
+    const state = createZoomCameraState()
+    const steps = times.map((t) => ({
+      t,
+      step: stepZoomCamera(state, freezeRegions, t, geometry, {
+        animating: animating(t),
+        cursorTelemetry: sweepTelemetry,
+      }),
+    }))
+    return { state, steps }
+  }
+
+  const rawFocusAt = (ms: number) =>
+    resolveZoomCameraTarget(freezeRegions, ms, geometry, { cursorTelemetry: sweepTelemetry }).focus
+
+  it('holds one focus for the whole zoom-out while the cursor keeps moving', () => {
+    const { steps } = runSteps(timeSeries(1000 / 60, 5200))
+    const zoomOut = steps.filter(
+      ({ t, step }) => t > 4000 && step.target.progress > 0 && step.target.progress < 0.999,
+    )
+    expect(zoomOut.length).toBeGreaterThan(30)
+
+    const held = zoomOut[0].step.target.focus
+    for (const { step } of zoomOut) {
+      expect(step.target.focus).toEqual(held)
+    }
+
+    // The raw cursor really did travel across that window, so the freeze is
+    // what kept the focus still, not a stationary cursor.
+    const rawStart = rawFocusAt(zoomOut[0].t)
+    const rawEnd = rawFocusAt(zoomOut[zoomOut.length - 1].t)
+    expect(rawEnd.cx - rawStart.cx).toBeGreaterThan(0.01)
+
+    // With a fixed focus the eased target only shrinks toward the identity.
+    for (let i = 1; i < zoomOut.length; i += 1) {
+      const previous = zoomOut[i - 1].step.target.transform
+      const current = zoomOut[i].step.target.transform
+      expect(current.scale).toBeLessThanOrEqual(previous.scale)
+      expect(Math.abs(current.x)).toBeLessThanOrEqual(Math.abs(previous.x) + 1e-9)
+    }
+  })
+
+  it('releases the freeze on the next region and follows the cursor again', () => {
+    const { state, steps } = runSteps(timeSeries(1000 / 60, 11_000))
+    expect(state.frozenAutoFocus).toBeNull()
+    expect(state.prevRegionId).toBe('second')
+
+    const atFullZoomOfSecond = steps.filter(
+      ({ t, step }) => t > 10_000 && t < 11_000 && step.target.progress >= 0.999,
+    )
+    expect(atFullZoomOfSecond.length).toBeGreaterThan(10)
+    const firstFocus = atFullZoomOfSecond[0].step.target.focus
+    const lastFocus = atFullZoomOfSecond[atFullZoomOfSecond.length - 1].step.target.focus
+    expect(lastFocus.cx).toBeGreaterThan(firstFocus.cx)
+  })
+
+  it('releases the freeze when content time goes backwards (scrub)', () => {
+    const { state } = runSteps(timeSeries(1000 / 60, 4400))
+    expect(state.reachedFullZoom).toBe(true)
+    expect(state.frozenAutoFocus).not.toBeNull()
+
+    // Scrub back to an earlier point of the same zoom-out: the freeze is
+    // released and the camera reads the cursor at the new time again.
+    const scrubbed = stepZoomCamera(state, freezeRegions, 4200, geometry, {
+      animating: true,
+      cursorTelemetry: sweepTelemetry,
+    })
+    expect(state.reachedFullZoom).toBe(false)
+    expect(state.frozenAutoFocus).toBeNull()
+    expect(scrubbed.target.focus).toEqual(rawFocusAt(4200))
+  })
+
+  it('is identical across two stepZoomCamera runs (preview / export parity)', () => {
+    const times = timeSeries(1000 / 60, 13_000)
+    const a = runSteps(times).steps.map(({ step }) => step)
+    const b = runSteps(times).steps.map(({ step }) => step)
+    expect(a.map((s) => s.applied)).toEqual(b.map((s) => s.applied))
+    expect(a.map((s) => s.target.focus)).toEqual(b.map((s) => s.target.focus))
+  })
+})
