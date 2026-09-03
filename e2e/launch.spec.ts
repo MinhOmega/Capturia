@@ -6,9 +6,7 @@ import { _electron as electron, expect, test } from '@playwright/test'
 
 /**
  * Launch smoke: the packaged-dev app boots, the HUD window appears, and the
- * source selector opens from it. Adapted from OpenScreen's `gif-export.spec.ts`
- * launch scaffolding (F10 / B14); export coverage comes later once the editor
- * export UI carries test ids.
+ * source selector opens from it. Export coverage lives in `export.spec.ts`.
  *
  * Prerequisite: `npm run build:vite` (writes `dist/` + `dist-electron/`).
  * Linux: `xvfb-run --auto-servernum npm run test:e2e`.

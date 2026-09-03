@@ -166,6 +166,7 @@ export function ExportDialog({
         onClick={onClose}
       />
       <div
+        data-testid="export-dialog"
         className="fixed top-1/2 left-1/2 z-[60] bg-[#09090b] rounded-2xl shadow-2xl border border-white/10 p-8 w-[90vw] max-w-md"
         style={{
           animation: isMinimizing
@@ -220,7 +221,7 @@ export function ExportDialog({
         </div>
 
         {error && (
-          <div className="mb-6 animate-in slide-in-from-top-2">
+          <div data-testid="export-error" className="mb-6 animate-in slide-in-from-top-2">
             <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex items-start gap-3">
               <div className="p-1 bg-red-500/20 rounded-full">
                 <X className="w-3 h-3 text-red-400" />
@@ -277,7 +278,7 @@ export function ExportDialog({
                           ? t('dialogs.export.phaseCopying')
                           : t('dialogs.export.phaseRendering')}
                 </span>
-                <span className="font-mono text-slate-200">
+                <span data-testid="export-progress-percentage" className="font-mono text-slate-200">
                   {isCompiling || (isFinalizing && exportFormat === 'gif') ? (
                     renderProgress !== undefined && renderProgress > 0 ? (
                       `${renderProgress}%`
@@ -385,6 +386,7 @@ export function ExportDialog({
             {onCancel && (
               <div className="pt-2">
                 <Button
+                  data-testid="export-cancel-button"
                   onClick={onCancel}
                   variant="destructive"
                   className="w-full py-6 bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 transition-all rounded-xl"
@@ -397,7 +399,10 @@ export function ExportDialog({
         )}
 
         {showSuccess && (
-          <div className="text-center py-4 animate-in zoom-in-95 flex flex-col items-center gap-2">
+          <div
+            data-testid="export-success"
+            className="text-center py-4 animate-in zoom-in-95 flex flex-col items-center gap-2"
+          >
             <p className="text-lg text-slate-200 font-medium">
               {t('dialogs.export.saved', { format: formatLabel })}
             </p>
@@ -423,7 +428,10 @@ export function ExportDialog({
               </Button>
             )}
             {exportedFilePath && (
-              <span className="text-[10px] text-slate-500 break-all max-w-xs">
+              <span
+                data-testid="export-saved-filename"
+                className="text-[10px] text-slate-500 break-all max-w-xs"
+              >
                 {exportedFilePath.replace(/^.*[\\/]/, '')}
               </span>
             )}
