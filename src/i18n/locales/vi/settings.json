@@ -35,6 +35,8 @@
 	"deleteTrim": "Xóa vùng cắt",
 	"customPlaybackSpeed": "Tốc độ tùy chỉnh",
 	"maxSpeedError": "Tốc độ không thể cao hơn {{max}}×",
+	"previewGpuRecoveryFailed": "Bản xem trước đã mất ngữ cảnh đồ hoạ và không thể dựng lại. Hãy đóng và mở lại trình chỉnh sửa để khôi phục.",
+	"speedPreviewFrameSteppingHint": "Trên {{native}}×, bản xem trước tua theo từng khung hình và tắt tiếng. Xuất video không bị ảnh hưởng.",
 	"videoEffects": "Hiệu ứng video",
 	"motionBlur": "Làm mờ chuyển động",
 	"motionBlurOff": "Tắt",

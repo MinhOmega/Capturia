@@ -51,10 +51,15 @@ export const DEFAULT_ROTATION_3D: Rotation3D = {
 
 export type Rotation3DPreset = 'iso' | 'left' | 'right'
 
+// Every preset rotates about all three axes on purpose. A single-axis tilt leaves
+// an edge of the projected quad exactly parallel to the frame (both vertical edges
+// for a pure Y rotation), and a perfectly vertical edge cutting through text reads
+// as `overflow: hidden` even though the whole plane is drawn — that is the
+// "recording looks truncated" report. A small X and Z component breaks the parallel.
 export const ROTATION_3D_PRESETS: Record<Rotation3DPreset, Rotation3D> = {
-  iso: { rotationX: -10, rotationY: -16, rotationZ: 0 },
-  left: { rotationX: 0, rotationY: -22, rotationZ: 0 },
-  right: { rotationX: 0, rotationY: 22, rotationZ: 0 },
+  iso: { rotationX: -12, rotationY: -18, rotationZ: -2 },
+  left: { rotationX: -8, rotationY: -16, rotationZ: -1 },
+  right: { rotationX: -8, rotationY: 16, rotationZ: 1 },
 }
 
 export const ROTATION_3D_PRESET_ORDER: readonly Rotation3DPreset[] = ['iso', 'left', 'right']
@@ -62,9 +67,11 @@ export const ROTATION_3D_PRESET_ORDER: readonly Rotation3DPreset[] = ['iso', 'le
 /**
  * Perspective distance in CSS px is this factor times min(viewport w, h). The
  * same factor drives the preview (CSS `perspective`) and the export (WebGL
- * fov), so the look matches at any canvas resolution.
+ * fov), so the look matches at any canvas resolution. Lower = camera closer =
+ * edges converge more visibly; at 2.6 the convergence was so flat that the
+ * tilt stopped reading as a tilt (iso's top edge came out ~0.08° off level).
  */
-export const ROTATION_3D_PERSPECTIVE_FACTOR = 2.6
+export const ROTATION_3D_PERSPECTIVE_FACTOR = 1.6
 
 export function rotation3DPerspective(width: number, height: number): number {
   return Math.min(width, height) * ROTATION_3D_PERSPECTIVE_FACTOR

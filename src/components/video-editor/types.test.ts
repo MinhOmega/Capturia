@@ -19,6 +19,7 @@ import {
   ROTATION_3D_PRESET_ORDER,
   ROTATION_3D_PRESETS,
   rotation3DPerspective,
+  type Rotation3D,
   type Rotation3DPreset,
 } from './types'
 
@@ -135,14 +136,14 @@ describe('3D rotation presets', () => {
   it('resolves a region preset to its angles and missing / unknown presets to identity', () => {
     expect(getRotation3D(zoomRegion({ rotationPreset: 'iso' }))).toEqual(ROTATION_3D_PRESETS.iso)
     expect(getRotation3D(zoomRegion({ rotationPreset: 'left' }))).toEqual({
-      rotationX: 0,
-      rotationY: -22,
-      rotationZ: 0,
+      rotationX: -8,
+      rotationY: -16,
+      rotationZ: -1,
     })
     expect(getRotation3D(zoomRegion({ rotationPreset: 'right' }))).toEqual({
-      rotationX: 0,
-      rotationY: 22,
-      rotationZ: 0,
+      rotationX: -8,
+      rotationY: 16,
+      rotationZ: 1,
     })
     expect(getRotation3D(zoomRegion())).toBe(DEFAULT_ROTATION_3D)
     expect(getRotation3D({ rotationPreset: 'tilt' as unknown as Rotation3DPreset })).toBe(
@@ -171,7 +172,7 @@ describe('3D rotation presets', () => {
 
   it('lerpRotation3D interpolates every axis linearly', () => {
     const mid = lerpRotation3D(DEFAULT_ROTATION_3D, ROTATION_3D_PRESETS.iso, 0.5)
-    expect(mid).toEqual({ rotationX: -5, rotationY: -8, rotationZ: 0 })
+    expect(mid).toEqual({ rotationX: -6, rotationY: -9, rotationZ: -1 })
     expect(lerpRotation3D(DEFAULT_ROTATION_3D, ROTATION_3D_PRESETS.iso, 0)).toEqual(
       DEFAULT_ROTATION_3D,
     )
@@ -179,12 +180,28 @@ describe('3D rotation presets', () => {
       ROTATION_3D_PRESETS.iso,
     )
     const between = lerpRotation3D(ROTATION_3D_PRESETS.left, ROTATION_3D_PRESETS.right, 0.25)
-    expect(between.rotationY).toBeCloseTo(-11, 6)
+    expect(between.rotationY).toBeCloseTo(-8, 6)
+    expect(between.rotationZ).toBeCloseTo(-0.5, 6)
   })
 
-  it('rotation3DPerspective is 2.6x the shorter viewport side', () => {
-    expect(rotation3DPerspective(1920, 1080)).toBeCloseTo(1080 * 2.6, 6)
-    expect(rotation3DPerspective(600, 800)).toBeCloseTo(600 * 2.6, 6)
+  it('rotation3DPerspective is 1.6x the shorter viewport side', () => {
+    expect(rotation3DPerspective(1920, 1080)).toBeCloseTo(1080 * 1.6, 6)
+    expect(rotation3DPerspective(600, 800)).toBeCloseTo(600 * 1.6, 6)
+  })
+
+  it('no preset leaves an edge parallel to the frame (every axis is non-zero)', () => {
+    // A single-axis tilt keeps an edge exactly parallel to the frame, which reads as
+    // clipping; each preset must carry an X, Y and Z component.
+    for (const preset of ROTATION_3D_PRESET_ORDER) {
+      const rot = ROTATION_3D_PRESETS[preset]
+      expect(Math.abs(rot.rotationX)).toBeGreaterThanOrEqual(1)
+      expect(Math.abs(rot.rotationY)).toBeGreaterThanOrEqual(1)
+      expect(Math.abs(rot.rotationZ)).toBeGreaterThanOrEqual(1)
+    }
+    // Left / right stay mirror images of each other.
+    expect(ROTATION_3D_PRESETS.left.rotationX).toBe(ROTATION_3D_PRESETS.right.rotationX)
+    expect(ROTATION_3D_PRESETS.left.rotationY).toBe(-ROTATION_3D_PRESETS.right.rotationY)
+    expect(ROTATION_3D_PRESETS.left.rotationZ).toBe(-ROTATION_3D_PRESETS.right.rotationZ)
   })
 
   describe('computeRotation3DContainScale', () => {
@@ -208,6 +225,7 @@ describe('3D rotation presets', () => {
       // rotateY(theta): x' = x cos(theta), z' = -x sin(theta); a corner with z' > 0 is
       // closer to the viewer and scales by P / (P - z'). That corner is the limiting one.
       const theta = (22 * Math.PI) / 180
+      const pureY: Rotation3D = { rotationX: 0, rotationY: 22, rotationZ: 0 }
       const halfW = W / 2
       const halfH = H / 2
       const nearZ = halfW * Math.sin(theta)
@@ -215,20 +233,24 @@ describe('3D rotation presets', () => {
       const maxX = halfW * Math.cos(theta) * f
       const maxY = halfH * f
       const expected = Math.min(halfW / maxX, halfH / maxY, 1)
-      expect(computeRotation3DContainScale(ROTATION_3D_PRESETS.right, W, H, P)).toBeCloseTo(
+      expect(computeRotation3DContainScale(pureY, W, H, P)).toBeCloseTo(expected, 10)
+      // The mirrored rotation projects the same extents.
+      expect(computeRotation3DContainScale({ ...pureY, rotationY: -22 }, W, H, P)).toBeCloseTo(
         expected,
         10,
       )
-      // The mirrored preset projects the same extents.
+      // So do the mirrored presets.
       expect(computeRotation3DContainScale(ROTATION_3D_PRESETS.left, W, H, P)).toBeCloseTo(
-        expected,
+        computeRotation3DContainScale(ROTATION_3D_PRESETS.right, W, H, P),
         10,
       )
     })
 
     it('is orthographic when perspective is 0: rotateY always fits, rotateZ needs shrinking', () => {
       const theta = (22 * Math.PI) / 180
-      expect(computeRotation3DContainScale(ROTATION_3D_PRESETS.right, W, H, 0)).toBeCloseTo(1, 10)
+      expect(
+        computeRotation3DContainScale({ rotationX: 0, rotationY: 22, rotationZ: 0 }, W, H, 0),
+      ).toBeCloseTo(1, 10)
       const z = computeRotation3DContainScale(
         { rotationX: 0, rotationY: 0, rotationZ: 22 },
         W,

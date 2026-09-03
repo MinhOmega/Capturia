@@ -139,7 +139,10 @@ export function buildMvpMatrix(rot: Rotation3D, w: number, h: number): Float32Ar
   const rx = rotationXMat(deg2rad(rot.rotationX))
   const ry = rotationYMat(deg2rad(rot.rotationY))
   const rz = rotationZMat(deg2rad(rot.rotationZ))
-  const rotMat = multiplyMat4(rz, multiplyMat4(ry, rx))
+  // CSS `rotateX(a) rotateY(b) rotateZ(c)` is Rx * Ry * Rz: Z is applied to the
+  // point first, then Y, then X. The contain scale projects corners in the same
+  // order, so the export lands exactly where the preview does.
+  const rotMat = multiplyMat4(rx, multiplyMat4(ry, rz))
 
   const perspective = rotation3DPerspective(w, h)
   const containScale = computeRotation3DContainScale(rot, w, h, perspective)
