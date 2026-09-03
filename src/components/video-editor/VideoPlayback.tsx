@@ -8,6 +8,7 @@ import {
   useMemo,
   useCallback,
 } from 'react'
+import { createPixiLifecycle } from '@/lib/rendering/pixiLifecycle'
 import { classifyWallpaper, DEFAULT_WALLPAPER, resolveImageWallpaperUrl } from '@/lib/wallpaper'
 import { Application, Container, Sprite, Graphics, Rectangle, Texture, VideoSource } from 'pixi.js'
 import { MotionBlurFilter } from 'pixi-filters/motion-blur'
@@ -1012,43 +1013,44 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
       const container = containerRef.current
       if (!container) return
 
-      let mounted = true
-      let app: Application | null = null
       const recovery = getContextLossRecovery()
-      // Declared outside the async IIFE so the cleanup can detach them.
+      // Declared outside the init callback so the cleanup can detach them.
       let handleContextLost: ((event: Event) => void) | null = null
       let handleContextRestored: (() => void) | null = null
+      let attachedCanvas: HTMLCanvasElement | null = null
 
-      ;(async () => {
-        app = new Application()
+      // A driver that never answers the context request used to leave the
+      // preview on its loading state forever, and an unmount during init used
+      // to drop the half-built application without destroying it. Both are the
+      // lifecycle's job now; a timeout arrives here as a rebuild failure, so
+      // the recovery policy retries and then shows the user what happened.
+      const lifecycle = createPixiLifecycle<Application>({
+        create: () => new Application(),
+        initOptions: () => ({
+          width: container.clientWidth,
+          height: container.clientHeight,
+          backgroundAlpha: 0,
+          antialias: true,
+          // Keep high-DPI sharpness in preview while still guarding extreme render cost.
+          resolution: preferredFpsRef.current > 60 ? 1 : Math.min(window.devicePixelRatio || 1, 2),
+          autoDensity: true,
+        }),
+      })
 
-        try {
-          await app.init({
-            width: container.clientWidth,
-            height: container.clientHeight,
-            backgroundAlpha: 0,
-            antialias: true,
-            // Keep high-DPI sharpness in preview while still guarding extreme render cost.
-            resolution:
-              preferredFpsRef.current > 60 ? 1 : Math.min(window.devicePixelRatio || 1, 2),
-            autoDensity: true,
-          })
-        } catch (error) {
-          console.error('[VideoPlayback] Pixi init failed:', error)
-          app = null
-          if (mounted) recovery.rebuildFailed(error)
+      void lifecycle.init().then((outcome) => {
+        if (outcome.status === 'destroyed') return
+        if (outcome.status === 'failed') {
+          console.error('[VideoPlayback] Pixi init failed:', outcome.error)
+          recovery.rebuildFailed(outcome.error)
           return
         }
 
+        const app = outcome.app
         app.ticker.maxFPS = normalizeTickerFps(preferredFpsRef.current)
         idleResolutionRef.current = app.renderer.resolution
 
-        if (!mounted) {
-          app.destroy(true, { children: true, texture: true, textureSource: true })
-          return
-        }
-
         appRef.current = app
+        attachedCanvas = app.canvas
         container.appendChild(app.canvas)
         recovery.rebuildSucceeded()
 
@@ -1077,29 +1079,24 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
         cameraContainer.addChild(videoContainer)
 
         setPixiReady(true)
-      })()
+      })
 
       return () => {
-        mounted = false
         setPixiReady(false)
-        if (app && app.renderer) {
-          const canvas = app.canvas
+        if (attachedCanvas) {
           if (handleContextLost) {
-            canvas.removeEventListener('webglcontextlost', handleContextLost)
+            attachedCanvas.removeEventListener('webglcontextlost', handleContextLost)
           }
           if (handleContextRestored) {
-            canvas.removeEventListener('webglcontextrestored', handleContextRestored)
-          }
-          try {
-            app.destroy(true, { children: true, texture: true, textureSource: true })
-          } catch (error) {
-            // Destroying a renderer whose GL context is already gone can throw
-            // from inside Pixi; the canvas must still leave the DOM so the
-            // rebuilt one is the only child.
-            console.warn('[VideoPlayback] Pixi destroy threw during teardown:', error)
-            canvas.remove()
+            attachedCanvas.removeEventListener('webglcontextrestored', handleContextRestored)
           }
         }
+        lifecycle.destroy()
+        // Destroying a renderer whose GL context is already gone throws from
+        // inside Pixi and leaves the canvas attached; the rebuilt one has to be
+        // the only child either way.
+        attachedCanvas?.remove()
+        attachedCanvas = null
         appRef.current = null
         cameraContainerRef.current = null
         videoContainerRef.current = null
