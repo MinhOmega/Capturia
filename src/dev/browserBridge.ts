@@ -83,14 +83,12 @@ export const UNIMPLEMENTED_BRIDGE_METHODS = [
 ] as const
 
 /**
- * `getAssetBasePath` is exposed by the preload but is missing from the
- * `Window['electronAPI']` declaration that wins the interface merge
- * (`electron/electron-env.d.ts` shadows the copy in `src/vite-env.d.ts`), so
- * it is spelled out here to keep the harness a superset of the real bridge.
+ * The shim answers exactly what the preload exposes: `Window['electronAPI']`
+ * is `electron/bridge-types.ts`, the same type the preload's exposed object is
+ * annotated with, so a signature that changes on one side stops compiling on
+ * the other.
  */
-export type HarnessBridge = Window['electronAPI'] & {
-  getAssetBasePath: () => Promise<string | null>
-}
+export type HarnessBridge = Window['electronAPI']
 
 /** One `saveExportedVideo` call, kept in memory instead of written to disk. */
 export interface HarnessExport {

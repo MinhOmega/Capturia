@@ -940,7 +940,16 @@ export class FrameRenderer {
     this.currentVideoSource = null
     this.backgroundSprite = null
     if (this.app) {
-      this.app.destroy(true, { children: true, texture: true, textureSource: true })
+      // `{ removeView: true }`, not `true`: a bare `true` also means
+      // `releaseGlobalResources`, and Pixi's batch, texture and canvas pools are
+      // module-level globals shared with every other renderer on the page. The
+      // editor's preview app is one of those. Releasing them from here destroys
+      // pooled `Batch` objects the preview's cached instruction sets still point
+      // at (`Batch.destroy()` nulls `batcher`), so its very next ticker frame
+      // threw `Cannot read properties of null (reading 'geometry')` out of
+      // `BatcherPipe.execute` — an uncaught error and a "Something went wrong"
+      // toast moments after an export that had in fact succeeded.
+      this.app.destroy({ removeView: true }, { children: true, texture: true, textureSource: true })
       this.app = null
     }
     this.cameraContainer = null
