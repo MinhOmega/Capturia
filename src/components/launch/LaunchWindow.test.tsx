@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
 //
-// Record-button flow of the launch HUD (ported from upstream v1.7.0
-// LaunchWindow.test.tsx, adapted to Capturia's recorder hook shape, countdown
-// and permission preflight). The recorder hook is mocked; `window.electronAPI`
+// Record-button flow of the launch HUD: recorder hook wiring, countdown and
+// permission preflight. The recorder hook is mocked; `window.electronAPI`
 // is stubbed with an all-granted permission snapshot so the preflight passes.
 import '@testing-library/jest-dom/vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'

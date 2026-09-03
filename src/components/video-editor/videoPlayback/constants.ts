@@ -2,8 +2,10 @@ import type { ZoomFocus } from '../types'
 
 export const DEFAULT_FOCUS: ZoomFocus = { cx: 0.5, cy: 0.5 }
 /**
- * Zoom-out ease length. Upstream #373 ("adjust zoom speed") was reverted in
- * e1c67c4e, so 1015.05 ms is the final value.
+ * Zoom-out ease length. 1015.05 ms is a tuned figure rather than a round
+ * number, and a later attempt to change the zoom speed was reverted, so this is
+ * the settled value. Preview and export sample the same curve, so both must
+ * read the window from here or the two drift apart.
  */
 export const TRANSITION_WINDOW_MS = 1015.05
 /** Zoom-in ease is 1.5x longer than zoom-out; ZOOM_IN_OVERLAP_MS of it lands inside the region. */

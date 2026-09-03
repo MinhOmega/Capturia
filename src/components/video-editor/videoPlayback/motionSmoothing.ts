@@ -3,8 +3,8 @@ import { spring } from 'motion'
 /**
  * Frame-stepped spring on top of `motion`'s analytical spring generator: each
  * step re-seeds a generator from the current value/velocity and samples it at
- * the (clamped) delta, so the target may move every frame. Ported from
- * OpenScreen v1.7.0; `spring({ keyframes, velocity, ... }).next(ms)` is
+ * the (clamped) delta, so the target may move every frame. The
+ * `spring({ keyframes, velocity, ... }).next(ms)` shape this relies on is
  * verified against motion 12.23.24.
  */
 

@@ -47,9 +47,9 @@ export function getContrastingTextColor(color: string): '#000000' | '#ffffff' {
 }
 
 /**
- * Colour wheel (HSVA) + swatch palette + validated hex input, ported from
- * upstream (7e563166 … c3faca19). `transparent` is represented to the wheel
- * as an alpha-0 HSVA sentinel so the widgets never receive an invalid hex.
+ * Colour wheel (HSVA) + swatch palette + validated hex input. `transparent`
+ * is represented to the wheel as an alpha-0 HSVA sentinel so the widgets never
+ * receive an invalid hex.
  */
 export default function ColorPicker(props: ColorPickerProps) {
   const { selectedColor, colorPalette, translations, onUpdateColor } = props

@@ -176,10 +176,9 @@ describe('connected zoom transitions', () => {
 })
 
 /**
- * Ported from upstream (issue #72): an auto-focus zoom region must pan to
- * follow the cursor for its whole span, not freeze at the focus captured when
- * the region was created / suggested. Telemetry comes from Capturia's
- * CursorTrack through buildCursorTelemetry.
+ * An auto-focus zoom region must pan to follow the cursor for its whole span,
+ * not freeze at the focus captured when the region was created / suggested.
+ * Telemetry comes from Capturia's CursorTrack through buildCursorTelemetry.
  */
 describe('findDominantRegion - auto-follow (focusMode "auto")', () => {
   const baseRegion: ZoomRegion = {
