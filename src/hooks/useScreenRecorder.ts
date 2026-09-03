@@ -18,6 +18,7 @@ import {
 import { useI18n } from '@/i18n'
 import { mixAudioTracks, normalizeMicrophoneGain } from '@/lib/audioMix'
 import { resolveNativeRecorderStartFailureMessage } from '@/lib/permissions/nativeRecorderErrors'
+import { assessRecordingDiskSpace, formatAvailableSpace } from '@/lib/recordingDiskSpace'
 import { reportUserActionError } from '@/lib/userErrorFeedback'
 import { webcamDeviceIdentityFrom } from '@/lib/webcamDeviceIdentity'
 
@@ -1176,11 +1177,44 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
     toast.warning(t('launch.microphoneFallback'))
   }
 
+  /**
+   * A5: both recorder paths go through here before anything is opened. Returns
+   * false only when the volume is too full for the recording to be worth
+   * starting; a check that could not run never blocks one.
+   */
+  const hasRoomToRecord = async (): Promise<boolean> => {
+    let snapshot: Awaited<ReturnType<NonNullable<typeof window.electronAPI.getRecordingsDiskSpace>>>
+    try {
+      snapshot = await window.electronAPI?.getRecordingsDiskSpace?.()
+    } catch (error) {
+      console.warn('Could not read the free space of the recordings folder.', error)
+      return true
+    }
+
+    const verdict = assessRecordingDiskSpace(snapshot)
+    if (verdict.level === 'blocked') {
+      toast.error(
+        t('launch.diskSpaceBlocked', { available: formatAvailableSpace(verdict.availableBytes) }),
+      )
+      return false
+    }
+    if (verdict.level === 'warn') {
+      toast.warning(
+        t('launch.diskSpaceLow', { available: formatAvailableSpace(verdict.availableBytes) }),
+      )
+    }
+    return true
+  }
+
   const isNativeMicrophoneFailure = (code: string | undefined): boolean =>
     code === 'microphone_permission_denied' || code === 'microphone_unavailable'
 
   const startRecording = async () => {
     if (transitionInFlight.current || recordingState !== 'idle') {
+      return
+    }
+
+    if (!(await hasRoomToRecord())) {
       return
     }
 

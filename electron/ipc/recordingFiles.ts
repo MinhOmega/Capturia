@@ -242,6 +242,31 @@ export function registerRecordingFilesHandlers(ctx: IpcContext): RecordingFilesR
     }
   })
 
+  // A5: free space on the recordings volume, asked for right before a recording
+  // starts. A capture that runs the disk out ends as a truncated file — on the
+  // native path one with no `moov` box at all — so the HUD warns early and
+  // refuses outright when there is not even a usable capture left to make.
+  ipcMain.handle('get-recordings-disk-space', async () => {
+    try {
+      const stats = await fs.statfs(recordingsDir)
+      const blockSize = Number(stats.bsize)
+      // `bavail` is what an unprivileged process may use, which is what matters
+      // here: `bfree` includes the root reserve the recorder can never touch.
+      const availableBytes = Number(stats.bavail) * blockSize
+      const totalBytes = Number(stats.blocks) * blockSize
+      if (!Number.isFinite(availableBytes) || availableBytes < 0) {
+        return { success: false, message: 'Filesystem reported no usable free space figure.' }
+      }
+      return { success: true, availableBytes, totalBytes }
+    } catch (error) {
+      // Never a recording-blocking failure: the caller treats it as "unknown".
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : String(error),
+      }
+    }
+  })
+
   ipcMain.handle('set-recording-state', (_, recording: boolean) => {
     const sourceName = session.selectedSource?.name || 'Screen'
     if (onRecordingStateChange) {

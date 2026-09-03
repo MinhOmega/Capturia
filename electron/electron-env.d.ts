@@ -268,6 +268,13 @@ interface Window {
     ) => Promise<{ success: boolean; error?: string }>
     closeRecordingStream: (fileName: string) => Promise<{ success: boolean; error?: string }>
     getRecordedVideoPath: () => Promise<{ success: boolean; path?: string; message?: string }>
+    /** A5: free space on the recordings volume; `success: false` means "unknown", never "blocked". */
+    getRecordingsDiskSpace: () => Promise<{
+      success: boolean
+      availableBytes?: number
+      totalBytes?: number
+      message?: string
+    }>
     setRecordingState: (recording: boolean) => Promise<void>
     startNativeScreenRecording: (options?: {
       source?: { id?: string; display_id?: string | number | null }

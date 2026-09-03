@@ -166,6 +166,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getRecordedVideoPath: () => {
     return ipcRenderer.invoke('get-recorded-video-path')
   },
+  // A5: free bytes on the recordings volume, checked before a recording starts.
+  getRecordingsDiskSpace: () => {
+    return ipcRenderer.invoke('get-recordings-disk-space')
+  },
   setRecordingState: (recording: boolean) => {
     return ipcRenderer.invoke('set-recording-state', recording)
   },

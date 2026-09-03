@@ -251,6 +251,13 @@ interface Window {
       error?: string
     }>
     getAssetBasePath: () => Promise<string | null>
+    /** A5: free space on the recordings volume; `success: false` means "unknown", never "blocked". */
+    getRecordingsDiskSpace: () => Promise<{
+      success: boolean
+      availableBytes?: number
+      totalBytes?: number
+      message?: string
+    }>
     setRecordingState: (recording: boolean) => Promise<void>
     startNativeScreenRecording: (options?: {
       source?: { id?: string; display_id?: string | number | null }
