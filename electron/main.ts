@@ -1461,7 +1461,15 @@ appReady?.then(async () => {
       const buffer = Buffer.alloc(length)
       const fd = openSync(filePath, 'r')
       try {
-        readSync(fd, buffer, 0, length, start)
+        // A single read is allowed to come up short; keep going until the
+        // buffer is full or the file ends, or the response would declare more
+        // bytes than it carries.
+        let filled = 0
+        while (filled < length) {
+          const read = readSync(fd, buffer, filled, length - filled, start + filled)
+          if (read <= 0) break
+          filled += read
+        }
       } finally {
         closeSync(fd)
       }
