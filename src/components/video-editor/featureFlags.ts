@@ -13,6 +13,18 @@ import type { ShortcutAction } from '@/lib/shortcuts'
  */
 export const BLUR_REGIONS_ENABLED = true
 
+/**
+ * Blur regions that follow their content (`src/lib/blurTracking`): the "Track
+ * content" action, the keyframe ticks on the timeline and the source-space
+ * render path. Off until phase 2 ships the UI and the renderers; with it off
+ * nothing is offered and a `blurTrack` already in a project is carried through
+ * save/load untouched but never rendered, so the region stays the static box
+ * it has always been.
+ *
+ * See `docs/specs/tracked-blur-regions.md`.
+ */
+export const BLUR_TRACKING_ENABLED = false
+
 /** Shortcut actions that belong to a flagged-off feature are hidden from the help and config dialogs. */
 export function isShortcutActionVisible(action: ShortcutAction): boolean {
   if (action === 'addBlur') return BLUR_REGIONS_ENABLED
