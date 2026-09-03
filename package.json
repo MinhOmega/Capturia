@@ -32,6 +32,7 @@
   },
   "scripts": {
     "dev": "vite",
+    "dev:browser": "node scripts/dev-browser.mjs",
     "build:native": "node scripts/build-native-macos-helper.mjs",
     "build": "npm run build:native && tsc && vite build && electron-builder --publish never",
     "lint": "biome lint .",
