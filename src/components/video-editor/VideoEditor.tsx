@@ -152,8 +152,10 @@ import {
   saveCaptionEngineSetting,
 } from '@/lib/captioning'
 import {
+  applyZoomLevelToAllAspects,
   clearStaleSelectedZoomIdForAspect,
   getSelectedZoomIdForAspect,
+  getZoomLevel,
   getZoomRegionsForAspect,
   setSelectedZoomIdForAspect,
   setZoomRegionsForAspect,
@@ -1768,6 +1770,16 @@ export default function VideoEditor() {
     },
     [selectedZoomId, setZoomRegionsForActiveAspect],
   )
+
+  // "Apply this level to all zooms": every zoom of every aspect takes the
+  // selected zoom's level. One zoom-regions update = one undo entry, and the
+  // reducer returns the input untouched when every region already matches, so
+  // a second click costs nothing.
+  const handleApplyZoomLevelToAll = useCallback(() => {
+    if (!selectedZoomRegion) return
+    const level = getZoomLevel(selectedZoomRegion)
+    setZoomRegionsByAspect((previous) => applyZoomLevelToAllAspects(previous, level))
+  }, [selectedZoomRegion])
 
   // Precision X/Y inputs: every keystroke updates the focus live, the whole
   // typing session is one history entry (committed on blur / Enter).
@@ -4049,6 +4061,7 @@ export default function VideoEditor() {
                   onZoomAdded={handleZoomAdded}
                   onZoomSpanChange={handleZoomSpanChange}
                   onZoomDelete={handleZoomDelete}
+                  onZoomDepthChange={handleZoomDepthChange}
                   selectedZoomId={selectedZoomId}
                   onSelectZoom={handleSelectZoom}
                   segments={segments}
@@ -4110,6 +4123,7 @@ export default function VideoEditor() {
                 selectedZoomRegion ? getZoomFocusMode(selectedZoomRegion) : null
               }
               onZoomFocusModeChange={handleZoomFocusModeChange}
+              onZoomApplyLevelToAll={handleApplyZoomLevelToAll}
               selectedZoomTransition={
                 selectedZoomRegion ? getZoomTransition(selectedZoomRegion) : null
               }

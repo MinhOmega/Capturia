@@ -11,6 +11,7 @@ import Item from './Item'
 import KeyframeMarkers from './KeyframeMarkers'
 import type { Range, Span } from 'dnd-timeline'
 import type {
+  ZoomDepth,
   ZoomRegion,
   TrimRegion,
   VideoSegment,
@@ -32,7 +33,13 @@ import {
 import { type AspectRatio, getAspectRatioLabel, ASPECT_RATIOS } from '@/utils/aspectRatioUtils'
 import { formatShortcut } from '@/utils/platformUtils'
 import { useShortcuts } from '@/contexts/ShortcutsContext'
-import { formatBinding, matchesShortcut } from '@/lib/shortcuts'
+import {
+  formatBinding,
+  isTextEditingTarget,
+  matchesShortcut,
+  ZOOM_DEPTH_SHORTCUT_KEYS,
+} from '@/lib/shortcuts'
+import { isModalDialogOpen } from '@/lib/modalDialog'
 import { getSelectionCycleAnnotations } from '@/lib/annotations/renderOrder'
 import { BLUR_REGIONS_ENABLED } from '../featureFlags'
 import { useAudioPeaks } from '@/hooks/useAudioPeaks'
@@ -57,6 +64,8 @@ interface TimelineEditorProps {
   onZoomAdded: (span: Span) => void
   onZoomSpanChange: (id: string, span: Span) => void
   onZoomDelete: (id: string) => void
+  /** Number keys 1-6 set the selected zoom's depth; omitted disables the shortcut. */
+  onZoomDepthChange?: (depth: ZoomDepth) => void
   selectedZoomId: string | null
   onSelectZoom: (id: string | null) => void
   segments?: VideoSegment[]
@@ -1065,6 +1074,7 @@ export default function TimelineEditor({
   onZoomAdded,
   onZoomSpanChange,
   onZoomDelete,
+  onZoomDepthChange,
   selectedZoomId,
   onSelectZoom,
   segments = [],
@@ -1464,6 +1474,30 @@ export default function TimelineEditor({
         return
       }
 
+      // Number keys set the selected zoom's level. Guarded like every other
+      // editor shortcut: not while a dialog owns the screen, not in a text
+      // field, and not when the digit carries a modifier (Ctrl+Shift+2 is the
+      // global stop-recording accelerator).
+      if (
+        onZoomDepthChange &&
+        selectedZoomId &&
+        !isModalDialogOpen() &&
+        !isTextEditingTarget(e.target) &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        !e.shiftKey
+      ) {
+        const depthIndex = ZOOM_DEPTH_SHORTCUT_KEYS.indexOf(
+          e.key as (typeof ZOOM_DEPTH_SHORTCUT_KEYS)[number],
+        )
+        if (depthIndex !== -1) {
+          e.preventDefault()
+          onZoomDepthChange((depthIndex + 1) as ZoomDepth)
+          return
+        }
+      }
+
       if (matchesShortcut(e, keyShortcuts.addKeyframe, isMacPlatform)) {
         addKeyframe()
       }
@@ -1533,6 +1567,7 @@ export default function TimelineEditor({
     deleteSelectedZoom,
     deleteSelectedSegment,
     deleteSelectedAnnotation,
+    onZoomDepthChange,
     selectedKeyframeId,
     selectedZoomId,
     selectedSegmentId,

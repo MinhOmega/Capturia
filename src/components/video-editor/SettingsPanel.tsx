@@ -29,6 +29,7 @@ import {
   ChevronDown,
   Lock,
   LockOpen,
+  CopyCheck,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import * as SliderPrimitive from '@radix-ui/react-slider'
@@ -112,6 +113,8 @@ interface SettingsPanelProps {
   /** Focus mode of the selected zoom ('auto' = camera follows the recorded cursor). */
   selectedZoomFocusMode?: ZoomFocusMode | null
   onZoomFocusModeChange?: (mode: ZoomFocusMode) => void
+  /** Give every zoom of every aspect the selected zoom's level, as one undo entry. */
+  onZoomApplyLevelToAll?: () => void
   /** Transition of the selected zoom ('instant' cuts in and out instead of easing). */
   selectedZoomTransition?: ZoomTransitionMode | null
   onZoomTransitionChange?: (transition: ZoomTransitionMode) => void
@@ -303,6 +306,7 @@ export function SettingsPanel({
   onZoomFocusCoordinateCommit,
   selectedZoomFocusMode = null,
   onZoomFocusModeChange,
+  onZoomApplyLevelToAll,
   selectedZoomTransition = null,
   onZoomTransitionChange,
   selectedZoomRotationPreset = null,
@@ -663,6 +667,18 @@ export function SettingsPanel({
             <p className="text-[10px] text-slate-500 mt-2 text-center">
               {t('settings.selectZoomToAdjust')}
             </p>
+          )}
+          {zoomEnabled && onZoomApplyLevelToAll && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => onZoomApplyLevelToAll()}
+              className="mt-2 w-full gap-2 bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10 hover:border-white/20 hover:text-white transition-all h-8 text-xs"
+            >
+              <CopyCheck className="w-3 h-3" />
+              {t('settings.zoomApplyLevelToAll')}
+            </Button>
           )}
           {zoomEnabled && onZoomCustomScaleChange && (
             <div className="mt-3">

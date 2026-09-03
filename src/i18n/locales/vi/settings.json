@@ -226,5 +226,6 @@
 	"zoomTransition": "Chuyển cảnh",
 	"zoomTransitionAnimated": "Chuyển động",
 	"zoomTransitionInstant": "Tức thì",
-	"zoomTransitionInstantDescription": "Cắt thẳng vào và ra khỏi vùng thu phóng này, không làm mượt và không lia máy"
+	"zoomTransitionInstantDescription": "Cắt thẳng vào và ra khỏi vùng thu phóng này, không làm mượt và không lia máy",
+	"zoomApplyLevelToAll": "Áp dụng mức này cho mọi vùng thu phóng"
 }
