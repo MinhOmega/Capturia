@@ -65,6 +65,7 @@
 	"cursorOffsetY": "光标偏移 Y",
 	"cursorOffsetReset": "重置光标偏移",
 	"cursorClipToBounds": "光标裁剪到视频范围",
+	"cursorClipToBoundsDescription": "将光标限制在圆角视频区域内，而不是让它溢出到背景上。",
 	"cursorMotionBlur": "光标运动模糊",
 	"audioTrack": "音轨",
 	"audioVolume": "音量",
