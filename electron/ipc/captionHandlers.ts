@@ -5,6 +5,7 @@ import path from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
+import { CAPTION_MODEL_ID, CAPTION_MODEL_REVISION } from '../../src/lib/captioning/captionConstants'
 import { isVideoAnalysisResultLike, saveSidecar } from '../analysis/videoAnalysisService'
 import {
   hasAllowedImportVideoExtension,
@@ -27,14 +28,13 @@ import {
  *                                     the video (same format as the native path)
  *
  * The model is deliberately not bundled with the app (~45 MB on every platform
- * for a macOS-only fallback); it is fetched on first use instead. Shape follows
- * upstream OpenScreen `electron/stt/modelManager.ts`.
+ * for a macOS-only fallback); it is fetched on first use instead.
  */
 
 export interface CaptionModelFile {
   /** Path relative to the model directory, e.g. `onnx/encoder_model_quantized.onnx`. */
   name: string
-  /** Expected size in bytes (progress only; small JSON files are listed as 0 = unknown). */
+  /** Size in bytes at the pinned revision (progress; 0 = unknown). */
   approximateBytes: number
   /** SHA-256 hex digest to verify after download; null skips verification. */
   expectedSha256: string | null
@@ -43,9 +43,20 @@ export interface CaptionModelFile {
 export interface CaptionModelDescriptor {
   /** Hugging Face repo id, also the on-disk sub-path (`Xenova/whisper-tiny`). */
   id: string
-  /** Git revision the file list was pinned against. */
+  /**
+   * Git commit the file list and digests were captured against. Must be a full
+   * 40-hex SHA so the download URLs are immutable (a branch name such as `main`
+   * would let a Hub push change the files under a verified digest).
+   */
   revision: string
   files: CaptionModelFile[]
+}
+
+const HEX_40 = /^[0-9a-f]{40}$/
+
+/** True when `revision` is an immutable commit SHA rather than a branch or tag. */
+export function isPinnedRevision(revision: string): boolean {
+  return HEX_40.test(revision)
 }
 
 const HF_BASE = 'https://huggingface.co'
@@ -54,33 +65,81 @@ const HF_BASE = 'https://huggingface.co'
  * Config/tokenizer/preprocessor files plus the quantized ONNX graphs the ASR
  * pipeline loads by default (encoder + merged decoder). Every metadata file is
  * listed so Transformers.js never asks for one that is missing (remote loading is
- * disabled in the worker). Sizes/digests captured from the Hub on 2026-08-27; the
- * two ONNX digests are the LFS SHA-256 the Hub reports as `x-linked-etag`.
+ * disabled in the worker).
+ *
+ * Sizes and SHA-256 digests were computed on 2026-09-03 from the bytes served at
+ * `CAPTION_MODEL_REVISION`; the two ONNX digests also match the LFS `sha256`
+ * the Hub API reports for that commit. Every download is verified, so bumping
+ * the revision means recomputing every entry here (docs/captions.md).
  */
 export const WHISPER_TINY_MODEL: CaptionModelDescriptor = {
-  id: 'Xenova/whisper-tiny',
-  revision: 'main',
+  id: CAPTION_MODEL_ID,
+  revision: CAPTION_MODEL_REVISION,
   files: [
-    { name: 'config.json', approximateBytes: 0, expectedSha256: null },
-    { name: 'generation_config.json', approximateBytes: 0, expectedSha256: null },
-    { name: 'preprocessor_config.json', approximateBytes: 339, expectedSha256: null },
-    { name: 'tokenizer.json', approximateBytes: 2_500_000, expectedSha256: null },
-    { name: 'tokenizer_config.json', approximateBytes: 0, expectedSha256: null },
-    { name: 'added_tokens.json', approximateBytes: 0, expectedSha256: null },
-    { name: 'special_tokens_map.json', approximateBytes: 0, expectedSha256: null },
-    { name: 'normalizer.json', approximateBytes: 52_000, expectedSha256: null },
-    { name: 'merges.txt', approximateBytes: 500_000, expectedSha256: null },
-    { name: 'vocab.json', approximateBytes: 1_000_000, expectedSha256: null },
-    { name: 'quantize_config.json', approximateBytes: 0, expectedSha256: null },
+    {
+      name: 'config.json',
+      approximateBytes: 2_248,
+      expectedSha256: '2b2e4e519084e0ea028b19b153f95202735a971870d6844aa26e559edd292e94',
+    },
+    {
+      name: 'generation_config.json',
+      approximateBytes: 3_716,
+      expectedSha256: '68ac791fcb4999461a313472125042934656240ba1cba7d1c2627fcbb19ac24c',
+    },
+    {
+      name: 'preprocessor_config.json',
+      approximateBytes: 339,
+      expectedSha256: 'a6a76d28c93edb273669eb9e0b0636a2bddbb1272c3261e47b7ca6dfdbac1b8d',
+    },
+    {
+      name: 'tokenizer.json',
+      approximateBytes: 2_480_466,
+      expectedSha256: '27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566',
+    },
+    {
+      name: 'tokenizer_config.json',
+      approximateBytes: 282_683,
+      expectedSha256: '2a4c4281cf9f51ac6ccc406fdc711a087afe6530f671fa7b80953edc498275ce',
+    },
+    {
+      name: 'added_tokens.json',
+      approximateBytes: 2_082,
+      expectedSha256: 'ce949fe720c14311cb6c446e69cfe340dc669d7b006077a6feed6ae571dd7e88',
+    },
+    {
+      name: 'special_tokens_map.json',
+      approximateBytes: 2_194,
+      expectedSha256: 'e67ae3a0aaa99abcd9f187138e12db1f65c16a14761c50ef10eef2c174a7a691',
+    },
+    {
+      name: 'normalizer.json',
+      approximateBytes: 52_666,
+      expectedSha256: 'bf1c507dc8724ca9cf9903640dacfb69dae2f00edee4f21ceba106a7392f26dd',
+    },
+    {
+      name: 'merges.txt',
+      approximateBytes: 493_869,
+      expectedSha256: '2df2990a395e35e8dfbc7511e08c12d56018d8d04691e0133e5d63b21e154dc6',
+    },
+    {
+      name: 'vocab.json',
+      approximateBytes: 1_036_584,
+      expectedSha256: '50d6a919f0a0601d56a04eb583c780d18553aa388254ba3158eb6a00f13e2c1a',
+    },
+    {
+      name: 'quantize_config.json',
+      approximateBytes: 2_840,
+      expectedSha256: '5be0072d627cc8094c2051c38629aed10a509844f562de6d17277756ff0a602c',
+    },
     {
       name: 'onnx/encoder_model_quantized.onnx',
       approximateBytes: 10_124_910,
-      expectedSha256: '33ed314ad3ab9a9f1754350299f1cb3f1a55b3d076ea6fdf1f5dacf2da15cc6e',
+      expectedSha256: 'fd9d995b9dcb0520f0dbf6cf68651af639fc385f594d9d876e69ca2802dc438e',
     },
     {
       name: 'onnx/decoder_model_merged_quantized.onnx',
       approximateBytes: 30_727_765,
-      expectedSha256: 'be9fd4dea91805a4f9be0f93406b67a7971641f8a6377c5e9ea065629449e731',
+      expectedSha256: '6c0c125986b007d2e3734bec84c18bda0152071b90b87fadac6d7764499927a0',
     },
   ],
 }
@@ -98,7 +157,12 @@ export function captionModelDir(userDataDir: string, model: CaptionModelDescript
 }
 
 export function modelFileUrl(model: CaptionModelDescriptor, file: CaptionModelFile): string {
-  return `${HF_BASE}/${model.id}/resolve/${encodeURIComponent(model.revision)}/${file.name}`
+  if (!isPinnedRevision(model.revision)) {
+    throw new Error(
+      `Caption model ${model.id} must be pinned to a commit SHA, got revision "${model.revision}"`,
+    )
+  }
+  return `${HF_BASE}/${model.id}/resolve/${model.revision}/${file.name}`
 }
 
 export function totalApproximateBytes(model: CaptionModelDescriptor): number {

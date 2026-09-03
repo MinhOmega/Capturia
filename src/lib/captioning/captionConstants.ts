@@ -13,6 +13,16 @@ export const MAX_CAPTION_AUDIO_SEC = 4 * 60 * 60
  */
 export const CAPTION_MODEL_ID = 'Xenova/whisper-tiny'
 
+/**
+ * Git commit of `CAPTION_MODEL_ID` the download list and digests in
+ * `electron/ipc/captionHandlers.ts` were captured against. Every file is fetched
+ * from this exact revision (never from a branch name), so a later push to the
+ * Hub can neither change the tokenizer under a verified ONNX graph nor break the
+ * SHA-256 checks. To move to a newer revision, look up the new commit and
+ * recompute every digest in `WHISPER_TINY_MODEL` (see docs/captions.md).
+ */
+export const CAPTION_MODEL_REVISION = '5332fcc35e32a33b86612b9a57a89be7906102b1'
+
 /** Approximate download size of the quantized tiny model (config + tokenizer + 2 ONNX graphs). */
 export const CAPTION_MODEL_APPROX_BYTES = 45_000_000
 

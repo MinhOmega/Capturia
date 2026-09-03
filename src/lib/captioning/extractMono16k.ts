@@ -2,6 +2,11 @@ import { materializeLocalSourceFile, releaseLocalSourceFile } from '@/lib/export
 import { MAX_IN_MEMORY_SOURCE_BYTES } from '@/lib/exporter/sourceFileLimits'
 import { MAX_CAPTION_AUDIO_SEC } from './captionConstants'
 import { extractMonoPcmViaMediabunny } from './extractMono16kMediabunny'
+import {
+  type DecodedMonoPcm,
+  extractMonoPcmViaWebDemuxer,
+  isAbortError,
+} from './extractMono16kWebDemuxer'
 
 export { MAX_CAPTION_AUDIO_SEC }
 
@@ -103,6 +108,44 @@ async function resampleMono(
   return rendered.getChannelData(0).slice()
 }
 
+/** One demux + decode strategy for the audio track (see `demuxMonoPcm`). */
+export type MonoPcmExtractor = (
+  file: File,
+  signal?: AbortSignal,
+  maxReadSec?: number,
+) => Promise<DecodedMonoPcm>
+
+export interface DemuxMonoPcmDeps {
+  /** First demux path; defaults to the `web-demuxer` + `AudioDecoder` route. */
+  primary?: MonoPcmExtractor
+  /** Second demux path; defaults to mediabunny's `AudioBufferSink`. */
+  secondary?: MonoPcmExtractor
+}
+
+/**
+ * Demuxer fallback chain used when `decodeAudioData` cannot handle the
+ * container: `web-demuxer` first (the wasm demuxer the export path already
+ * ships, widest container support), mediabunny second (covers containers the
+ * wasm demuxer rejects). An abort ends the chain immediately; any other
+ * failure of the first path is logged and the second path decides the outcome.
+ */
+export async function demuxMonoPcm(
+  file: File,
+  signal?: AbortSignal,
+  maxReadSec?: number,
+  deps: DemuxMonoPcmDeps = {},
+): Promise<DecodedMonoPcm> {
+  const primary = deps.primary ?? extractMonoPcmViaWebDemuxer
+  const secondary = deps.secondary ?? extractMonoPcmViaMediabunny
+  try {
+    return await primary(file, signal, maxReadSec)
+  } catch (error) {
+    if (isAbortError(error) || signal?.aborted) throw error
+    console.warn('[captions] web-demuxer audio path failed; trying the mediabunny path:', error)
+    return secondary(file, signal, maxReadSec)
+  }
+}
+
 async function truncateAndResampleTo16k(
   mono: Float32Array,
   fromRate: number,
@@ -123,8 +166,8 @@ async function truncateAndResampleTo16k(
 
 /**
  * Decode the video's audio track to mono 16 kHz float samples (Whisper input).
- * Prefers `decodeAudioData` when the container is supported, else the mediabunny
- * demux + WebCodecs path the exporter uses.
+ * Prefers `decodeAudioData` when the container is supported, else the demuxer
+ * chain in `demuxMonoPcm` (web-demuxer, then mediabunny).
  */
 export async function extractMono16kFromVideo(
   source: { videoPath?: string | null; videoUrl: string },
@@ -132,7 +175,7 @@ export async function extractMono16kFromVideo(
 ): Promise<ExtractMono16kResult> {
   const file = await loadSourceVideoFile(source, options?.signal)
 
-  /** When this returns null, use the mediabunny demuxer path. */
+  /** When this returns null, use the demuxer chain. */
   const tryDecodeAudioDataPath = async (): Promise<ExtractMono16kResult | null> => {
     const audioContext = new AudioContext()
     try {
@@ -176,7 +219,7 @@ export async function extractMono16kFromVideo(
 
     // For oversized sources, also cap how much audio the demuxer path decodes:
     // its PCM buffers are in-memory and scale with duration.
-    const pcm = await extractMonoPcmViaMediabunny(
+    const pcm = await demuxMonoPcm(
       file,
       options?.signal,
       isLargeFile ? LARGE_FILE_CAPTION_SEC : undefined,

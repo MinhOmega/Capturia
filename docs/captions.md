@@ -29,10 +29,14 @@ The native failure code reaches the renderer through the job status
 
 1. `extractMono16k.ts`: load the recording as a `File` (`readBinaryFile` /
    OPFS streaming via `localSourceFile.ts`), decode with `decodeAudioData`;
-   if that fails (WebM/Matroska with video, fragmented MP4) fall back to
-   mediabunny `Input` + `AudioBufferSink` (`extractMono16kMediabunny.ts`).
-   Output: mono 16 kHz float PCM, capped at 4 h (30 min for sources above the
-   in-memory limit).
+   if that fails (WebM/Matroska with video, fragmented MP4) run the demuxer
+   chain `demuxMonoPcm`: `web-demuxer` + `AudioDecoder`
+   (`extractMono16kWebDemuxer.ts`, same wasm as the export streaming decoder,
+   `public/wasm/web-demuxer.wasm`) first, then mediabunny `Input` +
+   `AudioBufferSink` (`extractMono16kMediabunny.ts`) for containers the wasm
+   demuxer rejects. An abort stops the chain; any other first-path failure is
+   logged and the second path decides. Output: mono 16 kHz float PCM, capped
+   at 4 h (30 min for sources above the in-memory limit).
 2. `leadingSilence.ts`: drop the silent prefix (re-added to all timestamps).
 3. `transcribe.ts` -> `transcribe.worker.ts`: `pipeline('automatic-speech-recognition',
    'Xenova/whisper-tiny')`, `numThreads = 1`, language pinned from the app
@@ -50,10 +54,15 @@ The native failure code reaches the renderer through the job status
 
 **Bundled with the app (Vite, `vite.config.ts` plugin `capturia-ort-wasm`)**
 
-- `dist/ort/ort-wasm.wasm` (9.2 MB) and `dist/ort/ort-wasm-simd.wasm` (10.0 MB)
-  from `onnxruntime-web@1.14.0` (the version `@xenova/transformers@2.17.2`
-  pins). Threaded variants are not shipped: no `SharedArrayBuffer` under
-  `file://`. In dev they are served from `/ort/`.
+- `dist/ort/ort-wasm-simd.wasm` (10.0 MB) from `onnxruntime-web@1.14.0` (the
+  version `@xenova/transformers@2.17.2` pins). Nothing else: the threaded
+  variants need `SharedArrayBuffer` (unavailable under `file://`) and the
+  non-SIMD build is never selected because Electron's Chromium always has
+  WebAssembly SIMD. The worker sets `env.backends.onnx.wasm.simd = true` and a
+  per-file `wasmPaths` map that names only this binary
+  (`src/lib/captioning/ortWasm.ts`), and probes SIMD support first so a runtime
+  without it fails with a readable error instead of a 404. In dev the file is
+  served from `/ort/`.
 - The Transformers.js worker bundle (`worker.format = 'es'`, code-split for the
   dynamic import). Node builtins `fs`/`path`/`url` are aliased to
   `src/lib/vite-stubs/empty-node-module.ts`; `onnxruntime-node` to
@@ -61,12 +70,13 @@ The native failure code reaches the renderer through the job status
 
 **Downloaded on first use (`electron/ipc/captionHandlers.ts`)**
 
-`userData/caption-models/Xenova/whisper-tiny/`:
+`userData/caption-models/Xenova/whisper-tiny/`, fetched from
+`https://huggingface.co/Xenova/whisper-tiny/resolve/<CAPTION_MODEL_REVISION>/<file>`.
 
 | File | Size |
 |------|------|
-| `onnx/decoder_model_merged_quantized.onnx` | 30.7 MB (SHA-256 verified) |
-| `onnx/encoder_model_quantized.onnx` | 10.1 MB (SHA-256 verified) |
+| `onnx/decoder_model_merged_quantized.onnx` | 30.7 MB |
+| `onnx/encoder_model_quantized.onnx` | 10.1 MB |
 | `tokenizer.json`, `vocab.json`, `merges.txt`, `normalizer.json`, `config.json`, `generation_config.json`, `preprocessor_config.json`, `tokenizer_config.json`, `added_tokens.json`, `special_tokens_map.json`, `quantize_config.json` | ~4 MB total |
 
 Total ~45 MB. Downloads are sequential, written to `<file>.partial` and
@@ -74,6 +84,29 @@ renamed when complete, resumed with `Range` requests, retried with backoff on
 408/425/429/5xx (honouring `Retry-After`), and cancellable
 (`caption-model-download-cancel`). The renderer asks before the first download
 (toast "Download caption model?") and shows progress.
+
+**Pinned revision and integrity.** `CAPTION_MODEL_REVISION`
+(`src/lib/captioning/captionConstants.ts`) is the full commit SHA of the Hub
+repo the file list was captured against; `modelFileUrl` refuses anything that
+is not a 40-hex SHA, so a push to the repo's `main` cannot change the
+tokenizer or config under the app. **Every** file (ONNX graphs and the JSON /
+text metadata) carries a SHA-256 in `WHISPER_TINY_MODEL`; a mismatch deletes the
+`.partial` and fails the download with `Checksum mismatch for <file>`.
+
+To move to a newer revision:
+
+```
+curl -s 'https://huggingface.co/api/models/Xenova/whisper-tiny?blobs=true' \
+  | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d["sha"]);[print(s["rfilename"],s["size"],(s.get("lfs") or {}).get("sha256")) for s in d["siblings"]]'
+# then, for each file in WHISPER_TINY_MODEL:
+curl -sL -o f "https://huggingface.co/Xenova/whisper-tiny/resolve/<sha>/<file>" && sha256sum f
+```
+
+Update `CAPTION_MODEL_REVISION` and every `approximateBytes` /
+`expectedSha256`, then run `npx vitest --run electron/ipc/captionHandlers.test.ts`.
+The LFS `sha256` the API reports for the ONNX files must equal what you
+compute from the downloaded bytes; the JSON/text files are not LFS objects, so
+their digests can only be computed locally.
 
 ## IPC and preload
 
@@ -93,7 +126,7 @@ preload as `electronAPI.assetBaseUrl` and `electronAPI.captionModelDirUrl`:
 - `--caption-model-dir=file:///.../userData/caption-models/`
 
 The worker sets `env.allowRemoteModels = false`, `env.localModelPath = <that URL>`
-and `env.backends.onnx.wasm.wasmPaths = <page URL>/ort/`. Transformers.js then
+and `env.backends.onnx.wasm.wasmPaths = { 'ort-wasm-simd.wasm': <page URL>/ort/ort-wasm-simd.wasm }`. Transformers.js then
 `fetch()`es `file://` URLs; this relies on the editor window's
 `webSecurity: false` (already set for local media playback). `useBrowserCache`
 is off so the model is not duplicated into Cache Storage.
