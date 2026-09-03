@@ -1671,6 +1671,19 @@ export default function VideoEditor() {
     setSegments((prev) => prev.map((s) => (s.id === id ? { ...s, speed: clampedSpeed } : s)))
   }, [])
 
+  // The speed field applies every keystroke so the preview follows along, but
+  // "2.5" is one edit, not three. The batch opens on the first change and
+  // closes on the commit (onSegmentSpeedCommit), which the field fires on blur
+  // and Enter and a preset button fires straight after its click. So a typing
+  // session and a preset click each cost exactly one undo entry.
+  const handleSegmentSpeedChangeFromPanel = useCallback(
+    (id: string, speed: number) => {
+      beginHistoryBatch()
+      handleSegmentSpeedChange(id, speed)
+    },
+    [beginHistoryBatch, handleSegmentSpeedChange],
+  )
+
   const handleZoomSpanChange = useCallback(
     (id: string, span: Span) => {
       const segs = segmentsRef.current
@@ -4074,7 +4087,8 @@ export default function VideoEditor() {
               onZoomDelete={handleZoomDelete}
               selectedSegment={segments.find((s) => s.id === selectedSegmentId) ?? null}
               onDeleteSegment={handleDeleteSegment}
-              onSegmentSpeedChange={handleSegmentSpeedChange}
+              onSegmentSpeedChange={handleSegmentSpeedChangeFromPanel}
+              onSegmentSpeedCommit={endHistoryBatch}
               shadowIntensity={shadowIntensity}
               onShadowChange={setShadowIntensity}
               showBlur={showBlur}
