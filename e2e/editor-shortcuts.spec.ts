@@ -131,7 +131,9 @@ test('places a zoom, sets its level with a number key and duplicates it with Ctr
     expect(spans.length).toBeGreaterThanOrEqual(2)
   } finally {
     killApp(app)
-    await app.close().catch(() => {})
+    await app.close().catch(() => {
+      // killApp already took the process down.
+    })
   }
 })
 
@@ -210,6 +212,8 @@ test('J, K and L drive the preview rate', async () => {
     expect(await rate()).toBe(2)
   } finally {
     killApp(app)
-    await app.close().catch(() => {})
+    await app.close().catch(() => {
+      // killApp already took the process down.
+    })
   }
 })
