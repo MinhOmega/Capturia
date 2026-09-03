@@ -365,7 +365,7 @@ export function createBlurAnnotationRegion(params: {
  * A freshly created text annotation starts with no content: the properties
  * panel's textarea shows a real placeholder for the empty state, so the value
  * must be empty for it to show and for typing to replace rather than append to
- * baked-in text (upstream #127).
+ * baked-in text.
  */
 export function createTextAnnotationRegion(params: {
   id: string

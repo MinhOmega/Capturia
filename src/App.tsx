@@ -13,7 +13,7 @@ import { ShortcutsConfigDialog } from './components/video-editor/ShortcutsConfig
 
 // The editor pulls in PixiJS, the exporter and the timeline; the HUD,
 // source-selector and permission windows never need any of it, so the editor
-// bundle is only fetched by the editor window (upstream 42c596da).
+// bundle is only fetched by the editor window.
 const VideoEditor = lazy(() => import('./components/video-editor/VideoEditor'))
 
 export default function App() {

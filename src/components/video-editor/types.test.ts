@@ -69,8 +69,8 @@ describe('getZoomScale', () => {
   })
 })
 
-// Regression coverage for upstream #127: a freshly created text annotation must
-// start with truly empty content so the properties panel's placeholder shows
+// Regression coverage: a freshly created text annotation must start with
+// truly empty content so the properties panel's placeholder shows
 // and typing replaces rather than appends to baked-in text.
 describe('createTextAnnotationRegion', () => {
   it('starts with empty content, not a baked-in placeholder string', () => {
