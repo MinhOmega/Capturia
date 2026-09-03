@@ -1,9 +1,11 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import {
+  DEFAULT_CURSOR_TRACK_COMPACTION,
   compactCursorTrackPauseRanges,
+  compactCursorTrackSamples,
   normalizeCursorTrackPauseRanges,
   readCursorTrackSidecar,
   resolveCursorSidecarPath,
@@ -231,5 +233,193 @@ describe('cursorTrack (pure)', () => {
     const videoPath = path.join(dir, 'recording-2.webm')
     await writeCursorTrackSidecar(videoPath, { samples: [] })
     await expect(readFile(resolveCursorSidecarPath(videoPath))).rejects.toThrow()
+  })
+})
+
+/**
+ * A capture at the tracker's live rate (~60 Hz), long enough that the pre-1.9
+ * head slice would have thrown away everything past the first ~100 seconds.
+ */
+function syntheticTrack(options: {
+  durationMs: number
+  intervalMs?: number
+  clickTimesMs?: number[]
+}): {
+  samples: Array<{ timeMs: number; x: number; y: number; click?: boolean }>
+  events: Array<{ type: 'click'; startMs: number; endMs: number; point: { x: number; y: number } }>
+} {
+  const intervalMs = options.intervalMs ?? 16
+  // Clicks have to land on the sampling grid, else no sample carries `click`.
+  const clickTimes = new Set(
+    (options.clickTimesMs ?? []).map((timeMs) => Math.round(timeMs / intervalMs) * intervalMs),
+  )
+  const samples: Array<{ timeMs: number; x: number; y: number; click?: boolean }> = []
+  for (let timeMs = 0; timeMs <= options.durationMs; timeMs += intervalMs) {
+    samples.push({
+      timeMs,
+      x: (timeMs % 1_000) / 1_000,
+      y: (timeMs % 700) / 700,
+      click: clickTimes.has(timeMs),
+    })
+  }
+  const events = [...clickTimes].map((timeMs) => ({
+    type: 'click' as const,
+    startMs: timeMs,
+    endMs: timeMs,
+    point: { x: 0.5, y: 0.5 },
+  }))
+  return { samples, events }
+}
+
+describe('cursor-track size policy', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('leaves a track at the old head-slice cap untouched', () => {
+    const { samples } = syntheticTrack({ durationMs: 16 * 5_999 })
+    expect(samples).toHaveLength(6_000)
+    const track = sanitizeCursorTrack({ samples })
+    expect(track?.samples).toHaveLength(6_000)
+    expect(track?.samples.map((sample) => sample.timeMs)).toEqual(
+      samples.map((sample) => sample.timeMs),
+    )
+  })
+
+  it('keeps a 20-minute track alive to its last second instead of cutting it short', () => {
+    const durationMs = 20 * 60 * 1_000
+    const { samples, events } = syntheticTrack({ durationMs, clickTimesMs: [600_000] })
+    const track = sanitizeCursorTrack({ samples, events })
+    const times = track?.samples.map((sample) => sample.timeMs) ?? []
+
+    expect(times.length).toBeGreaterThan(6_000)
+    expect(times[times.length - 1]).toBe(durationMs)
+    // The whole last second survives, at roughly the 30 Hz target.
+    const lastSecond = times.filter((timeMs) => timeMs > durationMs - 1_000)
+    expect(lastSecond.length).toBeGreaterThanOrEqual(25)
+    expect(lastSecond.length).toBeLessThanOrEqual(40)
+    // ... and so does a second sampled halfway through.
+    expect(times.filter((timeMs) => timeMs >= 500_000 && timeMs < 501_000).length).toBeGreaterThan(
+      20,
+    )
+  })
+
+  it('never drops a click, and keeps the samples within 250 ms of one', () => {
+    const clickTimesMs = [1_008, 300_000, 900_000, 1_198_992]
+    const { samples, events } = syntheticTrack({ durationMs: 20 * 60 * 1_000, clickTimesMs })
+    const track = sanitizeCursorTrack({ samples, events })
+    const kept = track?.samples ?? []
+
+    expect(kept.filter((sample) => sample.click).map((sample) => sample.timeMs)).toEqual(
+      clickTimesMs,
+    )
+    for (const clickMs of clickTimesMs) {
+      const around = samples.filter((sample) => Math.abs(sample.timeMs - clickMs) <= 250)
+      const keptAround = kept.filter((sample) => Math.abs(sample.timeMs - clickMs) <= 250)
+      expect(keptAround).toHaveLength(around.length)
+    }
+  })
+
+  it('keeps a two-hour track under the serialized payload guard', () => {
+    const { samples, events } = syntheticTrack({
+      durationMs: 2 * 60 * 60 * 1_000,
+      intervalMs: 16,
+      clickTimesMs: [60_000, 3_600_000],
+    })
+    const track = sanitizeCursorTrack({ samples, events })
+    expect(track?.samples.length).toBeLessThanOrEqual(DEFAULT_CURSOR_TRACK_COMPACTION.maxSamples)
+    expect(JSON.stringify(track?.samples).length).toBeLessThan(
+      DEFAULT_CURSOR_TRACK_COMPACTION.maxSampleBytes,
+    )
+    // Still covers the last second of the recording.
+    const times = track?.samples.map((sample) => sample.timeMs) ?? []
+    expect(times[times.length - 1]).toBe(2 * 60 * 60 * 1_000)
+  })
+
+  it('drops uniformly across time and logs once when the byte guard trips', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const { samples } = syntheticTrack({ durationMs: 600_000 })
+    const compacted = compactCursorTrackSamples(samples, [], {
+      compactAboveSamples: 0,
+      maxSampleBytes: 20_000,
+    })
+
+    expect(compacted.length).toBeLessThan(samples.length)
+    expect(JSON.stringify(compacted).length).toBeLessThanOrEqual(24_000)
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(String(warn.mock.calls[0][0])).toContain('payload ceiling reached')
+
+    // Uniform, not a tail cut: both halves of the recording keep samples.
+    const times = compacted.map((sample) => sample.timeMs)
+    expect(times.filter((timeMs) => timeMs < 300_000).length).toBeGreaterThan(10)
+    expect(times.filter((timeMs) => timeMs >= 300_000).length).toBeGreaterThan(10)
+    expect(times[times.length - 1]).toBe(600_000)
+  })
+
+  it('thins uniformly to the count ceiling while keeping every click', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const clickTimesMs = [0, 160_000, 320_000, 480_000]
+    const { samples, events } = syntheticTrack({ durationMs: 600_000, clickTimesMs })
+    const compacted = compactCursorTrackSamples(samples, events, {
+      compactAboveSamples: 0,
+      maxSamples: 500,
+    })
+
+    expect(compacted.length).toBeLessThanOrEqual(520)
+    expect(compacted.filter((sample) => sample.click).map((sample) => sample.timeMs)).toEqual(
+      clickTimesMs,
+    )
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(String(warn.mock.calls[0][0])).toContain('sample ceiling reached')
+  })
+})
+
+describe('cursor-track sidecar compatibility', () => {
+  let dir: string
+
+  beforeAll(async () => {
+    dir = await mkdtemp(path.join(os.tmpdir(), 'capturia-cursor-sidecar-'))
+  })
+
+  afterAll(async () => {
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  it('loads a legacy sidecar: bare track, no version wrapper, legacy cursor kind', async () => {
+    const videoPath = path.join(dir, 'legacy-recording.webm')
+    await writeFile(
+      resolveCursorSidecarPath(videoPath),
+      JSON.stringify({
+        source: 'recorded',
+        samples: [
+          { timeMs: 0, x: 0.25, y: 0.75, cursorKind: 'ibeam' },
+          { timeMs: 20, x: 0.3, y: 0.7, click: true },
+        ],
+        events: [{ type: 'click', startMs: 20, endMs: 20, point: { x: 0.3, y: 0.7 } }],
+        stats: { sampleCount: 2, clickCount: 1 },
+      }),
+      'utf-8',
+    )
+
+    const track = await readCursorTrackSidecar(videoPath)
+    expect(track?.samples).toEqual([
+      { timeMs: 0, x: 0.25, y: 0.75, click: false, visible: true, cursorKind: 'text' },
+      { timeMs: 20, x: 0.3, y: 0.7, click: true, visible: true, cursorKind: 'arrow' },
+    ])
+    expect(track?.events).toHaveLength(1)
+  })
+
+  it('writes a long track as compact JSON that still round-trips', async () => {
+    const videoPath = path.join(dir, 'long-recording.webm')
+    const { samples, events } = syntheticTrack({ durationMs: 600_000, clickTimesMs: [1_000] })
+    await writeCursorTrackSidecar(videoPath, { samples, events })
+
+    const raw = await readFile(resolveCursorSidecarPath(videoPath), 'utf-8')
+    expect(raw).not.toContain('\n')
+    expect(JSON.parse(raw).version).toBe(1)
+
+    const track = await readCursorTrackSidecar(videoPath)
+    expect(track?.samples.length).toBeGreaterThan(6_000)
+    expect(track?.samples[track.samples.length - 1].timeMs).toBe(600_000)
   })
 })

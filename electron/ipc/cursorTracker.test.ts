@@ -94,6 +94,49 @@ describe('cursor tracker IPC handlers', () => {
     }
   })
 
+  it('keeps the whole track of a long recording instead of dropping its oldest samples', async () => {
+    setPlatform('linux')
+    process.env['XDG_SESSION_TYPE'] = 'x11'
+    vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    vi.spyOn(console, 'info').mockImplementation(() => undefined)
+    vi.useFakeTimers()
+    try {
+      const { screen } = await import('electron')
+      // A cursor that actually moves, so every tick stores a sample (~60 Hz),
+      // which is what a real recording does and what used to overflow the buffer.
+      let step = 0
+      vi.mocked(screen.getCursorScreenPoint).mockImplementation(() => {
+        step += 1
+        return { x: 100 + (step % 800), y: 100 + (step % 600) }
+      })
+
+      const ipc = fakeIpcMain()
+      const ctx = buildContext(ipc)
+      ctx.session.selectedSource = { id: 'screen:1:0', display_id: '1' }
+      registerCursorTrackerHandlers(ctx)
+      await ipc.invoke('cursor-tracker-start', { captureSize: { width: 1920, height: 1080 } })
+
+      const durationMs = 10 * 60 * 1_000
+      vi.advanceTimersByTime(durationMs)
+
+      const stopped = await ipc.invoke<{
+        track?: { samples: Array<{ timeMs: number }> }
+      }>('cursor-tracker-stop')
+      const times = stopped.track?.samples.map((sample) => sample.timeMs) ?? []
+
+      // The old 12 000-sample buffer dropped its head, so a 10-minute recording
+      // started somewhere around minute 7. It now starts at zero...
+      expect(times[0]).toBeLessThanOrEqual(50)
+      // ... and still reaches the end.
+      expect(times[times.length - 1]).toBeGreaterThan(durationMs - 100)
+      // Decimated to ~30 Hz on the way out, not stored raw.
+      expect(times.length).toBeGreaterThan(10_000)
+      expect(times.length).toBeLessThan(durationMs / 25)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('stop without start returns no track', async () => {
     const ipc = fakeIpcMain()
     const registration = registerCursorTrackerHandlers(buildContext(ipc))

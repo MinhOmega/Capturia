@@ -426,6 +426,13 @@ export function createBrowserBridge(): BrowserHarness {
     setRecordingState: async () => {
       // No tray, no dock badge and no window state to flip in a browser tab.
     },
+    // A5: a browser tab cannot `statfs` anything. `success: false` is the
+    // "unknown" answer, which `assessRecordingDiskSpace` reads as "do not
+    // block" — the harness must never refuse a recording the app would allow.
+    getRecordingsDiskSpace: async () => ({
+      success: false,
+      message: 'Free disk space is not observable in the browser harness.',
+    }),
 
     // ---- Project state ----------------------------------------------------
     saveProjectState: async (videoPath, state) => {
@@ -584,6 +591,10 @@ export function createBrowserBridge(): BrowserHarness {
     // Drive any of these from DevTools, e.g.
     //   __capturiaBrowserHarness.emit('menu-export')
     onStopRecordingFromTray: (callback) => subscribe('stop-recording-from-tray', () => callback()),
+    // A2: `__capturiaBrowserHarness.emit('native-recorder-exited', { ... })`
+    // walks the HUD through a helper that died mid-recording.
+    onNativeRecorderExited: (callback) =>
+      subscribe('native-recorder-exited', (info) => callback(info as NativeRecorderExitPayload)),
     onSelectedSourceChanged: (callback) =>
       subscribe('selected-source-changed', (source) => callback(source)),
     onSourceSelectorClosed: (callback) => subscribe('source-selector-closed', () => callback()),

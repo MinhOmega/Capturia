@@ -82,6 +82,21 @@ type CursorTrackMetadata = {
   }
 }
 
+/**
+ * A2: the native macOS helper ended while a recording was still running and no
+ * stop had been asked for. Pushed to the HUD on `native-recorder-exited`.
+ */
+type NativeRecorderExitPayload = {
+  code: number | null
+  signal: string | null
+  /** `killed` when a signal ended it, `crashed` for a non-zero exit of its own. */
+  reason: 'killed' | 'crashed'
+  /** The partial recording left on disk. */
+  outputPath: string
+  /** The partial file has a top-level MP4 `moov` box, so the editor may open it. */
+  outputPlayable: boolean
+}
+
 type SubtitleCueMetadata = {
   id: string
   startMs: number

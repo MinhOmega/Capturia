@@ -90,7 +90,10 @@ __capturiaBrowserHarness.reset()           // forget saved state and reload
 `menu-return-to-recorder`, `menu-toggle-timeline`, `menu-toggle-settings`,
 `menu-open-shortcuts`, `request-save-before-close`, `stop-recording-from-tray`,
 `selected-source-changed`, `source-selector-closed`, `countdown-overlay-value`,
-`notes-window-closed`, `update-progress`, `caption-model-progress`.
+`notes-window-closed`, `update-progress`, `caption-model-progress`,
+`native-recorder-exited`. The last one carries a payload:
+`emit('native-recorder-exited', { code: null, signal: 'SIGKILL', reason: 'killed', outputPath: '/tmp/recording-1.mp4', outputPlayable: false })` walks the HUD
+through a native helper that died mid-recording.
 
 ## Known limitations
 

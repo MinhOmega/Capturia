@@ -8,6 +8,7 @@ import {
   canRequestStop,
   completeStopTransition,
   planNativeStopSideEffects,
+  planRecorderExitInterruption,
   resolveStopRoute,
   shouldStartAfterRestart,
   type RecordingTransitionState,
@@ -228,5 +229,59 @@ describe('recordingPhase restart', () => {
     expect(
       shouldStartAfterRestart({ phase: 'idle', transitionInFlight: false, restartPending: false }),
     ).toBe(false)
+  })
+
+  it('a helper that vanishes mid-recording lands on interrupted, offering the file when it is playable', () => {
+    const plan = planRecorderExitInterruption({
+      state: recordingState,
+      stopRequested: false,
+      outputPlayable: true,
+    })
+    expect(plan).toEqual({ state: IDLE_RECORDING_STATE, notify: true, offerOpen: true })
+
+    // Paused when it died, and the file has no moov: still interrupted, but nothing to open.
+    expect(
+      planRecorderExitInterruption({
+        state: { ...recordingState, phase: 'paused' },
+        stopRequested: false,
+        outputPlayable: false,
+      }),
+    ).toEqual({ state: IDLE_RECORDING_STATE, notify: true, offerOpen: false })
+
+    // The helper died before it ever announced itself.
+    expect(
+      planRecorderExitInterruption({
+        state: { ...IDLE_RECORDING_STATE, phase: 'starting' },
+        stopRequested: false,
+        outputPlayable: false,
+      }),
+    ).not.toBeNull()
+  })
+
+  it('a helper closing under a normal stop is not an interruption', () => {
+    // Main told us the stop came from us.
+    expect(
+      planRecorderExitInterruption({
+        state: recordingState,
+        stopRequested: true,
+        outputPlayable: true,
+      }),
+    ).toBeNull()
+    // The hook is already draining its own stop.
+    expect(
+      planRecorderExitInterruption({
+        state: beginStopTransition(recordingState),
+        stopRequested: false,
+        outputPlayable: true,
+      }),
+    ).toBeNull()
+    // Nothing was recording at all.
+    expect(
+      planRecorderExitInterruption({
+        state: IDLE_RECORDING_STATE,
+        stopRequested: false,
+        outputPlayable: true,
+      }),
+    ).toBeNull()
   })
 })

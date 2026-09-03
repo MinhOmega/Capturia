@@ -113,15 +113,213 @@ export async function writeCursorTrackSidecar(
   const sanitized = sanitizeCursorTrack(cursorTrack)
   if (!sanitized) return
   const sidecarPath = resolveCursorSidecarPath(videoPath)
+  // Indented for the short tracks a human might open, compact past that: the
+  // indentation of a two-hour track doubles a file that is already tens of MB.
+  // Both forms are the same JSON, so an old reader is unaffected.
+  const indent =
+    sanitized.samples.length > DEFAULT_CURSOR_TRACK_COMPACTION.compactAboveSamples ? undefined : 2
   const payload = JSON.stringify(
     {
       version: 1,
       cursorTrack: sanitized,
     },
     null,
-    2,
+    indent,
   )
   await fs.writeFile(sidecarPath, payload, 'utf-8')
+}
+
+/** A cursor sample as far as the compaction rules care: when it happened, and whether it is a click. */
+export type CursorSampleTiming = { timeMs: number; click?: boolean }
+/** A click / selection event as far as the compaction rules care: the span it covers. */
+export type CursorEventTiming = { startMs: number; endMs: number }
+
+export type CursorTrackCompactionLimits = {
+  /**
+   * Rate the samples outside an event guard are decimated to. 30 Hz is at or
+   * above the rate the cursor overlay and auto-zoom actually resolve.
+   */
+  targetSampleRateHz: number
+  /** Samples this close to a click / selection are kept whatever the spacing rule says. */
+  eventGuardMs: number
+  /**
+   * Tracks at or below this many samples are returned untouched. It is the cap
+   * the pre-1.9 head slice used, so every track that used to survive whole is
+   * still byte-for-byte what it was.
+   */
+  compactAboveSamples: number
+  /** Absolute ceiling. 260 000 at 30 Hz is ~2.4 h of recording. */
+  maxSamples: number
+  /**
+   * Ceiling on the serialized sample array. Only a backstop: 2 h at 30 Hz
+   * serializes to roughly 25 MB, so this never trips on a real recording.
+   */
+  maxSampleBytes: number
+}
+
+export const DEFAULT_CURSOR_TRACK_COMPACTION: CursorTrackCompactionLimits = Object.freeze({
+  targetSampleRateHz: 30,
+  eventGuardMs: 250,
+  compactAboveSamples: 6_000,
+  maxSamples: 260_000,
+  maxSampleBytes: 32 * 1024 * 1024,
+})
+
+/**
+ * Smallest possible serialization of one sanitized sample, used to skip the
+ * (expensive) byte measurement for any track that cannot reach the ceiling:
+ * `{"timeMs":0,"x":0,"y":0,"click":false,"visible":true,"cursorKind":"arrow"},`
+ */
+const MIN_SERIALIZED_SAMPLE_BYTES = 72
+
+function mergeGuardIntervals(
+  events: readonly CursorEventTiming[] | undefined,
+  guardMs: number,
+): CursorTrackPauseRange[] {
+  if (!events || events.length === 0) return []
+  const spans = events
+    .map((event) => ({
+      startMs: Number(event.startMs) - guardMs,
+      endMs: Number(event.endMs) + guardMs,
+    }))
+    .filter((span) => Number.isFinite(span.startMs) && Number.isFinite(span.endMs))
+    .sort((a, b) => a.startMs - b.startMs)
+
+  const merged: CursorTrackPauseRange[] = []
+  for (const span of spans) {
+    const last = merged[merged.length - 1]
+    if (last && span.startMs <= last.endMs) {
+      last.endMs = Math.max(last.endMs, span.endMs)
+    } else {
+      merged.push({ ...span })
+    }
+  }
+  return merged
+}
+
+/**
+ * Time-based decimation: every click and every sample inside an event guard is
+ * kept, and the rest are thinned to `targetSampleRateHz`. Samples must already
+ * be ordered by `timeMs`; the first and last are always kept so the track still
+ * spans the whole recording.
+ *
+ * The due time advances on its own grid rather than from the last kept sample:
+ * a tracker running at 60 Hz would otherwise only ever keep every third sample
+ * (16 ms ticks, 33 ms spacing) and land at 20 Hz instead of the 30 asked for.
+ */
+export function decimateCursorTrackSamples<S extends CursorSampleTiming>(
+  samples: readonly S[],
+  events: readonly CursorEventTiming[] | undefined,
+  options: { targetSampleRateHz?: number; eventGuardMs?: number } = {},
+): S[] {
+  const rateHz = options.targetSampleRateHz ?? DEFAULT_CURSOR_TRACK_COMPACTION.targetSampleRateHz
+  const guardMs = options.eventGuardMs ?? DEFAULT_CURSOR_TRACK_COMPACTION.eventGuardMs
+  if (samples.length === 0 || !Number.isFinite(rateHz) || rateHz <= 0) return [...samples]
+
+  const intervalMs = 1_000 / rateHz
+  const guards = mergeGuardIntervals(events, guardMs)
+  const kept: S[] = []
+  let guardIndex = 0
+  let nextDueMs = Number.NEGATIVE_INFINITY
+
+  for (let index = 0; index < samples.length; index += 1) {
+    const sample = samples[index]
+    const timeMs = Number(sample.timeMs)
+    while (guardIndex < guards.length && guards[guardIndex].endMs < timeMs) guardIndex += 1
+    const insideGuard = guardIndex < guards.length && timeMs >= guards[guardIndex].startMs
+    const isEdge = index === 0 || index === samples.length - 1
+    const isDue = timeMs >= nextDueMs
+    if (sample.click === true || insideGuard || isEdge || isDue) {
+      kept.push(sample)
+    }
+    if (isDue) {
+      nextDueMs = Number.isFinite(nextDueMs) ? nextDueMs : timeMs
+      while (nextDueMs <= timeMs) nextDueMs += intervalMs
+    }
+  }
+  return kept
+}
+
+/**
+ * Drops samples uniformly across the track until at most `maxCount` remain.
+ * Clicks and the two end samples are never candidates: a burst of clicks can
+ * leave the result above the target rather than lose an event the editor draws,
+ * and the track must still span the whole recording.
+ */
+export function thinCursorTrackSamples<S extends CursorSampleTiming>(
+  samples: readonly S[],
+  maxCount: number,
+): S[] {
+  if (samples.length <= maxCount) return [...samples]
+
+  const lastIndex = samples.length - 1
+  const isProtected = (sample: S, index: number): boolean =>
+    sample.click === true || index === 0 || index === lastIndex
+  let protectedCount = 0
+  for (let index = 0; index <= lastIndex; index += 1) {
+    if (isProtected(samples[index], index)) protectedCount += 1
+  }
+  const droppableCount = samples.length - protectedCount
+  const budget = Math.max(0, maxCount - protectedCount)
+  if (droppableCount === 0 || budget >= droppableCount) return [...samples]
+
+  const step = budget / droppableCount
+  const kept: S[] = []
+  let credit = 0
+  for (let index = 0; index <= lastIndex; index += 1) {
+    const sample = samples[index]
+    if (isProtected(sample, index)) {
+      kept.push(sample)
+      continue
+    }
+    credit += step
+    if (credit >= 1) {
+      credit -= 1
+      kept.push(sample)
+    }
+  }
+  return kept
+}
+
+/**
+ * The whole size policy for a cursor track, in one place: leave short tracks
+ * alone, decimate long ones to ~30 Hz around their clicks, and fall back to a
+ * uniform thin when even that is over the count or byte ceiling. Both ceilings
+ * drop across the whole recording, never off the tail, so the editor's cursor
+ * overlay and auto-zoom keep working to the last frame.
+ */
+export function compactCursorTrackSamples<S extends CursorSampleTiming>(
+  samples: readonly S[],
+  events: readonly CursorEventTiming[] | undefined,
+  limits: Partial<CursorTrackCompactionLimits> = {},
+): S[] {
+  const resolved: CursorTrackCompactionLimits = { ...DEFAULT_CURSOR_TRACK_COMPACTION, ...limits }
+  if (samples.length <= resolved.compactAboveSamples) return [...samples]
+
+  let result = decimateCursorTrackSamples(samples, events, resolved)
+  if (result.length > resolved.maxSamples) {
+    const before = result.length
+    result = thinCursorTrackSamples(result, resolved.maxSamples)
+    console.warn(
+      `[cursor-track] sample ceiling reached: thinned ${before} -> ${result.length} samples (max ${resolved.maxSamples})`,
+    )
+  }
+
+  // Measuring costs a full serialization, so only do it for a track long enough
+  // to possibly exceed the ceiling.
+  if (result.length * MIN_SERIALIZED_SAMPLE_BYTES > resolved.maxSampleBytes) {
+    const bytes = JSON.stringify(result).length
+    if (bytes > resolved.maxSampleBytes) {
+      const before = result.length
+      const target = Math.max(1, Math.floor(result.length * (resolved.maxSampleBytes / bytes)))
+      result = thinCursorTrackSamples(result, target)
+      console.warn(
+        `[cursor-track] payload ceiling reached: ${bytes} bytes over ${resolved.maxSampleBytes}; thinned ${before} -> ${result.length} samples`,
+      )
+    }
+  }
+
+  return result
 }
 
 export function sanitizeCursorTrack(
@@ -129,8 +327,7 @@ export function sanitizeCursorTrack(
 ): CurrentVideoMetadata['cursorTrack'] | undefined {
   if (!input || !Array.isArray(input.samples) || input.samples.length === 0) return undefined
 
-  const samples = input.samples
-    .slice(0, 6_000)
+  const normalizedSamples = input.samples
     .map((sample) => {
       const timeMs = Number(sample.timeMs)
       const x = Number(sample.x)
@@ -149,10 +346,12 @@ export function sanitizeCursorTrack(
     .filter((sample): sample is NonNullable<typeof sample> => Boolean(sample))
     .sort((a, b) => a.timeMs - b.timeMs)
 
-  if (samples.length === 0) return undefined
+  if (normalizedSamples.length === 0) return undefined
   const events = Array.isArray(input.events)
     ? input.events
-        .slice(0, 1_200)
+        // Raised from 1 200 with the sample ceiling: a two-hour session can hold
+        // well over a thousand clicks, and a dropped click loses an auto-zoom.
+        .slice(0, 20_000)
         .map((event) => {
           if (!event || typeof event !== 'object') return null
           const type: 'click' | 'selection' | null =
@@ -242,6 +441,10 @@ export function sanitizeCursorTrack(
         .filter((event): event is NonNullable<typeof event> => Boolean(event))
         .sort((a, b) => a.startMs - b.startMs)
     : []
+
+  // Size policy last, so the decimator can protect the samples around the
+  // events it has just normalized.
+  const samples = compactCursorTrackSamples(normalizedSamples, events)
 
   const clickCountFromEvents = events.reduce(
     (count, event) => count + (event.type === 'click' ? 1 : 0),
