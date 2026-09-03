@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { type AspectRatio } from '@/utils/aspectRatioUtils'
+import { type CropResizeHandle, resizeCropRegion } from '@/lib/crop/aspectCrop'
 
 interface CropRegion {
   x: number // 0-1 normalized
@@ -14,11 +15,18 @@ interface CropControlProps {
   cropRegion: CropRegion
   onCropChange: (region: CropRegion) => void
   aspectRatio: AspectRatio
+  /** Output pixel aspect an edge drag must keep; null resizes free-form. */
+  lockAspectRatio?: number | null
 }
 
-type DragHandle = 'top' | 'right' | 'bottom' | 'left' | null
+type DragHandle = Extract<CropResizeHandle, 'top' | 'right' | 'bottom' | 'left'> | null
 
-export function CropControl({ videoElement, cropRegion, onCropChange }: CropControlProps) {
+export function CropControl({
+  videoElement,
+  cropRegion,
+  onCropChange,
+  lockAspectRatio = null,
+}: CropControlProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [isDragging, setIsDragging] = useState<DragHandle>(null)
@@ -47,6 +55,11 @@ export function CropControl({ videoElement, cropRegion, onCropChange }: CropCont
     return () => cancelAnimationFrame(rafId)
   }, [videoElement])
 
+  const videoAspectRatio =
+    videoElement && videoElement.videoWidth > 0 && videoElement.videoHeight > 0
+      ? videoElement.videoWidth / videoElement.videoHeight
+      : 16 / 9
+
   const getContainerRect = () => {
     return containerRef.current?.getBoundingClientRect() || { width: 0, height: 0, left: 0, top: 0 }
   }
@@ -74,32 +87,14 @@ export function CropControl({ videoElement, cropRegion, onCropChange }: CropCont
     const deltaX = currentX - dragStart.x
     const deltaY = currentY - dragStart.y
 
-    const newCrop = { ...initialCrop }
-
-    switch (isDragging) {
-      case 'top': {
-        const newY = Math.max(0, initialCrop.y + deltaY)
-        const bottom = initialCrop.y + initialCrop.height
-        newCrop.y = Math.min(newY, bottom - 0.1)
-        newCrop.height = bottom - newCrop.y
-        break
-      }
-      case 'bottom':
-        newCrop.height = Math.max(0.1, Math.min(initialCrop.height + deltaY, 1 - initialCrop.y))
-        break
-      case 'left': {
-        const newX = Math.max(0, initialCrop.x + deltaX)
-        const right = initialCrop.x + initialCrop.width
-        newCrop.x = Math.min(newX, right - 0.1)
-        newCrop.width = right - newCrop.x
-        break
-      }
-      case 'right':
-        newCrop.width = Math.max(0.1, Math.min(initialCrop.width + deltaX, 1 - initialCrop.x))
-        break
-    }
-
-    onCropChange(newCrop)
+    onCropChange(
+      resizeCropRegion(
+        initialCrop,
+        isDragging,
+        { dx: deltaX, dy: deltaY },
+        { lockRatio: lockAspectRatio, sourceAspect: videoAspectRatio },
+      ),
+    )
   }
 
   const handlePointerUp = (e: React.PointerEvent) => {
@@ -115,9 +110,6 @@ export function CropControl({ videoElement, cropRegion, onCropChange }: CropCont
   const cropPixelY = cropRegion.y * 100
   const cropPixelWidth = cropRegion.width * 100
   const cropPixelHeight = cropRegion.height * 100
-  const videoAspectRatio = videoElement
-    ? videoElement.videoWidth / videoElement.videoHeight
-    : 16 / 9
   const isVideoPortrait = videoAspectRatio < 1
   const maxContainerWidth = isVideoPortrait ? '40vw' : '75vw'
   const maxContainerHeight = '75vh'
