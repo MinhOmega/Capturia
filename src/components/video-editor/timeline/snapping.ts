@@ -247,6 +247,88 @@ export function clampVisibleRange(candidate: TimeSpan, totalMs: number): TimeSpa
   return { start, end: start + span }
 }
 
+/**
+ * Wheel deltas in "line" and "page" units, converted to pixels.
+ *
+ * `WheelEvent.delta*` is only in pixels when `deltaMode` is 0. Firefox reports
+ * lines (`deltaMode` 1) for a mouse wheel, and a Page Up/Down-style device
+ * reports pages (`deltaMode` 2). Feeding those numbers to a handler tuned for
+ * pixels makes the timeline barely move on one browser and jump a whole
+ * viewport on another. 16 px is the usual line height and 240 px a screenful
+ * of scroll — the same figures browsers use internally.
+ */
+export const WHEEL_LINE_HEIGHT_PX = 16
+export const WHEEL_PAGE_HEIGHT_PX = 240
+
+export function normaliseWheelDeltaPx(delta: number, deltaMode: number): number {
+  if (!Number.isFinite(delta)) return 0
+  if (deltaMode === 1) return delta * WHEEL_LINE_HEIGHT_PX
+  if (deltaMode === 2) return delta * WHEEL_PAGE_HEIGHT_PX
+  return delta
+}
+
+/** What a region has to do to survive a change in the timeline's length. */
+export type SpanNormalisation =
+  | { action: 'keep' }
+  | { action: 'clamp'; start: number; end: number }
+  | { action: 'drop' }
+
+/**
+ * Fit one region into a timeline that is now `totalMs` long.
+ *
+ * Trimming shortens the effective timeline, and every track has to follow:
+ * a region that used to end at 30 s cannot still end there once the recording
+ * collapses to 20 s. A region that no longer has room for `minDurationMs`
+ * inside the new length is dropped rather than squashed to a sliver nobody
+ * asked for; anything else is clamped into range.
+ *
+ * `totalMs <= 0` means the duration is not known yet, so nothing is touched:
+ * the length arrives asynchronously and clamping against zero would delete the
+ * whole project.
+ */
+export function normaliseSpanToDuration(
+  span: TimeSpan,
+  totalMs: number,
+  minDurationMs: number,
+): SpanNormalisation {
+  if (!Number.isFinite(totalMs) || totalMs <= 0) return { action: 'keep' }
+  const minMs = Number.isFinite(minDurationMs) && minDurationMs > 0 ? minDurationMs : 1
+  if (minMs > totalMs) return { action: 'keep' }
+
+  // Empty or inverted, or starting so late that a minimum-length region no
+  // longer fits before the end: there is nothing left to keep.
+  if (!(span.end > span.start) || span.start >= totalMs) return { action: 'drop' }
+
+  const start = Math.max(0, Math.min(span.start, totalMs - minMs))
+  const end = Math.max(start + minMs, Math.min(span.end, totalMs))
+
+  if (start === span.start && end === span.end) return { action: 'keep' }
+  return { action: 'clamp', start, end }
+}
+
+/**
+ * Apply `normaliseSpanToDuration` to a whole track and report the work: which
+ * regions move and which go. Callers push both through their own handlers, so
+ * the reducer stays free of the source/effective time mapping.
+ */
+export function normaliseSpansToDuration(
+  regions: ReadonlyArray<IdentifiedSpan>,
+  totalMs: number,
+  minDurationMs: number,
+): { clamped: IdentifiedSpan[]; dropped: string[] } {
+  const clamped: IdentifiedSpan[] = []
+  const dropped: string[] = []
+
+  for (const region of regions) {
+    const result = normaliseSpanToDuration(region, totalMs, minDurationMs)
+    if (result.action === 'drop') dropped.push(region.id)
+    else if (result.action === 'clamp')
+      clamped.push({ id: region.id, start: result.start, end: result.end })
+  }
+
+  return { clamped, dropped }
+}
+
 /** Format a millisecond value for the drag/resize tooltip and item labels. */
 export function formatTooltipMs(ms: number): string {
   const s = ms / 1000

@@ -61,6 +61,7 @@ import { ANNOTATION_ID_PREFIX, BLUR_ID_PREFIX, maxIdNum } from './idCounters'
 import { BLUR_REGIONS_ENABLED } from './featureFlags'
 import { normalizeAnnotationBlurData } from '@/lib/blurEffects'
 import { findFreeGapAt, planDuplicateSpan } from './regionPlacement'
+import { editorSnapshotsEqual, type EditorSnapshot } from './editorHistory'
 import { stepTransport, type TransportKey } from './videoPlayback/transport'
 import {
   buildPastedAnnotation,
@@ -1279,12 +1280,6 @@ export default function VideoEditor() {
   // ── Undo / Redo history ──
   // Tracks snapshots of core editable state (segments, zoom, annotations, audio edits).
   // Pushes the PREVIOUS state onto the undo stack whenever tracked state changes.
-  interface EditorSnapshot {
-    segments: VideoSegment[]
-    zoomRegionsByAspect: ZoomRegionsByAspect
-    annotationRegions: AnnotationRegion[]
-    audioEditRegions: AudioEditRegion[]
-  }
   const MAX_UNDO_HISTORY = 50
   const undoStackRef = useRef<EditorSnapshot[]>([])
   const redoStackRef = useRef<EditorSnapshot[]>([])
@@ -1347,6 +1342,14 @@ export default function VideoEditor() {
     if (!historyReadyRef.current) {
       prevEditableRef.current = current
       if (segments.length > 0) historyReadyRef.current = true
+      return
+    }
+
+    // A reference change is not always an edit: several paths rebuild an array
+    // or the per-aspect map around the very same regions. Comparing by shallow
+    // identity keeps those out of the stack, so Ctrl+Z always undoes something.
+    if (editorSnapshotsEqual(prevEditableRef.current, current)) {
+      prevEditableRef.current = current
       return
     }
 
@@ -2075,6 +2078,36 @@ export default function VideoEditor() {
     },
     [setSelectedZoomIdForActiveAspect],
   )
+
+  // Effective (timeline) span -> stored source span. Shared by every track's
+  // span handler, because they all receive timeline coordinates.
+  const effectiveSpanToSource = useCallback((span: Span) => {
+    const segs = segmentsRef.current
+    const trims = normalizedTrimsRef.current
+    const toSource = (effectiveMs: number) =>
+      segs.length > 0
+        ? effectiveToSourceMsWithSegments(effectiveMs, segs)
+        : trims.length > 0
+          ? effectiveToSourceMs(effectiveMs, trims)
+          : effectiveMs
+    return { startMs: Math.round(toSource(span.start)), endMs: Math.round(toSource(span.end)) }
+  }, [])
+
+  // The timeline refits every track after a trim; audio edits get the same
+  // treatment as annotations (see snapping.normaliseSpansToDuration).
+  const handleAudioEditSpanChange = useCallback(
+    (id: string, span: Span) => {
+      const { startMs, endMs } = effectiveSpanToSource(span)
+      setAudioEditRegions((prev) =>
+        prev.map((region) => (region.id === id ? { ...region, startMs, endMs } : region)),
+      )
+    },
+    [effectiveSpanToSource],
+  )
+
+  const handleAudioEditDelete = useCallback((id: string) => {
+    setAudioEditRegions((prev) => prev.filter((region) => region.id !== id))
+  }, [])
 
   const handleAnnotationSpanChange = useCallback((id: string, span: Span) => {
     const segs = segmentsRef.current
@@ -4211,6 +4244,8 @@ export default function VideoEditor() {
                   audioEnabled={audioEnabled}
                   audioGain={audioGain}
                   audioEditRegions={effectiveAudioEditRegions}
+                  onAudioEditSpanChange={handleAudioEditSpanChange}
+                  onAudioEditDelete={handleAudioEditDelete}
                   onHoverPreview={handleHoverPreview}
                   onHoverCommit={commitHoverPreview}
                   isPlaying={isPlaying}

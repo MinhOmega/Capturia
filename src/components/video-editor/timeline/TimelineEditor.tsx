@@ -39,7 +39,12 @@ import type {
 import { getZoomScale } from '../types'
 import type { SubtitleCue } from '@/lib/analysis/types'
 import { sourceToEffectiveMsWithSegments } from '@/lib/trim/timeMapping'
-import { clampVisibleRange, spansIntersect } from './snapping'
+import {
+  clampVisibleRange,
+  normaliseSpansToDuration,
+  normaliseWheelDeltaPx,
+  spansIntersect,
+} from './snapping'
 import { shouldStartTimelineScrub, TIMELINE_SCRUB_OPT_OUT_ATTR } from './timelineScrub'
 import { v4 as uuidv4 } from 'uuid'
 import {
@@ -108,6 +113,9 @@ interface TimelineEditorProps {
   audioEnabled?: boolean
   audioGain?: number
   audioEditRegions?: AudioEditRegion[]
+  /** Refit an audio edit to a shortened timeline (same effective-time contract as the annotation handlers). */
+  onAudioEditSpanChange?: (id: string, span: Span) => void
+  onAudioEditDelete?: (id: string) => void
   onHoverPreview?: (effectiveMs: number | null) => void
   onHoverCommit?: () => void
   isPlaying?: boolean
@@ -1117,6 +1125,8 @@ export default function TimelineEditor({
   audioEnabled = true,
   audioGain = 1,
   audioEditRegions = [],
+  onAudioEditSpanChange,
+  onAudioEditDelete,
   onHoverPreview,
   onHoverCommit,
   isPlaying = false,
@@ -1381,31 +1391,51 @@ export default function TimelineEditor({
     })
   }, [currentTimeMs, isPlaying, totalMs])
 
+  // Trimming shortens the effective timeline, so every track has to be refitted
+  // to it, not just the zooms: an annotation, blur or audio edit left pointing
+  // past the new end would render nowhere and export nothing. Regions with no
+  // room left are dropped rather than squashed into a sliver.
+  // (Trims themselves are derived from the deleted segments and need no pass.)
   useEffect(() => {
     if (totalMs === 0 || safeMinDurationMs <= 0) {
       return
     }
 
-    zoomRegions.forEach((region) => {
-      const clampedStart = Math.max(0, Math.min(region.startMs, totalMs))
-      const minEnd = clampedStart + safeMinDurationMs
-      const clampedEnd = Math.min(totalMs, Math.max(minEnd, region.endMs))
-      const normalizedStart = Math.max(0, Math.min(clampedStart, totalMs - safeMinDurationMs))
-      const normalizedEnd = Math.max(minEnd, Math.min(clampedEnd, totalMs))
+    const toSpans = (regions: ReadonlyArray<{ id: string; startMs: number; endMs: number }>) =>
+      regions.map((region) => ({ id: region.id, start: region.startMs, end: region.endMs }))
 
-      if (normalizedStart !== region.startMs || normalizedEnd !== region.endMs) {
-        onZoomSpanChange(region.id, { start: normalizedStart, end: normalizedEnd })
-      }
-    })
+    const zooms = normaliseSpansToDuration(toSpans(zoomRegions), totalMs, safeMinDurationMs)
+    for (const span of zooms.clamped) onZoomSpanChange(span.id, span)
+    for (const id of zooms.dropped) onZoomDelete(id)
 
-    // Trim clamping removed — trims are now derived from deleted segments
+    if (onAnnotationSpanChange || onAnnotationDelete) {
+      // Blur regions live in annotationRegions, so this covers both rows.
+      const annotations = normaliseSpansToDuration(
+        toSpans(annotationRegions),
+        totalMs,
+        safeMinDurationMs,
+      )
+      for (const span of annotations.clamped) onAnnotationSpanChange?.(span.id, span)
+      for (const id of annotations.dropped) onAnnotationDelete?.(id)
+    }
+
+    if (onAudioEditSpanChange || onAudioEditDelete) {
+      const audio = normaliseSpansToDuration(toSpans(audioEditRegions), totalMs, safeMinDurationMs)
+      for (const span of audio.clamped) onAudioEditSpanChange?.(span.id, span)
+      for (const id of audio.dropped) onAudioEditDelete?.(id)
+    }
   }, [
     zoomRegions,
     annotationRegions,
+    audioEditRegions,
     totalMs,
     safeMinDurationMs,
     onZoomSpanChange,
+    onZoomDelete,
     onAnnotationSpanChange,
+    onAnnotationDelete,
+    onAudioEditSpanChange,
+    onAudioEditDelete,
   ])
 
   const hasOverlap = useCallback(
@@ -1620,10 +1650,15 @@ export default function TimelineEditor({
       e.preventDefault()
       e.stopPropagation()
 
+      // Firefox reports lines and some devices report pages; the maths below
+      // is tuned for pixels, so convert first.
+      const deltaX = normaliseWheelDeltaPx(e.deltaX, e.deltaMode)
+      const deltaY = normaliseWheelDeltaPx(e.deltaY, e.deltaMode)
+
       if (e.shiftKey) {
-        accPan += e.deltaX || e.deltaY
+        accPan += deltaX || deltaY
       } else {
-        accZoom += e.deltaY
+        accZoom += deltaY
       }
 
       if (rafId !== null) return

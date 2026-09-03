@@ -7,6 +7,9 @@ import {
   computeSnapThresholdMs,
   formatTooltipMs,
   inferResizeMode,
+  normaliseSpansToDuration,
+  normaliseSpanToDuration,
+  normaliseWheelDeltaPx,
   snapSpanToTargets,
   spansIntersect,
 } from './snapping'
@@ -228,5 +231,112 @@ describe('formatTooltipMs', () => {
   it('formats seconds below a minute and m:ss.s above', () => {
     expect(formatTooltipMs(1500)).toBe('1.5s')
     expect(formatTooltipMs(61500)).toBe('1:01.5')
+  })
+})
+
+describe('normaliseWheelDeltaPx', () => {
+  it('passes pixel deltas through unchanged', () => {
+    expect(normaliseWheelDeltaPx(120, 0)).toBe(120)
+    expect(normaliseWheelDeltaPx(-40.5, 0)).toBe(-40.5)
+  })
+
+  it('converts line deltas at 16 px a line', () => {
+    expect(normaliseWheelDeltaPx(3, 1)).toBe(48)
+    expect(normaliseWheelDeltaPx(-3, 1)).toBe(-48)
+  })
+
+  it('converts page deltas at 240 px a page', () => {
+    expect(normaliseWheelDeltaPx(1, 2)).toBe(240)
+    expect(normaliseWheelDeltaPx(-2, 2)).toBe(-480)
+  })
+
+  it('treats a non-finite delta as no movement', () => {
+    expect(normaliseWheelDeltaPx(Number.NaN, 1)).toBe(0)
+    expect(normaliseWheelDeltaPx(Number.POSITIVE_INFINITY, 0)).toBe(0)
+  })
+})
+
+describe('normaliseSpanToDuration', () => {
+  it('leaves a region that already fits alone', () => {
+    expect(normaliseSpanToDuration({ start: 1000, end: 4000 }, 10_000, 100)).toEqual({
+      action: 'keep',
+    })
+  })
+
+  it('clamps a region that runs past the new end', () => {
+    expect(normaliseSpanToDuration({ start: 1000, end: 14_000 }, 10_000, 100)).toEqual({
+      action: 'clamp',
+      start: 1000,
+      end: 10_000,
+    })
+  })
+
+  it('pulls a region back inside when its start no longer fits', () => {
+    expect(normaliseSpanToDuration({ start: 9950, end: 12_000 }, 10_000, 100)).toEqual({
+      action: 'clamp',
+      start: 9900,
+      end: 10_000,
+    })
+  })
+
+  it('clamps a negative start', () => {
+    expect(normaliseSpanToDuration({ start: -500, end: 2000 }, 10_000, 100)).toEqual({
+      action: 'clamp',
+      start: 0,
+      end: 2000,
+    })
+  })
+
+  it('drops an empty or inverted region', () => {
+    expect(normaliseSpanToDuration({ start: 2000, end: 2000 }, 10_000, 100)).toEqual({
+      action: 'drop',
+    })
+    expect(normaliseSpanToDuration({ start: 4000, end: 1000 }, 10_000, 100)).toEqual({
+      action: 'drop',
+    })
+  })
+
+  it('drops a region that now starts at or past the end', () => {
+    expect(normaliseSpanToDuration({ start: 10_000, end: 12_000 }, 10_000, 100)).toEqual({
+      action: 'drop',
+    })
+    expect(normaliseSpanToDuration({ start: 15_000, end: 16_000 }, 10_000, 100)).toEqual({
+      action: 'drop',
+    })
+  })
+
+  it('touches nothing while the duration is still unknown', () => {
+    expect(normaliseSpanToDuration({ start: 1000, end: 4000 }, 0, 100)).toEqual({ action: 'keep' })
+    expect(normaliseSpanToDuration({ start: 1000, end: 4000 }, Number.NaN, 100)).toEqual({
+      action: 'keep',
+    })
+  })
+
+  it('keeps a region when the whole timeline is shorter than the minimum length', () => {
+    expect(normaliseSpanToDuration({ start: 0, end: 50 }, 50, 100)).toEqual({ action: 'keep' })
+  })
+})
+
+describe('normaliseSpansToDuration', () => {
+  it('reports the regions to move and the regions to drop', () => {
+    const regions = [
+      { id: 'keep', start: 0, end: 2000 },
+      { id: 'clamp', start: 8000, end: 14_000 },
+      { id: 'empty', start: 3000, end: 3000 },
+      { id: 'past-end', start: 11_000, end: 12_000 },
+    ]
+
+    expect(normaliseSpansToDuration(regions, 10_000, 100)).toEqual({
+      clamped: [{ id: 'clamp', start: 8000, end: 10_000 }],
+      dropped: ['empty', 'past-end'],
+    })
+  })
+
+  it('reports no work for a track that already fits', () => {
+    const regions = [
+      { id: 'a', start: 0, end: 2000 },
+      { id: 'b', start: 3000, end: 4000 },
+    ]
+    expect(normaliseSpansToDuration(regions, 10_000, 100)).toEqual({ clamped: [], dropped: [] })
   })
 })
