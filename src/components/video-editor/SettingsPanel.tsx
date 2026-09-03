@@ -1,7 +1,8 @@
 import { cn } from '@/lib/utils'
-import { useCallback, useEffect, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
+import { Tooltip, TooltipProvider } from '@/components/ui/tooltip'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { useState } from 'react'
@@ -26,6 +27,8 @@ import {
   Info,
   MousePointer2,
   ChevronDown,
+  Lock,
+  LockOpen,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import * as SliderPrimitive from '@radix-ui/react-slider'
@@ -40,19 +43,18 @@ import type {
   Rotation3DPreset,
 } from './types'
 import { ROTATION_3D_PRESET_ORDER } from './types'
-import {
-  MAX_PLAYBACK_SPEED,
-  MAX_ZOOM_SCALE,
-  MIN_PLAYBACK_SPEED,
-  MIN_ZOOM_SCALE,
-  ZOOM_DEPTH_SCALES,
-} from './types'
-import { parseCustomPlaybackSpeedInput } from './customPlaybackSpeed'
+import { MAX_PLAYBACK_SPEED, MAX_ZOOM_SCALE, MIN_ZOOM_SCALE, ZOOM_DEPTH_SCALES } from './types'
+import { SEGMENT_SPEED_PRESETS, SegmentSpeedInput } from './SegmentSpeedInput'
 import { getFocusBoundsForScale } from './videoPlayback/focusUtils'
 import { CropControl } from './CropControl'
 import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp'
 import { AnnotationSettingsPanel } from './AnnotationSettingsPanel'
 import { ASPECT_RATIOS, type AspectRatio, getAspectRatioLabel } from '@/utils/aspectRatioUtils'
+import {
+  CROP_ASPECT_PRESETS,
+  type CropAspectPreset,
+  isCropAspectPreset,
+} from '@/lib/crop/aspectCrop'
 import type { ExportQuality, ExportFormat, GifFrameRate, GifSizePreset } from '@/lib/exporter'
 import { GIF_FRAME_RATES, GIF_SIZE_PRESETS } from '@/lib/exporter'
 import {
@@ -78,7 +80,7 @@ import type { BlurData } from './types'
 import {
   DEFAULT_WALLPAPER,
   isSameBuiltInWallpaper,
-  resolveImageWallpaperUrl,
+  resolveWallpaperThumbUrl,
   WALLPAPER_PATHS,
 } from '@/lib/wallpaper'
 import {
@@ -88,81 +90,6 @@ import {
 
 const GRADIENTS = BACKGROUND_GRADIENT_PRESETS
 const ZOOM_FOCUS_MODES: readonly ZoomFocusMode[] = ['manual', 'auto']
-
-const SEGMENT_SPEED_PRESETS = [0.25, 0.5, 0.75, 1, 1.5, 1.75, 2, 2.5, 3, 5, 8, 10, 20, 40] as const
-
-/**
- * Free-form segment speed. Digits and one decimal separator (comma accepted),
- * applied live while typing when inside [MIN_PLAYBACK_SPEED, MAX_PLAYBACK_SPEED];
- * values above the cap are refused via `onError`. The draft mirrors the
- * segment's speed while unfocused (empty when it is one of the presets), so a
- * preset click, a pasted speed or a different selection is reflected at once.
- */
-function SegmentSpeedInput({
-  value,
-  onChange,
-  onError,
-  ariaLabel,
-}: {
-  value: number
-  onChange: (speed: number) => void
-  onError: () => void
-  ariaLabel: string
-}) {
-  const isPreset = (SEGMENT_SPEED_PRESETS as readonly number[]).includes(value)
-  const [draft, setDraft] = useState(isPreset ? '' : String(value))
-  const [isFocused, setIsFocused] = useState(false)
-
-  const prevValue = useRef(value)
-  if (!isFocused && prevValue.current !== value) {
-    prevValue.current = value
-    setDraft(isPreset ? '' : String(value))
-  }
-
-  const handleChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const result = parseCustomPlaybackSpeedInput(e.target.value)
-      if (result.status === 'too-fast') {
-        onError()
-        return
-      }
-      setDraft(result.draft)
-      if (result.status === 'valid') {
-        onChange(result.speed)
-      }
-    },
-    [onChange, onError],
-  )
-
-  const handleBlur = useCallback(() => {
-    setIsFocused(false)
-    const result = parseCustomPlaybackSpeedInput(draft)
-    if (result.status === 'valid') {
-      setDraft(String(result.speed))
-    } else {
-      setDraft(isPreset ? '' : String(value))
-    }
-  }, [draft, isPreset, value])
-
-  return (
-    <div className="flex items-center gap-1">
-      <input
-        type="text"
-        inputMode="decimal"
-        pattern="[0-9]*[.,]?[0-9]*"
-        placeholder={`${MIN_PLAYBACK_SPEED}–${MAX_PLAYBACK_SPEED}`}
-        aria-label={ariaLabel}
-        value={draft}
-        onFocus={() => setIsFocused(true)}
-        onChange={handleChange}
-        onBlur={handleBlur}
-        onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-        className="w-16 text-[10px] bg-white/5 border border-white/10 rounded px-2 py-1 text-white text-center tabular-nums outline-none focus:border-[#34B27B]/50"
-      />
-      <span className="text-[10px] font-semibold text-slate-500">×</span>
-    </div>
-  )
-}
 
 interface SettingsPanelProps {
   selected: string
@@ -198,6 +125,8 @@ interface SettingsPanelProps {
   selectedSegment?: import('./types').VideoSegment | null
   onDeleteSegment?: () => void
   onSegmentSpeedChange?: (id: string, speed: number) => void
+  /** The typed speed is settled (blur / Enter): closes the caller's history batch. */
+  onSegmentSpeedCommit?: () => void
   shadowIntensity?: number
   onShadowChange?: (intensity: number) => void
   showBlur?: boolean
@@ -213,6 +142,13 @@ interface SettingsPanelProps {
   paddingDisabled?: boolean
   cropRegion?: CropRegion
   onCropChange?: (region: CropRegion) => void
+  /** Crop ratio select ('free' or a fixed ratio) and the aspect-lock switch. */
+  cropAspectPreset?: CropAspectPreset
+  cropAspectLocked?: boolean
+  /** Pixel aspect the crop dialog's edge drags must keep (null = free-form). */
+  cropLockAspectRatio?: number | null
+  onCropAspectPresetChange?: (preset: CropAspectPreset) => void
+  onCropAspectLockedChange?: (locked: boolean) => void
   aspectRatio: AspectRatio
   videoElement?: HTMLVideoElement | null
   exportQuality?: ExportQuality
@@ -373,6 +309,7 @@ export function SettingsPanel({
   selectedSegment = null,
   onDeleteSegment,
   onSegmentSpeedChange,
+  onSegmentSpeedCommit,
   shadowIntensity = 0,
   onShadowChange,
   showBlur,
@@ -386,6 +323,11 @@ export function SettingsPanel({
   paddingDisabled = false,
   cropRegion,
   onCropChange,
+  cropAspectPreset = 'free',
+  cropAspectLocked = false,
+  cropLockAspectRatio = null,
+  onCropAspectPresetChange,
+  onCropAspectLockedChange,
   aspectRatio,
   videoElement,
   exportQuality = 'good',
@@ -466,13 +408,17 @@ export function SettingsPanel({
     }
   }
 
-  // Thumbnails need a loadable URL; the value handed to onWallpaperChange stays
-  // the canonical "/wallpapers/wallpaperN.jpg" so projects persist portably.
+  // The grid paints the small pre-generated thumbs (see WALLPAPER_THUMB_PATHS),
+  // never the originals; the value handed to onWallpaperChange stays the
+  // canonical "/wallpapers/wallpaperN.jpg" so projects persist portably and
+  // only the selected wallpaper is decoded at full size (by the preview).
   useEffect(() => {
     let mounted = true
     ;(async () => {
       try {
-        const resolved = await Promise.all(WALLPAPER_PATHS.map((p) => resolveImageWallpaperUrl(p)))
+        const resolved = await Promise.all(
+          WALLPAPER_PATHS.map(async (p) => (await resolveWallpaperThumbUrl(p)) ?? p),
+        )
         if (mounted) setWallpaperPaths(resolved)
       } catch {
         if (mounted) setWallpaperPaths([...WALLPAPER_PATHS])
@@ -1085,7 +1031,12 @@ export function SettingsPanel({
               {SEGMENT_SPEED_PRESETS.map((speed) => (
                 <button
                   key={speed}
-                  onClick={() => onSegmentSpeedChange?.(selectedSegment.id, speed)}
+                  onClick={() => {
+                    // A preset click is one settled edit: change then commit,
+                    // so it never joins the typed field's history batch.
+                    onSegmentSpeedChange?.(selectedSegment.id, speed)
+                    onSegmentSpeedCommit?.()
+                  }}
                   className={cn(
                     'px-2 py-1 rounded text-[10px] font-medium transition-colors',
                     selectedSegment.speed === speed
@@ -1108,6 +1059,7 @@ export function SettingsPanel({
                 value={selectedSegment.speed}
                 ariaLabel={t('settings.customPlaybackSpeed')}
                 onChange={(speed) => onSegmentSpeedChange?.(selectedSegment.id, speed)}
+                onCommit={onSegmentSpeedCommit}
                 onError={() =>
                   toast.error(t('settings.maxSpeedError', { max: MAX_PLAYBACK_SPEED }))
                 }
@@ -1338,8 +1290,19 @@ export function SettingsPanel({
                 </div>
                 <div className="rounded-md bg-black/20 border border-white/5 p-2 mb-2">
                   <div className="flex items-center justify-between">
-                    <div className="text-[10px] text-slate-300">
-                      {t('settings.cursorClipToBounds')}
+                    <div className="flex items-center gap-1 text-[10px] text-slate-300">
+                      <span>{t('settings.cursorClipToBounds')}</span>
+                      <TooltipProvider>
+                        <Tooltip content={t('settings.cursorClipToBoundsDescription')}>
+                          <button
+                            type="button"
+                            aria-label={t('settings.cursorClipToBoundsDescription')}
+                            className="text-slate-500 hover:text-slate-300 transition-colors"
+                          >
+                            <Info size={11} />
+                          </button>
+                        </Tooltip>
+                      </TooltipProvider>
                     </div>
                     <Switch
                       checked={cursorStyle.clipToBounds ?? false}
@@ -1672,6 +1635,52 @@ export function SettingsPanel({
                 </div>
               </div>
 
+              {onCropAspectPresetChange && onCropAspectLockedChange && (
+                <div className="mt-2 rounded-md bg-black/20 border border-white/5 p-2 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <label
+                      htmlFor="crop-aspect-preset"
+                      className="text-[10px] text-slate-300 whitespace-nowrap"
+                    >
+                      {t('settings.cropAspectRatio')}
+                    </label>
+                    <select
+                      id="crop-aspect-preset"
+                      value={cropAspectPreset}
+                      onChange={(e) => {
+                        const next = e.target.value
+                        if (isCropAspectPreset(next)) onCropAspectPresetChange(next)
+                      }}
+                      className="h-6 min-w-[72px] rounded border border-white/10 bg-[#1a1a1f] px-1.5 text-[10px] text-slate-200 outline-none focus:border-[#34B27B]/50 cursor-pointer"
+                    >
+                      {CROP_ASPECT_PRESETS.map((preset) => (
+                        <option key={preset} value={preset} className="bg-[#1a1a1f]">
+                          {preset === 'free'
+                            ? t('settings.cropAspectFree')
+                            : getAspectRatioLabel(preset)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1 text-[10px] text-slate-300">
+                      {cropAspectLocked ? (
+                        <Lock className="w-3 h-3 text-[#34B27B]" />
+                      ) : (
+                        <LockOpen className="w-3 h-3 text-slate-500" />
+                      )}
+                      <span>{t('settings.cropLockAspectRatio')}</span>
+                    </div>
+                    <Switch
+                      checked={cropAspectLocked}
+                      onCheckedChange={onCropAspectLockedChange}
+                      aria-label={t('settings.cropLockAspectRatio')}
+                      className="data-[state=checked]:bg-[#34B27B] scale-90"
+                    />
+                  </div>
+                </div>
+              )}
+
               <Button
                 onClick={() => setShowCropDropdown(!showCropDropdown)}
                 variant="outline"
@@ -1893,7 +1902,14 @@ export function SettingsPanel({
             className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 animate-in fade-in duration-200"
             onClick={() => setShowCropDropdown(false)}
           />
-          <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[60] bg-[#09090b] rounded-2xl shadow-2xl border border-white/10 p-8 w-[90vw] max-w-5xl max-h-[90vh] overflow-auto animate-in zoom-in-95 duration-200">
+          {/* aria-modal keeps the editor's global shortcuts off while this
+              hand-rolled dialog is open (see lib/modalDialog.ts). */}
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={t('settings.cropDialogTitle')}
+            className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[60] bg-[#09090b] rounded-2xl shadow-2xl border border-white/10 p-8 w-[90vw] max-w-5xl max-h-[90vh] overflow-auto animate-in zoom-in-95 duration-200"
+          >
             <div className="flex items-center justify-between mb-6">
               <div>
                 <span className="text-xl font-bold text-slate-200">
@@ -1915,6 +1931,7 @@ export function SettingsPanel({
               cropRegion={cropRegion}
               onCropChange={onCropChange}
               aspectRatio={aspectRatio}
+              lockAspectRatio={cropLockAspectRatio}
             />
             <div className="mt-6 flex justify-end">
               <Button

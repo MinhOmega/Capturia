@@ -1,13 +1,14 @@
 import type React from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CropRegion } from './types'
-import { normalizeAspectCropRegion } from '@/lib/crop/aspectCrop'
+import { CROP_RESIZE_HANDLES, type CropResizeHandle, resizeCropRegion } from '@/lib/crop/aspectCrop'
 
 interface PreviewAspectCropOverlayProps {
   cropRegion: CropRegion
   onCropChange: (next: CropRegion) => void
   sourceAspectRatio: number
-  targetAspectRatio: number
+  /** Output pixel aspect a resize must keep, or null to resize free-form. */
+  lockAspectRatio: number | null
   positionHint: string
 }
 
@@ -21,10 +22,14 @@ type DragState =
       height: number
     }
   | {
-      mode: 'resize-br'
+      mode: 'resize'
       pointerId: number
-      anchorX: number
-      anchorY: number
+      handle: CropResizeHandle
+      startX: number
+      startY: number
+      origin: CropRegion
+      // Captured once per drag so a 'free' lock keeps the shape the drag started with.
+      lockRatio: number | null
     }
   | null
 
@@ -61,11 +66,22 @@ function resolveContentRect(bounds: PixelRect, sourceAspectRatio: number): Pixel
   }
 }
 
+const HANDLE_STYLE: Record<CropResizeHandle, { className: string; cursor: string }> = {
+  'top-left': { className: '-left-1.5 -top-1.5 h-3 w-3', cursor: 'cursor-nwse-resize' },
+  top: { className: 'left-1/2 -top-1 h-2 w-5 -translate-x-1/2', cursor: 'cursor-ns-resize' },
+  'top-right': { className: '-right-1.5 -top-1.5 h-3 w-3', cursor: 'cursor-nesw-resize' },
+  right: { className: '-right-1 top-1/2 h-5 w-2 -translate-y-1/2', cursor: 'cursor-ew-resize' },
+  'bottom-right': { className: '-right-1.5 -bottom-1.5 h-3 w-3', cursor: 'cursor-nwse-resize' },
+  bottom: { className: 'left-1/2 -bottom-1 h-2 w-5 -translate-x-1/2', cursor: 'cursor-ns-resize' },
+  'bottom-left': { className: '-left-1.5 -bottom-1.5 h-3 w-3', cursor: 'cursor-nesw-resize' },
+  left: { className: '-left-1 top-1/2 h-5 w-2 -translate-y-1/2', cursor: 'cursor-ew-resize' },
+}
+
 export function PreviewAspectCropOverlay({
   cropRegion,
   onCropChange,
   sourceAspectRatio,
-  targetAspectRatio,
+  lockAspectRatio,
   positionHint,
 }: PreviewAspectCropOverlayProps) {
   const overlayRef = useRef<HTMLDivElement | null>(null)
@@ -122,6 +138,8 @@ export function PreviewAspectCropOverlay({
     ],
   )
 
+  // Pointer position in normalized source coordinates. Unclamped so a resize
+  // delta keeps its sign outside the picture; `resizeCropRegion` bounds it.
   const pointToNormalized = (event: React.PointerEvent<HTMLDivElement>) => {
     const rect = overlayRef.current?.getBoundingClientRect()
     if (!rect || contentRect.width <= 0 || contentRect.height <= 0) return null
@@ -129,9 +147,10 @@ export function PreviewAspectCropOverlay({
     const localX = event.clientX - rect.left
     const localY = event.clientY - rect.top
 
-    const normalizedX = clamp((localX - contentRect.x) / contentRect.width, 0, 1)
-    const normalizedY = clamp((localY - contentRect.y) / contentRect.height, 0, 1)
-    return { x: normalizedX, y: normalizedY }
+    return {
+      x: (localX - contentRect.x) / contentRect.width,
+      y: (localY - contentRect.y) / contentRect.height,
+    }
   }
 
   const handleMoveStart = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -143,22 +162,30 @@ export function PreviewAspectCropOverlay({
     setDragState({
       mode: 'move',
       pointerId: event.pointerId,
-      offsetX: point.x - cropRegion.x,
-      offsetY: point.y - cropRegion.y,
+      offsetX: clamp(point.x, 0, 1) - cropRegion.x,
+      offsetY: clamp(point.y, 0, 1) - cropRegion.y,
       width: cropRegion.width,
       height: cropRegion.height,
     })
     event.currentTarget.setPointerCapture(event.pointerId)
   }
 
-  const handleResizeStart = (event: React.PointerEvent<HTMLDivElement>) => {
+  const handleResizeStart = (
+    event: React.PointerEvent<HTMLDivElement>,
+    handle: CropResizeHandle,
+  ) => {
     event.preventDefault()
     event.stopPropagation()
+    const point = pointToNormalized(event)
+    if (!point) return
     setDragState({
-      mode: 'resize-br',
+      mode: 'resize',
       pointerId: event.pointerId,
-      anchorX: cropRegion.x,
-      anchorY: cropRegion.y,
+      handle,
+      startX: point.x,
+      startY: point.y,
+      origin: cropRegion,
+      lockRatio: lockAspectRatio,
     })
     event.currentTarget.setPointerCapture(event.pointerId)
   }
@@ -168,14 +195,9 @@ export function PreviewAspectCropOverlay({
     const point = pointToNormalized(event)
     if (!point) return
 
-    const safeTargetAspect =
-      Number.isFinite(targetAspectRatio) && targetAspectRatio > 0 ? targetAspectRatio : 16 / 9
-    const safeSourceAspect =
-      Number.isFinite(sourceAspectRatio) && sourceAspectRatio > 0 ? sourceAspectRatio : 16 / 9
-
     if (dragState.mode === 'move') {
-      const nextX = clamp(point.x - dragState.offsetX, 0, 1 - dragState.width)
-      const nextY = clamp(point.y - dragState.offsetY, 0, 1 - dragState.height)
+      const nextX = clamp(clamp(point.x, 0, 1) - dragState.offsetX, 0, 1 - dragState.width)
+      const nextY = clamp(clamp(point.y, 0, 1) - dragState.offsetY, 0, 1 - dragState.height)
       onCropChange({
         x: nextX,
         y: nextY,
@@ -185,24 +207,12 @@ export function PreviewAspectCropOverlay({
       return
     }
 
-    const candidateWidthByX = point.x - dragState.anchorX
-    const candidateWidthByY = ((point.y - dragState.anchorY) * safeTargetAspect) / safeSourceAspect
-    const maxWidthByX = 1 - dragState.anchorX
-    const maxWidthByY = ((1 - dragState.anchorY) * safeTargetAspect) / safeSourceAspect
-    const maxWidth = Math.max(0.06, Math.min(maxWidthByX, maxWidthByY))
-    const nextWidth = clamp(Math.max(candidateWidthByX, candidateWidthByY), 0.06, maxWidth)
-    const nextHeight = (nextWidth * safeSourceAspect) / safeTargetAspect
-
     onCropChange(
-      normalizeAspectCropRegion(
-        {
-          x: dragState.anchorX,
-          y: dragState.anchorY,
-          width: nextWidth,
-          height: nextHeight,
-        },
-        safeSourceAspect,
-        safeTargetAspect,
+      resizeCropRegion(
+        dragState.origin,
+        dragState.handle,
+        { dx: point.x - dragState.startX, dy: point.y - dragState.startY },
+        { lockRatio: dragState.lockRatio, sourceAspect: sourceAspectRatio },
       ),
     )
   }
@@ -217,9 +227,10 @@ export function PreviewAspectCropOverlay({
     }
   }
 
-  if (contentRect.width <= 0 || contentRect.height <= 0) {
-    return null
-  }
+  // The root always renders: it carries the ref the size effect measures, so
+  // returning null before the first measurement would leave nothing to measure
+  // and the overlay would never appear. Only the mask and frame wait for a size.
+  const hasContentRect = contentRect.width > 0 && contentRect.height > 0
 
   return (
     <div
@@ -230,68 +241,77 @@ export function PreviewAspectCropOverlay({
       onPointerCancel={handlePointerEnd}
       onPointerLeave={handlePointerEnd}
     >
-      <div
-        className="absolute bg-black/45 pointer-events-none"
-        style={{
-          left: contentRect.x,
-          top: contentRect.y,
-          width: contentRect.width,
-          height: Math.max(0, frameRect.top - contentRect.y),
-        }}
-      />
-      <div
-        className="absolute bg-black/45 pointer-events-none"
-        style={{
-          left: contentRect.x,
-          top: frameRect.top + frameRect.height,
-          width: contentRect.width,
-          height: Math.max(
-            0,
-            contentRect.y + contentRect.height - (frameRect.top + frameRect.height),
-          ),
-        }}
-      />
-      <div
-        className="absolute bg-black/45 pointer-events-none"
-        style={{
-          left: contentRect.x,
-          top: frameRect.top,
-          width: Math.max(0, frameRect.left - contentRect.x),
-          height: frameRect.height,
-        }}
-      />
-      <div
-        className="absolute bg-black/45 pointer-events-none"
-        style={{
-          left: frameRect.left + frameRect.width,
-          top: frameRect.top,
-          width: Math.max(
-            0,
-            contentRect.x + contentRect.width - (frameRect.left + frameRect.width),
-          ),
-          height: frameRect.height,
-        }}
-      />
+      {hasContentRect ? (
+        <>
+          <div
+            className="absolute bg-black/45 pointer-events-none"
+            style={{
+              left: contentRect.x,
+              top: contentRect.y,
+              width: contentRect.width,
+              height: Math.max(0, frameRect.top - contentRect.y),
+            }}
+          />
+          <div
+            className="absolute bg-black/45 pointer-events-none"
+            style={{
+              left: contentRect.x,
+              top: frameRect.top + frameRect.height,
+              width: contentRect.width,
+              height: Math.max(
+                0,
+                contentRect.y + contentRect.height - (frameRect.top + frameRect.height),
+              ),
+            }}
+          />
+          <div
+            className="absolute bg-black/45 pointer-events-none"
+            style={{
+              left: contentRect.x,
+              top: frameRect.top,
+              width: Math.max(0, frameRect.left - contentRect.x),
+              height: frameRect.height,
+            }}
+          />
+          <div
+            className="absolute bg-black/45 pointer-events-none"
+            style={{
+              left: frameRect.left + frameRect.width,
+              top: frameRect.top,
+              width: Math.max(
+                0,
+                contentRect.x + contentRect.width - (frameRect.left + frameRect.width),
+              ),
+              height: frameRect.height,
+            }}
+          />
 
-      <div
-        className="absolute border-2 border-[#34B27B] rounded-sm cursor-move shadow-[0_0_0_1px_rgba(52,178,123,0.35)]"
-        style={{
-          left: frameRect.left,
-          top: frameRect.top,
-          width: frameRect.width,
-          height: frameRect.height,
-        }}
-        onPointerDown={handleMoveStart}
-      >
-        <div className="absolute -top-6 left-0 rounded bg-black/75 px-2 py-0.5 text-[10px] text-slate-200 pointer-events-none">
-          {positionHint}
-        </div>
-        <div
-          className="absolute -right-2 -bottom-2 h-4 w-4 rounded border border-white/80 bg-[#34B27B] cursor-se-resize"
-          onPointerDown={handleResizeStart}
-          title="Resize"
-        />
-      </div>
+          <div
+            className="absolute border-2 border-[#34B27B] rounded-sm cursor-move shadow-[0_0_0_1px_rgba(52,178,123,0.35)]"
+            style={{
+              left: frameRect.left,
+              top: frameRect.top,
+              width: frameRect.width,
+              height: frameRect.height,
+            }}
+            onPointerDown={handleMoveStart}
+            data-testid="crop-overlay-frame"
+            data-locked={lockAspectRatio !== null ? 'true' : 'false'}
+          >
+            <div className="absolute -top-6 left-0 rounded bg-black/75 px-2 py-0.5 text-[10px] text-slate-200 pointer-events-none whitespace-nowrap">
+              {positionHint}
+            </div>
+            {CROP_RESIZE_HANDLES.map((handle) => (
+              <div
+                key={handle}
+                className={`absolute rounded border border-white/80 bg-[#34B27B] ${HANDLE_STYLE[handle].className} ${HANDLE_STYLE[handle].cursor}`}
+                onPointerDown={(event) => handleResizeStart(event, handle)}
+                data-testid={`crop-overlay-handle-${handle}`}
+              />
+            ))}
+          </div>
+        </>
+      ) : null}
     </div>
   )
 }
