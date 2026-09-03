@@ -128,6 +128,7 @@ import {
   resolveCropLockRatio,
   sanitizeCropRegion,
 } from '@/lib/crop/aspectCrop'
+import { isModalDialogOpen } from '@/lib/modalDialog'
 import { generateAutoZoomDrafts } from '@/lib/autoEdit/screenStudioAutoZoom'
 import type { RoughCutSuggestion, SubtitleCue } from '@/lib/analysis/types'
 import { normalizeSubtitleCues } from '@/lib/analysis/subtitleTrack'
@@ -2314,6 +2315,12 @@ export default function VideoEditor() {
   // Global Tab prevention
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // An open dialog owns the keyboard. Without this the editor keeps
+      // reacting underneath it: Space toggles playback the user cannot see,
+      // the arrows seek, and Ctrl+Z undoes a hidden timeline edit. The dialog
+      // does its own key handling (Escape to close, Tab to cycle focus).
+      if (isModalDialogOpen()) return
+
       // Text fields keep their native key handling (typing, arrows, copy/paste).
       const editingText = isTextEditingTarget(e.target)
 
@@ -3688,11 +3695,14 @@ export default function VideoEditor() {
     const unsubscribe = window.electronAPI.onEditorMenuAction?.((action) => {
       switch (action) {
         case 'menu-undo':
-          // Same rule as the keydown path: a focused text field keeps the browser's undo.
+          // Same rules as the keydown path: an open dialog swallows the
+          // action, and a focused text field keeps the browser's undo.
+          if (isModalDialogOpen()) break
           if (isTextEditingTarget(document.activeElement)) document.execCommand('undo')
           else handleUndoRef.current()
           break
         case 'menu-redo':
+          if (isModalDialogOpen()) break
           if (isTextEditingTarget(document.activeElement)) document.execCommand('redo')
           else handleRedoRef.current()
           break
