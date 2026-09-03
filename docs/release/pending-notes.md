@@ -4,27 +4,30 @@ Draft entries for the next release. Bug entries state what a user would have see
 
 ## Fixed
 
-### Exports failed with a security error (GIF always; MP4 pending confirmation)
+### Every export failed with a cross-origin error
 
-Recordings are served to the editor over the `local-media://` scheme, which is a different
-origin from the page that loads it. The scheme did not enable CORS and the handler sent no
-`Access-Control-Allow-Origin`, so the media element was CORS-tainted and pixel reads off it
-failed.
+Recordings are served to the editor over the `local-media://` scheme, which is a different origin
+from the page that loads it. The scheme did not enable CORS and the handler sent no
+`Access-Control-Allow-Origin`, so the media was cross-origin data that the renderer refused to
+touch. **Both decode paths failed, on default settings**, measured on Linux with Electron
+41.10.7:
 
-- **GIF export: measured.** Export failed within a second or two. The dialog read "Export
-  failed" with the reason `Failed to construct 'VideoFrame': VideoFrames can't be created from
-  tainted sources`. GIF has only the seek decode path, so it failed every time. Measured on
-  Linux with Electron 41.10.7.
-- **MP4 export: awaiting measurement.** The seek path (the default) does not read the element
-  directly; it renders the element into the compositing canvas and builds the frame from that
-  canvas, so it is expected to fail one step later at the canvas read, with a different error
-  string. The optional WebCodecs path is unaffected because it reads container bytes instead.
-  **Do not publish the MP4 half of this entry until the error string and throw site are
-  captured on a pre-fix build.**
+- The default path failed when the tainted video was uploaded into the preview's WebGL texture:
+  `Failed to execute 'texImage2D' on 'WebGL2RenderingContext': The video element contains
+  cross-origin data, and may not be loaded.` It never reached the frame or canvas read.
+- The optional single-pass path did not rescue it. Its fetch was blocked outright with
+  `Cross origin requests are only supported for protocol schemes: chrome, chrome-extension,
+  chrome-untrusted, data, http, https`, after which it fell back to the default path and hit the
+  same failure.
 
-Not platform-specific in principle, since the cause is the scheme pairing rather than the OS,
-but only Linux was exercised. Development runs were affected too: the localhost page is still a
-different origin from the media.
+The same export now succeeds. Development runs were affected too, because the localhost page is
+still a different origin from the media.
+
+### The editor preview was blank, with an error toast
+
+Same cause, separate element. Opening a recording showed an empty preview canvas and a toast
+reading "Something went wrong. Please try again." The preview now requests the media in CORS
+mode. Fixed alongside the export path; the two are separate elements and needed separate fixes.
 
 ### GIF export could hang forever on the first frame
 
