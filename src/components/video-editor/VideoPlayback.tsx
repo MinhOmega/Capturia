@@ -1679,6 +1679,13 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
         <video
           ref={videoRef}
           src={videoPath}
+          // A recording served over `local-media://` is a different origin from
+          // this page. Without an explicit CORS request the element is tainted,
+          // and uploading it into the preview's WebGL texture throws
+          // ("The video element contains cross-origin data"), leaving an empty
+          // canvas and an error toast. Other sources (blob:, file:) are
+          // same-origin or opaque by nature and must not ask for CORS.
+          crossOrigin={videoPath?.startsWith('local-media:') ? 'anonymous' : undefined}
           className="hidden"
           preload="metadata"
           playsInline
