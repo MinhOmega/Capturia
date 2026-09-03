@@ -144,7 +144,10 @@
 	"cameraDevice": "Camera",
 	"webcam": {
 		"defaultCamera": "Camera mặc định",
-		"noneFound": "Không tìm thấy camera"
+		"noneFound": "Không tìm thấy camera",
+		"preview": "Xem trước camera",
+		"previewStop": "Dừng xem trước",
+		"previewLightHint": "Đèn camera sẽ sáng trong khi xem trước."
 	},
 	"microphone": "Micro",
 	"microphoneFallback": "Không dùng được micro. Ghi hình không có âm thanh.",

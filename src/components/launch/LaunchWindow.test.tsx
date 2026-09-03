@@ -118,6 +118,33 @@ const displayOneSource: ProcessedDesktopSource = {
   appIcon: null,
 }
 
+// D3: the fake camera. Every track records its own stop() so a test can ask the
+// only question that matters - is the camera light off?
+type FakeCameraTrack = { stop: () => void; stopped: boolean }
+let cameraTracks: FakeCameraTrack[] = []
+const cameraGetUserMedia = vi.fn(async (_constraints: MediaStreamConstraints) => {
+  const track: FakeCameraTrack = {
+    stopped: false,
+    stop: () => {
+      track.stopped = true
+    },
+  }
+  cameraTracks.push(track)
+  return { getTracks: () => [track] } as unknown as MediaStream
+})
+
+Object.defineProperty(global.navigator, 'mediaDevices', {
+  value: {
+    getUserMedia: cameraGetUserMedia,
+    enumerateDevices: vi.fn(async () => [
+      { kind: 'videoinput', deviceId: 'cam1', label: 'Camera 1', groupId: 'g1' },
+    ]),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  },
+  configurable: true,
+})
+
 let recordingMarkerListeners: Array<(result: RecordingMarkerOutcome) => void> = []
 let selectedSourceChangedListeners: SelectedSourceChangedListener[] = []
 let sourceSelectorClosedListeners: Array<() => void> = []
@@ -802,6 +829,84 @@ describe('LaunchWindow flag-this-moment button (D2)', () => {
       for (const listener of recordingMarkerListeners) {
         listener({ added: true, timeMs: 1_000, count: 1 })
       }
+    })
+  })
+})
+
+describe('LaunchWindow camera preview (D3)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', StubResizeObserver)
+    resizeObservers.length = 0
+    window.localStorage.clear()
+    window.localStorage.setItem('capturia.includeCamera', '1')
+    selectedSourceChangedListeners = []
+    sourceSelectorClosedListeners = []
+    recordingMarkerListeners = []
+    mainSelectedSource = null
+    stubElectronAPI()
+    cameraTracks = []
+    cameraGetUserMedia.mockClear()
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+  })
+
+  /** Opens the camera popover and clicks "Preview camera". */
+  async function startPreview() {
+    fireEvent.click(await screen.findByTestId('launch-camera-shape-button'))
+    fireEvent.click(await screen.findByTestId('launch-camera-preview-start'))
+    await waitFor(() => {
+      expect(cameraGetUserMedia).toHaveBeenCalledTimes(1)
+    })
+  }
+
+  it('keeps the camera off until the user asks for a preview', async () => {
+    render(<LaunchWindow />)
+    fireEvent.click(await screen.findByTestId('launch-camera-shape-button'))
+    await screen.findByTestId('launch-camera-preview-start')
+    expect(cameraGetUserMedia).not.toHaveBeenCalled()
+  })
+
+  it('names the camera light in the preview button hint', async () => {
+    render(<LaunchWindow />)
+    fireEvent.click(await screen.findByTestId('launch-camera-shape-button'))
+    expect(await screen.findByTestId('launch-camera-preview-start')).toHaveAttribute(
+      'title',
+      'The camera light turns on while the preview is open.',
+    )
+  })
+
+  it('opens a small video-only stream once Preview is clicked', async () => {
+    render(<LaunchWindow />)
+    await startPreview()
+    expect(cameraGetUserMedia.mock.calls[0][0]).toMatchObject({
+      audio: false,
+      video: { width: 320, height: 320, frameRate: 24 },
+    })
+    await screen.findByTestId('launch-camera-preview-video')
+  })
+
+  it('stops the preview before the recording starts', async () => {
+    render(<LaunchWindow />)
+    await waitForSourceSelectionSubscription()
+    emitSelectedSourceChanged(displayOneSource)
+    await startPreview()
+    expect(cameraTracks.every((track) => track.stopped)).toBe(false)
+
+    fireEvent.click(screen.getByTestId('launch-record-button'))
+
+    // Synchronous: the camera is free before the recorder is asked for it.
+    expect(cameraTracks.every((track) => track.stopped)).toBe(true)
+  })
+
+  it('stops the preview when the popover closes', async () => {
+    render(<LaunchWindow />)
+    await startPreview()
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    await waitFor(() => {
+      expect(cameraTracks.every((track) => track.stopped)).toBe(true)
     })
   })
 })

@@ -144,7 +144,10 @@
 	"cameraDevice": "Camera",
 	"webcam": {
 		"defaultCamera": "Default Camera",
-		"noneFound": "No camera found"
+		"noneFound": "No camera found",
+		"preview": "Preview camera",
+		"previewStop": "Stop preview",
+		"previewLightHint": "The camera light turns on while the preview is open."
 	},
 	"microphone": "Mic",
 	"microphoneFallback": "Microphone unavailable. Recording without audio.",

@@ -144,7 +144,10 @@
 	"cameraDevice": "摄像头",
 	"webcam": {
 		"defaultCamera": "默认摄像头",
-		"noneFound": "未找到摄像头"
+		"noneFound": "未找到摄像头",
+		"preview": "预览摄像头",
+		"previewStop": "停止预览",
+		"previewLightHint": "预览期间摄像头指示灯会亮起。"
 	},
 	"microphone": "麦克风",
 	"microphoneFallback": "麦克风不可用，将录制无声视频。",

@@ -8,6 +8,7 @@ import {
 } from '../../hooks/useScreenRecorder'
 import type { CameraOverlayShape } from '../../hooks/cameraOverlay'
 import { useCameraDevices } from '../../hooks/useCameraDevices'
+import { useCameraPreviewStream } from '../../hooks/useCameraPreviewStream'
 import { useMicrophoneDevices } from '../../hooks/useMicrophoneDevices'
 import { useAudioLevelMeter } from '../../hooks/useAudioLevelMeter'
 import { AudioLevelMeter } from '../ui/audio-level-meter'
@@ -237,6 +238,10 @@ export function LaunchWindow() {
     selectedDeviceId: cameraDeviceId,
     setSelectedDeviceId: setCameraDeviceId,
   } = useCameraDevices(includeCamera, readStoredString(CAMERA_DEVICE_STORAGE_KEY))
+  // D3: opt-in preview. The camera stays off until the popover is open AND the
+  // user has asked for a preview, and never while a take is starting or running
+  // - the recorder opens the camera itself.
+  const [cameraPreviewRequested, setCameraPreviewRequested] = useState(false)
   const cameraDeviceName = cameraDevices.find((device) => device.deviceId === cameraDeviceId)?.label
   // Microphone (A13): off records without an audio track; "" = system default device.
   const [microphoneEnabled, setMicrophoneEnabled] = useState(
@@ -409,6 +414,30 @@ export function LaunchWindow() {
     enabled: microphoneEnabled && microphonePopoverOpen && !controlsLocked,
     deviceId: microphoneDeviceId || undefined,
   })
+  // D3: same rule for the camera - open only while its popover is visible, the
+  // user has clicked Preview, and no take owns the device.
+  const {
+    stream: cameraPreviewStream,
+    isStarting: cameraPreviewStarting,
+    error: cameraPreviewError,
+    stop: stopCameraPreview,
+  } = useCameraPreviewStream(
+    includeCamera && cameraPopoverOpen && cameraPreviewRequested && !controlsLocked,
+    cameraDeviceId,
+  )
+  const cameraPreviewVideoRef = useRef<HTMLVideoElement | null>(null)
+  useEffect(() => {
+    const video = cameraPreviewVideoRef.current
+    if (!video) return
+    video.srcObject = cameraPreviewStream
+    // `play()` predates its promise return, and jsdom still answers undefined.
+    if (cameraPreviewStream) void Promise.resolve(video.play()).catch(() => undefined)
+  }, [cameraPreviewStream])
+  // Closing the popover ends the preview *and* forgets the request, so
+  // re-opening it never turns the camera light on unasked.
+  useEffect(() => {
+    if (!cameraPopoverOpen || !includeCamera) setCameraPreviewRequested(false)
+  }, [cameraPopoverOpen, includeCamera])
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null)
   // Token of the countdown run currently shown in the overlay window. Every run
   // gets a fresh id so the overlay ignores ticks/hides from a cancelled run.
@@ -1302,6 +1331,12 @@ export function LaunchWindow() {
   }, [chainedStartRequest, hasSelectedSource, requestRecordStart])
 
   const handleRecordButtonClick = useCallback(() => {
+    // D3: free the camera before anything else. The recorder opens it itself,
+    // and this runs in the same tick as the click, so the device is never
+    // claimed twice.
+    stopCameraPreview()
+    setCameraPreviewRequested(false)
+
     if (recording || recordingState === 'recording') {
       clearRecordCountdown()
       toggleRecording()
@@ -1335,6 +1370,7 @@ export function LaunchWindow() {
     recordingState,
     requestRecordStart,
     clearRecordCountdown,
+    stopCameraPreview,
     toggleRecording,
   ])
 
@@ -2125,6 +2161,55 @@ export function LaunchWindow() {
                   )}
                 </select>
               </label>
+              {/* D3: opt-in preview. Off until asked for, and the hint says why. */}
+              <div className="mb-2">
+                {cameraPreviewRequested ? (
+                  <div className="flex flex-col gap-1">
+                    {/* A live camera feed has nothing to caption. */}
+                    <video
+                      ref={cameraPreviewVideoRef}
+                      muted
+                      playsInline
+                      autoPlay
+                      className="w-full h-[104px] rounded-md bg-black/60 object-cover"
+                      data-testid="launch-camera-preview-video"
+                    />
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] text-cyan-100/70">
+                        {cameraPreviewError
+                          ? cameraPreviewError
+                          : cameraPreviewStarting
+                            ? t('common.loading')
+                            : t('launch.webcam.previewLightHint')}
+                      </span>
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className={`h-6 px-2 text-[10px] text-cyan-200 bg-transparent hover:bg-cyan-200/10 ${styles.electronNoDrag}`}
+                        onClick={() => {
+                          setCameraPreviewRequested(false)
+                          stopCameraPreview()
+                        }}
+                        data-testid="launch-camera-preview-stop"
+                      >
+                        {t('launch.webcam.previewStop')}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className={`h-7 w-full justify-center text-[11px] text-cyan-200 border border-cyan-300/20 rounded-md bg-cyan-400/5 hover:bg-cyan-400/15 ${styles.electronNoDrag}`}
+                    onClick={() => setCameraPreviewRequested(true)}
+                    disabled={controlsLocked || cameraDevices.length === 0}
+                    title={t('launch.webcam.previewLightHint')}
+                    data-testid="launch-camera-preview-start"
+                  >
+                    {t('launch.webcam.preview')}
+                  </Button>
+                )}
+              </div>
               <div className="flex items-center gap-2">
                 <Button
                   variant="link"
