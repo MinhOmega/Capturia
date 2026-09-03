@@ -222,5 +222,9 @@
 		"simple": "Simple",
 		"modern": "Modern",
 		"clean": "Clean"
-	}
+	},
+	"zoomTransition": "Transition",
+	"zoomTransitionAnimated": "Animated",
+	"zoomTransitionInstant": "Instant",
+	"zoomTransitionInstantDescription": "Cut straight in and out of this zoom, with no ease and no pan"
 }

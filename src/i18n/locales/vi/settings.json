@@ -222,5 +222,9 @@
 		"simple": "Đơn giản",
 		"modern": "Hiện đại",
 		"clean": "Gọn gàng"
-	}
+	},
+	"zoomTransition": "Chuyển cảnh",
+	"zoomTransitionAnimated": "Chuyển động",
+	"zoomTransitionInstant": "Tức thì",
+	"zoomTransitionInstantDescription": "Cắt thẳng vào và ra khỏi vùng thu phóng này, không làm mượt và không lia máy"
 }

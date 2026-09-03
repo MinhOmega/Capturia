@@ -1,5 +1,11 @@
 import type { Rotation3D, ZoomFocus, ZoomFocusMode, ZoomRegion } from '../types'
-import { DEFAULT_ROTATION_3D, getZoomFocusMode, getZoomScale, lerpRotation3D } from '../types'
+import {
+  DEFAULT_ROTATION_3D,
+  getZoomFocusMode,
+  getZoomScale,
+  getZoomTransition,
+  lerpRotation3D,
+} from '../types'
 import { AUTO_FOLLOW_PARAMS, DEFAULT_FOCUS, ZOOM_SPRING_MAX_STEP_MS } from './constants'
 import { advanceFollowFocus, type CursorTelemetryPoint } from './cursorFollowUtils'
 import { findDominantRegion } from './zoomRegionUtils'
@@ -50,6 +56,8 @@ export interface ZoomCameraTarget {
   regionId: string | null
   /** True while panning between two connected regions (the pan owns the focus). */
   transition: boolean
+  /** True when the active region cuts instead of easing (ZoomRegion.transition === 'instant'). */
+  instant: boolean
   /**
    * Effective 3D tilt for this frame: the region preset ramped in/out by
    * `progress` (identity when flat / unzoomed). Preview (CSS transform) and
@@ -74,6 +82,7 @@ function unzoomedTarget(): ZoomCameraTarget {
     focusMode: null,
     regionId: null,
     transition: false,
+    instant: false,
     rotation3D: DEFAULT_ROTATION_3D,
   }
 }
@@ -156,6 +165,7 @@ export function resolveZoomCameraTarget(
     focusMode: getZoomFocusMode(region),
     regionId: region.id,
     transition: transition !== null,
+    instant: getZoomTransition(region) === 'instant',
     // Tilt ramps with the same eased progress as the scale; mid-pan
     // (progress 1) rotation3D is already the lerp between the two regions.
     rotation3D: lerpRotation3D(DEFAULT_ROTATION_3D, rotation3D, progress),
@@ -178,6 +188,8 @@ export interface ZoomCameraState {
   reachedFullZoom: boolean
   /** Focus held for the whole zoom-out; null while the camera is free to follow. */
   frozenAutoFocus: ZoomFocus | null
+  /** Id of the instant region active on the previous step; null when none was. */
+  prevInstantRegionId: string | null
 }
 
 export function createZoomCameraState(): ZoomCameraState {
@@ -190,6 +202,7 @@ export function createZoomCameraState(): ZoomCameraState {
     prevRegionId: null,
     reachedFullZoom: false,
     frozenAutoFocus: null,
+    prevInstantRegionId: null,
   }
 }
 
@@ -202,6 +215,7 @@ export function resetZoomCameraState(state: ZoomCameraState) {
   state.prevRegionId = null
   state.reachedFullZoom = false
   state.frozenAutoFocus = null
+  state.prevInstantRegionId = null
 }
 
 /**
@@ -283,20 +297,22 @@ export function advanceAutoFollowFocus(
 /**
  * Chase `target` with the zoom spring by the content-time delta since the
  * previous step. Snaps straight to the target when not animating, on the
- * first frame, on a backwards / zero step, or on a jump larger than
- * ZOOM_SPRING_MAX_STEP_MS (seek, dropped frames).
+ * first frame, on a backwards / zero step, on a jump larger than
+ * ZOOM_SPRING_MAX_STEP_MS (seek, dropped frames), or when `cut` asks for a
+ * hard step (an instant region starting or ending).
  */
 export function advanceZoomCamera(
   state: ZoomCameraState,
   target: ZoomTransform,
   timeMs: number,
   animating: boolean,
+  cut = false,
 ): ZoomTransform {
   const prevMs = state.prevTimeMs
   const dtMs = prevMs === null ? 0 : timeMs - prevMs
 
   let applied: ZoomTransform
-  if (!animating || prevMs === null || dtMs <= 0 || dtMs > ZOOM_SPRING_MAX_STEP_MS) {
+  if (cut || !animating || prevMs === null || dtMs <= 0 || dtMs > ZOOM_SPRING_MAX_STEP_MS) {
     resetZoomSpring(state.spring, target)
     applied = { scale: target.scale, x: target.x, y: target.y }
   } else {
@@ -350,7 +366,14 @@ export function stepZoomCamera(
     }
   }
 
-  const applied = advanceZoomCamera(state, target.transform, timeMs, options.animating)
+  // An instant region must not be smoothed by the spring at either end, so the
+  // frame it takes over and the frame it hands back both cut straight to the
+  // target. Two adjacent instant regions cut between each other too.
+  const instantKey = target.instant ? target.regionId : null
+  const cut = instantKey !== state.prevInstantRegionId
+  state.prevInstantRegionId = instantKey
+
+  const applied = advanceZoomCamera(state, target.transform, timeMs, options.animating, cut)
   return { target, applied }
 }
 

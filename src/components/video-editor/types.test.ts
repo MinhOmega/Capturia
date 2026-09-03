@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   createTextAnnotationRegion,
   getZoomScale,
+  getZoomTransition,
+  normalizeZoomTransition,
   MAX_ZOOM_SCALE,
   MIN_ZOOM_SCALE,
   resolveTextAnnotationContent,
@@ -161,6 +163,23 @@ describe('3D rotation presets', () => {
     expect(normalizeRotationPreset(1)).toBeUndefined()
     expect(normalizeRotationPreset(null)).toBeUndefined()
     expect(normalizeRotationPreset(undefined)).toBeUndefined()
+  })
+
+  it('getZoomTransition defaults to animated so projects saved before the field load unchanged', () => {
+    expect(getZoomTransition({})).toBe('animated')
+    expect(getZoomTransition({ transition: undefined })).toBe('animated')
+    expect(getZoomTransition({ transition: 'animated' })).toBe('animated')
+    expect(getZoomTransition({ transition: 'instant' })).toBe('instant')
+  })
+
+  it('normalizeZoomTransition keeps only "instant" and drops everything else', () => {
+    expect(normalizeZoomTransition('instant')).toBe('instant')
+    expect(normalizeZoomTransition('animated')).toBeUndefined()
+    expect(normalizeZoomTransition('Instant')).toBeUndefined()
+    expect(normalizeZoomTransition('cut')).toBeUndefined()
+    expect(normalizeZoomTransition(1)).toBeUndefined()
+    expect(normalizeZoomTransition(null)).toBeUndefined()
+    expect(normalizeZoomTransition(undefined)).toBeUndefined()
   })
 
   it('isRotation3DIdentity tolerates sub-epsilon noise only', () => {

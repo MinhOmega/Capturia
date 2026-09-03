@@ -41,6 +41,7 @@ import type {
   AnnotationType,
   FigureData,
   Rotation3DPreset,
+  ZoomTransitionMode,
 } from './types'
 import { ROTATION_3D_PRESET_ORDER } from './types'
 import { MAX_PLAYBACK_SPEED, MAX_ZOOM_SCALE, MIN_ZOOM_SCALE, ZOOM_DEPTH_SCALES } from './types'
@@ -90,6 +91,7 @@ import {
 
 const GRADIENTS = BACKGROUND_GRADIENT_PRESETS
 const ZOOM_FOCUS_MODES: readonly ZoomFocusMode[] = ['manual', 'auto']
+const ZOOM_TRANSITION_MODES: readonly ZoomTransitionMode[] = ['animated', 'instant']
 
 interface SettingsPanelProps {
   selected: string
@@ -110,6 +112,9 @@ interface SettingsPanelProps {
   /** Focus mode of the selected zoom ('auto' = camera follows the recorded cursor). */
   selectedZoomFocusMode?: ZoomFocusMode | null
   onZoomFocusModeChange?: (mode: ZoomFocusMode) => void
+  /** Transition of the selected zoom ('instant' cuts in and out instead of easing). */
+  selectedZoomTransition?: ZoomTransitionMode | null
+  onZoomTransitionChange?: (transition: ZoomTransitionMode) => void
   /** 3D tilt preset of the selected zoom (null = flat). */
   selectedZoomRotationPreset?: Rotation3DPreset | null
   /** null clears the preset (back to flat). */
@@ -298,6 +303,8 @@ export function SettingsPanel({
   onZoomFocusCoordinateCommit,
   selectedZoomFocusMode = null,
   onZoomFocusModeChange,
+  selectedZoomTransition = null,
+  onZoomTransitionChange,
   selectedZoomRotationPreset = null,
   onZoomRotationPresetChange,
   autoFocusAll = false,
@@ -751,6 +758,50 @@ export function SettingsPanel({
                   <span>{t('settings.zoomFocusModeLockedDisclaimer')}</span>
                 </div>
               )}
+            </div>
+          )}
+          {zoomEnabled && onZoomTransitionChange && (
+            <div className="mt-3 space-y-1.5">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[11px] font-medium text-slate-400">
+                  {t('settings.zoomTransition')}
+                </span>
+                <div
+                  role="radiogroup"
+                  aria-label={t('settings.zoomTransition')}
+                  className="grid w-32 grid-cols-2 gap-0.5 rounded-lg border border-white/[0.06] bg-white/[0.035] p-0.5"
+                >
+                  {ZOOM_TRANSITION_MODES.map((mode) => {
+                    const isActive = (selectedZoomTransition ?? 'animated') === mode
+                    return (
+                      <Button
+                        key={mode}
+                        type="button"
+                        role="radio"
+                        aria-checked={isActive}
+                        title={
+                          mode === 'instant'
+                            ? t('settings.zoomTransitionInstantDescription')
+                            : undefined
+                        }
+                        onClick={() => onZoomTransitionChange(mode)}
+                        className={cn(
+                          'h-6 w-full rounded-md border px-1 text-center transition-all duration-150 ease-out cursor-pointer',
+                          isActive
+                            ? 'border-[#34B27B]/50 bg-[#34B27B] text-white hover:bg-[#34B27B]'
+                            : 'border-transparent bg-transparent text-slate-400 hover:bg-white/[0.06] hover:text-slate-200',
+                        )}
+                      >
+                        <span className="text-[10px] font-semibold">
+                          {mode === 'instant'
+                            ? t('settings.zoomTransitionInstant')
+                            : t('settings.zoomTransitionAnimated')}
+                        </span>
+                      </Button>
+                    )
+                  })}
+                </div>
+              </div>
             </div>
           )}
           {zoomEnabled && onZoomRotationPresetChange && (

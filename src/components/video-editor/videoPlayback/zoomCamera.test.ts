@@ -458,3 +458,95 @@ describe('auto-follow zoom-out freezes the focus (P2-B1)', () => {
     expect(a.map((s) => s.target.focus)).toEqual(b.map((s) => s.target.focus))
   })
 })
+
+describe('instant zoom regions cut instead of easing (P2-B2)', () => {
+  const instant: ZoomRegion[] = [
+    {
+      id: 'cut',
+      startMs: 2000,
+      endMs: 4000,
+      depth: 3,
+      focus: { cx: 0.3, cy: 0.3 },
+      transition: 'instant',
+    },
+  ]
+
+  it('is unzoomed until startMs, at full zoom for its whole span, unzoomed again after endMs', () => {
+    expect(resolveZoomCameraTarget(instant, 1000, geometry).progress).toBe(0)
+    // An animated region would already be easing in a second before startMs.
+    expect(resolveZoomCameraTarget(instant, 1999, geometry).progress).toBe(0)
+    expect(resolveZoomCameraTarget(instant, 2000, geometry).progress).toBe(1)
+    expect(resolveZoomCameraTarget(instant, 3000, geometry).scale).toBe(ZOOM_DEPTH_SCALES[3])
+    expect(resolveZoomCameraTarget(instant, 4000, geometry).progress).toBe(1)
+    // An animated region would ease out for another second after endMs.
+    expect(resolveZoomCameraTarget(instant, 4001, geometry).progress).toBe(0)
+    expect(resolveZoomCameraTarget(instant, 4001, geometry).transform).toEqual({
+      scale: 1,
+      x: 0,
+      y: 0,
+    })
+  })
+
+  it('applies the full transform on the first frame in and the identity on the first frame out', () => {
+    const times = timeSeries(1000 / 60, 4500)
+    const state = createZoomCameraState()
+    const steps = times.map((t) => ({
+      t,
+      step: stepZoomCamera(state, instant, t, geometry, { animating: true }),
+    }))
+
+    const firstInside = steps.find(({ t }) => t >= 2000)
+    if (!firstInside) throw new Error('no frame inside the region')
+    expect(firstInside.step.target.instant).toBe(true)
+    // The spring is cut, not chased: the applied transform is already the target.
+    expect(firstInside.step.applied).toEqual(firstInside.step.target.transform)
+    expect(firstInside.step.applied.scale).toBe(ZOOM_DEPTH_SCALES[3])
+
+    const firstOutside = steps.find(({ t }) => t > 4000)
+    if (!firstOutside) throw new Error('no frame after the region')
+    expect(firstOutside.step.applied).toEqual({ scale: 1, x: 0, y: 0 })
+  })
+
+  it('never pans into a neighbour close enough to connect', () => {
+    // Gap is 500 ms (< CONNECTED_ZOOM_GAP_MS), so two animated regions here
+    // would hand over through a connected pan instead of zooming out.
+    const nextRegion: ZoomRegion = {
+      id: 'next',
+      startMs: 4500,
+      endMs: 6000,
+      depth: 5,
+      focus: { cx: 0.8, cy: 0.8 },
+    }
+    const animatedNeighbour: ZoomRegion[] = [{ ...instant[0] }, nextRegion]
+    for (const timeMs of [4001, 4100, 4200, 4400]) {
+      // The neighbour still runs its own ease-in, but nothing pans out of the
+      // instant region: it simply stops being the active region.
+      const target = resolveZoomCameraTarget(animatedNeighbour, timeMs, geometry)
+      expect(target.transition).toBe(false)
+      expect(target.regionId).not.toBe('cut')
+    }
+
+    const instantNeighbour: ZoomRegion[] = [
+      { ...instant[0] },
+      { ...nextRegion, transition: 'instant' },
+    ]
+    for (const timeMs of [4001, 4100, 4200, 4499]) {
+      const target = resolveZoomCameraTarget(instantNeighbour, timeMs, geometry)
+      expect(target.transition).toBe(false)
+      expect(target.progress).toBe(0)
+    }
+    expect(resolveZoomCameraTarget(instantNeighbour, 4500, geometry).scale).toBe(
+      ZOOM_DEPTH_SCALES[5],
+    )
+  })
+
+  it('treats an explicit "animated" exactly like a missing transition field', () => {
+    const animated: ZoomRegion[] = [{ ...instant[0], transition: 'animated' }]
+    const legacy: ZoomRegion[] = [{ ...instant[0], transition: undefined }]
+    for (const timeMs of [1500, 2000, 3000, 4300]) {
+      expect(resolveZoomCameraTarget(animated, timeMs, geometry)).toEqual(
+        resolveZoomCameraTarget(legacy, timeMs, geometry),
+      )
+    }
+  })
+})
