@@ -32,6 +32,7 @@
 	"analysisCompleted": "Automatic subtitles and rough cut suggestions are ready",
 	"analysisNoSubtitles": "No subtitle cues were generated",
 	"projectRelinked": "This recording was moved or renamed. Your previous edits were restored.",
+	"waveformUnavailable": "Waveform unavailable for this recording",
 	"analysisNoSuggestions": "No rough cut suggestions found",
 	"analysisApplyRoughCutSuccess": "Applied {{count}} rough cut suggestions to audio track",
 	"captionPhaseNative": "Transcribing with the system speech recognizer...",
