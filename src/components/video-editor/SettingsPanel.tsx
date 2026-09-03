@@ -26,6 +26,8 @@ import {
   Info,
   MousePointer2,
   ChevronDown,
+  Lock,
+  LockOpen,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import * as SliderPrimitive from '@radix-ui/react-slider'
@@ -53,6 +55,11 @@ import { CropControl } from './CropControl'
 import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp'
 import { AnnotationSettingsPanel } from './AnnotationSettingsPanel'
 import { ASPECT_RATIOS, type AspectRatio, getAspectRatioLabel } from '@/utils/aspectRatioUtils'
+import {
+  CROP_ASPECT_PRESETS,
+  type CropAspectPreset,
+  isCropAspectPreset,
+} from '@/lib/crop/aspectCrop'
 import type { ExportQuality, ExportFormat, GifFrameRate, GifSizePreset } from '@/lib/exporter'
 import { GIF_FRAME_RATES, GIF_SIZE_PRESETS } from '@/lib/exporter'
 import {
@@ -213,6 +220,13 @@ interface SettingsPanelProps {
   paddingDisabled?: boolean
   cropRegion?: CropRegion
   onCropChange?: (region: CropRegion) => void
+  /** Crop ratio select ('free' or a fixed ratio) and the aspect-lock switch. */
+  cropAspectPreset?: CropAspectPreset
+  cropAspectLocked?: boolean
+  /** Pixel aspect the crop dialog's edge drags must keep (null = free-form). */
+  cropLockAspectRatio?: number | null
+  onCropAspectPresetChange?: (preset: CropAspectPreset) => void
+  onCropAspectLockedChange?: (locked: boolean) => void
   aspectRatio: AspectRatio
   videoElement?: HTMLVideoElement | null
   exportQuality?: ExportQuality
@@ -386,6 +400,11 @@ export function SettingsPanel({
   paddingDisabled = false,
   cropRegion,
   onCropChange,
+  cropAspectPreset = 'free',
+  cropAspectLocked = false,
+  cropLockAspectRatio = null,
+  onCropAspectPresetChange,
+  onCropAspectLockedChange,
   aspectRatio,
   videoElement,
   exportQuality = 'good',
@@ -1676,6 +1695,52 @@ export function SettingsPanel({
                 </div>
               </div>
 
+              {onCropAspectPresetChange && onCropAspectLockedChange && (
+                <div className="mt-2 rounded-md bg-black/20 border border-white/5 p-2 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <label
+                      htmlFor="crop-aspect-preset"
+                      className="text-[10px] text-slate-300 whitespace-nowrap"
+                    >
+                      {t('settings.cropAspectRatio')}
+                    </label>
+                    <select
+                      id="crop-aspect-preset"
+                      value={cropAspectPreset}
+                      onChange={(e) => {
+                        const next = e.target.value
+                        if (isCropAspectPreset(next)) onCropAspectPresetChange(next)
+                      }}
+                      className="h-6 min-w-[72px] rounded border border-white/10 bg-[#1a1a1f] px-1.5 text-[10px] text-slate-200 outline-none focus:border-[#34B27B]/50 cursor-pointer"
+                    >
+                      {CROP_ASPECT_PRESETS.map((preset) => (
+                        <option key={preset} value={preset} className="bg-[#1a1a1f]">
+                          {preset === 'free'
+                            ? t('settings.cropAspectFree')
+                            : getAspectRatioLabel(preset)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1 text-[10px] text-slate-300">
+                      {cropAspectLocked ? (
+                        <Lock className="w-3 h-3 text-[#34B27B]" />
+                      ) : (
+                        <LockOpen className="w-3 h-3 text-slate-500" />
+                      )}
+                      <span>{t('settings.cropLockAspectRatio')}</span>
+                    </div>
+                    <Switch
+                      checked={cropAspectLocked}
+                      onCheckedChange={onCropAspectLockedChange}
+                      aria-label={t('settings.cropLockAspectRatio')}
+                      className="data-[state=checked]:bg-[#34B27B] scale-90"
+                    />
+                  </div>
+                </div>
+              )}
+
               <Button
                 onClick={() => setShowCropDropdown(!showCropDropdown)}
                 variant="outline"
@@ -1919,6 +1984,7 @@ export function SettingsPanel({
               cropRegion={cropRegion}
               onCropChange={onCropChange}
               aspectRatio={aspectRatio}
+              lockAspectRatio={cropLockAspectRatio}
             />
             <div className="mt-6 flex justify-end">
               <Button

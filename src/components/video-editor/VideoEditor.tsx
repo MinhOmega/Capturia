@@ -119,9 +119,13 @@ import {
   type CursorTrackEvent,
 } from '@/lib/cursor'
 import {
+  type CropAspectLockState,
+  type CropAspectPreset,
   cropRegionEquals,
   getCenteredAspectCropRegion,
+  getDefaultCropAspectLockState,
   normalizeAspectCropRegion,
+  resolveCropLockRatio,
   sanitizeCropRegion,
 } from '@/lib/crop/aspectCrop'
 import { generateAutoZoomDrafts } from '@/lib/autoEdit/screenStudioAutoZoom'
@@ -185,16 +189,14 @@ function resolveAspectCropRegion(
   sourceAspectRatio: number,
 ): CropRegion {
   const region = regionsByAspect[ratio]
-  // 'native' has no fixed ratio: the crop is free-form (full source by default)
-  // and the output ratio follows it.
-  if (ratio === 'native') {
-    return region ? sanitizeCropRegion(region) : DEFAULT_CROP_REGION
-  }
-  const targetAspectRatio = getAspectRatioValue(ratio)
-  if (!region) {
-    return getCenteredAspectCropRegion(sourceAspectRatio, targetAspectRatio)
-  }
-  return normalizeAspectCropRegion(region, sourceAspectRatio, targetAspectRatio)
+  // A stored crop is free-form: its shape is whatever the user last dragged
+  // (the aspect lock is a tool mode, see aspectCrop.ts). Under 'native' the
+  // output ratio follows the crop; under a fixed ratio the layout letterboxes
+  // it. Only the default differs: full source for native, a centred crop of
+  // the output ratio otherwise.
+  if (region) return sanitizeCropRegion(region)
+  if (ratio === 'native') return DEFAULT_CROP_REGION
+  return getCenteredAspectCropRegion(sourceAspectRatio, getAspectRatioValue(ratio))
 }
 
 function fromFileUrl(input: string): string {
@@ -836,31 +838,71 @@ export default function VideoEditor() {
     [aspectRatio],
   )
 
-  const setCropRegionForAspect = useCallback(
-    (ratio: AspectRatio, region: CropRegion) => {
-      setCropRegionsByAspect((previous) => {
-        const normalized =
-          ratio === 'native'
-            ? sanitizeCropRegion(region)
-            : normalizeAspectCropRegion(region, sourceAspectRatio, getAspectRatioValue(ratio))
-        const existing = previous[ratio]
-        if (existing && cropRegionEquals(existing, normalized)) {
-          return previous
-        }
-        return {
-          ...previous,
-          [ratio]: normalized,
-        }
-      })
-    },
-    [sourceAspectRatio],
-  )
+  const setCropRegionForAspect = useCallback((ratio: AspectRatio, region: CropRegion) => {
+    setCropRegionsByAspect((previous) => {
+      const normalized = sanitizeCropRegion(region)
+      const existing = previous[ratio]
+      if (existing && cropRegionEquals(existing, normalized)) {
+        return previous
+      }
+      return {
+        ...previous,
+        [ratio]: normalized,
+      }
+    })
+  }, [])
 
   const handleActiveCropRegionChange = useCallback(
     (region: CropRegion) => {
       setCropRegionForAspect(aspectRatio, region)
     },
     [aspectRatio, setCropRegionForAspect],
+  )
+
+  // Crop ratio select + lock switch, per output aspect (a tool mode, not
+  // persisted: the default is derived from the crop's current shape).
+  const [cropAspectLockByAspect, setCropAspectLockByAspect] = useState<
+    Partial<Record<AspectRatio, CropAspectLockState>>
+  >({})
+  const activeCropAspectLock = useMemo(
+    () =>
+      cropAspectLockByAspect[aspectRatio] ??
+      getDefaultCropAspectLockState(aspectRatio, activeCropRegion, sourceAspectRatio),
+    [activeCropRegion, aspectRatio, cropAspectLockByAspect, sourceAspectRatio],
+  )
+  const activeCropLockRatio = useMemo(
+    () => resolveCropLockRatio(activeCropAspectLock, activeCropRegion, sourceAspectRatio),
+    [activeCropAspectLock, activeCropRegion, sourceAspectRatio],
+  )
+  // Choosing a ratio snaps the crop to it at once (keeping its centre) and
+  // locks; choosing Free unlocks and keeps the current shape.
+  const handleCropAspectPresetChange = useCallback(
+    (preset: CropAspectPreset) => {
+      if (preset !== 'free') {
+        setCropRegionForAspect(
+          aspectRatio,
+          normalizeAspectCropRegion(
+            activeCropRegion,
+            sourceAspectRatio,
+            getAspectRatioValue(preset),
+          ),
+        )
+      }
+      setCropAspectLockByAspect((previous) => ({
+        ...previous,
+        [aspectRatio]: { preset, locked: preset !== 'free' },
+      }))
+    },
+    [activeCropRegion, aspectRatio, setCropRegionForAspect, sourceAspectRatio],
+  )
+  const handleCropAspectLockedChange = useCallback(
+    (locked: boolean) => {
+      setCropAspectLockByAspect((previous) => ({
+        ...previous,
+        [aspectRatio]: { preset: activeCropAspectLock.preset, locked },
+      }))
+    },
+    [activeCropAspectLock.preset, aspectRatio],
   )
 
   // Helper to convert file path to proper file:// URL
@@ -3873,7 +3915,7 @@ export default function VideoEditor() {
                         cropRegion={activeCropRegion}
                         onCropChange={handleActiveCropRegionChange}
                         sourceAspectRatio={sourceAspectRatio}
-                        targetAspectRatio={activeAspectRatioValue}
+                        lockAspectRatio={activeCropLockRatio}
                         positionHint={t('editor.cropOverlayDragHint')}
                       />
                     ) : null}
@@ -4036,6 +4078,11 @@ export default function VideoEditor() {
               onPaddingChange={setPadding}
               cropRegion={activeCropRegion}
               onCropChange={handleActiveCropRegionChange}
+              cropAspectPreset={activeCropAspectLock.preset}
+              cropAspectLocked={activeCropAspectLock.locked}
+              cropLockAspectRatio={activeCropLockRatio}
+              onCropAspectPresetChange={handleCropAspectPresetChange}
+              onCropAspectLockedChange={handleCropAspectLockedChange}
               aspectRatio={aspectRatio}
               videoElement={videoPlaybackRef.current?.video || null}
               exportQuality={exportQuality}
