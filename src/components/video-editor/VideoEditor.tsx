@@ -921,6 +921,9 @@ export default function VideoEditor() {
           try {
             const saved = await window.electronAPI.loadProjectState(result.path)
             const savedState = saved.state as ProjectState | undefined
+            // The recording was moved or renamed since it was last edited and its
+            // state was found again by content fingerprint (see projectMediaRelinker).
+            if (saved.success && saved.relinked) toast.info(t('editor.projectRelinked'))
             if (saved.success && savedState?.version === 1) {
               const s = savedState
 
