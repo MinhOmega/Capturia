@@ -165,4 +165,84 @@ describe('recordingsCleanupPolicy', () => {
     ])
     expect(plan.estimatedBytesFreed).toBe(240)
   })
+
+  it('never deletes a recording a project still references, however old and over budget it is', () => {
+    const entries: RecordingArtifactEntry[] = [
+      // Ancient and far over the byte budget, but a saved project points at it.
+      entry('recording-1.webm', 5_000, 10),
+      entry('recording-1.cursor.json', 10, 10),
+      // Just as old, referenced by nothing.
+      entry('recording-2.webm', 5_000, 20),
+      entry('recording-2.cursor.json', 10, 20),
+      entry('recording-3.webm', 100, 4_900),
+    ]
+    const policy = createRecordingCleanupPolicy({
+      maxTotalBytes: 1_000,
+      targetTotalBytes: 500,
+      maxVideoAgeMs: 1_000,
+      minKeepVideoGroups: 1,
+      orphanSidecarAgeMs: 500,
+    })
+
+    const plan = planRecordingCleanup(entries, {
+      nowMs: 5_000,
+      policy,
+      protectedFileNames: ['recording-1.webm'],
+    })
+
+    // The whole group survives, sidecar included.
+    expect(plan.filesToDelete).not.toContain('recording-1.webm')
+    expect(plan.filesToDelete).not.toContain('recording-1.cursor.json')
+    // The unreferenced one is still collected.
+    expect(plan.filesToDelete).toEqual(['recording-2.cursor.json', 'recording-2.webm'])
+
+    // Without the protection it would have gone with the rest.
+    const unprotected = planRecordingCleanup(entries, { nowMs: 5_000, policy })
+    expect(unprotected.filesToDelete).toContain('recording-1.webm')
+  })
+
+  it('protects a group named only through its cursor sidecar (a relinked recording)', () => {
+    const entries: RecordingArtifactEntry[] = [
+      entry('recording-7.mp4', 5_000, 10),
+      entry('recording-7.cursor.json', 10, 10),
+      entry('recording-8.mp4', 100, 4_900),
+    ]
+
+    const plan = planRecordingCleanup(entries, {
+      nowMs: 5_000,
+      policy: createRecordingCleanupPolicy({
+        maxTotalBytes: 1_000,
+        targetTotalBytes: 500,
+        maxVideoAgeMs: 1_000,
+        minKeepVideoGroups: 1,
+        orphanSidecarAgeMs: 500,
+      }),
+      protectedFileNames: ['recording-7.cursor.json'],
+    })
+
+    expect(plan.filesToDelete).toEqual([])
+  })
+
+  it('keeps an orphaned sidecar and a stale patch leftover when a project still names them', () => {
+    const entries: RecordingArtifactEntry[] = [
+      // No video left, old enough to be an orphan.
+      entry('recording-9.cursor.json', 10, 100),
+      entry('recording-10.webm', 120, 4_900),
+      entry('recording-10.webm.duration-patch.tmp', 120, 100),
+    ]
+
+    const plan = planRecordingCleanup(entries, {
+      nowMs: 5_000,
+      policy: createRecordingCleanupPolicy({
+        maxTotalBytes: 10_000,
+        targetTotalBytes: 8_000,
+        maxVideoAgeMs: 10_000,
+        minKeepVideoGroups: 1,
+        orphanSidecarAgeMs: 500,
+      }),
+      protectedFileNames: ['recording-9.cursor.json', 'recording-10.webm.duration-patch.tmp'],
+    })
+
+    expect(plan.filesToDelete).toEqual([])
+  })
 })

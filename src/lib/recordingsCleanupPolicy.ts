@@ -162,12 +162,22 @@ export function createRecordingCleanupPolicy(
   return normalizePolicy(input)
 }
 
+export interface RecordingCleanupPlanOptions {
+  nowMs?: number
+  policy?: Partial<RecordingCleanupPolicy>
+  /**
+   * File names in the recordings dir that a saved project still points at. The
+   * whole recording group of such a file is kept regardless of age or budget:
+   * a project whose media is gone is not a freed gigabyte, it is lost work.
+   * Resolving which paths those are belongs to the caller
+   * (`electron/recordingsCleanup.ts`); this stays a pure name set.
+   */
+  protectedFileNames?: Iterable<string>
+}
+
 export function planRecordingCleanup(
   entries: RecordingArtifactEntry[],
-  options?: {
-    nowMs?: number
-    policy?: Partial<RecordingCleanupPolicy>
-  },
+  options?: RecordingCleanupPlanOptions,
 ): RecordingCleanupPlan {
   const normalizedEntries = entries
     .map(toValidEntry)
@@ -176,6 +186,13 @@ export function planRecordingCleanup(
   const nowMs = Number.isFinite(options?.nowMs) ? Number(options?.nowMs) : Date.now()
   const groups = groupManagedArtifacts(normalizedEntries)
   const managedTotalBytes = groups.reduce((sum, group) => sum + group.totalBytes, 0)
+
+  const protectedFileNames = new Set(options?.protectedFileNames ?? [])
+  const protectedKeys = new Set<string>()
+  for (const fileName of protectedFileNames) {
+    const key = recordingGroupKeyFromFileName(fileName)
+    if (key) protectedKeys.add(key)
+  }
 
   const groupsByNewest = groups
     .slice()
@@ -191,6 +208,7 @@ export function planRecordingCleanup(
   for (const group of videoGroupsByNewest) {
     if (group.latestMtimeMs >= ageThreshold) continue
     if (protectedVideoKeys.has(group.key)) continue
+    if (protectedKeys.has(group.key)) continue
     deletedKeys.add(group.key)
   }
 
@@ -203,6 +221,7 @@ export function planRecordingCleanup(
     for (const group of remainingVideoGroups) {
       if (remainingVideoBytes <= policy.targetTotalBytes) break
       if (protectedVideoKeys.has(group.key)) continue
+      if (protectedKeys.has(group.key)) continue
       if (deletedKeys.has(group.key)) continue
       deletedKeys.add(group.key)
       remainingVideoBytes -= group.totalBytes
@@ -213,6 +232,7 @@ export function planRecordingCleanup(
   for (const group of groupsByNewest) {
     if (group.hasVideo) continue
     if (group.latestMtimeMs > orphanThreshold) continue
+    if (protectedKeys.has(group.key)) continue
     deletedKeys.add(group.key)
   }
 
@@ -221,6 +241,9 @@ export function planRecordingCleanup(
   for (const group of groupsByNewest) {
     if (deletedKeys.has(group.key)) {
       for (const file of group.files) {
+        // Belt and braces: a referenced file never leaves, even if some future
+        // rule added its group to the delete set.
+        if (protectedFileNames.has(file.name)) continue
         filesToDelete.push(file.name)
         estimatedBytesFreed += file.size
       }
@@ -231,6 +254,7 @@ export function planRecordingCleanup(
     // so an in-flight patch on a recording that just finished is never raced.
     for (const file of group.tempFiles) {
       if (file.mtimeMs > orphanThreshold) continue
+      if (protectedFileNames.has(file.name)) continue
       filesToDelete.push(file.name)
       estimatedBytesFreed += file.size
     }

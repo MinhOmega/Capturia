@@ -95,6 +95,7 @@ export function registerRecordingFilesHandlers(ctx: IpcContext): RecordingFilesR
     ipcMain,
     session,
     recordingsDir,
+    userDataDir,
     createEditorWindow,
     createSourceSelectorWindow,
     getMainWindow,
@@ -201,6 +202,7 @@ export function registerRecordingFilesHandlers(ctx: IpcContext): RecordingFilesR
         }
         scheduleRecordingsCleanup({
           recordingsDir: recordingsDir,
+          userDataDir,
           excludePaths: [videoPath],
           reason: 'post-recording',
         })
@@ -424,6 +426,7 @@ export function registerRecordingFilesHandlers(ctx: IpcContext): RecordingFilesR
       if (result.success && result.path) {
         scheduleRecordingsCleanup({
           recordingsDir: recordingsDir,
+          userDataDir,
           excludePaths: [result.path],
           reason: 'post-native-recording',
         })
