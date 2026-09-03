@@ -148,6 +148,35 @@ export function resolveGifWorkerCount(hardwareConcurrency: number | undefined): 
 
 type SourceVideoInfo = { width: number; height: number; duration: number }
 
+/** How long the first-frame wait gives the compositor before it gives up. */
+const PRESENTED_FRAME_TIMEOUT_MS = 80
+
+/**
+ * Wait for the video to present a decoded frame, but never longer than
+ * `PRESENTED_FRAME_TIMEOUT_MS`.
+ *
+ * `requestVideoFrameCallback` only fires on a *new* presentation. When the
+ * frame is already on screen by the time the seek resolves — which is what
+ * happens under software rendering, and is a race everywhere else — the
+ * callback never fires and an unbounded wait hangs the whole export. The
+ * MP4 exporter bounds the same wait (`VideoExporter.waitForVideoFrame`);
+ * this keeps the GIF path in line with it.
+ */
+async function waitForPresentedFrame(videoElement: HTMLVideoElement): Promise<void> {
+  if (typeof videoElement.requestVideoFrameCallback !== 'function') return
+  await new Promise<void>((resolve) => {
+    let settled = false
+    const finish = () => {
+      if (settled) return
+      settled = true
+      window.clearTimeout(timer)
+      resolve()
+    }
+    const timer = window.setTimeout(finish, PRESENTED_FRAME_TIMEOUT_MS)
+    videoElement.requestVideoFrameCallback(() => finish())
+  })
+}
+
 export class GifExporter {
   private config: GifExporterConfig
   private decoder: VideoFileDecoder | null = null
@@ -490,9 +519,7 @@ export class GifExporter {
     // Seek to the first frame upfront
     if (frameIndex < totalFrames && !this.cancelled) {
       await seekTo(plan.sourceTimeMsForFrame(frameIndex) / 1000)
-      await new Promise<void>((resolve) => {
-        videoElement.requestVideoFrameCallback(() => resolve())
-      })
+      await waitForPresentedFrame(videoElement)
     }
 
     while (frameIndex < totalFrames && !this.cancelled) {

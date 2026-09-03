@@ -142,7 +142,9 @@ export function createElectronMock() {
       isTrustedAccessibilityClient: vi.fn(() => true),
       askForMediaAccess: vi.fn(async () => true),
     },
-    BrowserWindow: class {},
+    BrowserWindow: class {
+      static getAllWindows = vi.fn((): unknown[] => [])
+    },
     Menu: { buildFromTemplate: vi.fn(), setApplicationMenu: vi.fn() },
   }
 }

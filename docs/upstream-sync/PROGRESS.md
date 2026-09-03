@@ -432,3 +432,38 @@ Gate: lint 0 errors / 116 warnings (unchanged); tsc + test types clean; i18n 666
 vi in parity); `biome format .` clean; vitest **130 files / 1448 tests** (+3 / +52). Not verified:
 no Electron run, so the relink toast, a genuinely moved recording on disk and the streaming
 waveform against a multi-GB file are all untested end to end.
+
+## 2026-09-03 — wave 5 round 1: R5-IPC + R5-CI test infrastructure (agent branch, pending review)
+
+Nine commits; the second half of the batch (T-1..T-4) plus two export fixes the new specs found.
+
+- **T-1 browser-mode vitest.** `vitest.browser.config.ts` runs `src/**/*.browser.test.ts` in
+  headless Chromium through Playwright; `vitest.config.ts` excludes them so the node lane never
+  boots a browser. Three specs, five tests: the silent-export invariant (seek-path MP4 renders
+  every frame from a muted, paused `<video>`, never calls `play()`), WSOLA at 2x over an
+  `OfflineAudioContext` tone (length, pitch, level, then loaded into an `AudioContext`), and GIF
+  frame count `ceil(duration * fps)` from both a fixture and a canvas recorded in-test with
+  `MediaRecorder`. Fixture `src/__fixtures__/sample.webm`: 60 KB, 2 s, 320x240 VP9/Opus.
+  Deps: `@vitest/browser`, `@vitest/browser-playwright`, `playwright`.
+- **T-2 export e2e.** `e2e/export.spec.ts` drives a built app from launch to a GIF on disk.
+  `CAPTURIA_E2E_VIDEO` (main, unpackaged only) approves a fixture and boots into the editor;
+  the save dialog is replaced in the main process; a seeded project picks GIF and a solid
+  background (bundled wallpapers only resolve in a packaged layout); the export starts on the
+  same channel the application menu uses. `data-testid` added to `ExportDialog.tsx` only.
+- **T-3/T-4 CI.** `npm run check` = `biome check` (lint + format + import order) as one validate
+  gate, with `lint` and `format:check` kept. `validate` also runs `i18n:check` and
+  `build:vite`. New `test-browser` job installs Chromium and runs the browser lane.
+- **Export fixes the specs forced.** (a) GIF export awaited `seeked` and only then registered
+  `requestVideoFrameCallback`, which fires only on a *new* presentation — an unbounded wait that
+  hung every run under software rendering; now bounded at 80 ms like the MP4 path. (b) A
+  recording served over `local-media://` was CORS-tainted against the `file://` page, so
+  `new VideoFrame(videoElement)` threw `SecurityError` and GIF export could not produce a single
+  frame in a real build. Fixed with `corsEnabled` on the scheme, `Access-Control-Allow-Origin`
+  on both responses and a CORS-mode load in the decoder. Both are behaviour changes outside the
+  batch's stated file list; flagged to the lead.
+- Gate: `biome check` 0 errors / 115 warnings; `tsc` and test types clean; i18n 635 en keys;
+  vitest **125 files / 1362 tests**; browser lane **3 files / 5 tests**; e2e **2 specs** green
+  under `xvfb-run --auto-servernum`; `vite build` OK.
+- Open: the CI jobs themselves are unrun (no push); macOS and Windows never exercised; the
+  editor's preview `<video>` still loads without CORS, which is harmless for drawing but leaves
+  any future read-back path tainted.

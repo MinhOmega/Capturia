@@ -404,6 +404,8 @@ interface Window {
       relinked?: boolean
       relinkedFrom?: string
     }>
+    /** `process.platform` snapshotted by the preload (`darwin` | `win32` | `linux`). */
+    platform: string
     getPlatform: () => Promise<string>
     getShortcuts: () => Promise<Record<string, unknown> | null>
     saveShortcuts: (shortcuts: unknown) => Promise<{ success: boolean; error?: string }>

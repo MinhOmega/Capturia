@@ -1,8 +1,11 @@
+import type { BrowserWindow } from 'electron'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { buildContext, fakeIpcMain, fakeWindow } from './__tests__/ipcTestKit'
 import {
   applyLongEdgeLimit,
   clampRecorderDimension,
+  collectOwnWindowSourceIds,
+  excludeOwnWindowSources,
   normalizeGetSourcesOptions,
   registerPermissionHandlers,
 } from './permissions'
@@ -138,6 +141,95 @@ describe('permission IPC handlers', () => {
         thumbnailSize: { width: 320, height: 180 },
       }),
     )
+  })
+})
+
+describe('own-window exclusion', () => {
+  const ownWindow = (id: string | null, destroyed = false) => ({
+    isDestroyed: () => destroyed,
+    getMediaSourceId: () => {
+      if (id === null) throw new Error('no media source id')
+      return id
+    },
+  })
+
+  it('collects media source ids of live windows and skips destroyed or failing ones', () => {
+    const ids = collectOwnWindowSourceIds([
+      ownWindow('window:11:0'),
+      ownWindow('window:12:0', true),
+      ownWindow(null),
+      ownWindow(''),
+      ownWindow('window:13:0'),
+    ])
+    expect([...ids]).toEqual(['window:11:0', 'window:13:0'])
+  })
+
+  it('excludeOwnWindowSources keeps every source when nothing is owned', () => {
+    const sources = [{ id: 'screen:0:0' }, { id: 'window:1:0' }]
+    const result = excludeOwnWindowSources(sources, new Set())
+    expect(result).toEqual(sources)
+    expect(result).not.toBe(sources)
+  })
+
+  it('get-sources drops the HUD, selector and editor windows from the picker feed', async () => {
+    setPlatform('linux')
+    const { desktopCapturer, BrowserWindow } = await import('electron')
+    const source = (id: string, name: string) =>
+      ({
+        id,
+        name,
+        display_id: '',
+        thumbnail: null,
+        appIcon: null,
+      }) as unknown as Electron.DesktopCapturerSource
+    vi.mocked(desktopCapturer.getSources).mockResolvedValueOnce([
+      source('screen:0:0', 'Entire screen'),
+      source('window:100:0', 'Capturia'),
+      source('window:101:0', 'Terminal'),
+      source('window:102:0', 'Capturia'),
+    ])
+    vi.mocked(BrowserWindow.getAllWindows).mockReturnValueOnce([
+      ownWindow('window:100:0'),
+      ownWindow('window:102:0'),
+      ownWindow('window:103:0', true),
+    ] as unknown as BrowserWindow[])
+    const ipc = fakeIpcMain()
+    registerPermissionHandlers(buildContext(ipc))
+    const sources = await ipc.invoke<Array<{ id: string }>>('get-sources', {
+      types: ['screen', 'window'],
+    })
+    expect(sources.map((s) => s.id)).toEqual(['screen:0:0', 'window:101:0'])
+  })
+
+  it('get-sources logs enumeration timing under CAPTURIA_DIAGNOSTIC', async () => {
+    setPlatform('linux')
+    const { desktopCapturer } = await import('electron')
+    vi.mocked(desktopCapturer.getSources).mockResolvedValueOnce([
+      {
+        id: 'screen:0:0',
+        name: 'Entire screen',
+        display_id: '',
+        thumbnail: null,
+        appIcon: null,
+      } as unknown as Electron.DesktopCapturerSource,
+    ])
+    const previous = process.env.CAPTURIA_DIAGNOSTIC
+    process.env.CAPTURIA_DIAGNOSTIC = '1'
+    const log = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    try {
+      const ipc = fakeIpcMain()
+      registerPermissionHandlers(buildContext(ipc))
+      await ipc.invoke('get-sources', { types: ['screen'] })
+      expect(log).toHaveBeenCalledWith(
+        expect.stringMatching(
+          /^\[get-sources\] 1 source\(s\) \(0 own window\(s\) excluded\) in \d+ ms; types=screen$/,
+        ),
+      )
+    } finally {
+      log.mockRestore()
+      if (previous === undefined) delete process.env.CAPTURIA_DIAGNOSTIC
+      else process.env.CAPTURIA_DIAGNOSTIC = previous
+    }
   })
 })
 
