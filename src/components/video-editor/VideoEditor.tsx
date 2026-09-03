@@ -23,7 +23,9 @@ import {
   ZOOM_DEPTH_SCALES,
   clampFocusToDepth,
   getZoomFocusMode,
+  getZoomTransition,
   normalizeRotationPreset,
+  normalizeZoomTransition,
   DEFAULT_CROP_REGION,
   DEFAULT_FIGURE_DATA,
   createTextAnnotationRegion,
@@ -35,6 +37,7 @@ import {
   type ZoomFocus,
   type ZoomFocusMode,
   type ZoomRegion,
+  type ZoomTransitionMode,
   type TrimRegion,
   type VideoSegment,
   type AudioEditRegion,
@@ -57,7 +60,9 @@ import { EditorMenuBar } from './EditorMenuBar'
 import { ANNOTATION_ID_PREFIX, BLUR_ID_PREFIX, maxIdNum } from './idCounters'
 import { BLUR_REGIONS_ENABLED } from './featureFlags'
 import { normalizeAnnotationBlurData } from '@/lib/blurEffects'
-import { findFreeGapAt } from './regionPlacement'
+import { findFreeGapAt, planDuplicateSpan } from './regionPlacement'
+import { editorSnapshotsEqual, type EditorSnapshot } from './editorHistory'
+import { stepTransport, type TransportKey } from './videoPlayback/transport'
 import {
   buildPastedAnnotation,
   buildZoomRegion,
@@ -149,8 +154,10 @@ import {
   saveCaptionEngineSetting,
 } from '@/lib/captioning'
 import {
+  applyZoomLevelToAllAspects,
   clearStaleSelectedZoomIdForAspect,
   getSelectedZoomIdForAspect,
+  getZoomLevel,
   getZoomRegionsForAspect,
   setSelectedZoomIdForAspect,
   setZoomRegionsForAspect,
@@ -168,6 +175,7 @@ import {
   segmentsToTrimRegions,
   findSegmentAtSourceTime,
 } from '@/lib/trim/timeMapping'
+import { applySpeedToAllSegments, resetAllSegmentEdits } from '@/lib/trim/segmentEdits'
 import { VideoMouseAnalyzer } from '@/lib/analysis/videoMouseAnalyzer'
 
 function resolvePreviewFrameRate(sourceFrameRate?: number): number {
@@ -996,27 +1004,33 @@ export default function VideoEditor() {
                   // Remove exact content duplicates (same id + startMs + endMs + depth)
                   const contentKeys = new Set<string>()
                   const deduped = regions.filter((r) => {
-                    const key = `${r.id}|${r.startMs}|${r.endMs}|${r.depth}|${r.customScale ?? ''}|${r.focus?.cx}|${r.focus?.cy}|${r.focusMode ?? ''}|${r.rotationPreset ?? ''}`
+                    const key = `${r.id}|${r.startMs}|${r.endMs}|${r.depth}|${r.customScale ?? ''}|${r.focus?.cx}|${r.focus?.cy}|${r.focusMode ?? ''}|${r.rotationPreset ?? ''}|${r.transition ?? ''}`
                     if (contentKeys.has(key)) return false
                     contentKeys.add(key)
                     return true
                   })
                   // Re-ID any remaining ID collisions; drop unknown focusMode /
-                  // rotationPreset values (older / hand-edited saves) so they
-                  // read as manual / flat.
+                  // rotationPreset / transition values (older / hand-edited
+                  // saves) so they read as manual / flat / animated.
                   let maxZ = maxIdNum(deduped, 'zoom-')
                   const seenIds = new Set<string>()
                   const fixed = deduped.map((r) => {
                     const focusMode: ZoomFocusMode | undefined =
                       r.focusMode === 'auto' || r.focusMode === 'manual' ? r.focusMode : undefined
                     const rotationPreset = normalizeRotationPreset(r.rotationPreset)
+                    const transition = normalizeZoomTransition(r.transition)
                     let normalized = r
-                    if (focusMode !== r.focusMode || rotationPreset !== r.rotationPreset) {
-                      const { focusMode: _fm, rotationPreset: _rp, ...rest } = r
+                    if (
+                      focusMode !== r.focusMode ||
+                      rotationPreset !== r.rotationPreset ||
+                      transition !== r.transition
+                    ) {
+                      const { focusMode: _fm, rotationPreset: _rp, transition: _tr, ...rest } = r
                       normalized = {
                         ...rest,
                         ...(focusMode ? { focusMode } : {}),
                         ...(rotationPreset ? { rotationPreset } : {}),
+                        ...(transition ? { transition } : {}),
                       }
                     }
                     if (seenIds.has(normalized.id)) {
@@ -1266,12 +1280,6 @@ export default function VideoEditor() {
   // ── Undo / Redo history ──
   // Tracks snapshots of core editable state (segments, zoom, annotations, audio edits).
   // Pushes the PREVIOUS state onto the undo stack whenever tracked state changes.
-  interface EditorSnapshot {
-    segments: VideoSegment[]
-    zoomRegionsByAspect: ZoomRegionsByAspect
-    annotationRegions: AnnotationRegion[]
-    audioEditRegions: AudioEditRegion[]
-  }
   const MAX_UNDO_HISTORY = 50
   const undoStackRef = useRef<EditorSnapshot[]>([])
   const redoStackRef = useRef<EditorSnapshot[]>([])
@@ -1334,6 +1342,14 @@ export default function VideoEditor() {
     if (!historyReadyRef.current) {
       prevEditableRef.current = current
       if (segments.length > 0) historyReadyRef.current = true
+      return
+    }
+
+    // A reference change is not always an edit: several paths rebuild an array
+    // or the per-aspect map around the very same regions. Comparing by shallow
+    // identity keeps those out of the stack, so Ctrl+Z always undoes something.
+    if (editorSnapshotsEqual(prevEditableRef.current, current)) {
+      prevEditableRef.current = current
       return
     }
 
@@ -1674,6 +1690,22 @@ export default function VideoEditor() {
     setSegments((prev) => prev.map((s) => (s.id === id ? { ...s, speed: clampedSpeed } : s)))
   }, [])
 
+  // "Apply to all segments": one setSegments update, so one undo entry, and
+  // the reducer hands the array back untouched when every segment already runs
+  // at that speed.
+  const handleSegmentSpeedApplyToAll = useCallback((speed: number) => {
+    setSegments((prev) => applySpeedToAllSegments(prev, speed))
+  }, [])
+
+  // "Reset all trims and cuts" (confirmed in the timeline dialog): back to one
+  // segment spanning the whole recording at normal speed, as one undo entry.
+  // The selection is dropped because the segment it pointed at is gone.
+  const handleResetAllSegmentEdits = useCallback(() => {
+    const id = `seg-${nextSegIdRef.current++}`
+    setSegments((prev) => resetAllSegmentEdits(prev, durationRef.current * 1000, id))
+    setSelectedSegmentId(null)
+  }, [])
+
   // The speed field applies every keystroke so the preview follows along, but
   // "2.5" is one edit, not three. The batch opens on the first change and
   // closes on the commit (onSegmentSpeedCommit), which the field fires on blur
@@ -1760,6 +1792,16 @@ export default function VideoEditor() {
     [selectedZoomId, setZoomRegionsForActiveAspect],
   )
 
+  // "Apply this level to all zooms": every zoom of every aspect takes the
+  // selected zoom's level. One zoom-regions update = one undo entry, and the
+  // reducer returns the input untouched when every region already matches, so
+  // a second click costs nothing.
+  const handleApplyZoomLevelToAll = useCallback(() => {
+    if (!selectedZoomRegion) return
+    const level = getZoomLevel(selectedZoomRegion)
+    setZoomRegionsByAspect((previous) => applyZoomLevelToAllAspects(previous, level))
+  }, [selectedZoomRegion])
+
   // Precision X/Y inputs: every keystroke updates the focus live, the whole
   // typing session is one history entry (committed on blur / Enter).
   const handleZoomFocusCoordinateChange = useCallback(
@@ -1820,6 +1862,27 @@ export default function VideoEditor() {
             return { ...rest, source: 'manual' }
           }
           return { ...region, rotationPreset: preset, source: 'manual' }
+        }),
+      )
+    },
+    [selectedZoomId, setZoomRegionsForActiveAspect],
+  )
+
+  // Per-zoom transition (animated / instant). 'animated' is the default, so it
+  // removes the field and a saved project stays byte-identical to one written
+  // before the field existed. One region update = one undo entry.
+  const handleZoomTransitionChange = useCallback(
+    (transition: ZoomTransitionMode) => {
+      if (!selectedZoomId) return
+      setZoomRegionsForActiveAspect((prev) =>
+        prev.map((region) => {
+          if (region.id !== selectedZoomId) return region
+          if (getZoomTransition(region) === transition) return region
+          if (transition === 'animated') {
+            const { transition: _removed, ...rest } = region
+            return { ...rest, source: 'manual' }
+          }
+          return { ...region, transition, source: 'manual' }
         }),
       )
     },
@@ -2015,6 +2078,36 @@ export default function VideoEditor() {
     },
     [setSelectedZoomIdForActiveAspect],
   )
+
+  // Effective (timeline) span -> stored source span. Shared by every track's
+  // span handler, because they all receive timeline coordinates.
+  const effectiveSpanToSource = useCallback((span: Span) => {
+    const segs = segmentsRef.current
+    const trims = normalizedTrimsRef.current
+    const toSource = (effectiveMs: number) =>
+      segs.length > 0
+        ? effectiveToSourceMsWithSegments(effectiveMs, segs)
+        : trims.length > 0
+          ? effectiveToSourceMs(effectiveMs, trims)
+          : effectiveMs
+    return { startMs: Math.round(toSource(span.start)), endMs: Math.round(toSource(span.end)) }
+  }, [])
+
+  // The timeline refits every track after a trim; audio edits get the same
+  // treatment as annotations (see snapping.normaliseSpansToDuration).
+  const handleAudioEditSpanChange = useCallback(
+    (id: string, span: Span) => {
+      const { startMs, endMs } = effectiveSpanToSource(span)
+      setAudioEditRegions((prev) =>
+        prev.map((region) => (region.id === id ? { ...region, startMs, endMs } : region)),
+      )
+    },
+    [effectiveSpanToSource],
+  )
+
+  const handleAudioEditDelete = useCallback((id: string) => {
+    setAudioEditRegions((prev) => prev.filter((region) => region.id !== id))
+  }, [])
 
   const handleAnnotationSpanChange = useCallback((id: string, span: Span) => {
     const segs = segmentsRef.current
@@ -2318,7 +2411,68 @@ export default function VideoEditor() {
     t,
   ])
 
+  // Ctrl/Cmd+D: a copy of the selected region straight after itself, the same
+  // length, shortened rather than allowed to overlap or run off the end.
+  // Distinct from the annotation panel's "Duplicate", which makes a copy over
+  // the same span and nudges it on screen instead of moving it in time.
+  const handleDuplicateSelectedRegion = useCallback(() => {
+    const totalMs = Math.round(durationRef.current * 1000)
+    if (totalMs <= 0) return
+
+    if (selectedZoomId) {
+      const regions = zoomRegions
+      const source = regions.find((region) => region.id === selectedZoomId)
+      if (!source) return
+      // Zooms may not overlap, so the whole track constrains the copy.
+      const span = planDuplicateSpan(source, totalMs, regions)
+      if (!span) {
+        toast.error(t('timeline.cannotPlaceZoom'), {
+          description: t('timeline.cannotPlaceZoomDesc'),
+        })
+        return
+      }
+      const id = `zoom-${nextZoomIdRef.current++}`
+      setZoomRegionsForActiveAspect((prev) => [
+        ...prev,
+        { ...source, id, startMs: span.startMs, endMs: span.endMs, source: 'manual' },
+      ])
+      handleSelectZoom(id)
+      return
+    }
+
+    if (selectedAnnotationId) {
+      const source = annotationRegions.find((region) => region.id === selectedAnnotationId)
+      if (!source) return
+      // Annotations and blurs may overlap, so only the duration constrains them.
+      const span = planDuplicateSpan(source, totalMs)
+      if (!span) return
+      const duplicate = duplicateAnnotationRegion(source, {
+        id:
+          source.type === 'blur'
+            ? `${BLUR_ID_PREFIX}${nextBlurIdRef.current++}`
+            : `${ANNOTATION_ID_PREFIX}${nextAnnotationIdRef.current++}`,
+        zIndex: nextAnnotationZIndexRef.current++,
+        span,
+      })
+      setAnnotationRegions((prev) => [...prev, duplicate])
+      setSelectedAnnotationId(duplicate.id)
+      setSelectedZoomIdForActiveAspect(null)
+      setSelectedSegmentId(null)
+    }
+  }, [
+    annotationRegions,
+    zoomRegions,
+    selectedZoomId,
+    selectedAnnotationId,
+    handleSelectZoom,
+    setZoomRegionsForActiveAspect,
+    setSelectedZoomIdForActiveAspect,
+    t,
+  ])
+
   // Refs for the keydown handler below (it has [] deps).
+  const handleDuplicateSelectedRegionRef = useRef(handleDuplicateSelectedRegion)
+  handleDuplicateSelectedRegionRef.current = handleDuplicateSelectedRegion
   const handleCopySelectedRef = useRef(handleCopySelected)
   handleCopySelectedRef.current = handleCopySelected
   const handlePasteRef = useRef(handlePaste)
@@ -2364,6 +2518,61 @@ export default function VideoEditor() {
             return
           }
         }
+      }
+
+      // J / K / L transport. Plain keys only, so Ctrl+L (the browser's address
+      // bar) and friends still reach the platform.
+      if (
+        !editingText &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        !e.shiftKey &&
+        (e.key === 'j' ||
+          e.key === 'J' ||
+          e.key === 'k' ||
+          e.key === 'K' ||
+          e.key === 'l' ||
+          e.key === 'L')
+      ) {
+        const playback = videoPlaybackRef.current
+        const video = playback?.video
+        if (video) {
+          e.preventDefault()
+          const next = stepTransport(
+            { rate: previewPlaybackRateRef.current, playing: !video.paused },
+            e.key.toLowerCase() as TransportKey,
+            playback?.nativePlaybackRateCap,
+          )
+          if (next.rate !== previewPlaybackRateRef.current) {
+            // The ref is normally refreshed from state during render, which is
+            // a frame away. Two quick presses of L would then both read the old
+            // rate and both land on the same rung, so write it eagerly and let
+            // the render assign the identical value afterwards.
+            previewPlaybackRateRef.current = next.rate
+            setPreviewPlaybackRate(next.rate)
+          }
+          if (next.playing && video.paused) {
+            commitHoverPreview()
+            playback?.play().catch(console.error)
+          } else if (!next.playing && !video.paused) {
+            playback?.pause()
+          }
+          return
+        }
+      }
+
+      // Duplicate the selected region (Ctrl/Cmd+D).
+      if (
+        !editingText &&
+        (e.key === 'd' || e.key === 'D') &&
+        (isMacRef.current ? e.metaKey : e.ctrlKey) &&
+        !e.shiftKey &&
+        !e.altKey
+      ) {
+        e.preventDefault()
+        handleDuplicateSelectedRegionRef.current()
+        return
       }
 
       if (matchesShortcut(e, keyShortcutsRef.current.playPause, isMacRef.current)) {
@@ -4019,10 +4228,12 @@ export default function VideoEditor() {
                   onZoomAdded={handleZoomAdded}
                   onZoomSpanChange={handleZoomSpanChange}
                   onZoomDelete={handleZoomDelete}
+                  onZoomDepthChange={handleZoomDepthChange}
                   selectedZoomId={selectedZoomId}
                   onSelectZoom={handleSelectZoom}
                   segments={segments}
                   onSplitAtTime={handleSplitAtTime}
+                  onResetAllSegmentEdits={handleResetAllSegmentEdits}
                   onDeleteSegment={handleDeleteSegment}
                   selectedSegmentId={selectedSegmentId}
                   onSelectSegment={handleSelectSegment}
@@ -4040,6 +4251,8 @@ export default function VideoEditor() {
                   audioEnabled={audioEnabled}
                   audioGain={audioGain}
                   audioEditRegions={effectiveAudioEditRegions}
+                  onAudioEditSpanChange={handleAudioEditSpanChange}
+                  onAudioEditDelete={handleAudioEditDelete}
                   onHoverPreview={handleHoverPreview}
                   onHoverCommit={commitHoverPreview}
                   isPlaying={isPlaying}
@@ -4080,6 +4293,11 @@ export default function VideoEditor() {
                 selectedZoomRegion ? getZoomFocusMode(selectedZoomRegion) : null
               }
               onZoomFocusModeChange={handleZoomFocusModeChange}
+              onZoomApplyLevelToAll={handleApplyZoomLevelToAll}
+              selectedZoomTransition={
+                selectedZoomRegion ? getZoomTransition(selectedZoomRegion) : null
+              }
+              onZoomTransitionChange={handleZoomTransitionChange}
               selectedZoomRotationPreset={selectedZoomRegion?.rotationPreset ?? null}
               onZoomRotationPresetChange={handleZoomRotationPresetChange}
               autoFocusAll={autoFocusAll}
@@ -4092,6 +4310,7 @@ export default function VideoEditor() {
               onDeleteSegment={handleDeleteSegment}
               onSegmentSpeedChange={handleSegmentSpeedChangeFromPanel}
               onSegmentSpeedCommit={endHistoryBatch}
+              onSegmentSpeedApplyToAll={handleSegmentSpeedApplyToAll}
               shadowIntensity={shadowIntensity}
               onShadowChange={setShadowIntensity}
               showBlur={showBlur}

@@ -380,6 +380,14 @@ export default function TimelineWrapper({
     [hideOverlays, onDragEnd],
   )
 
+  // Escape during a drag or resize: dnd-kit fires cancel instead of end, so
+  // without this the snap guide and the tooltip stay painted over the timeline
+  // until the next drag happens to hide them. Nothing is committed — the item
+  // keeps the span it had before the drag.
+  const onDragCancel = useCallback(() => {
+    hideOverlays()
+  }, [hideOverlays])
+
   const handleRangeChange = useCallback(
     (updater: (previous: Range) => Range) => {
       onRangeChange((prev) => {
@@ -415,6 +423,7 @@ export default function TimelineWrapper({
       onDragStart={onDragStart}
       onDragMove={onDragMove}
       onDragEnd={onDragEndWithOverlays}
+      onDragCancel={onDragCancel}
       autoScroll={{ enabled: false }}
     >
       <div className="relative">

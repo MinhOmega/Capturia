@@ -347,3 +347,206 @@ describe('resolveZoomCameraTarget - 3D tilt ramps with the eased zoom progress (
     expect(target.rotation3D).toEqual(ROTATION_3D_PRESETS.iso)
   })
 })
+
+describe('auto-follow zoom-out freezes the focus (P2-B1)', () => {
+  // Two unconnected auto-follow regions (gap 5000 ms > CONNECTED_ZOOM_GAP_MS).
+  const freezeRegions: ZoomRegion[] = [
+    {
+      id: 'first',
+      startMs: 1000,
+      endMs: 4000,
+      depth: 3,
+      focus: { cx: 0.5, cy: 0.5 },
+      focusMode: 'auto',
+    },
+    {
+      id: 'second',
+      startMs: 9000,
+      endMs: 12_000,
+      depth: 3,
+      focus: { cx: 0.5, cy: 0.5 },
+      focusMode: 'auto',
+    },
+  ]
+  // The cursor sweeps steadily left to right for the whole clip, so a camera
+  // that keeps following during the zoom-out shows up as a moving focus.
+  const sweep: CursorTrack = {
+    samples: [
+      { timeMs: 0, x: 0.2, y: 0.5 },
+      { timeMs: 14_000, x: 0.8, y: 0.5 },
+    ],
+  }
+  const sweepTelemetry = buildCursorTelemetry(sweep)
+
+  function runSteps(times: number[], animating: (t: number) => boolean = () => true) {
+    const state = createZoomCameraState()
+    const steps = times.map((t) => ({
+      t,
+      step: stepZoomCamera(state, freezeRegions, t, geometry, {
+        animating: animating(t),
+        cursorTelemetry: sweepTelemetry,
+      }),
+    }))
+    return { state, steps }
+  }
+
+  const rawFocusAt = (ms: number) =>
+    resolveZoomCameraTarget(freezeRegions, ms, geometry, { cursorTelemetry: sweepTelemetry }).focus
+
+  it('holds one focus for the whole zoom-out while the cursor keeps moving', () => {
+    const { steps } = runSteps(timeSeries(1000 / 60, 5200))
+    const zoomOut = steps.filter(
+      ({ t, step }) => t > 4000 && step.target.progress > 0 && step.target.progress < 0.999,
+    )
+    expect(zoomOut.length).toBeGreaterThan(30)
+
+    const held = zoomOut[0].step.target.focus
+    for (const { step } of zoomOut) {
+      expect(step.target.focus).toEqual(held)
+    }
+
+    // The raw cursor really did travel across that window, so the freeze is
+    // what kept the focus still, not a stationary cursor.
+    const rawStart = rawFocusAt(zoomOut[0].t)
+    const rawEnd = rawFocusAt(zoomOut[zoomOut.length - 1].t)
+    expect(rawEnd.cx - rawStart.cx).toBeGreaterThan(0.01)
+
+    // With a fixed focus the eased target only shrinks toward the identity.
+    for (let i = 1; i < zoomOut.length; i += 1) {
+      const previous = zoomOut[i - 1].step.target.transform
+      const current = zoomOut[i].step.target.transform
+      expect(current.scale).toBeLessThanOrEqual(previous.scale)
+      expect(Math.abs(current.x)).toBeLessThanOrEqual(Math.abs(previous.x) + 1e-9)
+    }
+  })
+
+  it('releases the freeze on the next region and follows the cursor again', () => {
+    const { state, steps } = runSteps(timeSeries(1000 / 60, 11_000))
+    expect(state.frozenAutoFocus).toBeNull()
+    expect(state.prevRegionId).toBe('second')
+
+    const atFullZoomOfSecond = steps.filter(
+      ({ t, step }) => t > 10_000 && t < 11_000 && step.target.progress >= 0.999,
+    )
+    expect(atFullZoomOfSecond.length).toBeGreaterThan(10)
+    const firstFocus = atFullZoomOfSecond[0].step.target.focus
+    const lastFocus = atFullZoomOfSecond[atFullZoomOfSecond.length - 1].step.target.focus
+    expect(lastFocus.cx).toBeGreaterThan(firstFocus.cx)
+  })
+
+  it('releases the freeze when content time goes backwards (scrub)', () => {
+    const { state } = runSteps(timeSeries(1000 / 60, 4400))
+    expect(state.reachedFullZoom).toBe(true)
+    expect(state.frozenAutoFocus).not.toBeNull()
+
+    // Scrub back to an earlier point of the same zoom-out: the freeze is
+    // released and the camera reads the cursor at the new time again.
+    const scrubbed = stepZoomCamera(state, freezeRegions, 4200, geometry, {
+      animating: true,
+      cursorTelemetry: sweepTelemetry,
+    })
+    expect(state.reachedFullZoom).toBe(false)
+    expect(state.frozenAutoFocus).toBeNull()
+    expect(scrubbed.target.focus).toEqual(rawFocusAt(4200))
+  })
+
+  it('is identical across two stepZoomCamera runs (preview / export parity)', () => {
+    const times = timeSeries(1000 / 60, 13_000)
+    const a = runSteps(times).steps.map(({ step }) => step)
+    const b = runSteps(times).steps.map(({ step }) => step)
+    expect(a.map((s) => s.applied)).toEqual(b.map((s) => s.applied))
+    expect(a.map((s) => s.target.focus)).toEqual(b.map((s) => s.target.focus))
+  })
+})
+
+describe('instant zoom regions cut instead of easing (P2-B2)', () => {
+  const instant: ZoomRegion[] = [
+    {
+      id: 'cut',
+      startMs: 2000,
+      endMs: 4000,
+      depth: 3,
+      focus: { cx: 0.3, cy: 0.3 },
+      transition: 'instant',
+    },
+  ]
+
+  it('is unzoomed until startMs, at full zoom for its whole span, unzoomed again after endMs', () => {
+    expect(resolveZoomCameraTarget(instant, 1000, geometry).progress).toBe(0)
+    // An animated region would already be easing in a second before startMs.
+    expect(resolveZoomCameraTarget(instant, 1999, geometry).progress).toBe(0)
+    expect(resolveZoomCameraTarget(instant, 2000, geometry).progress).toBe(1)
+    expect(resolveZoomCameraTarget(instant, 3000, geometry).scale).toBe(ZOOM_DEPTH_SCALES[3])
+    expect(resolveZoomCameraTarget(instant, 4000, geometry).progress).toBe(1)
+    // An animated region would ease out for another second after endMs.
+    expect(resolveZoomCameraTarget(instant, 4001, geometry).progress).toBe(0)
+    expect(resolveZoomCameraTarget(instant, 4001, geometry).transform).toEqual({
+      scale: 1,
+      x: 0,
+      y: 0,
+    })
+  })
+
+  it('applies the full transform on the first frame in and the identity on the first frame out', () => {
+    const times = timeSeries(1000 / 60, 4500)
+    const state = createZoomCameraState()
+    const steps = times.map((t) => ({
+      t,
+      step: stepZoomCamera(state, instant, t, geometry, { animating: true }),
+    }))
+
+    const firstInside = steps.find(({ t }) => t >= 2000)
+    if (!firstInside) throw new Error('no frame inside the region')
+    expect(firstInside.step.target.instant).toBe(true)
+    // The spring is cut, not chased: the applied transform is already the target.
+    expect(firstInside.step.applied).toEqual(firstInside.step.target.transform)
+    expect(firstInside.step.applied.scale).toBe(ZOOM_DEPTH_SCALES[3])
+
+    const firstOutside = steps.find(({ t }) => t > 4000)
+    if (!firstOutside) throw new Error('no frame after the region')
+    expect(firstOutside.step.applied).toEqual({ scale: 1, x: 0, y: 0 })
+  })
+
+  it('never pans into a neighbour close enough to connect', () => {
+    // Gap is 500 ms (< CONNECTED_ZOOM_GAP_MS), so two animated regions here
+    // would hand over through a connected pan instead of zooming out.
+    const nextRegion: ZoomRegion = {
+      id: 'next',
+      startMs: 4500,
+      endMs: 6000,
+      depth: 5,
+      focus: { cx: 0.8, cy: 0.8 },
+    }
+    const animatedNeighbour: ZoomRegion[] = [{ ...instant[0] }, nextRegion]
+    for (const timeMs of [4001, 4100, 4200, 4400]) {
+      // The neighbour still runs its own ease-in, but nothing pans out of the
+      // instant region: it simply stops being the active region.
+      const target = resolveZoomCameraTarget(animatedNeighbour, timeMs, geometry)
+      expect(target.transition).toBe(false)
+      expect(target.regionId).not.toBe('cut')
+    }
+
+    const instantNeighbour: ZoomRegion[] = [
+      { ...instant[0] },
+      { ...nextRegion, transition: 'instant' },
+    ]
+    for (const timeMs of [4001, 4100, 4200, 4499]) {
+      const target = resolveZoomCameraTarget(instantNeighbour, timeMs, geometry)
+      expect(target.transition).toBe(false)
+      expect(target.progress).toBe(0)
+    }
+    expect(resolveZoomCameraTarget(instantNeighbour, 4500, geometry).scale).toBe(
+      ZOOM_DEPTH_SCALES[5],
+    )
+  })
+
+  it('treats an explicit "animated" exactly like a missing transition field', () => {
+    const animated: ZoomRegion[] = [{ ...instant[0], transition: 'animated' }]
+    const legacy: ZoomRegion[] = [{ ...instant[0], transition: undefined }]
+    for (const timeMs of [1500, 2000, 3000, 4300]) {
+      expect(resolveZoomCameraTarget(animated, timeMs, geometry)).toEqual(
+        resolveZoomCameraTarget(legacy, timeMs, geometry),
+      )
+    }
+  })
+})

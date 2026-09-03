@@ -42,5 +42,10 @@
 	"globalHint": "Hoạt động trong mọi ứng dụng. Phím tắt toàn hệ thống cần Ctrl/⌘ hoặc Alt.",
 	"globalNeedsModifier": "Phím tắt toàn hệ thống cần Ctrl/⌘ hoặc Alt",
 	"registrationFailed": "Không thể đăng ký \"{{label}}\" ({{shortcut}}). Có thể ứng dụng khác đang dùng tổ hợp này.",
-	"saveFailed": "Không lưu được phím tắt"
+	"saveFailed": "Không lưu được phím tắt",
+	"zoomLevel": "Đặt mức thu phóng",
+	"transportSlower": "Phát chậm lại",
+	"transportPause": "Tạm dừng phát",
+	"transportFaster": "Phát nhanh hơn",
+	"duplicateRegion": "Nhân đôi vùng"
 }

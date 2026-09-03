@@ -82,6 +82,10 @@ const KeyframeMarkers: React.FC<KeyframeMarkersProps> = ({
               transition: isDragging ? 'none' : 'left 0.1s ease-out',
             }}
             onMouseDown={(e) => {
+              // Primary button only. A right-click already goes to
+              // onContextMenu, and a middle-click starting a drag left the
+              // keyframe stuck to the pointer with no mouseup to release it.
+              if (e.button !== 0) return
               e.stopPropagation()
               setSelectedKeyframeId(kf.id)
               setDraggingKeyframeId(kf.id)

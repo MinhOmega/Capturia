@@ -5,11 +5,15 @@ import {
   matchesShortcut,
   formatBinding,
   mergeWithDefaults,
+  isReservedBinding,
   isTextEditingTarget,
   isArrowKeyOwningTarget,
   DEFAULT_SHORTCUTS,
+  FIXED_SHORTCUTS,
   SHORTCUT_ACTIONS,
   SHORTCUT_LABEL_KEYS,
+  TRANSPORT_SHORTCUT_KEYS,
+  ZOOM_DEPTH_SHORTCUT_KEYS,
   type ShortcutBinding,
   type ShortcutsConfig,
 } from './shortcuts'
@@ -272,22 +276,92 @@ describe('mergeWithDefaults', () => {
   })
 
   it('preserves full config as-is', () => {
+    // Plain 1-6 are the fixed zoom-depth keys, so a saved config may not hold
+    // them; every binding here is one a user could still assign today.
     const full: ShortcutsConfig = {
-      addZoom: { key: '1' },
-      addAnnotation: { key: '2' },
+      addZoom: { key: 'q' },
+      addAnnotation: { key: 'w' },
       addBlur: { key: 'b', shift: true },
-      addKeyframe: { key: '3' },
-      toggleScissors: { key: '4' },
+      addKeyframe: { key: 'e' },
+      toggleScissors: { key: 'r' },
       deleteSelected: { key: '5', ctrl: true },
-      playPause: { key: '6' },
-      speedUp: { key: '7' },
-      speedDown: { key: '8' },
-      copySelected: { key: '9', ctrl: true },
-      paste: { key: '0', ctrl: true },
+      playPause: { key: '7' },
+      speedUp: { key: '8' },
+      speedDown: { key: '9' },
+      copySelected: { key: '0', ctrl: true },
+      paste: { key: 'v', ctrl: true, alt: true },
       openApp: { key: 'o', ctrl: true, alt: true },
       stopRecording: { key: 'r', ctrl: true, alt: true },
     }
     expect(mergeWithDefaults(full)).toEqual(full)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Reserved bindings — configs saved before a binding became fixed
+// ---------------------------------------------------------------------------
+describe('reserved bindings in a saved config', () => {
+  it('drops a saved deleteSelected of Ctrl+D, which now duplicates a region', () => {
+    // Ctrl/Cmd+D was the shipped default before the duplicate shortcut took
+    // it. Keeping it would delete AND duplicate the selection on one press,
+    // because the two run from separate keydown listeners.
+    const merged = mergeWithDefaults({ deleteSelected: { key: 'd', ctrl: true } })
+    expect(merged.deleteSelected).toEqual({ key: 'delete' })
+    expect(merged.deleteSelected).toEqual(DEFAULT_SHORTCUTS.deleteSelected)
+  })
+
+  it('keeps a custom binding that collides with nothing fixed', () => {
+    const merged = mergeWithDefaults({
+      deleteSelected: { key: 'd', ctrl: true, shift: true },
+      addZoom: { key: 'q' },
+    })
+    expect(merged.deleteSelected).toEqual({ key: 'd', ctrl: true, shift: true })
+    expect(merged.addZoom).toEqual({ key: 'q' })
+  })
+
+  it('drops the transport and zoom-depth keys, whatever action saved them', () => {
+    const merged = mergeWithDefaults({
+      playPause: { key: 'k' },
+      addZoom: { key: '3' },
+      speedUp: { key: 'l' },
+      speedDown: { key: 'j' },
+    })
+    expect(merged.playPause).toEqual(DEFAULT_SHORTCUTS.playPause)
+    expect(merged.addZoom).toEqual(DEFAULT_SHORTCUTS.addZoom)
+    expect(merged.speedUp).toEqual(DEFAULT_SHORTCUTS.speedUp)
+    expect(merged.speedDown).toEqual(DEFAULT_SHORTCUTS.speedDown)
+  })
+
+  it('isReservedBinding matches only on the exact modifier combination', () => {
+    expect(isReservedBinding({ key: 'd', ctrl: true })).toBe(true)
+    expect(isReservedBinding({ key: 'D', ctrl: true })).toBe(true)
+    expect(isReservedBinding({ key: '4' })).toBe(true)
+    expect(isReservedBinding({ key: 'j' })).toBe(true)
+    // The same keys with another modifier stay assignable.
+    expect(isReservedBinding({ key: 'd' })).toBe(false)
+    expect(isReservedBinding({ key: 'd', ctrl: true, shift: true })).toBe(false)
+    expect(isReservedBinding({ key: '4', ctrl: true })).toBe(false)
+    expect(isReservedBinding({ key: 'j', alt: true })).toBe(false)
+  })
+
+  it('leaves every default assignable, so no default is silently reset', () => {
+    for (const action of SHORTCUT_ACTIONS) {
+      expect(isReservedBinding(DEFAULT_SHORTCUTS[action])).toBe(false)
+    }
+    expect(mergeWithDefaults(DEFAULT_SHORTCUTS)).toEqual(DEFAULT_SHORTCUTS)
+  })
+
+  it('refuses a reserved binding in the config dialog, via findConflict', () => {
+    // The dialog shows shortcuts.conflictFixed and declines the capture.
+    const conflict = findConflict({ key: 'd', ctrl: true }, 'deleteSelected', DEFAULT_SHORTCUTS)
+    expect(conflict).toEqual({ type: 'fixed', labelKey: 'shortcuts.duplicateRegion' })
+    expect(findConflict({ key: 'k' }, 'playPause', DEFAULT_SHORTCUTS)).toEqual({
+      type: 'fixed',
+      labelKey: 'shortcuts.transportPause',
+    })
+    expect(
+      findConflict({ key: 'd', ctrl: true, shift: true }, 'deleteSelected', DEFAULT_SHORTCUTS),
+    ).toBeNull()
   })
 })
 
@@ -317,6 +391,75 @@ describe('DEFAULT_SHORTCUTS', () => {
     const merged = mergeWithDefaults(legacy)
     expect(merged.copySelected).toEqual(DEFAULT_SHORTCUTS.copySelected)
     expect(merged.paste).toEqual(DEFAULT_SHORTCUTS.paste)
+  })
+
+  it('leaves Ctrl/Cmd+D to the fixed duplicate shortcut and deletes with Delete', () => {
+    expect(DEFAULT_SHORTCUTS.deleteSelected).toEqual({ key: 'delete' })
+    expect(findConflict({ key: 'd', ctrl: true }, 'addZoom', DEFAULT_SHORTCUTS)).toEqual({
+      type: 'fixed',
+      labelKey: 'shortcuts.duplicateRegion',
+    })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Fixed table — the shortcuts P2-B added
+// ---------------------------------------------------------------------------
+describe('FIXED_SHORTCUTS', () => {
+  const byLabel = (labelKey: string) => FIXED_SHORTCUTS.find((f) => f.labelKey === labelKey)
+
+  it('has a label key and a display string for every entry', () => {
+    for (const fixed of FIXED_SHORTCUTS) {
+      expect(fixed.labelKey).toMatch(/^shortcuts\./)
+      expect(fixed.display.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('lists the zoom level keys 1-6', () => {
+    expect(ZOOM_DEPTH_SHORTCUT_KEYS).toEqual(['1', '2', '3', '4', '5', '6'])
+    const entry = byLabel('shortcuts.zoomLevel')
+    expect(entry?.bindings).toEqual([
+      { key: '1' },
+      { key: '2' },
+      { key: '3' },
+      { key: '4' },
+      { key: '5' },
+      { key: '6' },
+    ])
+    // A plain digit is reserved; the stop-recording accelerator carries
+    // modifiers, so it is not caught by the reservation.
+    expect(findConflict({ key: '3' }, 'addZoom', DEFAULT_SHORTCUTS)).toEqual({
+      type: 'fixed',
+      labelKey: 'shortcuts.zoomLevel',
+    })
+    expect(
+      findConflict({ key: '2', ctrl: true, shift: true }, 'stopRecording', DEFAULT_SHORTCUTS),
+    ).toBeNull()
+  })
+
+  it('lists J / K / L transport and the duplicate combo', () => {
+    expect(TRANSPORT_SHORTCUT_KEYS).toEqual({ slower: 'j', pause: 'k', faster: 'l' })
+    expect(byLabel('shortcuts.transportSlower')?.bindings).toEqual([{ key: 'j' }])
+    expect(byLabel('shortcuts.transportPause')?.bindings).toEqual([{ key: 'k' }])
+    expect(byLabel('shortcuts.transportFaster')?.bindings).toEqual([{ key: 'l' }])
+    expect(byLabel('shortcuts.duplicateRegion')?.bindings).toEqual([{ key: 'd', ctrl: true }])
+  })
+
+  it('matches the transport keys only without modifiers', () => {
+    const press = (init: Partial<KeyboardEvent> & { key: string }) =>
+      ({
+        ctrlKey: false,
+        metaKey: false,
+        shiftKey: false,
+        altKey: false,
+        ...init,
+      }) as unknown as KeyboardEvent
+    const j = byLabel('shortcuts.transportSlower')?.bindings[0]
+    if (!j) throw new Error('missing transport binding')
+    expect(matchesShortcut(press({ key: 'j' }), j, false)).toBe(true)
+    expect(matchesShortcut(press({ key: 'J' }), j, false)).toBe(true)
+    expect(matchesShortcut(press({ key: 'j', ctrlKey: true }), j, false)).toBe(false)
+    expect(matchesShortcut(press({ key: 'j', shiftKey: true }), j, false)).toBe(false)
   })
 })
 

@@ -1,7 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTimelineContext } from 'dnd-timeline'
 import { Button } from '@/components/ui/button'
-import { Plus, Scissors, ZoomIn, MessageSquare, ChevronDown, Check, EyeOff } from 'lucide-react'
+import {
+  Plus,
+  Scissors,
+  ZoomIn,
+  MessageSquare,
+  ChevronDown,
+  Check,
+  EyeOff,
+  MoreHorizontal,
+  RotateCcw,
+} from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import { findFreeGapAt } from '../regionPlacement'
 import { cn } from '@/lib/utils'
@@ -11,6 +29,7 @@ import Item from './Item'
 import KeyframeMarkers from './KeyframeMarkers'
 import type { Range, Span } from 'dnd-timeline'
 import type {
+  ZoomDepth,
   ZoomRegion,
   TrimRegion,
   VideoSegment,
@@ -20,7 +39,12 @@ import type {
 import { getZoomScale } from '../types'
 import type { SubtitleCue } from '@/lib/analysis/types'
 import { sourceToEffectiveMsWithSegments } from '@/lib/trim/timeMapping'
-import { clampVisibleRange, spansIntersect } from './snapping'
+import {
+  clampVisibleRange,
+  normaliseSpansToDuration,
+  normaliseWheelDeltaPx,
+  spansIntersect,
+} from './snapping'
 import { shouldStartTimelineScrub, TIMELINE_SCRUB_OPT_OUT_ATTR } from './timelineScrub'
 import { v4 as uuidv4 } from 'uuid'
 import {
@@ -32,7 +56,13 @@ import {
 import { type AspectRatio, getAspectRatioLabel, ASPECT_RATIOS } from '@/utils/aspectRatioUtils'
 import { formatShortcut } from '@/utils/platformUtils'
 import { useShortcuts } from '@/contexts/ShortcutsContext'
-import { formatBinding, matchesShortcut } from '@/lib/shortcuts'
+import {
+  formatBinding,
+  isTextEditingTarget,
+  matchesShortcut,
+  ZOOM_DEPTH_SHORTCUT_KEYS,
+} from '@/lib/shortcuts'
+import { isModalDialogOpen } from '@/lib/modalDialog'
 import { getSelectionCycleAnnotations } from '@/lib/annotations/renderOrder'
 import { BLUR_REGIONS_ENABLED } from '../featureFlags'
 import { useAudioPeaks } from '@/hooks/useAudioPeaks'
@@ -57,10 +87,14 @@ interface TimelineEditorProps {
   onZoomAdded: (span: Span) => void
   onZoomSpanChange: (id: string, span: Span) => void
   onZoomDelete: (id: string) => void
+  /** Number keys 1-6 set the selected zoom's depth; omitted disables the shortcut. */
+  onZoomDepthChange?: (depth: ZoomDepth) => void
   selectedZoomId: string | null
   onSelectZoom: (id: string | null) => void
   segments?: VideoSegment[]
   onSplitAtTime?: (effectiveMs: number) => void
+  /** Restore one full-length segment at speed 1; omitted hides the action. */
+  onResetAllSegmentEdits?: () => void
   onDeleteSegment?: () => void
   selectedSegmentId?: string | null
   onSelectSegment?: (id: string | null) => void
@@ -79,6 +113,9 @@ interface TimelineEditorProps {
   audioEnabled?: boolean
   audioGain?: number
   audioEditRegions?: AudioEditRegion[]
+  /** Refit an audio edit to a shortened timeline (same effective-time contract as the annotation handlers). */
+  onAudioEditSpanChange?: (id: string, span: Span) => void
+  onAudioEditDelete?: (id: string) => void
   onHoverPreview?: (effectiveMs: number | null) => void
   onHoverCommit?: () => void
   isPlaying?: boolean
@@ -1065,10 +1102,12 @@ export default function TimelineEditor({
   onZoomAdded,
   onZoomSpanChange,
   onZoomDelete,
+  onZoomDepthChange,
   selectedZoomId,
   onSelectZoom,
   segments = [],
   onSplitAtTime,
+  onResetAllSegmentEdits,
   onDeleteSegment,
   selectedSegmentId,
   onSelectSegment,
@@ -1086,6 +1125,8 @@ export default function TimelineEditor({
   audioEnabled = true,
   audioGain = 1,
   audioEditRegions = [],
+  onAudioEditSpanChange,
+  onAudioEditDelete,
   onHoverPreview,
   onHoverCommit,
   isPlaying = false,
@@ -1117,6 +1158,11 @@ export default function TimelineEditor({
   })
   const { shortcuts: keyShortcuts, isMac: isMacPlatform } = useShortcuts()
   const [scissorsMode, setScissorsMode] = useState(false)
+  // "Reset all trims and cuts" throws away every split, deletion and speed in
+  // one go, so it asks first. The dialog carries aria-modal, which is how the
+  // editor's global shortcuts (lib/modalDialog.isModalDialogOpen) know to stand
+  // down while it is open.
+  const [resetEditsConfirmOpen, setResetEditsConfirmOpen] = useState(false)
 
   // Waveform peaks (source time). Only decoded when the toggle is on and the
   // source has audio; the hook drops stale peaks as soon as the source changes.
@@ -1345,31 +1391,51 @@ export default function TimelineEditor({
     })
   }, [currentTimeMs, isPlaying, totalMs])
 
+  // Trimming shortens the effective timeline, so every track has to be refitted
+  // to it, not just the zooms: an annotation, blur or audio edit left pointing
+  // past the new end would render nowhere and export nothing. Regions with no
+  // room left are dropped rather than squashed into a sliver.
+  // (Trims themselves are derived from the deleted segments and need no pass.)
   useEffect(() => {
     if (totalMs === 0 || safeMinDurationMs <= 0) {
       return
     }
 
-    zoomRegions.forEach((region) => {
-      const clampedStart = Math.max(0, Math.min(region.startMs, totalMs))
-      const minEnd = clampedStart + safeMinDurationMs
-      const clampedEnd = Math.min(totalMs, Math.max(minEnd, region.endMs))
-      const normalizedStart = Math.max(0, Math.min(clampedStart, totalMs - safeMinDurationMs))
-      const normalizedEnd = Math.max(minEnd, Math.min(clampedEnd, totalMs))
+    const toSpans = (regions: ReadonlyArray<{ id: string; startMs: number; endMs: number }>) =>
+      regions.map((region) => ({ id: region.id, start: region.startMs, end: region.endMs }))
 
-      if (normalizedStart !== region.startMs || normalizedEnd !== region.endMs) {
-        onZoomSpanChange(region.id, { start: normalizedStart, end: normalizedEnd })
-      }
-    })
+    const zooms = normaliseSpansToDuration(toSpans(zoomRegions), totalMs, safeMinDurationMs)
+    for (const span of zooms.clamped) onZoomSpanChange(span.id, span)
+    for (const id of zooms.dropped) onZoomDelete(id)
 
-    // Trim clamping removed — trims are now derived from deleted segments
+    if (onAnnotationSpanChange || onAnnotationDelete) {
+      // Blur regions live in annotationRegions, so this covers both rows.
+      const annotations = normaliseSpansToDuration(
+        toSpans(annotationRegions),
+        totalMs,
+        safeMinDurationMs,
+      )
+      for (const span of annotations.clamped) onAnnotationSpanChange?.(span.id, span)
+      for (const id of annotations.dropped) onAnnotationDelete?.(id)
+    }
+
+    if (onAudioEditSpanChange || onAudioEditDelete) {
+      const audio = normaliseSpansToDuration(toSpans(audioEditRegions), totalMs, safeMinDurationMs)
+      for (const span of audio.clamped) onAudioEditSpanChange?.(span.id, span)
+      for (const id of audio.dropped) onAudioEditDelete?.(id)
+    }
   }, [
     zoomRegions,
     annotationRegions,
+    audioEditRegions,
     totalMs,
     safeMinDurationMs,
     onZoomSpanChange,
+    onZoomDelete,
     onAnnotationSpanChange,
+    onAnnotationDelete,
+    onAudioEditSpanChange,
+    onAudioEditDelete,
   ])
 
   const hasOverlap = useCallback(
@@ -1464,6 +1530,30 @@ export default function TimelineEditor({
         return
       }
 
+      // Number keys set the selected zoom's level. Guarded like every other
+      // editor shortcut: not while a dialog owns the screen, not in a text
+      // field, and not when the digit carries a modifier (Ctrl+Shift+2 is the
+      // global stop-recording accelerator).
+      if (
+        onZoomDepthChange &&
+        selectedZoomId &&
+        !isModalDialogOpen() &&
+        !isTextEditingTarget(e.target) &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        !e.shiftKey
+      ) {
+        const depthIndex = ZOOM_DEPTH_SHORTCUT_KEYS.indexOf(
+          e.key as (typeof ZOOM_DEPTH_SHORTCUT_KEYS)[number],
+        )
+        if (depthIndex !== -1) {
+          e.preventDefault()
+          onZoomDepthChange((depthIndex + 1) as ZoomDepth)
+          return
+        }
+      }
+
       if (matchesShortcut(e, keyShortcuts.addKeyframe, isMacPlatform)) {
         addKeyframe()
       }
@@ -1533,6 +1623,7 @@ export default function TimelineEditor({
     deleteSelectedZoom,
     deleteSelectedSegment,
     deleteSelectedAnnotation,
+    onZoomDepthChange,
     selectedKeyframeId,
     selectedZoomId,
     selectedSegmentId,
@@ -1559,10 +1650,15 @@ export default function TimelineEditor({
       e.preventDefault()
       e.stopPropagation()
 
+      // Firefox reports lines and some devices report pages; the maths below
+      // is tuned for pixels, so convert first.
+      const deltaX = normaliseWheelDeltaPx(e.deltaX, e.deltaMode)
+      const deltaY = normaliseWheelDeltaPx(e.deltaY, e.deltaMode)
+
       if (e.shiftKey) {
-        accPan += e.deltaX || e.deltaY
+        accPan += deltaX || deltaY
       } else {
-        accZoom += e.deltaY
+        accZoom += deltaY
       }
 
       if (rafId !== null) return
@@ -1859,6 +1955,30 @@ export default function TimelineEditor({
           </DropdownMenu>
           <div className="w-[1px] h-4 bg-white/10" />
           <TutorialHelp />
+          {onResetAllSegmentEdits && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-slate-400 hover:text-slate-200 hover:bg-white/10 transition-all"
+                  title={t('timeline.moreActions')}
+                  aria-label={t('timeline.moreActions')}
+                >
+                  <MoreHorizontal className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="bg-[#1a1a1a] border-white/10">
+                <DropdownMenuItem
+                  onClick={() => setResetEditsConfirmOpen(true)}
+                  className="text-red-400 hover:text-red-300 hover:bg-red-500/10 cursor-pointer gap-2"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>{t('timeline.resetAllEdits')}</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
         <div className="flex-1" />
         <div className="flex items-center gap-4 text-[10px] text-slate-500 font-medium">
@@ -1934,6 +2054,40 @@ export default function TimelineEditor({
           />
         </TimelineWrapper>
       </div>
+      <Dialog open={resetEditsConfirmOpen} onOpenChange={setResetEditsConfirmOpen}>
+        <DialogContent className="bg-[#09090b] border-white/10 text-white max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle className="text-sm">{t('timeline.resetAllEdits')}</DialogTitle>
+            <DialogDescription className="text-xs text-slate-400">
+              {t('timeline.resetAllEditsConfirm')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setResetEditsConfirmOpen(false)}
+              className="h-8 text-xs text-slate-300 hover:bg-white/10"
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              onClick={() => {
+                setResetEditsConfirmOpen(false)
+                onResetAllSegmentEdits?.()
+              }}
+              className="h-8 gap-2 bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 text-xs"
+            >
+              <RotateCcw className="w-3 h-3" />
+              {t('timeline.resetAllEditsConfirmAction')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

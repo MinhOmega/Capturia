@@ -3,8 +3,10 @@ import { describe, expect, it } from 'vitest'
 import type { ZoomRegion } from '@/components/video-editor/types'
 
 import {
+  applyZoomLevelToAllAspects,
   clearStaleSelectedZoomIdForAspect,
   getSelectedZoomIdForAspect,
+  getZoomLevel,
   getZoomRegionsForAspect,
   setSelectedZoomIdForAspect,
   setZoomRegionsForAspect,
@@ -79,5 +81,71 @@ describe('native aspect key', () => {
         'native',
       ),
     ).toBeNull()
+  })
+})
+
+describe('applyZoomLevelToAllAspects', () => {
+  const level = (depth: ZoomRegion['depth'], customScale?: number) =>
+    customScale == null ? { depth } : { depth, customScale }
+
+  it('gives every zoom of every aspect the same depth and custom scale', () => {
+    const regionsByAspect: ZoomRegionsByAspect = {
+      '16:9': [createZoomRegion('zoom-a'), { ...createZoomRegion('zoom-b'), depth: 1 }],
+      '9:16': [{ ...createZoomRegion('zoom-c'), depth: 6, customScale: 4.2 }],
+    }
+
+    const next = applyZoomLevelToAllAspects(regionsByAspect, level(2, 1.6))
+
+    for (const regions of Object.values(next)) {
+      for (const region of regions ?? []) {
+        expect(region.depth).toBe(2)
+        expect(region.customScale).toBe(1.6)
+        expect(region.source).toBe('manual')
+      }
+    }
+    // Ids and spans are untouched: only the level is applied.
+    expect((next['16:9'] ?? []).map((r) => r.id)).toEqual(['zoom-a', 'zoom-b'])
+    expect(next['9:16']?.[0].startMs).toBe(0)
+  })
+
+  it('drops customScale when the applied level has none, so the depth preset wins again', () => {
+    const regionsByAspect: ZoomRegionsByAspect = {
+      '16:9': [{ ...createZoomRegion('zoom-a'), depth: 6, customScale: 4.2 }],
+    }
+
+    const next = applyZoomLevelToAllAspects(regionsByAspect, level(4))
+
+    expect(next['16:9']?.[0].depth).toBe(4)
+    expect(next['16:9']?.[0]).not.toHaveProperty('customScale')
+  })
+
+  it('returns the input untouched when every region already has the level', () => {
+    const regionsByAspect: ZoomRegionsByAspect = {
+      '16:9': [createZoomRegion('zoom-a')],
+      '9:16': [createZoomRegion('zoom-b')],
+    }
+
+    expect(applyZoomLevelToAllAspects(regionsByAspect, level(3))).toBe(regionsByAspect)
+  })
+
+  it('keeps the array of an aspect that needs no change, so the history dedupe sees no edit', () => {
+    const settled = [createZoomRegion('zoom-a')]
+    const regionsByAspect: ZoomRegionsByAspect = {
+      '16:9': settled,
+      '9:16': [{ ...createZoomRegion('zoom-b'), depth: 1 }],
+    }
+
+    const next = applyZoomLevelToAllAspects(regionsByAspect, level(3))
+
+    expect(next).not.toBe(regionsByAspect)
+    expect(next['16:9']).toBe(settled)
+    expect(next['9:16']?.[0].depth).toBe(3)
+    // Every aspect the input had is still present.
+    expect(Object.keys(next).sort()).toEqual(Object.keys(regionsByAspect).sort())
+  })
+
+  it('getZoomLevel reads the level a region resolves to', () => {
+    expect(getZoomLevel({ depth: 3 })).toEqual({ depth: 3 })
+    expect(getZoomLevel({ depth: 3, customScale: 2.1 })).toEqual({ depth: 3, customScale: 2.1 })
   })
 })

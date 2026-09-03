@@ -222,5 +222,10 @@
 		"simple": "简约",
 		"modern": "现代",
 		"clean": "简洁"
-	}
+	},
+	"zoomTransition": "转场",
+	"zoomTransitionAnimated": "动画",
+	"zoomTransitionInstant": "瞬间",
+	"zoomTransitionInstantDescription": "直接切入和切出该缩放，没有缓动，也不平移",
+	"zoomApplyLevelToAll": "将此级别应用到所有缩放"
 }

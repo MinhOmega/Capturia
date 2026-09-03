@@ -263,7 +263,7 @@ export function ShortcutsConfigDialog() {
               >
                 <span className="text-sm text-slate-400">{t(labelKey)}</span>
                 <kbd className="px-2 py-1 bg-white/5 border border-white/10 rounded text-xs font-mono text-slate-400 min-w-[90px] text-center">
-                  {bindings.length > 0 ? formatBinding(bindings[0], isMac) : display}
+                  {bindings.length === 1 ? formatBinding(bindings[0], isMac) : display}
                 </kbd>
               </div>
             ))}

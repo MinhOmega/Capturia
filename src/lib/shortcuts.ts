@@ -94,7 +94,10 @@ export const DEFAULT_SHORTCUTS: ShortcutsConfig = {
   addBlur: { key: 'b' },
   addKeyframe: { key: 'f' },
   toggleScissors: { key: 's' },
-  deleteSelected: { key: 'd', ctrl: true },
+  // Delete, not Ctrl/Cmd+D: Ctrl/Cmd+D is the fixed "duplicate region"
+  // shortcut, and Delete/Backspace already delete the selection, so this
+  // default loses nothing and leaves the duplicate combo free.
+  deleteSelected: { key: 'delete' },
   playPause: { key: ' ' },
   speedUp: { key: ']' },
   speedDown: { key: '[' },
@@ -107,6 +110,12 @@ export const DEFAULT_SHORTCUTS: ShortcutsConfig = {
 // ---------------------------------------------------------------------------
 // Fixed (non-configurable) shortcuts — listed in the help panel only
 // ---------------------------------------------------------------------------
+
+/** Number keys that set the selected zoom's depth (ZoomDepth 1..6). */
+export const ZOOM_DEPTH_SHORTCUT_KEYS = ['1', '2', '3', '4', '5', '6'] as const
+
+/** J / K / L transport: step the preview rate down, pause, step it up. */
+export const TRANSPORT_SHORTCUT_KEYS = { slower: 'j', pause: 'k', faster: 'l' } as const
 
 export const FIXED_SHORTCUTS: FixedShortcut[] = [
   { labelKey: 'shortcuts.seekForward', display: '→', bindings: [{ key: 'arrowright' }] },
@@ -125,6 +134,31 @@ export const FIXED_SHORTCUTS: FixedShortcut[] = [
   },
   { labelKey: 'shortcuts.panTimeline', display: 'Shift+Ctrl+Scroll', bindings: [] },
   { labelKey: 'shortcuts.zoomTimeline', display: 'Ctrl+Scroll', bindings: [] },
+  {
+    labelKey: 'shortcuts.zoomLevel',
+    display: '1 – 6',
+    bindings: ZOOM_DEPTH_SHORTCUT_KEYS.map((key) => ({ key })),
+  },
+  {
+    labelKey: 'shortcuts.transportSlower',
+    display: 'J',
+    bindings: [{ key: TRANSPORT_SHORTCUT_KEYS.slower }],
+  },
+  {
+    labelKey: 'shortcuts.transportPause',
+    display: 'K',
+    bindings: [{ key: TRANSPORT_SHORTCUT_KEYS.pause }],
+  },
+  {
+    labelKey: 'shortcuts.transportFaster',
+    display: 'L',
+    bindings: [{ key: TRANSPORT_SHORTCUT_KEYS.faster }],
+  },
+  {
+    labelKey: 'shortcuts.duplicateRegion',
+    display: 'Ctrl+D',
+    bindings: [{ key: 'd', ctrl: true }],
+  },
 ]
 
 // ---------------------------------------------------------------------------
@@ -138,6 +172,15 @@ export function bindingsEqual(a: ShortcutBinding, b: ShortcutBinding): boolean {
     !!a.shift === !!b.shift &&
     !!a.alt === !!b.alt
   )
+}
+
+/**
+ * True when the binding belongs to one of the fixed, non-configurable
+ * shortcuts. Those run from their own keydown listeners, so a configurable
+ * action sharing a binding fires alongside them rather than instead of them.
+ */
+export function isReservedBinding(binding: ShortcutBinding): boolean {
+  return FIXED_SHORTCUTS.some((fixed) => fixed.bindings.some((b) => bindingsEqual(b, binding)))
 }
 
 export function findConflict(
@@ -272,7 +315,12 @@ export function mergeWithDefaults(partial: Partial<ShortcutsConfig>): ShortcutsC
   for (const action of SHORTCUT_ACTIONS) {
     const value = partial[action]
     if (value && typeof value === 'object' && typeof value.key === 'string') {
-      merged[action] = value as ShortcutBinding
+      const binding = value as ShortcutBinding
+      // A config saved before this binding was reserved would now trigger two
+      // handlers on one keystroke - Ctrl/Cmd+D used to delete the selection
+      // and today duplicates it, which would do both. Fall back to the default.
+      if (isReservedBinding(binding)) continue
+      merged[action] = binding
     }
   }
   return merged

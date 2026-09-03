@@ -30,10 +30,33 @@ export interface ZoomRegion {
    * Missing = flat. Ramps in/out with the region's zoom progress.
    */
   rotationPreset?: Rotation3DPreset
+  /**
+   * How the camera enters and leaves the region. 'animated' (the default, and
+   * what a missing value means for older saves) eases in and out and may pan
+   * to a neighbouring zoom; 'instant' is a step function — full zoom from
+   * startMs, unzoomed again after endMs, with no ease and no connected pan.
+   */
+  transition?: ZoomTransitionMode
 }
 
 export type ZoomRegionSource = 'auto' | 'manual'
 export type ZoomFocusMode = 'manual' | 'auto'
+export type ZoomTransitionMode = 'animated' | 'instant'
+
+/** Effective transition of a region (missing -> animated). */
+export function getZoomTransition(region: Pick<ZoomRegion, 'transition'>): ZoomTransitionMode {
+  return region.transition === 'instant' ? 'instant' : 'animated'
+}
+
+/**
+ * Saved-project normaliser: only 'instant' survives, because it is the only
+ * value that changes behaviour. 'animated', a missing field and anything
+ * unrecognised all read as the animated default and are stored as absent, so
+ * a project saved before this field existed loads unchanged.
+ */
+export function normalizeZoomTransition(value: unknown): ZoomTransitionMode | undefined {
+  return value === 'instant' ? 'instant' : undefined
+}
 
 // --- 3D iso / tilt presets -------------------------------------------------
 

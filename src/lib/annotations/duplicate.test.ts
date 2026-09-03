@@ -74,4 +74,18 @@ describe('duplicateAnnotationRegion', () => {
     expect(copy.blurData).toEqual(source.blurData)
     expect(copy.blurData).not.toBe(source.blurData)
   })
+
+  it('takes a span and keeps the position, because the copy no longer shares a frame', () => {
+    const source = annotation()
+    const copy = duplicateAnnotationRegion(source, {
+      id: 'annotation-9',
+      zIndex: 7,
+      span: { startMs: 4000, endMs: 7000 },
+    })
+
+    expect(copy.startMs).toBe(4000)
+    expect(copy.endMs).toBe(7000)
+    expect(copy.position).toEqual(source.position)
+    expect(copy.position).not.toBe(source.position)
+  })
 })

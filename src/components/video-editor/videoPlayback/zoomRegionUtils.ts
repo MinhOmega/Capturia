@@ -1,5 +1,11 @@
 import type { Rotation3D, ZoomFocus, ZoomRegion } from '../types'
-import { DEFAULT_ROTATION_3D, getRotation3D, getZoomScale, lerpRotation3D } from '../types'
+import {
+  DEFAULT_ROTATION_3D,
+  getRotation3D,
+  getZoomScale,
+  getZoomTransition,
+  lerpRotation3D,
+} from '../types'
 import {
   CONNECTED_ZOOM_GAP_MS,
   CONNECTED_ZOOM_PAN_DURATION_MS,
@@ -80,8 +86,15 @@ function easeConnectedPan(value: number) {
  * ZOOM_IN_TRANSITION_WINDOW_MS - ZOOM_IN_OVERLAP_MS before startMs and lands
  * ZOOM_IN_OVERLAP_MS inside the region; holds at 1; eases out over
  * TRANSITION_WINDOW_MS after endMs.
+ *
+ * An `instant` region skips the curve entirely: it is a step function, at full
+ * zoom for exactly its own span and unzoomed everywhere else.
  */
 export function computeRegionStrength(region: ZoomRegion, timeMs: number) {
+  if (getZoomTransition(region) === 'instant') {
+    return timeMs >= region.startMs && timeMs <= region.endMs ? 1 : 0
+  }
+
   const zoomInEnd = region.startMs + ZOOM_IN_OVERLAP_MS
   const leadInStart = zoomInEnd - ZOOM_IN_TRANSITION_WINDOW_MS
   const leadOutEnd = region.endMs + TRANSITION_WINDOW_MS
@@ -149,6 +162,15 @@ export function getConnectedRegionPairs(regions: ZoomRegion[]): ConnectedRegionP
     const gapMs = nextRegion.startMs - currentRegion.endMs
 
     if (gapMs > CONNECTED_ZOOM_GAP_MS) {
+      continue
+    }
+
+    // An instant region is a step function at both ends, so it neither pans
+    // into its neighbour nor lets a neighbour pan into it.
+    if (
+      getZoomTransition(currentRegion) === 'instant' ||
+      getZoomTransition(nextRegion) === 'instant'
+    ) {
       continue
     }
 
