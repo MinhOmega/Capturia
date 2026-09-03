@@ -90,6 +90,14 @@ export class VideoFileDecoder {
   async loadVideo(videoUrl: string): Promise<DecodedVideoInfo> {
     this.videoElement = document.createElement('video')
     this.applySilentDefaults(this.videoElement)
+    // A recording arrives over `local-media://`, which is a different origin
+    // from the page. Without a CORS-mode load the element is tainted and the
+    // export dies on the first `new VideoFrame(video)`; the protocol handler
+    // answers with `Access-Control-Allow-Origin`. Left alone for every other
+    // scheme, where a CORS request would only add a way to fail.
+    if (videoUrl.startsWith('local-media:')) {
+      this.videoElement.crossOrigin = 'anonymous'
+    }
     this.videoElement.src = videoUrl
     this.setupSilentPlaybackGuard(this.videoElement)
     this.setupDebugListeners(this.videoElement)
