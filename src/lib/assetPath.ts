@@ -1,3 +1,42 @@
+/**
+ * Resolve a bundled asset (`wallpapers/wallpaper1.jpg`, ...) to a URL the
+ * renderer can load.
+ *
+ * - Dev server (http/https): the asset is served from `public/`, so the
+ *   web path is returned as-is.
+ * - Packaged app (file://): the preload exposes `electronAPI.assetBaseUrl`,
+ *   a `file://` URL of the resources directory computed once by the main
+ *   process, so the answer is available synchronously and every caller does
+ *   not pay an IPC round trip per asset. Bundled assets live under
+ *   `<resources>/assets/` (electron-builder `extraResources`), the same
+ *   directory the `get-asset-base-path` IPC hands back.
+ * - Older preloads without `assetBaseUrl` fall back to that IPC.
+ */
+
+const PACKAGED_ASSET_SUBDIR = 'assets/'
+
+function stripLeadingSlash(relativePath: string): string {
+  return relativePath.replace(/^\/+/, '')
+}
+
+function readAssetBaseUrl(): string | null {
+  if (typeof window === 'undefined') return null
+  const api = (window as any).electronAPI
+  const base = api?.assetBaseUrl
+  return typeof base === 'string' && base.length > 0 ? base : null
+}
+
+/**
+ * Synchronous resolution through `electronAPI.assetBaseUrl`. Returns `null`
+ * when the preload does not expose the base (older preload, plain browser).
+ */
+export function getAssetPathSync(relativePath: string): string | null {
+  const base = readAssetBaseUrl()
+  if (!base) return null
+  const withSlash = base.endsWith('/') ? base : `${base}/`
+  return `${withSlash}${PACKAGED_ASSET_SUBDIR}${stripLeadingSlash(relativePath)}`
+}
+
 export async function getAssetPath(relativePath: string): Promise<string> {
   try {
     if (typeof window !== 'undefined') {
@@ -7,8 +46,11 @@ export async function getAssetPath(relativePath: string): Promise<string> {
         window.location.protocol &&
         window.location.protocol.startsWith('http')
       ) {
-        return `/${relativePath.replace(/^\//, '')}`
+        return `/${stripLeadingSlash(relativePath)}`
       }
+
+      const sync = getAssetPathSync(relativePath)
+      if (sync) return sync
 
       if (
         (window as any).electronAPI &&
@@ -26,7 +68,7 @@ export async function getAssetPath(relativePath: string): Promise<string> {
   }
 
   // Fallback for web/dev server: public/wallpapers are served at '/wallpapers/...'
-  return `/${relativePath.replace(/^\//, '')}`
+  return `/${stripLeadingSlash(relativePath)}`
 }
 
 export default getAssetPath
