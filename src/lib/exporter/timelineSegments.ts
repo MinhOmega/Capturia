@@ -66,8 +66,15 @@ export function computeKeepSegments(
 
 /**
  * Splits keep-segments by overlapping speed regions, annotating each sub-segment
- * with its playback speed multiplier (defaults to 1x). Regions are assumed
- * non-overlapping; when they do overlap the earliest-starting one wins.
+ * with its playback speed multiplier (defaults to 1x).
+ *
+ * Overlapping regions are handled rather than assumed away: the earliest-starting
+ * one keeps the stretch it already covers, and a later region contributes only the
+ * part past the cursor (nothing at all when it is fully covered). Output is always
+ * disjoint and ascending - the decode loop walks it with a forward-only frame
+ * cursor, so an overlap would otherwise duplicate source and seek backwards.
+ * `segmentAdapter.ts` already produces disjoint regions; this is the guard for
+ * any other caller.
  */
 export function splitBySpeed(
   segments: TimelineSegment[],
@@ -92,8 +99,13 @@ export function splitBySpeed(
     for (const sr of overlapping) {
       const srStart = Math.max(sr.startMs / 1000, segment.startSec)
       const srEnd = Math.min(sr.endMs / 1000, segment.endSec)
-      if (cursor < srStart) result.push({ startSec: cursor, endSec: srStart, speed: 1 })
-      result.push({ startSec: srStart, endSec: srEnd, speed: sr.speed })
+      // Fully covered by an earlier region: nothing left past the cursor.
+      if (srEnd <= cursor) continue
+      const effectiveStart = Math.max(srStart, cursor)
+      if (cursor < effectiveStart) {
+        result.push({ startSec: cursor, endSec: effectiveStart, speed: 1 })
+      }
+      result.push({ startSec: effectiveStart, endSec: srEnd, speed: sr.speed })
       cursor = srEnd
     }
     if (cursor < segment.endSec) {

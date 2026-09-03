@@ -53,6 +53,13 @@
 			"unavailable": "不可用"
 		}
 	},
+	"exportError": {
+		"encoderStall": "视频编码器停止响应，导出已中止。请重试；若反复出现，请关闭其他占用显卡的应用。",
+		"encoderFlushTimeout": "视频编码器未能及时写完最后几帧。请重新导出。",
+		"encoderUnsupported": "此系统没有支持所选导出设置的视频编码器。请尝试较低的分辨率或帧率。",
+		"encoderFailed": "视频编码器报告了错误，导出已中止。请重试，或改用较低的分辨率导出。",
+		"decoderFailed": "无法解码此录像，导出已中止。文件可能已损坏或使用了不支持的编码格式。"
+	},
 	"format": {
 		"mp4": {
 			"label": "MP4 视频",

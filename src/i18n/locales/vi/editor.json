@@ -14,6 +14,7 @@
 	"recordingSystemAudioUnavailable": "Không thu được âm thanh hệ thống. Tiếp tục ghi hình không có âm thanh hệ thống.",
 	"recordingCameraDisconnected": "Camera đã ngắt kết nối. Tiếp tục ghi hình không có khung camera.",
 	"exportWarningDecodeEndedEarly": "Nguồn video ngừng giải mã trước điểm kết thúc được báo cáo nên video xuất ra có thể ngắn hơn dự kiến một chút.",
+	"exportWarningAudioTracksSkipped": "Một số luồng âm thanh trong bản ghi không giải mã hoặc trộn được nên đã bị bỏ qua khi xuất.",
 	"saveGifFailed": "Không thể lưu GIF",
 	"saveVideoFailed": "Không thể lưu video",
 	"gifExportFailed": "Xuất GIF thất bại",

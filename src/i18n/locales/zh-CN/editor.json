@@ -14,6 +14,7 @@
 	"recordingSystemAudioUnavailable": "无法捕获系统声音，录制将在没有系统声音的情况下继续。",
 	"recordingCameraDisconnected": "摄像头已断开，录制将在没有摄像头画面的情况下继续。",
 	"exportWarningDecodeEndedEarly": "源视频在报告的结尾之前停止解码，导出结果可能比预期略短。",
+	"exportWarningAudioTracksSkipped": "录像中的部分音轨无法解码或混合，本次导出已将其省略。",
 	"saveGifFailed": "保存 GIF 失败",
 	"saveVideoFailed": "保存视频失败",
 	"gifExportFailed": "GIF 导出失败",

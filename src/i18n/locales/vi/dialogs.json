@@ -53,6 +53,13 @@
 			"unavailable": "không khả dụng"
 		}
 	},
+	"exportError": {
+		"encoderStall": "Bộ mã hóa video ngừng phản hồi nên quá trình xuất đã dừng. Hãy thử lại; nếu vẫn lặp lại, hãy đóng các ứng dụng khác đang dùng card đồ họa.",
+		"encoderFlushTimeout": "Bộ mã hóa video không kịp ghi xong những khung hình cuối. Hãy xuất lại.",
+		"encoderUnsupported": "Hệ thống này không có bộ mã hóa video nào hỗ trợ thiết lập xuất đã chọn. Hãy thử giảm độ phân giải hoặc tốc độ khung hình.",
+		"encoderFailed": "Bộ mã hóa video báo lỗi và quá trình xuất đã dừng. Hãy thử lại hoặc xuất ở độ phân giải thấp hơn.",
+		"decoderFailed": "Không giải mã được bản ghi nên quá trình xuất đã dừng. Tệp có thể bị hỏng hoặc dùng codec không được hỗ trợ."
+	},
 	"format": {
 		"mp4": {
 			"label": "Video MP4",
