@@ -95,11 +95,50 @@ describe('native recorder helper exit', () => {
     return module
   }
 
-  /** One microtask drain is not enough: the exit handler stats the output file. */
-  async function settle() {
-    for (let index = 0; index < 5; index += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 5))
+  const POLL_INTERVAL_MS = 5
+  /** Generous: only ever waited out in full when the assertion is about to fail. */
+  const WAIT_TIMEOUT_MS = 2_000
+  /**
+   * How long an exit that should stay silent is given to speak up. The announce
+   * path stats the output file first, so this has to outlast one file check on
+   * a loaded machine - but a wrong announce is caught as soon as it lands.
+   */
+  const SILENCE_WINDOW_MS = 250
+
+  const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+  /**
+   * Polls until `predicate` holds. The exit handler stats the output file
+   * before announcing, and a fixed sleep long enough for that on an idle box
+   * is not long enough on a loaded one - so wait for the outcome, not a clock.
+   */
+  async function waitFor(predicate: () => boolean, what: string): Promise<void> {
+    const deadline = Date.now() + WAIT_TIMEOUT_MS
+    while (!predicate()) {
+      if (Date.now() >= deadline) {
+        throw new Error(`timed out after ${WAIT_TIMEOUT_MS}ms waiting for ${what}`)
+      }
+      await sleep(POLL_INTERVAL_MS)
     }
+  }
+
+  /** Waits for the exit to reach the listener, then hands back what it got. */
+  async function waitForExitInfo(onExit: ReturnType<typeof vi.fn>): Promise<unknown> {
+    await waitFor(() => onExit.mock.calls.length > 0, 'the exit listener to be called')
+    return onExit.mock.calls[0][0]
+  }
+
+  /**
+   * Asserts the listener stays quiet, failing the moment it does not rather
+   * than only at the end of the window.
+   */
+  async function expectNoExitAnnounced(onExit: ReturnType<typeof vi.fn>): Promise<void> {
+    const deadline = Date.now() + SILENCE_WINDOW_MS
+    while (Date.now() < deadline) {
+      expect(onExit).not.toHaveBeenCalled()
+      await sleep(POLL_INTERVAL_MS)
+    }
+    expect(onExit).not.toHaveBeenCalled()
   }
 
   it('announces an exit nobody asked for, with the file verdict attached', async () => {
@@ -110,10 +149,10 @@ describe('native recorder helper exit', () => {
     const onExit = vi.fn()
     module.setNativeRecorderExitListener(onExit)
     helper.end(1, null)
-    await settle()
+    const info = await waitForExitInfo(onExit)
 
     expect(onExit).toHaveBeenCalledTimes(1)
-    expect(onExit.mock.calls[0][0]).toEqual({
+    expect(info).toEqual({
       code: 1,
       signal: null,
       reason: 'crashed',
@@ -131,10 +170,10 @@ describe('native recorder helper exit', () => {
     const onExit = vi.fn()
     module.setNativeRecorderExitListener(onExit)
     helper.end(null, 'SIGKILL')
-    await settle()
+    const info = await waitForExitInfo(onExit)
 
     expect(onExit).toHaveBeenCalledTimes(1)
-    expect(onExit.mock.calls[0][0]).toMatchObject({
+    expect(info).toMatchObject({
       signal: 'SIGKILL',
       reason: 'killed',
       outputPlayable: false,
@@ -153,9 +192,8 @@ describe('native recorder helper exit', () => {
     const stopping = module.stopNativeMacRecorder()
     helper.end(0, null)
     await expect(stopping).resolves.toMatchObject({ success: true, path: outputPath })
-    await settle()
 
-    expect(onExit).not.toHaveBeenCalled()
+    await expectNoExitAnnounced(onExit)
   })
 
   it('stays silent when a force-terminate ends the helper', async () => {
@@ -167,9 +205,8 @@ describe('native recorder helper exit', () => {
     module.setNativeRecorderExitListener(onExit)
     module.forceTerminateNativeMacRecorder()
     helper.end(null, 'SIGTERM')
-    await settle()
 
-    expect(onExit).not.toHaveBeenCalled()
+    await expectNoExitAnnounced(onExit)
   })
 
   it('refuses to hand the editor a file with no moov after an unclean stop', async () => {
