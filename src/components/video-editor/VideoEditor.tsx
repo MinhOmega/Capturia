@@ -2544,7 +2544,14 @@ export default function VideoEditor() {
             e.key.toLowerCase() as TransportKey,
             playback?.nativePlaybackRateCap,
           )
-          if (next.rate !== previewPlaybackRateRef.current) setPreviewPlaybackRate(next.rate)
+          if (next.rate !== previewPlaybackRateRef.current) {
+            // The ref is normally refreshed from state during render, which is
+            // a frame away. Two quick presses of L would then both read the old
+            // rate and both land on the same rung, so write it eagerly and let
+            // the render assign the identical value afterwards.
+            previewPlaybackRateRef.current = next.rate
+            setPreviewPlaybackRate(next.rate)
+          }
           if (next.playing && video.paused) {
             commitHoverPreview()
             playback?.play().catch(console.error)

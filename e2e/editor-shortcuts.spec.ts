@@ -152,6 +152,31 @@ test('J, K and L drive the preview rate', async () => {
   try {
     const editor = await app.firstWindow({ timeout: 60_000 })
     await editor.waitForLoadState('domcontentloaded')
+
+    // Same hand-over as the first spec: approve the fixture and reload onto it,
+    // otherwise a project left behind by an earlier run decides what opens.
+    const applied = await editor.evaluate(async (videoPath) => {
+      const bridge = (
+        window as unknown as {
+          electronAPI: {
+            setCurrentVideoPath: (p: string) => Promise<{ success: boolean }>
+            saveProjectState: (p: string, state: unknown) => Promise<unknown>
+          }
+        }
+      ).electronAPI
+      await bridge.saveProjectState(videoPath, {
+        version: 1,
+        savedAt: Date.now(),
+        videoFilePath: videoPath,
+        wallpaper: '#101820',
+        previewPlaybackRate: 1,
+      })
+      return bridge.setCurrentVideoPath(videoPath)
+    }, FIXTURE)
+    expect(applied.success).toBe(true)
+    await editor.reload()
+    await editor.waitForLoadState('domcontentloaded')
+
     await editor.waitForFunction(
       () => {
         const video = document.querySelector('video')
@@ -164,27 +189,24 @@ test('J, K and L drive the preview rate', async () => {
     const rate = () => editor.evaluate(() => document.querySelector('video')?.playbackRate ?? 0)
     const paused = () => editor.evaluate(() => document.querySelector('video')?.paused ?? true)
 
-    // Park the playhead away from the end so the clip does not run out mid-test.
-    await editor.evaluate(() => {
-      const video = document.querySelector('video')
-      if (video) video.currentTime = 0
-    })
+    // L starts the preview at 1x.
+    await editor.keyboard.press('l')
+    await expect.poll(paused, { timeout: 15_000 }).toBe(false)
 
-    // L plays at 1x, then climbs the ladder.
+    // Then climb to 4x and step back to 2x. The three presses go out as one
+    // burst on purpose: the fixture is two seconds long, so pausing to assert
+    // each rung would let the clip run out mid-ladder and the next press would
+    // restart it at 1x instead of stepping. Landing on 2x is only reachable
+    // through 1x -> 2x -> 4x -> 2x; a ladder that ignored the presses would
+    // read 1x, and one that stopped climbing early would read 1x as well.
     await editor.keyboard.press('l')
-    await expect.poll(paused).toBe(false)
     await editor.keyboard.press('l')
-    await expect.poll(rate).toBe(2)
-    await editor.keyboard.press('l')
-    await expect.poll(rate).toBe(4)
-
-    // J steps back down.
     await editor.keyboard.press('j')
-    await expect.poll(rate).toBe(2)
+    await expect.poll(rate, { timeout: 15_000 }).toBe(2)
 
     // K pauses and keeps the rate.
     await editor.keyboard.press('k')
-    await expect.poll(paused).toBe(true)
+    await expect.poll(paused, { timeout: 15_000 }).toBe(true)
     expect(await rate()).toBe(2)
   } finally {
     killApp(app)
