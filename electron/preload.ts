@@ -1,4 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
+import type { ElectronAPI } from './bridge-types'
 
 // C-1: the caption worker cannot call IPC, so the main process hands the editor
 // window two file:// URLs through webPreferences.additionalArguments (see
@@ -15,7 +16,14 @@ const captionModelDirUrl = readArgUrl('--caption-model-dir=')
 // its first render already know whether it is on macOS (src/utils/platformUtils.ts).
 const PLATFORM: string = process.platform
 
-contextBridge.exposeInMainWorld('electronAPI', {
+/**
+ * Everything the renderer may call. The annotation is what keeps the bridge and
+ * its declaration (`electron/bridge-types.ts`, surfaced as `window.electronAPI`
+ * by `src/vite-env.d.ts`) in step: a member missing here, one invented here, or
+ * one whose parameters no longer match is a compile error rather than a
+ * `undefined is not a function` at runtime.
+ */
+const electronAPI: ElectronAPI = {
   hudOverlayHide: () => {
     ipcRenderer.send('hud-overlay-hide')
   },
@@ -56,8 +64,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkForUpdates: () => {
     return ipcRenderer.invoke('check-for-updates')
   },
-  onUpdateProgress: (callback: (event: unknown) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload)
+  onUpdateProgress: (callback: (event: UpdateProgressEvent) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, payload: UpdateProgressEvent) =>
+      callback(payload)
     ipcRenderer.on('update-progress', listener)
     return () => {
       ipcRenderer.removeListener('update-progress', listener)
@@ -120,33 +129,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       systemCursorMode?: 'always' | 'never'
       hasMicrophoneAudio?: boolean
       durationMs?: number
-      cursorTrack?: {
-        source?: 'recorded' | 'synthetic'
-        samples: Array<{
-          timeMs: number
-          x: number
-          y: number
-          click?: boolean
-          visible?: boolean
-          cursorKind?: 'arrow' | 'ibeam'
-        }>
-        events?: Array<{
-          type: 'click' | 'selection'
-          startMs: number
-          endMs: number
-          point: { x: number; y: number }
-          startPoint?: { x: number; y: number }
-          endPoint?: { x: number; y: number }
-          bounds?: {
-            minX: number
-            minY: number
-            maxX: number
-            maxY: number
-            width: number
-            height: number
-          }
-        }>
-      }
+      // Was an inline copy that still spelled the cursor kinds as
+      // `'arrow' | 'ibeam'`, long after the tracker grew the other fourteen.
+      cursorTrack?: CursorTrackMetadata
     },
   ) => {
     return ipcRenderer.invoke('store-recorded-video', videoData, fileName, metadata)
@@ -293,7 +278,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     videoData: ArrayBuffer,
     fileName: string,
     locale?: string,
-    options?: { directoryPath?: string | null },
+    // `targetFilePath` echoes back a path the user picked through
+    // `pick-save-file-path`; main refuses anything it did not approve.
+    options?: { directoryPath?: string | null; targetFilePath?: string | null },
   ) => {
     return ipcRenderer.invoke('save-exported-video', videoData, fileName, locale, options)
   },
@@ -310,33 +297,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       capturedAt?: number
       systemCursorMode?: 'always' | 'never'
       hasMicrophoneAudio?: boolean
-      cursorTrack?: {
-        source?: 'recorded' | 'synthetic'
-        samples: Array<{
-          timeMs: number
-          x: number
-          y: number
-          click?: boolean
-          visible?: boolean
-          cursorKind?: 'arrow' | 'ibeam'
-        }>
-        events?: Array<{
-          type: 'click' | 'selection'
-          startMs: number
-          endMs: number
-          point: { x: number; y: number }
-          startPoint?: { x: number; y: number }
-          endPoint?: { x: number; y: number }
-          bounds?: {
-            minX: number
-            minY: number
-            maxX: number
-            maxY: number
-            width: number
-            height: number
-          }
-        }>
-      }
+      // Was an inline copy that still spelled the cursor kinds as
+      // `'arrow' | 'ibeam'`, long after the tracker grew the other fourteen.
+      cursorTrack?: CursorTrackMetadata
     },
   ) => {
     return ipcRenderer.invoke('set-current-video-path', path, metadata)
@@ -407,8 +370,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   cancelCaptionModelDownload: () => {
     return ipcRenderer.invoke('caption-model-download-cancel')
   },
-  onCaptionModelProgress: (callback: (progress: unknown) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, progress: unknown) => callback(progress)
+  onCaptionModelProgress: (callback: (progress: CaptionModelProgressPayload) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, progress: CaptionModelProgressPayload) =>
+      callback(progress)
     ipcRenderer.on('caption-model-progress', listener)
     return () => {
       ipcRenderer.removeListener('caption-model-progress', listener)
@@ -466,7 +430,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getMainLogTail: (lines?: number) => {
     return ipcRenderer.invoke('get-main-log-tail', lines)
   },
-})
+}
+
+contextBridge.exposeInMainWorld('electronAPI', electronAPI)
 
 const EDITOR_MENU_ACTIONS = [
   'menu-undo',

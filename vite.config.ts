@@ -44,6 +44,52 @@ function ortWasmPlugin(): Plugin {
   }
 }
 
+/**
+ * Browser harness (`npm run dev:browser`, docs/testing/browser-harness.md):
+ * serve the renderer to a plain Chrome instead of Electron, so a change can be
+ * driven through real DevTools before an end-to-end spec exists for it. Two
+ * things change, both dev-server only:
+ *  - the Electron plugin is left out, so no app window is spawned and no
+ *    preload is built (a preload bridge would shadow the harness shim);
+ *  - the recording fixture the shim points the editor at is served over HTTP.
+ */
+const BROWSER_HARNESS = process.env.VITE_BROWSER_HARNESS === '1'
+const HARNESS_FIXTURE_URL_PATH = '/dev-fixtures/sample.webm'
+const HARNESS_FIXTURE_FILE = path.resolve(__dirname, 'src/__fixtures__/sample.webm')
+
+function browserHarnessPlugin(): Plugin {
+  return {
+    name: 'capturia-browser-harness',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const url = (req.url ?? '').split('?')[0]
+        if (url !== HARNESS_FIXTURE_URL_PATH) return next()
+        if (!fs.existsSync(HARNESS_FIXTURE_FILE)) return next()
+        const size = fs.statSync(HARNESS_FIXTURE_FILE).size
+        res.setHeader('Content-Type', 'video/webm')
+        res.setHeader('Cache-Control', 'no-cache')
+        // `<video>` seeking and the exporter's chunked reads both ask for ranges.
+        res.setHeader('Accept-Ranges', 'bytes')
+        const match = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range ?? '')
+        if (match && (match[1] !== '' || match[2] !== '')) {
+          const start = match[1] === '' ? size - Number(match[2]) : Number(match[1])
+          const end = match[1] === '' || match[2] === '' ? size - 1 : Number(match[2])
+          const from = Math.max(0, Math.min(start, size - 1))
+          const to = Math.max(from, Math.min(end, size - 1))
+          res.statusCode = 206
+          res.setHeader('Content-Range', `bytes ${from}-${to}/${size}`)
+          res.setHeader('Content-Length', String(to - from + 1))
+          fs.createReadStream(HARNESS_FIXTURE_FILE, { start: from, end: to }).pipe(res)
+          return
+        }
+        res.setHeader('Content-Length', String(size))
+        fs.createReadStream(HARNESS_FIXTURE_FILE).pipe(res)
+      })
+    },
+  }
+}
+
 const EMPTY_NODE_MODULE = path.resolve(__dirname, 'src/lib/vite-stubs/empty-node-module.ts')
 
 // Mirrors the guard in electron/main.ts: software rendering on Linux Wayland because
@@ -58,6 +104,34 @@ const devElectronArgs = [
   ...(isLinuxWayland ? ['--in-process-gpu', '--disable-gpu', '--disable-gpu-compositing'] : []),
 ]
 
+function electronPlugin() {
+  return electron({
+    main: {
+      // Shortcut of `build.lib.entry`.
+      entry: 'electron/main.ts',
+      onstart({ startup }) {
+        return startup(devElectronArgs)
+      },
+      vite: {
+        build: {},
+      },
+    },
+    preload: {
+      // Shortcut of `build.rollupOptions.input`.
+      // Preload scripts may contain Web assets, so use the `build.rollupOptions.input` instead `build.lib.entry`.
+      input: path.join(__dirname, 'electron/preload.ts'),
+    },
+    // Ployfill the Electron and Node.js API for Renderer process.
+    // If you want use Node.js in Renderer process, the `nodeIntegration` needs to be enabled in the Main process.
+    // See https://github.com/electron-vite/vite-plugin-electron-renderer
+    renderer:
+      process.env.NODE_ENV === 'test'
+        ? // https://github.com/electron-vite/vite-plugin-electron-renderer/issues/78#issuecomment-2053600808
+          undefined
+        : {},
+  })
+}
+
 // https://vitejs.dev/config/
 export default defineConfig({
   define: {
@@ -66,31 +140,8 @@ export default defineConfig({
   plugins: [
     react(),
     ortWasmPlugin(),
-    electron({
-      main: {
-        // Shortcut of `build.lib.entry`.
-        entry: 'electron/main.ts',
-        onstart({ startup }) {
-          return startup(devElectronArgs)
-        },
-        vite: {
-          build: {},
-        },
-      },
-      preload: {
-        // Shortcut of `build.rollupOptions.input`.
-        // Preload scripts may contain Web assets, so use the `build.rollupOptions.input` instead `build.lib.entry`.
-        input: path.join(__dirname, 'electron/preload.ts'),
-      },
-      // Ployfill the Electron and Node.js API for Renderer process.
-      // If you want use Node.js in Renderer process, the `nodeIntegration` needs to be enabled in the Main process.
-      // See https://github.com/electron-vite/vite-plugin-electron-renderer
-      renderer:
-        process.env.NODE_ENV === 'test'
-          ? // https://github.com/electron-vite/vite-plugin-electron-renderer/issues/78#issuecomment-2053600808
-            undefined
-          : {},
-    }),
+    // The harness serves the renderer to a browser; Electron must not boot.
+    ...(BROWSER_HARNESS ? [browserHarnessPlugin()] : [electronPlugin()]),
   ],
   resolve: {
     alias: {

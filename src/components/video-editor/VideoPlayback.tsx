@@ -1044,7 +1044,8 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
         idleResolutionRef.current = app.renderer.resolution
 
         if (!mounted) {
-          app.destroy(true, { children: true, texture: true, textureSource: true })
+          // `{ removeView: true }` rather than `true`: see the teardown below.
+          app.destroy({ removeView: true }, { children: true, texture: true, textureSource: true })
           return
         }
 
@@ -1091,7 +1092,15 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
             canvas.removeEventListener('webglcontextrestored', handleContextRestored)
           }
           try {
-            app.destroy(true, { children: true, texture: true, textureSource: true })
+            // `{ removeView: true }` takes the canvas out of the DOM, which is
+            // all this teardown wants. A bare `true` would additionally release
+            // Pixi's *global* batch/texture/canvas pools, which an export
+            // renderer running at the same time is also using — and a pooled
+            // object destroyed under a live renderer crashes its next frame.
+            app.destroy(
+              { removeView: true },
+              { children: true, texture: true, textureSource: true },
+            )
           } catch (error) {
             // Destroying a renderer whose GL context is already gone can throw
             // from inside Pixi; the canvas must still leave the DOM so the
