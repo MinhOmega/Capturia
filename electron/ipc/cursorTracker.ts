@@ -25,6 +25,7 @@ import {
   type CursorTrackPauseRange,
   type CursorTrackPayload,
   compactCursorTrackPauseRanges,
+  compactCursorTrackSamples,
   sanitizeCursorTrack,
 } from './cursorTrack'
 import { getWindowBoundsById, parseWindowIdFromSourceId } from './windowBounds'
@@ -88,9 +89,34 @@ type ActiveSelectionGesture = {
   hasVisiblePoint: boolean
 }
 
-const GESTURE_EVENT_BUFFER_LIMIT = 4_000
+const GESTURE_EVENT_BUFFER_LIMIT = 20_000
 const SELECTION_MIN_DISTANCE_NORM = 0.022
 const SELECTION_MIN_DIMENSION_NORM = 0.012
+
+/**
+ * Live-buffer ceiling. The tracker stores up to ~60 samples a second, so this is
+ * a bit over an hour of raw sampling; reaching it compacts the buffer in place
+ * (30 Hz decimation around the clicks, then a uniform thin) instead of dropping
+ * the oldest samples, which is what used to end the cursor track a couple of
+ * minutes into a recording.
+ */
+const RUNTIME_SAMPLE_LIMIT = 240_000
+/** Compaction thins to this, so the next compaction is a full buffer-refill away. */
+const RUNTIME_SAMPLE_TARGET = 180_000
+
+function compactTrackerSampleBuffer(tracker: CursorTrackerRuntime): void {
+  const before = tracker.samples.length
+  tracker.samples = compactCursorTrackSamples(tracker.samples, tracker.events, {
+    // Already the live buffer: the count is the binding limit here, and the
+    // serialized-size guard runs once on the way out through `sanitizeCursorTrack`.
+    compactAboveSamples: 0,
+    maxSamples: RUNTIME_SAMPLE_TARGET,
+    maxSampleBytes: Number.POSITIVE_INFINITY,
+  })
+  console.info(
+    `[cursor-tracker] live buffer compacted: ${before} -> ${tracker.samples.length} samples`,
+  )
+}
 
 function pushCursorSample(
   tracker: CursorTrackerRuntime,
@@ -117,8 +143,8 @@ function pushCursorSample(
     tracker.clickCount += 1
   }
 
-  if (tracker.samples.length > 12_000) {
-    tracker.samples.splice(0, 2_000)
+  if (tracker.samples.length > RUNTIME_SAMPLE_LIMIT) {
+    compactTrackerSampleBuffer(tracker)
   }
 
   tracker.lastSampleAt = now

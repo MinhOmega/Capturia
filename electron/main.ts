@@ -33,7 +33,7 @@ import {
 } from './windows'
 import { atomicWriteFile } from './ipc/atomicSave'
 import { registerIpcHandlers } from './ipc/handlers'
-import { getRecordingsDir } from './paths'
+import { getRecordingsDir, getUserDataDir } from './paths'
 import {
   approveFilePath,
   isReadablePathAllowed,
@@ -1675,6 +1675,7 @@ appReady?.then(async () => {
   await ensureRecordingsDir()
   scheduleRecordingsCleanup({
     recordingsDir: RECORDINGS_DIR,
+    userDataDir: getUserDataDir(),
     reason: 'startup',
   })
 

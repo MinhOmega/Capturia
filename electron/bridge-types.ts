@@ -92,6 +92,13 @@ export interface ElectronAPI {
    * synchronous `assetBaseUrl` (older preload, or a base computed after boot).
    */
   getAssetBasePath: () => Promise<string | null>
+  /** A5: free space on the recordings volume; `success: false` means "unknown", never "blocked". */
+  getRecordingsDiskSpace: () => Promise<{
+    success: boolean
+    availableBytes?: number
+    totalBytes?: number
+    message?: string
+  }>
   setRecordingState: (recording: boolean) => Promise<void>
   startNativeScreenRecording: (options?: {
     source?: { id?: string; display_id?: string | number | null }
@@ -145,6 +152,8 @@ export interface ElectronAPI {
     path?: string
     message?: string
     discarded?: boolean
+    /** `output_missing_moov`: the helper died before finalizing a playable MP4. */
+    code?: 'no_session' | 'output_missing' | 'output_missing_moov'
     metadata?: {
       frameRate?: number
       width?: number
@@ -163,6 +172,8 @@ export interface ElectronAPI {
   stopCursorTracking: () => Promise<{ success: boolean; track?: CursorTrackMetadata }>
   pauseCursorTracking: () => Promise<{ success: boolean; changed?: boolean; message?: string }>
   resumeCursorTracking: () => Promise<{ success: boolean; changed?: boolean; message?: string }>
+  /** A2: the native helper died mid-recording; returns an unsubscribe function. */
+  onNativeRecorderExited: (callback: (info: NativeRecorderExitPayload) => void) => () => void
   onStopRecordingFromTray: (callback: () => void) => () => void
   onSelectedSourceChanged: (callback: (source: unknown) => void) => () => void
   onSourceSelectorClosed: (callback: () => void) => () => void

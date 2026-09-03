@@ -6,6 +6,7 @@ import {
   isNativeMacRecorderActive,
   pauseNativeMacRecorder,
   resumeNativeMacRecorder,
+  setNativeRecorderExitListener,
   startNativeMacRecorder,
   stopNativeMacRecorder,
 } from '../native/sckRecorder'
@@ -94,6 +95,7 @@ export function registerRecordingFilesHandlers(ctx: IpcContext): RecordingFilesR
     ipcMain,
     session,
     recordingsDir,
+    userDataDir,
     createEditorWindow,
     createSourceSelectorWindow,
     getMainWindow,
@@ -108,6 +110,21 @@ export function registerRecordingFilesHandlers(ctx: IpcContext): RecordingFilesR
   registerRecordingStreamHandlers(ipcMain, recordingStreams, (fileName) =>
     resolveRecordingOutputPath(recordingsDir, fileName),
   )
+
+  // A2: the native helper can die on its own (crash, SIGKILL from the OS, a
+  // permission revoked mid-capture). Without this the HUD would keep showing
+  // "recording" forever, so push the exit to it and let the tray / main window
+  // recover exactly as they do after a normal stop.
+  setNativeRecorderExitListener((info) => {
+    console.warn(
+      `[native-screen-recorder] helper exited unexpectedly: reason=${info.reason} code=${info.code ?? 'null'} signal=${info.signal ?? 'none'} playable=${info.outputPlayable}`,
+    )
+    onRecordingStateChange?.(false, session.selectedSource?.name || 'Screen')
+    const mainWin = getMainWindow()
+    if (mainWin && !mainWin.isDestroyed()) {
+      mainWin.webContents.send('native-recorder-exited', info)
+    }
+  })
 
   ipcMain.handle('select-source', (_, source) => {
     session.selectedSource = source
@@ -185,6 +202,7 @@ export function registerRecordingFilesHandlers(ctx: IpcContext): RecordingFilesR
         }
         scheduleRecordingsCleanup({
           recordingsDir: recordingsDir,
+          userDataDir,
           excludePaths: [videoPath],
           reason: 'post-recording',
         })
@@ -221,6 +239,31 @@ export function registerRecordingFilesHandlers(ctx: IpcContext): RecordingFilesR
     } catch (error) {
       console.error('Failed to get video path:', error)
       return { success: false, message: 'Failed to get video path', error: String(error) }
+    }
+  })
+
+  // A5: free space on the recordings volume, asked for right before a recording
+  // starts. A capture that runs the disk out ends as a truncated file — on the
+  // native path one with no `moov` box at all — so the HUD warns early and
+  // refuses outright when there is not even a usable capture left to make.
+  ipcMain.handle('get-recordings-disk-space', async () => {
+    try {
+      const stats = await fs.statfs(recordingsDir)
+      const blockSize = Number(stats.bsize)
+      // `bavail` is what an unprivileged process may use, which is what matters
+      // here: `bfree` includes the root reserve the recorder can never touch.
+      const availableBytes = Number(stats.bavail) * blockSize
+      const totalBytes = Number(stats.blocks) * blockSize
+      if (!Number.isFinite(availableBytes) || availableBytes < 0) {
+        return { success: false, message: 'Filesystem reported no usable free space figure.' }
+      }
+      return { success: true, availableBytes, totalBytes }
+    } catch (error) {
+      // Never a recording-blocking failure: the caller treats it as "unknown".
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : String(error),
+      }
     }
   })
 
@@ -408,6 +451,7 @@ export function registerRecordingFilesHandlers(ctx: IpcContext): RecordingFilesR
       if (result.success && result.path) {
         scheduleRecordingsCleanup({
           recordingsDir: recordingsDir,
+          userDataDir,
           excludePaths: [result.path],
           reason: 'post-native-recording',
         })

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import fsPromises, { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
@@ -10,6 +10,7 @@ vi.mock('../native/sckRecorder', () => ({
   forceTerminateNativeMacRecorder: vi.fn(),
   getNativeMacRecorderOutputPath: vi.fn(() => null),
   isNativeMacRecorderActive: vi.fn(() => false),
+  setNativeRecorderExitListener: vi.fn(),
   startNativeMacRecorder: vi.fn(async () => ({ success: false, message: 'not in test' })),
   stopNativeMacRecorder: vi.fn(async () => ({ success: true })),
   pauseNativeMacRecorder: vi.fn(async () => ({
@@ -64,12 +65,73 @@ describe('recording files IPC handlers', () => {
       'switch-to-editor',
       'store-recorded-video',
       'get-recorded-video-path',
+      'get-recordings-disk-space',
       'set-recording-state',
       'native-screen-recorder-start',
       'pause-native-recording',
       'resume-native-recording',
       'native-screen-recorder-stop',
     ])
+  })
+
+  it('reports the free space an unprivileged writer actually has', async () => {
+    const ipc = fakeIpcMain()
+    registerRecordingFilesHandlers(buildContext(ipc, { recordingsDir }))
+    // 4 KiB blocks; `bavail` is smaller than `bfree` because of the root reserve.
+    vi.spyOn(fsPromises, 'statfs').mockResolvedValue({
+      type: 0,
+      bsize: 4_096,
+      blocks: 1_000_000,
+      bfree: 60_000,
+      bavail: 50_000,
+      files: 0,
+      ffree: 0,
+    })
+
+    await expect(ipc.invoke('get-recordings-disk-space')).resolves.toEqual({
+      success: true,
+      availableBytes: 50_000 * 4_096,
+      totalBytes: 1_000_000 * 4_096,
+    })
+  })
+
+  it('answers "unknown" rather than throwing when the volume cannot be measured', async () => {
+    const ipc = fakeIpcMain()
+    registerRecordingFilesHandlers(buildContext(ipc, { recordingsDir }))
+    vi.spyOn(fsPromises, 'statfs').mockRejectedValue(new Error('ENOSYS'))
+
+    await expect(ipc.invoke('get-recordings-disk-space')).resolves.toEqual({
+      success: false,
+      message: 'ENOSYS',
+    })
+  })
+
+  it('pushes an unexpected helper exit to the HUD window and clears the recording state', async () => {
+    const sck = await import('../native/sckRecorder')
+    const mainWindow = fakeWindow()
+    const onRecordingStateChange = vi.fn()
+    const ipc = fakeIpcMain()
+    registerRecordingFilesHandlers(
+      buildContext(ipc, {
+        recordingsDir,
+        getMainWindow: () => mainWindow,
+        onRecordingStateChange,
+      }),
+    )
+
+    const listener = vi.mocked(sck.setNativeRecorderExitListener).mock.calls.at(-1)?.[0]
+    expect(listener).toBeTypeOf('function')
+    const info = {
+      code: null,
+      signal: 'SIGKILL' as const,
+      reason: 'killed' as const,
+      outputPath: path.join(recordingsDir, 'recording-1.mp4'),
+      outputPlayable: false,
+    }
+    listener?.(info)
+
+    expect(onRecordingStateChange).toHaveBeenCalledWith(false, 'Screen')
+    expect(mainWindow.webContents.send).toHaveBeenCalledWith('native-recorder-exited', info)
   })
 
   it('pause / resume forward the helper answer and degrade to unsupported on a throw', async () => {

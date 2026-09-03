@@ -151,6 +151,10 @@ const electronAPI: ElectronAPI = {
   getRecordedVideoPath: () => {
     return ipcRenderer.invoke('get-recorded-video-path')
   },
+  // A5: free bytes on the recordings volume, checked before a recording starts.
+  getRecordingsDiskSpace: () => {
+    return ipcRenderer.invoke('get-recordings-disk-space')
+  },
   setRecordingState: (recording: boolean) => {
     return ipcRenderer.invoke('set-recording-state', recording)
   },
@@ -200,6 +204,14 @@ const electronAPI: ElectronAPI = {
   },
   resumeCursorTracking: () => {
     return ipcRenderer.invoke('cursor-tracker-resume')
+  },
+  // A2: main pushes this when the native helper process ends on its own while a
+  // recording is running; the HUD leaves the recording state instead of hanging.
+  onNativeRecorderExited: (callback: (info: NativeRecorderExitPayload) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, info: NativeRecorderExitPayload) =>
+      callback(info)
+    ipcRenderer.on('native-recorder-exited', listener)
+    return () => ipcRenderer.removeListener('native-recorder-exited', listener)
   },
   onStopRecordingFromTray: (callback: () => void) => {
     const listener = () => callback()
