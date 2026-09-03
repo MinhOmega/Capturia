@@ -94,3 +94,16 @@ Wording rule from wave 5 on: commits, comments and docs describe behaviour in Ca
 terms and do not name or link the source project or its commit hashes.
 
 `electron-updater`.
+
+### Round 3 follow-ups recorded during round 2
+
+- `src/lib/exporter/decoderFallback.ts` duplicates the fallback error class and warning
+  constants that live privately in `videoExporter.ts` (the GIF batch could not edit that file
+  because another batch held it). Dedupe once both are merged: export them from the shared
+  module and have `videoExporter.ts` import them.
+- Reference neutralisation scope measured on 2026-08-27: 84 mentions across `src/`, `electron/`,
+  `scripts/`, `e2e/`, plus `docs/{i18n,captions,native-helper}.md` and
+  `docs/technical-debt/export-silent-pipeline.md`. Waves 0-4 predate the wording rule, so most
+  are provenance comments carrying a commit hash. Rewrite each to state the behaviour and the
+  reason in Capturia's own terms; keep the engineering content, drop the external identifier.
+  `docs/upstream-sync/**` is internal and is excluded from the PR branch instead.
