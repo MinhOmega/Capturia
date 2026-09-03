@@ -339,3 +339,32 @@ tests (upstream shipped blur regions disabled and untested). Feature note:
 Gate: lint 0 errors / 116 warnings (unchanged); tsc + test types clean; i18n 652 en keys (zh-CN,
 vi in parity); `biome format .` clean; vitest **122 files / 1277 tests** (+4 / +49). Manual smoke
 list in the feature note — no display on the lead box.
+
+
+## 2026-09-03 — wave 5 round 2: project relink (R5-PROJ) + streaming waveform (R5-WAVE)
+
+Two robustness items for long-lived projects and long recordings. Feature notes:
+`docs/media-relink.md`, `docs/waveform-streaming.md`.
+
+- Project state survives a move or rename: `<userData>/media-links.json` keyed by a content
+  fingerprint (size + SHA-256 of the first and last 64 KiB, so the cost is flat in file size) AND
+  by path, so two live copies stay distinguishable. `save-project-state` records the link;
+  `load-project-state` falls back to it when the path has no state file, copies the state to the
+  new key and the cursor sidecar next to the moved recording, and returns `relinked` for the
+  `editor.projectRelinked` toast. No new IPC channel. `decideRelink` is pure and table-tested:
+  keep / no-match / same-path / state-missing / **ambiguous** / relink, where ambiguity never
+  relinks. Registry contents are data, not trust: bare `.json` names inside the projects dir,
+  sidecar paths only as derived from their own entry, and `isReadablePathAllowed` before anything
+  is fingerprinted or written.
+- Waveform for huge sources: `src/hooks/streamingAudioPeaks.ts`. Above
+  `MAX_IN_MEMORY_SOURCE_BYTES` the recording is materialized as an OPFS-backed File and its audio
+  demuxed and decoded chunk by chunk (mediabunny `AudioBufferSink` over WebCodecs, the captioning
+  stack) into `peakBlockCount(duration)` min/max columns, memory flat in the recording's length.
+  Throttled progress hands out column snapshots so the timeline fills in progressively; abort
+  stops at the next chunk. Small sources keep `decodeAudioData` and fall back to streaming on
+  failure; when neither works the audio row shows `editor.waveformUnavailable`.
+
+Gate: lint 0 errors / 116 warnings (unchanged); tsc + test types clean; i18n 666 en keys (zh-CN,
+vi in parity); `biome format .` clean; vitest **130 files / 1448 tests** (+3 / +52). Not verified:
+no Electron run, so the relink toast, a genuinely moved recording on disk and the streaming
+waveform against a multi-GB file are all untested end to end.
