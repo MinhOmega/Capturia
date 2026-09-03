@@ -67,6 +67,7 @@ const recorderState = vi.hoisted(() => ({
     recording: false,
     recordingState: 'idle' as RecordingPhase,
     canPause: false,
+    nativeSystemAudioSupported: false,
     toggleRecording: vi.fn(),
     pauseRecording: vi.fn(),
     resumeRecording: vi.fn(),
@@ -135,6 +136,8 @@ function stubElectronAPI() {
       success: true,
       accelerator,
     })),
+    // Nothing registered in main by default: the HUD pushes its persisted value.
+    getStopRecordingShortcut: vi.fn(async () => ({ success: true, accelerator: '' })),
     hudOverlayHide: vi.fn(),
     hudOverlayClose: vi.fn(),
     hudOverlayResize: vi.fn(),
@@ -455,5 +458,205 @@ describe('LaunchWindow HUD geometry', () => {
     fireResizeObservers()
     await flushAnimationFrames()
     expect(setSize).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('LaunchWindow system audio toggle', () => {
+  beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', StubResizeObserver)
+    resizeObservers.length = 0
+    window.localStorage.clear()
+    selectedSourceChangedListeners = []
+    sourceSelectorClosedListeners = []
+    mainSelectedSource = null
+    recorderState.value.nativeSystemAudioSupported = false
+    stubElectronAPI()
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+  })
+
+  it('is hidden on macOS until the native helper reports system-audio capture', async () => {
+    const { unmount } = render(<LaunchWindow />)
+    await screen.findByTestId('hud-bar')
+    await waitFor(() => {
+      expect(window.electronAPI.getPlatform).toHaveBeenCalled()
+    })
+    await waitFor(() => {
+      expect(screen.queryByTestId('launch-system-audio-toggle')).not.toBeInTheDocument()
+    })
+    unmount()
+
+    recorderState.value.nativeSystemAudioSupported = true
+    render(<LaunchWindow />)
+    expect(await screen.findByTestId('launch-system-audio-toggle')).toBeInTheDocument()
+  })
+
+  it('is shown on Linux and Windows, starts off and remembers the choice', async () => {
+    window.electronAPI.getPlatform = vi.fn(async () => 'linux')
+    const { unmount } = render(<LaunchWindow />)
+    const toggle = await screen.findByTestId('launch-system-audio-toggle')
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    expect(toggle).toHaveAttribute('title', 'Record system audio (what the computer plays)')
+
+    fireEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    expect(toggle).toHaveAttribute('title', 'Stop recording system audio')
+    expect(window.localStorage.getItem('capturia.systemAudioEnabled')).toBe('1')
+
+    unmount()
+    render(<LaunchWindow />)
+    expect(await screen.findByTestId('launch-system-audio-toggle')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+  })
+})
+
+describe('LaunchWindow popovers close on window blur', () => {
+  beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', StubResizeObserver)
+    resizeObservers.length = 0
+    window.localStorage.clear()
+    selectedSourceChangedListeners = []
+    sourceSelectorClosedListeners = []
+    mainSelectedSource = null
+    stubElectronAPI()
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+  })
+
+  function blurWindow() {
+    act(() => {
+      window.dispatchEvent(new Event('blur'))
+    })
+  }
+
+  const cases: Array<{ name: string; trigger: string; content: string; setup?: () => void }> = [
+    {
+      name: 'microphone settings',
+      trigger: 'launch-microphone-settings',
+      content: 'launch-microphone-device-select',
+    },
+    {
+      name: 'capture settings',
+      trigger: 'launch-capture-settings-button',
+      content: 'launch-capture-settings-popover',
+    },
+    {
+      name: 'stop shortcut',
+      trigger: 'launch-stop-shortcut-button',
+      content: 'launch-stop-shortcut-popover',
+    },
+    {
+      name: 'camera shape',
+      trigger: 'launch-camera-shape-button',
+      content: 'launch-camera-shape-popover',
+      setup: () => window.localStorage.setItem('capturia.includeCamera', '1'),
+    },
+  ]
+
+  for (const { name, trigger, content, setup } of cases) {
+    it(`closes the ${name} popover when the window loses focus`, async () => {
+      setup?.()
+      render(<LaunchWindow />)
+      fireEvent.click(await screen.findByTestId(trigger))
+      expect(await screen.findByTestId(content)).toBeInTheDocument()
+
+      blurWindow()
+      await waitFor(() => {
+        expect(screen.queryByTestId(content)).not.toBeInTheDocument()
+      })
+    })
+  }
+
+  it('ignores focus moving between controls inside a popover (element blur does not bubble)', async () => {
+    render(<LaunchWindow />)
+    fireEvent.click(await screen.findByTestId('launch-capture-settings-button'))
+    const popover = await screen.findByTestId('launch-capture-settings-popover')
+    const [firstButton] = popover.querySelectorAll('button')
+    expect(firstButton).toBeDefined()
+
+    fireEvent.blur(firstButton as HTMLElement)
+    expect(screen.getByTestId('launch-capture-settings-popover')).toBeInTheDocument()
+  })
+
+  it('leaves the stop-shortcut capture mode when the window loses focus', async () => {
+    render(<LaunchWindow />)
+    fireEvent.click(await screen.findByTestId('launch-stop-shortcut-button'))
+    const popover = await screen.findByTestId('launch-stop-shortcut-popover')
+    fireEvent.click(screen.getByText('Set Shortcut', { selector: 'button' }))
+    expect(popover).toHaveTextContent('Listening... press new shortcut')
+
+    blurWindow()
+    await waitFor(() => {
+      expect(screen.queryByTestId('launch-stop-shortcut-popover')).not.toBeInTheDocument()
+    })
+    // Reopen: the listening state was reset with the popover.
+    fireEvent.click(screen.getByTestId('launch-stop-shortcut-button'))
+    expect(await screen.findByTestId('launch-stop-shortcut-popover')).not.toHaveTextContent(
+      'Listening... press new shortcut',
+    )
+  })
+
+  it('does nothing on blur while no popover is open', async () => {
+    render(<LaunchWindow />)
+    await screen.findByTestId('hud-bar')
+    blurWindow()
+    expect(screen.getByTestId('hud-bar')).toBeInTheDocument()
+    expect(screen.queryByTestId('launch-capture-settings-popover')).not.toBeInTheDocument()
+  })
+})
+
+describe('LaunchWindow stop shortcut on mount', () => {
+  beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', StubResizeObserver)
+    resizeObservers.length = 0
+    window.localStorage.clear()
+    selectedSourceChangedListeners = []
+    sourceSelectorClosedListeners = []
+    mainSelectedSource = null
+    stubElectronAPI()
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+  })
+
+  it('adopts the shortcut main has registered instead of the persisted one', async () => {
+    window.localStorage.setItem('capturia.stopRecordingShortcut', 'CommandOrControl+Shift+5')
+    window.electronAPI.getStopRecordingShortcut = vi.fn(async () => ({
+      success: true,
+      accelerator: 'CommandOrControl+Shift+9',
+    }))
+    render(<LaunchWindow />)
+    const button = await screen.findByTestId('launch-stop-shortcut-button')
+    // macOS glyphs once the platform probe has answered.
+    await waitFor(() => {
+      expect(button).toHaveTextContent('⌘⇧9')
+    })
+    expect(window.electronAPI.setStopRecordingShortcut).not.toHaveBeenCalled()
+    expect(window.localStorage.getItem('capturia.stopRecordingShortcut')).toBe(
+      'CommandOrControl+Shift+9',
+    )
+  })
+
+  it('pushes the persisted shortcut to main when nothing is registered there', async () => {
+    window.localStorage.setItem('capturia.stopRecordingShortcut', 'CommandOrControl+Shift+5')
+    render(<LaunchWindow />)
+    await waitFor(() => {
+      expect(window.electronAPI.setStopRecordingShortcut).toHaveBeenCalledWith(
+        'CommandOrControl+Shift+5',
+      )
+    })
+    await waitFor(() => {
+      expect(screen.getByTestId('launch-stop-shortcut-button')).toHaveTextContent('⌘⇧5')
+    })
   })
 })

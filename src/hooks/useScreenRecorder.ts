@@ -15,6 +15,7 @@ import {
   type RecordingTransitionState,
 } from './recordingPhase'
 import { useI18n } from '@/i18n'
+import { mixAudioTracks, normalizeMicrophoneGain } from '@/lib/audioMix'
 import { resolveNativeRecorderStartFailureMessage } from '@/lib/permissions/nativeRecorderErrors'
 import { reportUserActionError } from '@/lib/userErrorFeedback'
 import { webcamDeviceIdentityFrom } from '@/lib/webcamDeviceIdentity'
@@ -27,6 +28,12 @@ type UseScreenRecorderReturn = {
    * macOS path when the running helper announced pause support (old helper: hidden).
    */
   canPause: boolean
+  /**
+   * The native macOS helper announced system-audio capture on its last start
+   * (remembered across launches). The HUD hides the system-audio toggle on macOS
+   * until this is true; on Windows/Linux the browser path handles it directly.
+   */
+  nativeSystemAudioSupported: boolean
   toggleRecording: () => void
   pauseRecording: () => void
   resumeRecording: () => void
@@ -55,13 +62,34 @@ type UseScreenRecorderOptions = {
   microphoneEnabled?: boolean
   /** Microphone chosen in the HUD picker (Chromium deviceId); empty = system default. */
   microphoneDeviceId?: string
+  /**
+   * Record what the computer plays (loopback on Windows, the desktop audio source
+   * on Linux) mixed with the microphone. Default off. Ignored on the macOS browser
+   * fallback path, where Chromium cannot capture system audio.
+   */
   systemAudioEnabled?: boolean
   /** Label of that microphone for the native helper (looked up from the id when absent). */
   microphoneDeviceName?: string
 }
 
-/** Length of the gain ramp at the start of a recording so the first mic packet does not click. */
-const MICROPHONE_FADE_IN_SECONDS = 0.02
+/** Remembered answer of the native macOS helper to "can you capture system audio?". */
+const NATIVE_SYSTEM_AUDIO_STORAGE_KEY = 'capturia.nativeSystemAudioSupported'
+
+function readNativeSystemAudioSupported(): boolean {
+  try {
+    return window.localStorage.getItem(NATIVE_SYSTEM_AUDIO_STORAGE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+function writeNativeSystemAudioSupported(supported: boolean): void {
+  try {
+    window.localStorage.setItem(NATIVE_SYSTEM_AUDIO_STORAGE_KEY, supported ? '1' : '0')
+  } catch {
+    // no-op
+  }
+}
 
 export type CaptureProfile = 'balanced' | 'quality' | 'ultra'
 export type CaptureFrameRate = 24 | 30 | 60 | 120
@@ -69,7 +97,10 @@ export type CaptureResolutionPreset = 'auto' | '1080p' | '1440p' | '2160p'
 type CursorMode = 'always' | 'never'
 
 type LegacyDesktopGetUserMedia = (constraints: {
-  audio?: MediaTrackConstraints | boolean
+  audio?:
+    | { mandatory?: Record<string, string | number | boolean | undefined> }
+    | MediaTrackConstraints
+    | boolean
   video?: {
     mandatory?: Record<string, string | number | boolean | undefined>
     cursor?: CursorMode
@@ -113,18 +144,18 @@ function dedupe<T>(items: T[]): T[] {
   return Array.from(new Set(items))
 }
 
-function normalizeMicrophoneGain(input?: number): number {
-  if (!Number.isFinite(input)) return 1
-  return Math.max(0.5, Math.min(2, Number(input)))
-}
-
+/**
+ * Video from `videoStream` plus the audio of `audioStream` (the mixed recording
+ * audio). Only video tracks are taken from `videoStream`, so a raw system-audio
+ * track riding on the desktop stream is never added twice.
+ */
 function combineVideoAndAudioStream(
   videoStream: MediaStream,
-  microphoneStream?: MediaStream | null,
+  audioStream?: MediaStream | null,
 ): MediaStream {
   const tracks: MediaStreamTrack[] = [...videoStream.getVideoTracks()]
-  if (microphoneStream) {
-    tracks.push(...microphoneStream.getAudioTracks())
+  if (audioStream) {
+    tracks.push(...audioStream.getAudioTracks())
   }
   return new MediaStream(tracks)
 }
@@ -195,6 +226,9 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
   const microphoneDeviceId = options.microphoneDeviceId || undefined
   const microphoneDeviceName = options.microphoneDeviceName || undefined
   const [recording, setRecording] = useState(false)
+  const [nativeSystemAudioSupported, setNativeSystemAudioSupported] = useState(
+    readNativeSystemAudioSupported,
+  )
   const [recordingState, setRecordingPhase] = useState<RecordingPhase>('idle')
   // Mirrors `nativeRecordingActive` for rendering (refs don't re-render): the HUD hides
   // Pause while the native recorder owns the session.
@@ -211,9 +245,13 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
   const cameraStream = useRef<MediaStream | null>(null)
   // Identity of the camera actually opened for the last (attempted) recording.
   const openedCameraRef = useRef<{ deviceId?: string; deviceName?: string } | null>(null)
-  const microphoneStream = useRef<MediaStream | null>(null)
+  // Audio handed to the recorder: the mixed mic + system destination stream, or a
+  // stream around the lone system track. Null when the recording has no audio.
+  const recordingAudioStream = useRef<MediaStream | null>(null)
+  // Raw microphone capture feeding the mix (kept so it is released on teardown).
   const microphoneSourceStream = useRef<MediaStream | null>(null)
-  const microphoneAudioContext = useRef<AudioContext | null>(null)
+  // AudioContext owning the mix graph (gain ramps, user gain, limiter).
+  const audioMixContext = useRef<AudioContext | null>(null)
   const startTime = useRef<number>(0)
   const compositionCleanup = useRef<(() => void) | null>(null)
   const cursorTrackingActive = useRef(false)
@@ -388,23 +426,23 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
       : new Error('Failed to create MediaRecorder with available codecs.')
   }
 
-  /** Stop the processed + source microphone streams and close the gain AudioContext. */
-  const releaseMicrophoneCapture = () => {
-    const processedMicStream = microphoneStream.current
-    if (processedMicStream) {
-      processedMicStream.getTracks().forEach((track) => track.stop())
-      microphoneStream.current = null
+  /** Stop the mixed + source microphone streams and close the mix AudioContext. */
+  const releaseAudioCapture = () => {
+    const mixedStream = recordingAudioStream.current
+    if (mixedStream) {
+      mixedStream.getTracks().forEach((track) => track.stop())
+      recordingAudioStream.current = null
     }
     const sourceMicStream = microphoneSourceStream.current
-    if (sourceMicStream && sourceMicStream !== processedMicStream) {
+    if (sourceMicStream && sourceMicStream !== mixedStream) {
       sourceMicStream.getTracks().forEach((track) => track.stop())
     }
     microphoneSourceStream.current = null
-    if (microphoneAudioContext.current) {
-      void microphoneAudioContext.current.close().catch((error) => {
-        console.warn('Failed to close microphone AudioContext during cleanup.', error)
+    if (audioMixContext.current) {
+      void audioMixContext.current.close().catch((error) => {
+        console.warn('Failed to close the recording AudioContext during cleanup.', error)
       })
-      microphoneAudioContext.current = null
+      audioMixContext.current = null
     }
   }
 
@@ -436,7 +474,7 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
       cameraStream.current.getTracks().forEach((track) => track.stop())
       cameraStream.current = null
     }
-    releaseMicrophoneCapture()
+    releaseAudioCapture()
     if (stream.current) {
       stream.current.getTracks().forEach((track) => track.stop())
       stream.current = null
@@ -614,9 +652,10 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
     overlayOptions: { shape: CameraOverlayShape; sizePercent: number },
   ): Promise<CompositionResources> => {
     const openWebcam = async (deviceId: string | undefined): Promise<MediaStream> => {
+      // No size hint on purpose: asking for 1280x720 made some drivers rotate a
+      // portrait camera into landscape. The native frame is centre-cropped into
+      // the overlay box by `drawVideoCover`, so any orientation renders undistorted.
       const videoConstraints: MediaTrackConstraints = {
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
         frameRate: { ideal: 30, max: 60 },
       }
       if (deviceId) {
@@ -745,12 +784,26 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
     let lastDrawTime = 0
     const frameIntervalMs = 1000 / compositeFrameRate
 
+    // Camera unplugged mid-recording: the <video> keeps showing its last frame, so
+    // without this flag the overlay would freeze on it. Drop the overlay, keep
+    // recording the plain desktop and tell the user once. `track.stop()` from our
+    // own cleanup does not fire `ended`, so this only reacts to a real loss.
+    let webcamLost = false
+    const webcamTrack = webcamStream.getVideoTracks()[0]
+    const handleWebcamEnded = () => {
+      if (!running || webcamLost) return
+      webcamLost = true
+      console.warn('[capture] camera track ended mid-recording; continuing without the overlay.')
+      toast.warning(t('editor.recordingCameraDisconnected'))
+    }
+    webcamTrack?.addEventListener('ended', handleWebcamEnded)
+
     const drawCompositedFrame = () => {
       if (desktopVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
         ctx.drawImage(desktopVideo, 0, 0, sourceWidth, sourceHeight)
       }
 
-      if (webcamVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+      if (!webcamLost && webcamVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
         const x = overlay.x
         const y = overlay.y
         const w = overlay.width
@@ -829,6 +882,7 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
       frameRate: compositeFrameRate,
       cleanup: () => {
         running = false
+        webcamTrack?.removeEventListener('ended', handleWebcamEnded)
         cancelAnimationFrame(rafToken)
         if (
           videoFrameCallbackToken !== null &&
@@ -843,22 +897,35 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
     }
   }
 
+  /**
+   * Desktop capture for the MediaRecorder path. With `withSystemAudio` the stream
+   * is asked for the desktop's audio as well (main grants Windows loopback through
+   * the display-media handler; the legacy constraints reach PulseAudio/PipeWire on
+   * Linux). A request that fails *with* audio is retried without it, so system
+   * audio never costs the recording; the caller checks the returned audio tracks
+   * and tells the user when none arrived.
+   */
   const captureDesktopStream = async (
     selectedSource: { id?: string | null },
     cursorMode: CursorMode,
+    withSystemAudio: boolean,
   ): Promise<MediaStream> => {
-    const captureWithLegacyDesktopConstraints = async (): Promise<MediaStream> => {
+    const captureWithLegacyDesktopConstraints = async (
+      includeAudio: boolean,
+    ): Promise<MediaStream> => {
       console.log(
         '[capture] using legacy getUserMedia with chromeMediaSource=desktop, cursor:',
         cursorMode,
         'sourceId:',
         selectedSource.id,
+        'systemAudio:',
+        includeAudio,
       )
       const getLegacyUserMedia = navigator.mediaDevices.getUserMedia.bind(
         navigator.mediaDevices,
       ) as unknown as LegacyDesktopGetUserMedia
       const stream = await getLegacyUserMedia({
-        audio: false,
+        audio: includeAudio ? { mandatory: { chromeMediaSource: 'desktop' } } : false,
         video: {
           mandatory: {
             chromeMediaSource: 'desktop',
@@ -873,12 +940,24 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
       console.log('[capture] legacy stream obtained, track settings:', trackSettings)
       return stream
     }
+    const captureLegacy = async (): Promise<MediaStream> => {
+      if (!withSystemAudio) return await captureWithLegacyDesktopConstraints(false)
+      try {
+        return await captureWithLegacyDesktopConstraints(true)
+      } catch (error) {
+        console.warn(
+          '[capture] legacy desktop capture with system audio failed, retrying video-only.',
+          error,
+        )
+        return await captureWithLegacyDesktopConstraints(false)
+      }
+    }
 
     // Hide-native-cursor path: prefer legacy constraints first because this path is
     // currently more reliable on Electron/macOS for cursor suppression.
     if (cursorMode === 'never') {
       try {
-        return await captureWithLegacyDesktopConstraints()
+        return await captureLegacy()
       } catch (error) {
         console.warn(
           'Legacy desktop capture failed for cursor hidden mode, trying displayMedia.',
@@ -889,15 +968,32 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
 
     const getDisplayMedia = navigator.mediaDevices.getDisplayMedia?.bind(navigator.mediaDevices)
     if (typeof getDisplayMedia === 'function') {
-      try {
-        console.log('[capture] trying getDisplayMedia with cursor:', cursorMode)
-        const stream = await getDisplayMedia({
-          audio: false,
+      const requestDisplayMedia = (includeAudio: boolean) =>
+        getDisplayMedia({
+          audio: includeAudio,
           video: {
             frameRate: { ideal: TARGET_CAPTURE_FPS, max: MAX_CAPTURE_FPS },
             cursor: cursorMode,
           } as MediaTrackConstraints,
         })
+      try {
+        console.log(
+          '[capture] trying getDisplayMedia with cursor:',
+          cursorMode,
+          'systemAudio:',
+          withSystemAudio,
+        )
+        let stream: MediaStream
+        try {
+          stream = await requestDisplayMedia(withSystemAudio)
+        } catch (error) {
+          if (!withSystemAudio) throw error
+          console.warn(
+            '[capture] getDisplayMedia with system audio failed, retrying video-only.',
+            error,
+          )
+          stream = await requestDisplayMedia(false)
+        }
         console.log('[capture] getDisplayMedia succeeded')
         return stream
       } catch (error) {
@@ -908,54 +1004,16 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
       }
     }
 
-    return await captureWithLegacyDesktopConstraints()
+    return await captureLegacy()
   }
 
   /**
-   * Microphone capture for the MediaRecorder path. Resolves to `null` when the
-   * mic is switched off or cannot be opened (denied, unplugged): the recording
-   * then proceeds without an audio track instead of failing outright.
+   * Raw microphone capture for the MediaRecorder path (gain, ramp and limiter are
+   * applied later by the mix graph together with system audio). Resolves to `null`
+   * when the mic is switched off or cannot be opened (denied, unplugged): the
+   * recording then proceeds without a mic instead of failing outright.
    */
   const captureOptionalMicrophoneStream = async (): Promise<MediaStream | null> => {
-    const buildAdjustedMicrophoneStream = (sourceStream: MediaStream): MediaStream => {
-      const AudioContextConstructor =
-        window.AudioContext ||
-        (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
-      if (!AudioContextConstructor) {
-        console.warn('AudioContext is unavailable; microphone gain control is skipped.')
-        return sourceStream
-      }
-
-      const audioContext = new AudioContextConstructor()
-      const sourceNode = audioContext.createMediaStreamSource(sourceStream)
-      const gainNode = audioContext.createGain()
-      // Short ramp from silence to the user's gain: the first packet of a fresh
-      // capture otherwise lands as an audible click at the head of the recording.
-      gainNode.gain.setValueAtTime(0, audioContext.currentTime)
-      gainNode.gain.linearRampToValueAtTime(
-        microphoneGain,
-        audioContext.currentTime + MICROPHONE_FADE_IN_SECONDS,
-      )
-
-      const limiterNode = audioContext.createDynamicsCompressor()
-      limiterNode.threshold.value = -1
-      limiterNode.knee.value = 0
-      limiterNode.ratio.value = 20
-      limiterNode.attack.value = 0.003
-      limiterNode.release.value = 0.1
-
-      const destination = audioContext.createMediaStreamDestination()
-      sourceNode.connect(gainNode)
-      gainNode.connect(limiterNode)
-      limiterNode.connect(destination)
-
-      microphoneAudioContext.current = audioContext
-      void audioContext.resume().catch((error) => {
-        console.warn('Failed to resume microphone AudioContext for gain processing.', error)
-      })
-      return destination.stream
-    }
-
     if (!microphoneEnabled) {
       return null
     }
@@ -989,12 +1047,17 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
         sourceStream = await openMicrophone(undefined)
       }
       microphoneSourceStream.current = sourceStream
-      return buildAdjustedMicrophoneStream(sourceStream)
+      return sourceStream
     } catch (error) {
       console.warn('Microphone unavailable, recording without audio.', error)
       notifyMicrophoneFallback()
       return null
     }
+  }
+
+  /** System audio was asked for but the platform gave no track; the recording goes on without it. */
+  const notifySystemAudioUnavailable = () => {
+    toast.warning(t('editor.recordingSystemAudioUnavailable'))
   }
 
   /** The recording continues without the webcam overlay; tell the user instead of failing silently. */
@@ -1155,7 +1218,14 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
             // The helper opened the default microphone instead of the picked one.
             toast.warning(t('launch.microphoneDeviceNotFound'))
           }
-          if (systemAudioEnabled && nativeStart.canCaptureSystemAudio !== true) {
+          // A helper that knows about system audio reports whether it can capture it;
+          // an older one says nothing, which is remembered as "not supported".
+          const nativeSystemAudio = nativeStart.canCaptureSystemAudio
+          if (typeof nativeSystemAudio === 'boolean') {
+            setNativeSystemAudioSupported(nativeSystemAudio)
+            writeNativeSystemAudioSupported(nativeSystemAudio)
+          }
+          if (systemAudioEnabled && nativeSystemAudio !== true) {
             // Helper built before system audio: the recording goes on without it.
             toast.warning(t('launch.systemAudioUnavailable'))
           }
@@ -1191,9 +1261,13 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
         }
       }
 
+      // Chromium cannot capture system audio on macOS; this path only runs there as
+      // the fallback for an unsupported OS version, and the HUD hides the toggle.
+      const systemAudioRequested = systemAudioEnabled && platform !== 'darwin'
+
       // Capture screen + microphone in parallel: the gap between the two getUserMedia
       // calls is the dominant source of mic-vs-video lag at the start of a recording.
-      const screenCapture = captureDesktopStream(selectedSource, cursorMode)
+      const screenCapture = captureDesktopStream(selectedSource, cursorMode, systemAudioRequested)
       const micCapture = captureOptionalMicrophoneStream()
 
       let desktopStream: MediaStream
@@ -1205,7 +1279,7 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
         void micCapture
           .then((micStream) => {
             micStream?.getTracks().forEach((track) => track.stop())
-            releaseMicrophoneCapture()
+            releaseAudioCapture()
           })
           .catch(() => undefined)
         throw error
@@ -1269,9 +1343,24 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
       )
 
       const micStream = await micCapture
-      microphoneStream.current = micStream
-      const desktopRecordingStream = combineVideoAndAudioStream(desktopStream, micStream)
-      const hasMicrophoneAudio = (micStream?.getAudioTracks().length ?? 0) > 0
+      const micAudioTrack = micStream?.getAudioTracks()[0] ?? null
+      const systemAudioTrack = systemAudioRequested
+        ? (desktopStream.getAudioTracks()[0] ?? null)
+        : null
+      if (systemAudioRequested && !systemAudioTrack) {
+        console.warn(
+          '[capture] system audio requested but the desktop stream carries no audio track.',
+        )
+        notifySystemAudioUnavailable()
+      }
+      // One recordable track: mic (user gain, 20 ms ramp) + system audio through a
+      // soft limiter; a lone system track passes through untouched.
+      const audioMix = mixAudioTracks({ micAudioTrack, systemAudioTrack, microphoneGain })
+      audioMixContext.current = audioMix.context
+      recordingAudioStream.current = audioMix.stream
+      const desktopRecordingStream = combineVideoAndAudioStream(desktopStream, audioMix.stream)
+      const hasMicrophoneAudio = micAudioTrack !== null
+      const hasSystemAudio = systemAudioTrack !== null
 
       let recordingStream: MediaStream = desktopRecordingStream
       if (includeCamera) {
@@ -1281,7 +1370,7 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
             sizePercent: cameraSizePercent,
           })
           compositionCleanup.current = composition.cleanup
-          recordingStream = combineVideoAndAudioStream(composition.compositeStream, micStream)
+          recordingStream = combineVideoAndAudioStream(composition.compositeStream, audioMix.stream)
           width = composition.width
           height = composition.height
           frameRate = composition.frameRate
@@ -1442,7 +1531,8 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
             mimeType: recordedMimeType,
             capturedAt: timestamp,
             systemCursorMode,
-            hasMicrophoneAudio,
+            // The editor reads this as "the file carries an audio track".
+            hasMicrophoneAudio: hasMicrophoneAudio || hasSystemAudio,
             durationMs: duration,
             cursorTrack: capturedCursorTrack,
           }
@@ -1530,6 +1620,7 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
           microphoneGain,
           microphoneEnabled,
           microphoneDeviceId,
+          systemAudioEnabled,
           recordSystemCursor,
           normalizedMessage: message,
           nativeStartCode: nativeStartFailure?.code,
@@ -1745,6 +1836,7 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
     recording,
     recordingState,
     canPause,
+    nativeSystemAudioSupported,
     toggleRecording,
     pauseRecording,
     resumeRecording,

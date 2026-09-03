@@ -144,8 +144,11 @@
 		"microphoneDevice": "麦克风",
 		"noneFound": "未找到麦克风",
 		"level": "输入电平",
-		"settings": "麦克风设置"
+		"settings": "麦克风设置",
+		"enableSystemAudio": "录制系统声音（电脑播放的声音）",
+		"disableSystemAudio": "停止录制系统声音"
 	},
+	"systemAudio": "系统声音",
 	"notes": "笔记",
 	"openNotesFailed": "无法打开笔记窗口。",
 	"dragHandle": "拖动以移动启动栏",

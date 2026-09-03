@@ -89,6 +89,15 @@ if (IS_LINUX_WAYLAND) {
   app.commandLine.appendSwitch('disable-gpu-compositing')
 }
 
+if (process.platform === 'darwin') {
+  // A `getDisplayMedia({ audio: true })` request on macOS otherwise goes through the
+  // CoreAudio tap API, which needs an audio-capture usage string in the *host*
+  // process's Info.plist: absent when running from a terminal or IDE in dev, the
+  // renderer crashes. Route the request through the Screen & System Audio
+  // Recording permission instead (system audio on macOS is the native helper's job).
+  app.commandLine.appendSwitch('disable-features', 'MacCatapLoopbackAudioForScreenShare')
+}
+
 // Resolved once at startup; `electron/paths.ts` owns the layout (lazy, testable).
 const RECORDINGS_DIR = getRecordingsDir()
 
@@ -1319,7 +1328,7 @@ appReady?.then(async () => {
     }
   })
 
-  session.defaultSession.setDisplayMediaRequestHandler(async (_request, callback) => {
+  session.defaultSession.setDisplayMediaRequestHandler(async (request, callback) => {
     let callbackInvoked = false
     try {
       console.log(
@@ -1364,9 +1373,23 @@ appReady?.then(async () => {
         return
       }
 
-      console.log('[display-media] providing source:', selectedSource.id, selectedSource.name)
+      // System audio: Chromium only offers a loopback device on Windows. Linux gets
+      // desktop audio through the renderer's legacy `chromeMediaSource: 'desktop'`
+      // audio constraint (PulseAudio/PipeWire monitor), and macOS through the native
+      // helper, so those platforms are handed video only here.
+      const grantSystemAudio = request.audioRequested && process.platform === 'win32'
+      console.log(
+        '[display-media] providing source:',
+        selectedSource.id,
+        selectedSource.name,
+        'audio:',
+        grantSystemAudio ? 'loopback' : 'none',
+      )
       callbackInvoked = true
-      callback({ video: selectedSource })
+      callback({
+        video: selectedSource,
+        ...(grantSystemAudio ? { audio: 'loopback' as const } : {}),
+      })
     } catch (error) {
       console.error('[display-media] handler failed:', error)
       if (!callbackInvoked) {

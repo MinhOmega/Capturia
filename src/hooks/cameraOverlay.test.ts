@@ -27,4 +27,29 @@ describe('computeCameraOverlayRect', () => {
     expect(tooSmall.width).toBe(269)
     expect(tooLarge.width).toBe(560)
   })
+
+  it('keeps the overlay inside a portrait canvas (rotated display or window) for every shape', () => {
+    for (const shape of ['rounded', 'square', 'circle'] as const) {
+      for (const sizePercent of [14, 22, 40]) {
+        const rect = computeCameraOverlayRect(1080, 1920, { shape, sizePercent })
+        expect(rect.x).toBeGreaterThanOrEqual(0)
+        expect(rect.y).toBeGreaterThanOrEqual(0)
+        expect(rect.x + rect.width).toBeLessThanOrEqual(1080)
+        expect(rect.y + rect.height).toBeLessThanOrEqual(1920)
+        // The box scales with the canvas width, so a narrow portrait canvas never
+        // gets a wider overlay than the same percentage on a landscape one.
+        expect(rect.width).toBeLessThanOrEqual(
+          computeCameraOverlayRect(1920, 1080, { shape, sizePercent }).width,
+        )
+      }
+    }
+  })
+
+  it('stays within a very small canvas even at the minimum overlay size', () => {
+    const rect = computeCameraOverlayRect(320, 240, { sizePercent: 14 })
+    // Minimum overlay width (180) plus its margin still fits a 320 px wide frame.
+    expect(rect.x).toBeGreaterThanOrEqual(0)
+    expect(rect.x + rect.width).toBeLessThanOrEqual(320)
+    expect(rect.y + rect.height).toBeLessThanOrEqual(240)
+  })
 })

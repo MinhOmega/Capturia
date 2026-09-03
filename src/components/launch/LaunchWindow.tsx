@@ -34,6 +34,8 @@ import {
   SlidersHorizontal,
   Timer,
   Trash2,
+  Volume2,
+  VolumeX,
 } from 'lucide-react'
 import { getAvailableLocales, getLocaleName, useI18n } from '@/i18n'
 import { toast } from 'sonner'
@@ -84,6 +86,7 @@ const STOP_SHORTCUT_STORAGE_KEY = 'capturia.stopRecordingShortcut'
 const CAMERA_DEVICE_STORAGE_KEY = 'capturia.cameraDeviceId'
 const MICROPHONE_ENABLED_STORAGE_KEY = 'capturia.microphoneEnabled'
 const MICROPHONE_DEVICE_STORAGE_KEY = 'capturia.microphoneDeviceId'
+const SYSTEM_AUDIO_ENABLED_STORAGE_KEY = 'capturia.systemAudioEnabled'
 const DEFAULT_STOP_RECORDING_SHORTCUT = 'CommandOrControl+Shift+2'
 const AUTO_HIDE_HUD_ON_RECORD_STORAGE_KEY = 'capturia.autoHideHudOnRecord'
 const CAPTURE_MODE_STORAGE_KEY = 'capturia.captureMode'
@@ -240,6 +243,11 @@ export function LaunchWindow() {
     (device) => device.deviceId === microphoneDeviceId,
   )?.label
   const [microphonePopoverOpen, setMicrophonePopoverOpen] = useState(false)
+  // System audio (what the computer plays), mixed with the mic. Off by default:
+  // loopback capture is a deliberate choice, not something to surprise a user with.
+  const [systemAudioEnabled, setSystemAudioEnabled] = useState(
+    () => readStoredString(SYSTEM_AUDIO_ENABLED_STORAGE_KEY) === '1',
+  )
   const [captureProfile, setCaptureProfile] = useState<CaptureProfile>(() => {
     try {
       const value = window.localStorage.getItem('capturia.captureProfile')
@@ -321,6 +329,8 @@ export function LaunchWindow() {
   })
   const [captureStopShortcut, setCaptureStopShortcut] = useState(false)
   const [stopShortcutPopoverOpen, setStopShortcutPopoverOpen] = useState(false)
+  const [capturePopoverOpen, setCapturePopoverOpen] = useState(false)
+  const [cameraPopoverOpen, setCameraPopoverOpen] = useState(false)
   const [isMacPlatform, setIsMacPlatform] = useState(() => {
     if (typeof navigator === 'undefined') return false
     return /Mac|iPhone|iPad|iPod/.test(navigator.platform)
@@ -349,6 +359,7 @@ export function LaunchWindow() {
     recording,
     recordingState,
     canPause,
+    nativeSystemAudioSupported,
     toggleRecording,
     pauseRecording,
     resumeRecording,
@@ -365,12 +376,19 @@ export function LaunchWindow() {
     cameraDeviceName,
     microphoneEnabled,
     microphoneDeviceId,
+    // The hook ignores this on the macOS browser fallback path; on the native path
+    // the helper answers with `canCaptureSystemAudio`, which gates the toggle below.
+    systemAudioEnabled,
     captureProfile,
     captureFrameRate: captureMode === 'pro' ? captureFrameRate : undefined,
     captureResolutionPreset: captureMode === 'pro' ? captureResolutionPreset : undefined,
     recordSystemCursor,
   })
   const isTransitioning = recordingState === 'starting' || recordingState === 'stopping'
+  // The browser recording path can only capture system audio on Windows (loopback)
+  // and Linux (desktop audio source). On macOS it is the native helper's job, so the
+  // toggle stays hidden there until the helper has reported that it can do it.
+  const systemAudioToggleAvailable = !isMacPlatform || nativeSystemAudioSupported
   const [countdownRemaining, setCountdownRemaining] = useState<number | null>(null)
   const isCountingDown = countdownRemaining !== null
   const controlsLocked = recording || isTransitioning || isCountingDown
@@ -641,6 +659,27 @@ export function LaunchWindow() {
   }`
   const popoverSide = isVerticalTray ? 'right' : 'top'
 
+  // Every HUD popover closes when the window loses focus. The HUD window is a
+  // small bar on a mostly transparent (click-through) reserve: a click anywhere
+  // else on screen never reaches this renderer as a pointerdown, so the popover's
+  // own outside-click dismissal cannot fire, and once focus is gone Escape cannot
+  // be delivered here either. `blur` is the one signal that crosses that boundary.
+  // Registered on the window in bubble phase: element blur does not bubble, so
+  // moving focus between the controls inside a popover never triggers this.
+  const closePopovers = useCallback(() => {
+    setMicrophonePopoverOpen(false)
+    setCapturePopoverOpen(false)
+    setStopShortcutPopoverOpen(false)
+    setCaptureStopShortcut(false)
+    setCameraPopoverOpen(false)
+  }, [])
+  useEffect(() => {
+    window.addEventListener('blur', closePopovers)
+    return () => {
+      window.removeEventListener('blur', closePopovers)
+    }
+  }, [closePopovers])
+
   useEffect(() => {
     let timer: NodeJS.Timeout | null = null
     const isActive = recording || recordingState === 'paused'
@@ -745,6 +784,10 @@ export function LaunchWindow() {
   useEffect(() => {
     writeStoredString(MICROPHONE_DEVICE_STORAGE_KEY, microphoneDeviceId)
   }, [microphoneDeviceId])
+
+  useEffect(() => {
+    writeStoredString(SYSTEM_AUDIO_ENABLED_STORAGE_KEY, systemAudioEnabled ? '1' : '0')
+  }, [systemAudioEnabled])
 
   useEffect(() => {
     try {
@@ -862,8 +905,31 @@ export function LaunchWindow() {
     [t],
   )
 
+  // Mount: main owns the registered stop shortcut (it persists it with the other
+  // global shortcuts), so ask it first and mirror the answer into localStorage.
+  // Only when main has nothing registered (older main, first run) is the persisted
+  // HUD value pushed through as before.
   useEffect(() => {
-    void applyStopRecordingShortcut(stopRecordingShortcut, { silent: true })
+    let cancelled = false
+    void (async () => {
+      let registered = ''
+      try {
+        const result = await window.electronAPI?.getStopRecordingShortcut?.()
+        registered = result?.accelerator || ''
+      } catch {
+        registered = ''
+      }
+      if (cancelled) return
+      if (registered) {
+        setStopRecordingShortcut(registered)
+        writeStoredString(STOP_SHORTCUT_STORAGE_KEY, registered)
+        return
+      }
+      void applyStopRecordingShortcut(stopRecordingShortcut, { silent: true })
+    })()
+    return () => {
+      cancelled = true
+    }
     // apply once using persisted value
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -1585,6 +1651,32 @@ export function LaunchWindow() {
           ) : null}
         </div>
 
+        {systemAudioToggleAvailable ? (
+          <Button
+            variant="link"
+            size="sm"
+            className={`gap-1 shrink-0 min-w-[96px] text-white bg-transparent hover:bg-transparent px-1 text-center text-xs ${styles.electronNoDrag}`}
+            onClick={() => setSystemAudioEnabled((value) => !value)}
+            disabled={controlsLocked}
+            title={
+              systemAudioEnabled
+                ? t('launch.audio.disableSystemAudio')
+                : t('launch.audio.enableSystemAudio')
+            }
+            aria-pressed={systemAudioEnabled}
+            data-testid="launch-system-audio-toggle"
+          >
+            {systemAudioEnabled ? (
+              <Volume2 size={14} className="text-cyan-300" />
+            ) : (
+              <VolumeX size={14} className="text-white/50" />
+            )}
+            <span className={systemAudioEnabled ? 'text-cyan-300' : 'text-white/50'}>
+              {t('launch.systemAudio')}
+            </span>
+          </Button>
+        ) : null}
+
         <Button
           variant="link"
           size="sm"
@@ -1616,13 +1708,14 @@ export function LaunchWindow() {
           </Button>
         ) : null}
 
-        <Popover>
+        <Popover open={capturePopoverOpen} onOpenChange={setCapturePopoverOpen}>
           <PopoverTrigger asChild>
             <Button
               variant="link"
               size="sm"
               className={`gap-1 shrink-0 min-w-[118px] text-white bg-transparent hover:bg-transparent px-1 text-center text-xs ${styles.electronNoDrag}`}
               disabled={controlsLocked}
+              data-testid="launch-capture-settings-button"
               title={
                 captureMode === 'pro'
                   ? t('launch.captureProLabel', {
@@ -1644,6 +1737,7 @@ export function LaunchWindow() {
             align="center"
             collisionPadding={12}
             className={`w-[360px] bg-[#11131a] border border-white/20 text-white p-2.5 ${styles.electronNoDrag}`}
+            data-testid="launch-capture-settings-popover"
           >
             <div className="flex items-center justify-between gap-2 mb-2">
               <span className="text-[11px] text-white/80">{t('launch.captureSettingsTitle')}</span>
@@ -1801,6 +1895,7 @@ export function LaunchWindow() {
               className={`gap-1 shrink-0 min-w-[100px] text-white bg-transparent hover:bg-transparent px-1 text-center text-xs ${styles.electronNoDrag}`}
               disabled={controlsLocked}
               title={t('launch.stopShortcutLabel', { shortcut: displayedStopShortcut })}
+              data-testid="launch-stop-shortcut-button"
             >
               <Keyboard size={13} className="text-white/80" />
               <span className="text-white/90">{displayedStopShortcut}</span>
@@ -1812,6 +1907,7 @@ export function LaunchWindow() {
             align="center"
             collisionPadding={12}
             className={`w-[250px] bg-[#11131a] border border-white/20 text-white p-2.5 ${styles.electronNoDrag}`}
+            data-testid="launch-stop-shortcut-popover"
           >
             <div className="text-[11px] text-white/80 mb-2">
               {t('launch.stopShortcutConfigTitle')}
@@ -1866,13 +1962,14 @@ export function LaunchWindow() {
         </Button>
 
         {includeCamera ? (
-          <Popover>
+          <Popover open={cameraPopoverOpen} onOpenChange={setCameraPopoverOpen}>
             <PopoverTrigger asChild>
               <Button
                 variant="link"
                 size="sm"
                 className={`gap-1 shrink-0 min-w-[70px] text-cyan-200 bg-cyan-400/10 hover:bg-cyan-400/20 border border-cyan-300/20 px-1 text-xs ${styles.electronNoDrag}`}
                 title={t('launch.cameraShapeLabel', { shape: cameraShapeLabelMap[cameraShape] })}
+                data-testid="launch-camera-shape-button"
               >
                 <SlidersHorizontal size={13} />
                 <span>{t('launch.shape')}</span>
@@ -1884,6 +1981,7 @@ export function LaunchWindow() {
               align="center"
               collisionPadding={12}
               className={`w-[210px] bg-[#11131a] border border-cyan-300/20 text-cyan-100 p-2 ${styles.electronNoDrag}`}
+              data-testid="launch-camera-shape-popover"
             >
               <div className="flex items-center justify-between text-[11px] mb-2">
                 <span>{t('launch.shape')}</span>
