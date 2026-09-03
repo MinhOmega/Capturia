@@ -18,7 +18,8 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import os from 'node:os'
 import fs from 'node:fs/promises'
-import { readFileSync, statSync, openSync, readSync, closeSync } from 'node:fs'
+import { createReadStream, statSync, openSync, readSync, closeSync } from 'node:fs'
+import { Readable } from 'node:stream'
 import {
   createHudOverlayWindow,
   createEditorWindow,
@@ -30,6 +31,7 @@ import {
   getHudOverlayWindow,
   HEADLESS,
 } from './windows'
+import { atomicWriteFile } from './ipc/atomicSave'
 import { registerIpcHandlers } from './ipc/handlers'
 import { getRecordingsDir, getUserDataDir } from './paths'
 import {
@@ -39,6 +41,13 @@ import {
   normalizeExternalUrl,
 } from './ipc/paths'
 import { shouldSwallowMainProcessError } from './main-process-errors'
+import { attachNavigationPolicy } from './navigationPolicy'
+import {
+  contentRangeHeader,
+  parseRangeHeader,
+  unsatisfiableContentRangeHeader,
+} from './media/rangeRequests'
+import { isPermissionAllowed, windowTypeForContents } from './windowPermissions'
 import { checkLatestRelease } from './update-checker'
 import {
   type AutoUpdaterController,
@@ -872,11 +881,9 @@ async function readAutoUpdateCheckPreference(): Promise<boolean> {
 }
 
 async function writeAutoUpdateCheckPreference(enabled: boolean): Promise<void> {
-  await fs.mkdir(path.dirname(UPDATE_PREFERENCES_FILE), { recursive: true })
-  await fs.writeFile(
+  await atomicWriteFile(
     UPDATE_PREFERENCES_FILE,
     serializeUpdatePreferences({ autoUpdateCheck: enabled }),
-    'utf-8',
   )
 }
 
@@ -1301,19 +1308,29 @@ app.on('before-quit', (event) => {
   })()
 })
 
-// Web permissions the renderer may hold/request. Everything else (notifications,
-// geolocation, clipboard, ...) is denied. `fullscreen` is here for the editor's
-// fullscreen preview (`requestFullscreen()`); the rest is what capture needs.
-const ALLOWED_WEB_PERMISSIONS: ReadonlySet<string> = new Set([
-  'media',
-  'audioCapture',
-  'microphone',
-  'videoCapture',
-  'camera',
-  'screen',
-  'display-capture',
-  'fullscreen',
-])
+/**
+ * Bodies larger than this are streamed rather than buffered. 8 MiB is roughly
+ * a second of a high-bitrate screen recording: below it the whole response is
+ * a rounding error against the renderer's own decode buffers, above it the
+ * main process would be holding a copy of something the renderer is already
+ * holding.
+ */
+const LOCAL_MEDIA_STREAM_THRESHOLD_BYTES = 8 * 1024 * 1024
+
+const LOCAL_MEDIA_CONTENT_TYPES: Readonly<Record<string, string>> = {
+  '.webm': 'video/webm',
+  '.mp4': 'video/mp4',
+  '.mov': 'video/quicktime',
+  '.m4v': 'video/x-m4v',
+  '.mkv': 'video/x-matroska',
+  '.json': 'application/json',
+}
+
+function localMediaContentType(filePath: string): string {
+  return (
+    LOCAL_MEDIA_CONTENT_TYPES[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream'
+  )
+}
 
 // Register all IPC handlers when app is ready
 const appReady = hasSingleInstanceLock ? app.whenReady() : null
@@ -1327,13 +1344,32 @@ appReady?.then(async () => {
     app.dock?.show()
   }
 
-  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
-    return ALLOWED_WEB_PERMISSIONS.has(permission)
+  // Capture belongs to the recorder HUD; every other window only plays back.
+  // See `./windowPermissions` for why the window's identity comes from what
+  // the main process created rather than from the URL the page reports.
+  session.defaultSession.setPermissionCheckHandler((webContents, permission, _origin, details) => {
+    return isPermissionAllowed({
+      permission,
+      windowType: windowTypeForContents(webContents),
+      isMainFrame: details?.isMainFrame !== false,
+    })
   })
 
-  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-    callback(ALLOWED_WEB_PERMISSIONS.has(permission))
-  })
+  session.defaultSession.setPermissionRequestHandler(
+    (webContents, permission, callback, details) => {
+      callback(
+        isPermissionAllowed({
+          permission,
+          windowType: windowTypeForContents(webContents),
+          isMainFrame: details?.isMainFrame !== false,
+        }),
+      )
+    },
+  )
+
+  // Capturia talks to no USB, HID or serial device. Chromium would otherwise
+  // remember a grant made by any page that managed to ask.
+  session.defaultSession.setDevicePermissionHandler(() => false)
 
   app.on('web-contents-created', (_event, contents) => {
     contents.on('render-process-gone', (_goneEvent, details) => {
@@ -1342,14 +1378,28 @@ appReady?.then(async () => {
         new Error(`reason=${details.reason}; exitCode=${details.exitCode}`),
       )
     })
+
+    // Every window is one document that never navigates. Anything that tries
+    // is page-driven, and the editor window runs with `webSecurity: false`, so
+    // a navigation it did not ask for is the most valuable thing an attacker
+    // could get. See `./navigationPolicy`.
+    attachNavigationPolicy(contents, {
+      openExternal: (url) => shell.openExternal(url),
+    })
   })
 
-  // Handle local-media:// requests by reading local files into Buffer.
-  // Uses Buffer (not Node.js streams) because Electron's Response constructor
-  // reliably accepts Buffer. Supports Range requests for video seeking.
-  // Only files inside the recordings dir or explicitly approved by the user
-  // (file picker) are served; the editor runs with webSecurity off, so this
-  // gate is what keeps the scheme from being an arbitrary file reader.
+  // Serve `local-media://` from disk. Only files inside the recordings dir or
+  // explicitly approved by the user (file picker) are served; the editor runs
+  // with webSecurity off, so this gate is what keeps the scheme from being an
+  // arbitrary file reader.
+  //
+  // Bodies above LOCAL_MEDIA_STREAM_THRESHOLD_BYTES are streamed. The old
+  // handler read whole files with readFileSync and allocated the remainder of
+  // the file for an open-ended range, which on a long recording meant hundreds
+  // of megabytes resident in the main process for a request that only moved
+  // the playhead. Smaller bodies stay on the Buffer path: for a few hundred KB
+  // a stream is more moving parts than it is worth, and Electron's Response
+  // has always accepted a Buffer.
   protocol.handle('local-media', async (request) => {
     const filePath = localMediaUrlToPath(request.url)
     if (!filePath || !isReadablePathAllowed(filePath, { recordingsDir: RECORDINGS_DIR })) {
@@ -1358,60 +1408,72 @@ appReady?.then(async () => {
     }
     try {
       const stat = statSync(filePath)
-      const ext = path.extname(filePath).toLowerCase()
-      const mimeMap: Record<string, string> = {
-        '.webm': 'video/webm',
-        '.mp4': 'video/mp4',
-        '.mov': 'video/quicktime',
-        '.m4v': 'video/x-m4v',
-        '.mkv': 'video/x-matroska',
-        '.json': 'application/json',
+      const contentType = localMediaContentType(filePath)
+      // `local-media://` is a different origin from the page that loads it, so
+      // without this a <video> reading from it is CORS-tainted and every pixel
+      // read fails: `new VideoFrame(video)` throws SecurityError and canvases
+      // go opaque. The exporter's decoder asks for the file in CORS mode; the
+      // request is already refused unless the path is approved, so the wildcard
+      // adds no reach beyond what the gate above allows. No credentials are
+      // involved, so `*` is the whole story.
+      const baseHeaders = {
+        'Content-Type': contentType,
+        'Accept-Ranges': 'bytes',
+        'Access-Control-Allow-Origin': '*',
       }
-      const contentType = mimeMap[ext] || 'application/octet-stream'
 
-      const rangeHeader = request.headers.get('range')
-      if (rangeHeader) {
-        const match = rangeHeader.match(/bytes=(\d+)-(\d*)/)
-        if (match) {
-          const start = parseInt(match[1], 10)
-          const end = match[2] ? parseInt(match[2], 10) : stat.size - 1
-          const chunkSize = end - start + 1
-          const buffer = Buffer.alloc(chunkSize)
-          const fd = openSync(filePath, 'r')
-          readSync(fd, buffer, 0, chunkSize, start)
-          closeSync(fd)
-          console.log('[local-media] range:', start, '-', end, '/', stat.size, filePath)
-          return new Response(buffer, {
-            status: 206,
-            headers: {
-              'Content-Type': contentType,
-              'Content-Range': `bytes ${start}-${end}/${stat.size}`,
-              'Content-Length': String(chunkSize),
-              'Accept-Ranges': 'bytes',
-              // See the note on the 200 response below.
-              'Access-Control-Allow-Origin': '*',
-            },
-          })
+      const range = parseRangeHeader(request.headers.get('range'), stat.size)
+
+      if (range.kind === 'unsatisfiable') {
+        console.warn('[local-media] range past the end of the file:', request.url)
+        return new Response(null, {
+          status: 416,
+          headers: {
+            ...baseHeaders,
+            'Content-Range': unsatisfiableContentRangeHeader(stat.size),
+          },
+        })
+      }
+
+      const start = range.kind === 'partial' ? range.start : 0
+      const end = range.kind === 'partial' ? range.end : Math.max(0, stat.size - 1)
+      const length = range.kind === 'partial' ? range.length : stat.size
+      const headers =
+        range.kind === 'partial'
+          ? {
+              ...baseHeaders,
+              'Content-Range': contentRangeHeader(start, end, stat.size),
+              'Content-Length': String(length),
+            }
+          : { ...baseHeaders, 'Content-Length': String(length) }
+      const status = range.kind === 'partial' ? 206 : 200
+
+      if (length > LOCAL_MEDIA_STREAM_THRESHOLD_BYTES) {
+        const stream = createReadStream(filePath, { start, end })
+        return new Response(Readable.toWeb(stream) as ReadableStream<Uint8Array>, {
+          status,
+          headers,
+        })
+      }
+
+      if (stat.size === 0) return new Response(null, { status, headers })
+
+      const buffer = Buffer.alloc(length)
+      const fd = openSync(filePath, 'r')
+      try {
+        // A single read is allowed to come up short; keep going until the
+        // buffer is full or the file ends, or the response would declare more
+        // bytes than it carries.
+        let filled = 0
+        while (filled < length) {
+          const read = readSync(fd, buffer, filled, length - filled, start + filled)
+          if (read <= 0) break
+          filled += read
         }
+      } finally {
+        closeSync(fd)
       }
-
-      console.log('[local-media] full:', stat.size, 'bytes', contentType, filePath)
-      const buffer = readFileSync(filePath)
-      return new Response(buffer, {
-        status: 200,
-        headers: {
-          'Content-Type': contentType,
-          'Content-Length': String(stat.size),
-          'Accept-Ranges': 'bytes',
-          // `local-media://` is a different origin from the page that loads it,
-          // so without this a <video> reading from it is CORS-tainted and every
-          // pixel read fails: `new VideoFrame(video)` throws SecurityError and
-          // canvases go opaque. The exporter's decoder asks for the file in CORS
-          // mode; the request is already refused unless the path is approved, so
-          // the wildcard adds no reach beyond what the handler above allows.
-          'Access-Control-Allow-Origin': '*',
-        },
-      })
+      return new Response(buffer, { status, headers })
     } catch (error) {
       console.error('[local-media] failed to serve file:', request.url, error)
       return new Response('Not Found', { status: 404 })

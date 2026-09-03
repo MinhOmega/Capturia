@@ -12,8 +12,8 @@
 // - the two actions may not share an accelerator.
 
 import fs from 'node:fs/promises'
-import path from 'node:path'
 import { DEFAULT_SHORTCUTS, type ShortcutBinding } from '../src/lib/shortcuts'
+import { atomicWriteJson } from './ipc/atomicSave'
 
 export type GlobalShortcutAction = 'openApp' | 'stopRecording'
 
@@ -249,6 +249,5 @@ export async function persistStoredGlobalBinding(
     existing = {}
   }
   existing[action] = binding
-  await fs.mkdir(path.dirname(shortcutsFile), { recursive: true })
-  await fs.writeFile(shortcutsFile, JSON.stringify(existing, null, 2), 'utf-8')
+  await atomicWriteJson(shortcutsFile, existing, { space: 2 })
 }
