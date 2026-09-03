@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { findFreeGapAt } from './regionPlacement'
+import { findFreeGapAt, planDuplicateSpan } from './regionPlacement'
 
 const totalMs = 10000
 
@@ -50,5 +50,53 @@ describe('findFreeGapAt', () => {
     const { ok, gapMs } = findFreeGapAt(regions, 1000, totalMs)
     expect(ok).toBe(true)
     expect(gapMs).toBe(2000)
+  })
+})
+
+describe('planDuplicateSpan', () => {
+  it('places the copy straight after the original with the same length', () => {
+    expect(planDuplicateSpan({ startMs: 1000, endMs: 3000 }, totalMs)).toEqual({
+      startMs: 3000,
+      endMs: 5000,
+    })
+  })
+
+  it('shortens the copy rather than running past the end of the recording', () => {
+    expect(planDuplicateSpan({ startMs: 6000, endMs: 9000 }, totalMs)).toEqual({
+      startMs: 9000,
+      endMs: 10_000,
+    })
+  })
+
+  it('shortens the copy rather than overlapping the next region', () => {
+    const source = { startMs: 1000, endMs: 3000 }
+    const siblings = [source, { startMs: 3500, endMs: 6000 }]
+    expect(planDuplicateSpan(source, totalMs, siblings)).toEqual({ startMs: 3000, endMs: 3500 })
+  })
+
+  it('ignores the original when it is passed among the siblings', () => {
+    const source = { startMs: 1000, endMs: 3000 }
+    expect(planDuplicateSpan(source, totalMs, [source])).toEqual({ startMs: 3000, endMs: 5000 })
+  })
+
+  it('refuses when there is no room after the region', () => {
+    // Ends exactly at the duration.
+    expect(planDuplicateSpan({ startMs: 8000, endMs: 10_000 }, totalMs)).toBeNull()
+    // Another region starts the instant this one ends.
+    expect(
+      planDuplicateSpan({ startMs: 1000, endMs: 3000 }, totalMs, [{ startMs: 3000, endMs: 4000 }]),
+    ).toBeNull()
+  })
+
+  it('refuses a region with no length or an unknown duration', () => {
+    expect(planDuplicateSpan({ startMs: 1000, endMs: 1000 }, totalMs)).toBeNull()
+    expect(planDuplicateSpan({ startMs: 1000, endMs: 3000 }, Number.NaN)).toBeNull()
+  })
+
+  it('rounds the span to whole milliseconds', () => {
+    expect(planDuplicateSpan({ startMs: 1000.4, endMs: 2999.6 }, totalMs)).toEqual({
+      startMs: 3000,
+      endMs: 4999,
+    })
   })
 })

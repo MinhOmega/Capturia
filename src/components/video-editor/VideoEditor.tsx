@@ -60,7 +60,8 @@ import { EditorMenuBar } from './EditorMenuBar'
 import { ANNOTATION_ID_PREFIX, BLUR_ID_PREFIX, maxIdNum } from './idCounters'
 import { BLUR_REGIONS_ENABLED } from './featureFlags'
 import { normalizeAnnotationBlurData } from '@/lib/blurEffects'
-import { findFreeGapAt } from './regionPlacement'
+import { findFreeGapAt, planDuplicateSpan } from './regionPlacement'
+import { stepTransport, type TransportKey } from './videoPlayback/transport'
 import {
   buildPastedAnnotation,
   buildZoomRegion,
@@ -2377,7 +2378,68 @@ export default function VideoEditor() {
     t,
   ])
 
+  // Ctrl/Cmd+D: a copy of the selected region straight after itself, the same
+  // length, shortened rather than allowed to overlap or run off the end.
+  // Distinct from the annotation panel's "Duplicate", which makes a copy over
+  // the same span and nudges it on screen instead of moving it in time.
+  const handleDuplicateSelectedRegion = useCallback(() => {
+    const totalMs = Math.round(durationRef.current * 1000)
+    if (totalMs <= 0) return
+
+    if (selectedZoomId) {
+      const regions = zoomRegions
+      const source = regions.find((region) => region.id === selectedZoomId)
+      if (!source) return
+      // Zooms may not overlap, so the whole track constrains the copy.
+      const span = planDuplicateSpan(source, totalMs, regions)
+      if (!span) {
+        toast.error(t('timeline.cannotPlaceZoom'), {
+          description: t('timeline.cannotPlaceZoomDesc'),
+        })
+        return
+      }
+      const id = `zoom-${nextZoomIdRef.current++}`
+      setZoomRegionsForActiveAspect((prev) => [
+        ...prev,
+        { ...source, id, startMs: span.startMs, endMs: span.endMs, source: 'manual' },
+      ])
+      handleSelectZoom(id)
+      return
+    }
+
+    if (selectedAnnotationId) {
+      const source = annotationRegions.find((region) => region.id === selectedAnnotationId)
+      if (!source) return
+      // Annotations and blurs may overlap, so only the duration constrains them.
+      const span = planDuplicateSpan(source, totalMs)
+      if (!span) return
+      const duplicate = duplicateAnnotationRegion(source, {
+        id:
+          source.type === 'blur'
+            ? `${BLUR_ID_PREFIX}${nextBlurIdRef.current++}`
+            : `${ANNOTATION_ID_PREFIX}${nextAnnotationIdRef.current++}`,
+        zIndex: nextAnnotationZIndexRef.current++,
+        span,
+      })
+      setAnnotationRegions((prev) => [...prev, duplicate])
+      setSelectedAnnotationId(duplicate.id)
+      setSelectedZoomIdForActiveAspect(null)
+      setSelectedSegmentId(null)
+    }
+  }, [
+    annotationRegions,
+    zoomRegions,
+    selectedZoomId,
+    selectedAnnotationId,
+    handleSelectZoom,
+    setZoomRegionsForActiveAspect,
+    setSelectedZoomIdForActiveAspect,
+    t,
+  ])
+
   // Refs for the keydown handler below (it has [] deps).
+  const handleDuplicateSelectedRegionRef = useRef(handleDuplicateSelectedRegion)
+  handleDuplicateSelectedRegionRef.current = handleDuplicateSelectedRegion
   const handleCopySelectedRef = useRef(handleCopySelected)
   handleCopySelectedRef.current = handleCopySelected
   const handlePasteRef = useRef(handlePaste)
@@ -2423,6 +2485,54 @@ export default function VideoEditor() {
             return
           }
         }
+      }
+
+      // J / K / L transport. Plain keys only, so Ctrl+L (the browser's address
+      // bar) and friends still reach the platform.
+      if (
+        !editingText &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        !e.shiftKey &&
+        (e.key === 'j' ||
+          e.key === 'J' ||
+          e.key === 'k' ||
+          e.key === 'K' ||
+          e.key === 'l' ||
+          e.key === 'L')
+      ) {
+        const playback = videoPlaybackRef.current
+        const video = playback?.video
+        if (video) {
+          e.preventDefault()
+          const next = stepTransport(
+            { rate: previewPlaybackRateRef.current, playing: !video.paused },
+            e.key.toLowerCase() as TransportKey,
+            playback?.nativePlaybackRateCap,
+          )
+          if (next.rate !== previewPlaybackRateRef.current) setPreviewPlaybackRate(next.rate)
+          if (next.playing && video.paused) {
+            commitHoverPreview()
+            playback?.play().catch(console.error)
+          } else if (!next.playing && !video.paused) {
+            playback?.pause()
+          }
+          return
+        }
+      }
+
+      // Duplicate the selected region (Ctrl/Cmd+D).
+      if (
+        !editingText &&
+        (e.key === 'd' || e.key === 'D') &&
+        (isMacRef.current ? e.metaKey : e.ctrlKey) &&
+        !e.shiftKey &&
+        !e.altKey
+      ) {
+        e.preventDefault()
+        handleDuplicateSelectedRegionRef.current()
+        return
       }
 
       if (matchesShortcut(e, keyShortcutsRef.current.playPause, isMacRef.current)) {
