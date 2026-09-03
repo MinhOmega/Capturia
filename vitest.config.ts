@@ -11,6 +11,9 @@ export default defineConfig({
     // also the fix when a new test dies on `document is not defined`.
     environment: 'node',
     include: ['{src,electron}/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    // `*.browser.test.ts` need a real browser: `vitest.browser.config.ts`
+    // (`npm run test:browser`) owns them.
+    exclude: ['**/node_modules/**', '**/dist/**', '**/*.browser.test.*'],
   },
   resolve: {
     alias: {
