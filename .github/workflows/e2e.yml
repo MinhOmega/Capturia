@@ -1,7 +1,8 @@
 name: E2E (nightly)
 
-# Electron Playwright smoke (`e2e/*.spec.ts`). Nightly + manual only: not a PR
-# gate (upstream removed the equivalent job from PR CI as flaky, d4c50c9a).
+# Electron Playwright specs (`e2e/*.spec.ts`): a launch smoke and a GIF export.
+# Nightly + manual only, never a PR gate: booting a real Electron app on a
+# hosted runner is too flaky to block a merge on.
 # Linux runs under xvfb because Electron needs a display even with HEADLESS=1.
 on:
   schedule:

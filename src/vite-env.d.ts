@@ -412,6 +412,8 @@ interface Window {
       relinked?: boolean
       relinkedFrom?: string
     }>
+    /** `process.platform` snapshotted by the preload (`darwin` | `win32` | `linux`). */
+    platform: string
     getPlatform: () => Promise<string>
     startVideoAnalysis: (options?: {
       videoPath?: string

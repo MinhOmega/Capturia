@@ -1,4 +1,5 @@
-import { desktopCapturer, screen, shell, systemPreferences } from 'electron'
+import { BrowserWindow, desktopCapturer, screen, shell, systemPreferences } from 'electron'
+import { isDiagnosticModeEnabled } from '../diagnostics/main-log-buffer'
 import type { IpcContext } from './context'
 
 /**
@@ -512,6 +513,47 @@ export async function getSourcesWithFallback(
   throw lastError ?? new Error('Failed to get sources.')
 }
 
+type OwnWindowLike = Pick<BrowserWindow, 'isDestroyed' | 'getMediaSourceId'>
+
+/**
+ * `desktopCapturer` media source ids of every window this app owns (HUD,
+ * source selector, countdown, notes, permission checker, editor). Destroyed
+ * windows and windows whose id cannot be read are skipped.
+ */
+export function collectOwnWindowSourceIds(windows: readonly OwnWindowLike[]): Set<string> {
+  const ids = new Set<string>()
+  for (const win of windows) {
+    try {
+      if (win.isDestroyed()) continue
+      const id = win.getMediaSourceId()
+      if (typeof id === 'string' && id.length > 0) ids.add(id)
+    } catch {
+      // A window mid-teardown has no media source id; nothing to exclude.
+    }
+  }
+  return ids
+}
+
+/**
+ * Drop the app's own windows from the picker feed so the HUD or the selector
+ * itself is never offered as something to record.
+ */
+export function excludeOwnWindowSources<T extends { id: string }>(
+  sources: readonly T[],
+  ownIds: ReadonlySet<string>,
+): T[] {
+  if (ownIds.size === 0) return [...sources]
+  return sources.filter((source) => !ownIds.has(source.id))
+}
+
+function ownWindowSourceIds(): Set<string> {
+  try {
+    return collectOwnWindowSourceIds(BrowserWindow.getAllWindows())
+  } catch {
+    return new Set()
+  }
+}
+
 export function registerPermissionHandlers(ctx: IpcContext): void {
   const { ipcMain, getPermissionCheckerWindow, createPermissionCheckerWindow } = ctx
 
@@ -522,8 +564,17 @@ export function registerPermissionHandlers(ctx: IpcContext): void {
       throw new Error(`${SOURCE_PERMISSION_GUIDANCE} (status: ${accessStatus})`)
     }
 
+    const startedAtMs = Date.now()
     try {
-      const sources = await getSourcesWithFallback(normalized)
+      const enumerated = await getSourcesWithFallback(normalized)
+      const sources = excludeOwnWindowSources(enumerated, ownWindowSourceIds())
+      if (isDiagnosticModeEnabled()) {
+        // Lands in the main log buffer, so a diagnostic report shows how long
+        // the picker feed took and how many of our own windows were dropped.
+        console.log(
+          `[get-sources] ${sources.length} source(s) (${enumerated.length - sources.length} own window(s) excluded) in ${Date.now() - startedAtMs} ms; types=${normalized.types.join(',')}`,
+        )
+      }
       return sources.map((source) => ({
         id: source.id,
         name: source.name,
