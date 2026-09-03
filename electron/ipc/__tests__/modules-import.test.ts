@@ -21,12 +21,24 @@ const MODULES = [
   '../handlers',
 ] as const
 
+/**
+ * These cases assert an import-time side effect, not speed, but each one pays
+ * for a cold transform of the module's whole graph. On a loaded worker pool
+ * that can exceed the default 5 s, so the budget is raised rather than the
+ * assertion weakened.
+ */
+const IMPORT_TIMEOUT_MS = 30_000
+
 describe('IPC modules are importable without touching app', () => {
-  it.each(MODULES)('%s', async (specifier) => {
-    const { app } = await import('electron')
-    vi.mocked(app.getPath).mockClear()
-    const mod = await import(specifier)
-    expect(Object.keys(mod).length).toBeGreaterThan(0)
-    expect(app.getPath).not.toHaveBeenCalled()
-  })
+  it.each(MODULES)(
+    '%s',
+    async (specifier) => {
+      const { app } = await import('electron')
+      vi.mocked(app.getPath).mockClear()
+      const mod = await import(specifier)
+      expect(Object.keys(mod).length).toBeGreaterThan(0)
+      expect(app.getPath).not.toHaveBeenCalled()
+    },
+    IMPORT_TIMEOUT_MS,
+  )
 })
