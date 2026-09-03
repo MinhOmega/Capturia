@@ -13,15 +13,16 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const PRELOAD = path.join(ROOT, 'electron', 'preload.ts')
 
 /**
- * Top-level keys of the object handed to `contextBridge.exposeInMainWorld`.
- * The preload writes one key per line at two spaces of indentation, so the
- * block boundaries plus that indentation identify them without a parser.
+ * Top-level keys of the object the preload hands to
+ * `contextBridge.exposeInMainWorld`. The preload writes one key per line at two
+ * spaces of indentation, so the block boundaries plus that indentation identify
+ * them without a parser.
  */
 function readPreloadBridgeKeys(): string[] {
   const source = fs.readFileSync(PRELOAD, 'utf8')
-  const start = source.indexOf("contextBridge.exposeInMainWorld('electronAPI', {")
+  const start = source.indexOf('const electronAPI: ElectronAPI = {')
   expect(start).toBeGreaterThanOrEqual(0)
-  const body = source.slice(start).split('\n})')[0]
+  const body = source.slice(start).split('\n}')[0]
   const keys = new Set<string>()
   for (const line of body.split('\n')) {
     const match = /^ {2}([A-Za-z_][A-Za-z0-9_]*)\s*[:,(]/.exec(line)
