@@ -5,8 +5,7 @@ export interface WebcamDeviceIdentity {
 
 /**
  * The camera to report for a recording, read off the track the browser actually
- * opened rather than off two separate pieces of React state (ported from
- * upstream main `webcamDeviceIdentity.ts`).
+ * opened rather than off two separate pieces of React state.
  *
  * The id restored from preferences and the label from the HUD's own
  * `enumerateDevices()` settle independently, so a request could carry one

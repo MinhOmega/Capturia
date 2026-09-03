@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url'
 
 export type PlatformPath = typeof nodePath
 
-/** Video containers the editor can open (mirrors upstream ALLOWED_IMPORT_VIDEO_EXTENSIONS). */
+/** Video containers the editor can open. */
 export const ALLOWED_IMPORT_VIDEO_EXTENSIONS: ReadonlySet<string> = new Set([
   '.webm',
   '.mp4',

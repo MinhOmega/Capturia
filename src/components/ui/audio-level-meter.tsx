@@ -20,7 +20,7 @@ function getBarColor(level: number, threshold: number) {
   return 'bg-emerald-500'
 }
 
-/** Five-bar microphone input meter (ported from upstream v1.7.0). */
+/** Five-bar microphone input meter for the HUD microphone popover. */
 export function AudioLevelMeter({ level, className = '' }: AudioLevelMeterProps) {
   return (
     <div

@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 //
-// Source picker empty state, reload and tab default (ported from upstream
-// v1.7.0 SourceSelector.test.tsx). Capturia gates enumeration behind
-// `getScreenCaptureAccessStatus`, so the stub reports access as granted.
+// Source picker empty state, reload and tab default. Capturia gates
+// enumeration behind `getScreenCaptureAccessStatus`, so the stub reports
+// access as granted.
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'

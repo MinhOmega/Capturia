@@ -38,7 +38,7 @@ describe('electron/i18n', () => {
     setMainLocale('vi')
     expect(getMainLocale()).toBe('vi')
     expect(mainT(undefined, 'common.electron.tray.quit')).toBe('Thoát')
-    // Capturia-only key without an upstream twin: partial locale falls back to en
+    // Capturia-only key with no translation in a partial locale: falls back to en
     expect(mainT('fr', 'common.electron.exportSaved')).toBe('Video exported successfully')
     expect(mainT('fr', 'common.electron.tray.quit')).toBe('Quitter')
     expect(mainT('en', 'common.missing.key')).toBe('common.missing.key')

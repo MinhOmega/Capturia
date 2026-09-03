@@ -5,7 +5,6 @@ import type { CaptionSegment, TranscribeMono16kResult } from './transcribe'
  * Pure transcription algorithm for the captioning Web Worker: takes a built Whisper
  * `transcriber` and turns mono 16 kHz audio into timed caption segments. No DOM or
  * Transformers.js imports so it runs in a worker and unit-tests in isolation.
- * Ported from upstream OpenScreen v1.7.0 `transcribeCore.ts` (+ `language` option).
  */
 
 /** A Transformers.js automatic-speech-recognition pipeline call. */

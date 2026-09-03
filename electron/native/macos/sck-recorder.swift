@@ -1225,7 +1225,7 @@ final class ScreenStreamWriter: NSObject, SCStreamOutput {
     private var lastRelativePTS: CMTime?
     private(set) var frameCount = 0
 
-    // Pause state (upstream OpenScreen 73870c65): while paused every sample is
+    // Pause state: while paused every sample is
     // dropped; after a resume every sample is retimed by the accumulated pause
     // duration so the output timeline has no gap. Guarded by `stateQueue` because
     // the stdin reader thread, the SCK sample queue and the audio queue all touch it.
@@ -2221,7 +2221,7 @@ struct NativeRecorderMain {
 
             let stopSignal = StopSignal()
 
-            // stdin command loop (upstream main.swift:667-676): `pause`, `resume`, `stop`.
+            // stdin command loop: `pause`, `resume`, `stop`.
             // Runs on a plain Thread because readLine() blocks. When stdin is closed
             // or was never a pipe, readLine() returns nil at once and the thread ends;
             // SIGINT/SIGTERM keep working as the stop path either way.

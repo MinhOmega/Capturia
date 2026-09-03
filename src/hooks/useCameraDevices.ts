@@ -7,9 +7,9 @@ export interface CameraDevice {
 }
 
 /**
- * Enumerates video inputs for the HUD camera picker (ported from upstream
- * v1.7.0). Enumeration only: the recorder opens the camera at record time, so
- * no preview stream is requested here and the camera light stays off.
+ * Enumerates video inputs for the HUD camera picker. Enumeration only: the
+ * recorder opens the camera at record time, so no preview stream is requested
+ * here and the camera light stays off.
  *
  * `initialDeviceId` seeds the selection from a persisted preference; it is kept
  * while the device is present and replaced by the first available camera when

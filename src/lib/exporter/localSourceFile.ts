@@ -24,9 +24,6 @@ import { MAX_IN_MEMORY_SOURCE_BYTES } from './sourceFileLimits'
  * {@link releaseLocalSourceFile} with the returned File's `.name`.
  *
  * Small recordings keep the in-memory path: simpler, and no on-disk copy.
- *
- * Ported from upstream OpenScreen v1.7.0 `localSourceFile.ts`. Not yet wired
- * into the export decode path (that arrives with the streaming decoder).
  */
 
 // Chunk size for streaming a large file into OPFS. Large enough to keep IPC
