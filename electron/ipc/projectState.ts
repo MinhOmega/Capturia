@@ -7,6 +7,7 @@ import {
   registerProjectMedia,
   relinkProjectStateForVideo,
 } from '../media/projectMediaRelinker'
+import { atomicWriteJson } from './atomicSave'
 import type { IpcContext } from './context'
 import {
   type CurrentVideoMetadata,
@@ -144,13 +145,13 @@ export function registerProjectStateHandlers(ctx: IpcContext): void {
 
   ipcMain.handle('save-project-state', async (_, videoPath: string, state: unknown) => {
     try {
-      await fs.mkdir(projectsDir, { recursive: true })
       const fileName = projectStateFileName(videoPath)
       const filePath = path.join(projectsDir, fileName)
-      // Atomic write: write to temp file then rename to avoid corruption on crash
-      const tmpPath = filePath + '.tmp'
-      await fs.writeFile(tmpPath, JSON.stringify(state), 'utf-8')
-      await fs.rename(tmpPath, filePath)
+      // Durable and serialised: the editor auto-saves on a debounce while the
+      // close handler flushes one last time, and the close-time write has no
+      // later save to repair it. `keepBackup` leaves one generation of the
+      // edit history behind for a few KB of JSON.
+      await atomicWriteJson(filePath, state, { keepBackup: true })
       await refreshMediaLink(videoPath, fileName)
       return { success: true }
     } catch (error) {
@@ -222,7 +223,7 @@ export function registerProjectStateHandlers(ctx: IpcContext): void {
 
   ipcMain.handle('save-shortcuts', async (_, shortcuts: unknown) => {
     try {
-      await fs.writeFile(SHORTCUTS_FILE, JSON.stringify(shortcuts, null, 2), 'utf-8')
+      await atomicWriteJson(SHORTCUTS_FILE, shortcuts, { space: 2 })
       return { success: true }
     } catch (error) {
       console.error('Failed to save shortcuts:', error)

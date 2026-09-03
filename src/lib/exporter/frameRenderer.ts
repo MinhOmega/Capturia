@@ -7,6 +7,11 @@ import type {
   Rotation3D,
 } from '@/components/video-editor/types'
 import { DEFAULT_ROTATION_3D, isRotation3DIdentity } from '@/components/video-editor/types'
+import {
+  createPixiLifecycle,
+  destroyPixiApplication,
+  type PixiLifecycle,
+} from '@/lib/rendering/pixiLifecycle'
 import { createThreeDPass, type ThreeDPass } from './threeDPass'
 import {
   applyZoomTransform,
@@ -127,6 +132,7 @@ function isExportAudioDebugEnabled(): boolean {
 
 export class FrameRenderer {
   private app: Application | null = null
+  private appLifecycle: PixiLifecycle<Application> | null = null
   private cameraContainer: Container | null = null
   private videoContainer: Container | null = null
   private videoSprite: Sprite | null = null
@@ -176,8 +182,8 @@ export class FrameRenderer {
     }
   }
 
-  async initialize(): Promise<void> {
-    // Create canvas for rendering
+  /** A fresh render target per backend attempt: a canvas only ever holds one context. */
+  private createRenderCanvas(): HTMLCanvasElement {
     const canvas = document.createElement('canvas')
     canvas.width = this.config.width
     canvas.height = this.config.height
@@ -191,18 +197,38 @@ export class FrameRenderer {
       // Silently ignore colorSpace errors on platforms that don't support it
       console.warn('[FrameRenderer] colorSpace not supported on this platform:', error)
     }
+    return canvas
+  }
 
-    // Initialize PixiJS with optimized settings for export performance
-    this.app = new Application()
-    await this.app.init({
-      canvas,
-      width: this.config.width,
-      height: this.config.height,
-      backgroundAlpha: 0,
-      antialias: true,
-      resolution: 1,
-      autoDensity: true,
+  async initialize(): Promise<void> {
+    // Initialize PixiJS with optimized settings for export performance.
+    // An export that waits forever on a context request is worse than one that
+    // fails: the progress bar sits at zero and the user has nothing to report.
+    // The lifecycle bounds each attempt and destroys whatever a failed attempt
+    // managed to build.
+    this.appLifecycle = createPixiLifecycle<Application>({
+      create: () => new Application(),
+      initOptions: () => ({
+        canvas: this.createRenderCanvas(),
+        width: this.config.width,
+        height: this.config.height,
+        backgroundAlpha: 0,
+        antialias: true,
+        resolution: 1,
+        autoDensity: true,
+      }),
     })
+
+    const outcome = await this.appLifecycle.init()
+    if (outcome.status === 'destroyed') {
+      throw new Error('Export renderer was torn down while it was starting up')
+    }
+    if (outcome.status === 'failed') {
+      throw outcome.error instanceof Error
+        ? outcome.error
+        : new Error(`Failed to initialise the export renderer: ${String(outcome.error)}`)
+    }
+    this.app = outcome.app
 
     // Setup containers
     this.cameraContainer = new Container()
@@ -939,19 +965,18 @@ export class FrameRenderer {
     }
     this.currentVideoSource = null
     this.backgroundSprite = null
-    if (this.app) {
-      // `{ removeView: true }`, not `true`: a bare `true` also means
-      // `releaseGlobalResources`, and Pixi's batch, texture and canvas pools are
-      // module-level globals shared with every other renderer on the page. The
-      // editor's preview app is one of those. Releasing them from here destroys
-      // pooled `Batch` objects the preview's cached instruction sets still point
-      // at (`Batch.destroy()` nulls `batcher`), so its very next ticker frame
-      // threw `Cannot read properties of null (reading 'geometry')` out of
-      // `BatcherPipe.execute` — an uncaught error and a "Something went wrong"
-      // toast moments after an export that had in fact succeeded.
-      this.app.destroy({ removeView: true }, { children: true, texture: true, textureSource: true })
-      this.app = null
+    // Through the lifecycle so a destroy that arrives while `initialize` is
+    // still waiting on the driver is honoured when that init lands. Both paths
+    // pass `{ removeView: true }` rather than `true`: `true` also releases
+    // Pixi's global batch, texture and canvas pools, which the editor's preview
+    // renderer is using at the same time, and its next frame then throws.
+    if (this.appLifecycle) {
+      this.appLifecycle.destroy()
+      this.appLifecycle = null
+    } else {
+      destroyPixiApplication(this.app)
     }
+    this.app = null
     this.cameraContainer = null
     this.videoContainer = null
     this.maskGraphics = null

@@ -1,6 +1,7 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { atomicWriteJson } from '../ipc/atomicSave'
 
 /**
  * Media-links registry: which project-state file and which cursor sidecar
@@ -152,11 +153,7 @@ async function writeMediaLinksRegistry(
   baseDir: string,
   file: MediaLinksRegistryFile,
 ): Promise<void> {
-  await fs.mkdir(baseDir, { recursive: true })
-  const target = mediaLinksRegistryPath(baseDir)
-  const tmpPath = `${target}.tmp-${process.pid}-${Date.now()}`
-  await fs.writeFile(tmpPath, JSON.stringify(file, null, 2), 'utf-8')
-  await fs.rename(tmpPath, target)
+  await atomicWriteJson(mediaLinksRegistryPath(baseDir), file, { space: 2 })
 }
 
 // Single desktop process: a promise chain per registry directory is enough to

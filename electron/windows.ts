@@ -11,6 +11,7 @@ import {
   type HudSize,
   hudAnchorOf,
 } from '../src/hooks/useHudLayout'
+import { rememberWindowType } from './windowPermissions'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -191,6 +192,9 @@ export function createNotesWindow(): BrowserWindow {
     if (!HEADLESS) win.show()
   })
 
+  // Capture permissions key on what main built, never on the URL the page reports.
+  rememberWindowType(win.webContents, 'notes')
+
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL + '?showNotes=true')
   } else {
@@ -247,6 +251,9 @@ export function createCountdownOverlayWindow(): BrowserWindow {
   if (process.platform === 'darwin') {
     win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   }
+
+  // Capture permissions key on what main built, never on the URL the page reports.
+  rememberWindowType(win.webContents, 'countdown-overlay')
 
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL + '?windowType=countdown-overlay')
@@ -434,6 +441,9 @@ export function createHudOverlayWindow(): BrowserWindow {
     }
   })
 
+  // Capture permissions key on what main built, never on the URL the page reports.
+  rememberWindowType(win.webContents, 'hud-overlay')
+
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL + '?windowType=hud-overlay')
   } else {
@@ -503,6 +513,9 @@ export function createEditorWindow(): BrowserWindow {
     win?.webContents.send('main-process-message', new Date().toLocaleString())
   })
 
+  // Capture permissions key on what main built, never on the URL the page reports.
+  rememberWindowType(win.webContents, 'editor')
+
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL + '?windowType=editor')
   } else {
@@ -547,6 +560,9 @@ export function createSourceSelectorWindow(): BrowserWindow {
   if (process.platform === 'darwin') {
     win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   }
+
+  // Capture permissions key on what main built, never on the URL the page reports.
+  rememberWindowType(win.webContents, 'source-selector')
 
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL + '?windowType=source-selector')
@@ -603,6 +619,9 @@ export function createPermissionCheckerWindow(): BrowserWindow {
       permissionCheckerWindow = null
     }
   })
+
+  // Capture permissions key on what main built, never on the URL the page reports.
+  rememberWindowType(win.webContents, 'permission-checker')
 
   if (VITE_DEV_SERVER_URL) {
     win.loadURL(VITE_DEV_SERVER_URL + '?windowType=permission-checker')
