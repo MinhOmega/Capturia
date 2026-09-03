@@ -4,17 +4,22 @@ import os from 'node:os'
 import path from 'node:path'
 import type { IpcMainInvokeEvent } from 'electron'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { CAPTION_MODEL_REVISION } from '../../src/lib/captioning/captionConstants'
 import {
   backoffMs,
   captionModelDir,
   type CaptionModelDescriptor,
   downloadCaptionModel,
   getCaptionModelStatus,
+  isPinnedRevision,
   modelFileUrl,
   registerCaptionHandlers,
   resolveSidecarVideoPath,
   WHISPER_TINY_MODEL,
 } from './captionHandlers'
+
+/** Fake commit SHA for the test model: URLs must always point at a pinned revision. */
+const TEST_REVISION = '0123456789abcdef0123456789abcdef01234567'
 import { approvedReadPaths } from './paths'
 
 type Handler = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown
@@ -107,7 +112,7 @@ function tinyModel(
 ): { model: CaptionModelDescriptor; files: Record<string, Uint8Array> } {
   const model: CaptionModelDescriptor = {
     id: 'Test/tiny',
-    revision: 'main',
+    revision: TEST_REVISION,
     files: Object.entries(contents).map(([name, text]) => ({
       name,
       approximateBytes: text.length,
@@ -245,8 +250,32 @@ describe('caption model status + download', () => {
       'onnx/decoder_model_merged_quantized.onnx',
     )
     expect(modelFileUrl(WHISPER_TINY_MODEL, WHISPER_TINY_MODEL.files[0]!)).toBe(
-      'https://huggingface.co/Xenova/whisper-tiny/resolve/main/config.json',
+      `https://huggingface.co/Xenova/whisper-tiny/resolve/${CAPTION_MODEL_REVISION}/config.json`,
     )
+  })
+
+  it('pins the whisper-tiny download to a commit SHA, never a branch', () => {
+    expect(WHISPER_TINY_MODEL.revision).toBe(CAPTION_MODEL_REVISION)
+    expect(WHISPER_TINY_MODEL.revision).toMatch(/^[0-9a-f]{40}$/)
+    expect(WHISPER_TINY_MODEL.revision).not.toBe('main')
+    expect(isPinnedRevision('main')).toBe(false)
+    expect(isPinnedRevision('v1.0')).toBe(false)
+    expect(isPinnedRevision(CAPTION_MODEL_REVISION)).toBe(true)
+    for (const file of WHISPER_TINY_MODEL.files) {
+      expect(modelFileUrl(WHISPER_TINY_MODEL, file)).not.toContain('/resolve/main/')
+    }
+  })
+
+  it('verifies a SHA-256 digest for every whisper-tiny file', () => {
+    for (const file of WHISPER_TINY_MODEL.files) {
+      expect(file.expectedSha256, file.name).toMatch(/^[0-9a-f]{64}$/)
+      expect(file.approximateBytes, file.name).toBeGreaterThan(0)
+    }
+  })
+
+  it('refuses to build a download URL for an unpinned revision', () => {
+    const unpinned: CaptionModelDescriptor = { ...WHISPER_TINY_MODEL, revision: 'main' }
+    expect(() => modelFileUrl(unpinned, unpinned.files[0]!)).toThrow(/pinned to a commit SHA/)
   })
 })
 

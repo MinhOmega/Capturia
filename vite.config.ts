@@ -5,11 +5,14 @@ import electron from 'vite-plugin-electron/simple'
 import react from '@vitejs/plugin-react'
 import pkg from './package.json'
 
-// C-1: ONNX Runtime wasm for the in-browser Whisper caption fallback. Only the two
-// non-threaded builds are shipped (the worker runs numThreads=1: no SharedArrayBuffer
-// under file://). Served from /ort/ in dev and emitted to dist/ort/ at build so the
-// renderer resolves them relative to its own page URL (see captionModel.ts).
-const ORT_WASM_FILES = ['ort-wasm.wasm', 'ort-wasm-simd.wasm']
+// ONNX Runtime wasm for the in-browser Whisper caption fallback. Only the
+// single-threaded SIMD build is shipped: the worker runs numThreads=1 (no
+// SharedArrayBuffer under file://) and Electron's Chromium always has WebAssembly
+// SIMD, so the non-SIMD build would never be loaded (the worker maps exactly this
+// file name through `wasmPaths`, see src/lib/captioning/ortWasm.ts). Served from
+// /ort/ in dev and emitted to dist/ort/ at build so the renderer resolves it
+// relative to its own page URL (see captionModel.ts).
+const ORT_WASM_FILES = ['ort-wasm-simd.wasm']
 const ORT_WASM_SRC_DIR = path.resolve(__dirname, 'node_modules/onnxruntime-web/dist')
 
 function ortWasmPlugin(): Plugin {

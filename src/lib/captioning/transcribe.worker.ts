@@ -9,6 +9,7 @@
  * cooperatively cancelled), so there is no in-worker abort handling.
  */
 
+import { assertWasmSimdSupport, buildOrtWasmPaths } from './ortWasm'
 import type { TranscribeWorkerRequest, TranscribeWorkerResponse } from './transcribe'
 import { runTranscription, type TranscriberFn } from './transcribeCore'
 
@@ -49,6 +50,9 @@ async function loadTranscriber(opts: {
   ortWasmBaseUrl: string
 }): Promise<TranscriberFn> {
   return withoutNodeVersion(async () => {
+    // Only the SIMD ORT build is bundled; fail with a clear message rather
+    // than a 404 for a file that was never shipped.
+    assertWasmSimdSupport()
     const { pipeline, env } = await import('@xenova/transformers')
     // The model is downloaded by the main process into userData (see
     // electron/ipc/captionHandlers.ts) and read back here over file://. Remote
@@ -60,7 +64,10 @@ async function loadTranscriber(opts: {
     // only duplicate ~45 MB per profile (and is unavailable on file:// origins).
     env.useBrowserCache = false
     env.useFSCache = false
-    env.backends.onnx.wasm.wasmPaths = opts.ortWasmBaseUrl
+    // Per-file map rather than a prefix: ORT then only ever asks for the one
+    // binary that is bundled (see ortWasm.ts / the capturia-ort-wasm Vite plugin).
+    env.backends.onnx.wasm.wasmPaths = buildOrtWasmPaths(opts.ortWasmBaseUrl)
+    env.backends.onnx.wasm.simd = true
     // Non-threaded wasm: SharedArrayBuffer isn't available under file:// (no cross-origin isolation).
     env.backends.onnx.wasm.numThreads = 1
     // Default quantized tiny weights only: the `output_attentions` revision regresses
