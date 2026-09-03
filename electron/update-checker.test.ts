@@ -138,7 +138,7 @@ describe('checkLatestRelease', () => {
 
   it.each([
     'https://github.com/MinhOmega/Capturia/releases/download/v9.9.9/app.zip',
-    'https://github.com/getopenscreen/openscreen/releases/tag/v9.9.9',
+    'https://github.com/someone-else/capturia/releases/tag/v9.9.9',
     `${RELEASE_PAGE}/v9.9.8`,
     `${RELEASE_PAGE}/v9.9.9?download=1`,
     `${RELEASE_PAGE}/v9.9.9#notes`,

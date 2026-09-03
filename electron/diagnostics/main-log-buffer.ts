@@ -1,5 +1,5 @@
 /**
- * Ring buffer for main-process console output (ported from OpenScreen).
+ * Ring buffer for main-process console output.
  *
  * Captures the last `capacity` lines written via console.log / info / warn /
  * error into one in-memory buffer so a diagnostic report or a bug-report URL

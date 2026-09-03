@@ -6,9 +6,10 @@ import { app } from 'electron'
  *
  * `main.ts` used to export `RECORDINGS_DIR` computed with `app.getPath()` at
  * import time, and `ipc/handlers.ts` imported it back — an import cycle that
- * also made every IPC module unloadable under vitest (upstream's own note in
- * `deviceNameMatching.ts`: handlers.ts "calls app.getPath() while being
- * imported and cannot be loaded from a test"). Everything here calls into
+ * also made every IPC module unloadable under vitest — the same problem
+ * `deviceNameMatching.ts` records, that the handler modules call
+ * `app.getPath()` at import time and cannot be loaded from a test. Everything
+ * here calls into
  * `app` only when invoked, so importing this module never touches Electron.
  */
 

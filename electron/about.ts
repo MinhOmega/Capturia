@@ -1,5 +1,5 @@
-// What the About box says, kept out of the dialog that shows it (ported from
-// OpenScreen). Every fact is passed in rather than read from `app`/`process`,
+// What the About box says, kept out of the dialog that shows it. Every fact is
+// passed in rather than read from `app`/`process`,
 // so the string can be pinned in a test from any platform.
 
 import { GITHUB_REPO_URL } from '../src/lib/supportLinks'
