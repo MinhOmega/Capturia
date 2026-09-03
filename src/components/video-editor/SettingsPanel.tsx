@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils'
-import { useCallback, useEffect, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -42,14 +42,8 @@ import type {
   Rotation3DPreset,
 } from './types'
 import { ROTATION_3D_PRESET_ORDER } from './types'
-import {
-  MAX_PLAYBACK_SPEED,
-  MAX_ZOOM_SCALE,
-  MIN_PLAYBACK_SPEED,
-  MIN_ZOOM_SCALE,
-  ZOOM_DEPTH_SCALES,
-} from './types'
-import { parseCustomPlaybackSpeedInput } from './customPlaybackSpeed'
+import { MAX_PLAYBACK_SPEED, MAX_ZOOM_SCALE, MIN_ZOOM_SCALE, ZOOM_DEPTH_SCALES } from './types'
+import { SEGMENT_SPEED_PRESETS, SegmentSpeedInput } from './SegmentSpeedInput'
 import { getFocusBoundsForScale } from './videoPlayback/focusUtils'
 import { CropControl } from './CropControl'
 import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp'
@@ -96,81 +90,6 @@ import {
 const GRADIENTS = BACKGROUND_GRADIENT_PRESETS
 const ZOOM_FOCUS_MODES: readonly ZoomFocusMode[] = ['manual', 'auto']
 
-const SEGMENT_SPEED_PRESETS = [0.25, 0.5, 0.75, 1, 1.5, 1.75, 2, 2.5, 3, 5, 8, 10, 20, 40] as const
-
-/**
- * Free-form segment speed. Digits and one decimal separator (comma accepted),
- * applied live while typing when inside [MIN_PLAYBACK_SPEED, MAX_PLAYBACK_SPEED];
- * values above the cap are refused via `onError`. The draft mirrors the
- * segment's speed while unfocused (empty when it is one of the presets), so a
- * preset click, a pasted speed or a different selection is reflected at once.
- */
-function SegmentSpeedInput({
-  value,
-  onChange,
-  onError,
-  ariaLabel,
-}: {
-  value: number
-  onChange: (speed: number) => void
-  onError: () => void
-  ariaLabel: string
-}) {
-  const isPreset = (SEGMENT_SPEED_PRESETS as readonly number[]).includes(value)
-  const [draft, setDraft] = useState(isPreset ? '' : String(value))
-  const [isFocused, setIsFocused] = useState(false)
-
-  const prevValue = useRef(value)
-  if (!isFocused && prevValue.current !== value) {
-    prevValue.current = value
-    setDraft(isPreset ? '' : String(value))
-  }
-
-  const handleChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const result = parseCustomPlaybackSpeedInput(e.target.value)
-      if (result.status === 'too-fast') {
-        onError()
-        return
-      }
-      setDraft(result.draft)
-      if (result.status === 'valid') {
-        onChange(result.speed)
-      }
-    },
-    [onChange, onError],
-  )
-
-  const handleBlur = useCallback(() => {
-    setIsFocused(false)
-    const result = parseCustomPlaybackSpeedInput(draft)
-    if (result.status === 'valid') {
-      setDraft(String(result.speed))
-    } else {
-      setDraft(isPreset ? '' : String(value))
-    }
-  }, [draft, isPreset, value])
-
-  return (
-    <div className="flex items-center gap-1">
-      <input
-        type="text"
-        inputMode="decimal"
-        pattern="[0-9]*[.,]?[0-9]*"
-        placeholder={`${MIN_PLAYBACK_SPEED}–${MAX_PLAYBACK_SPEED}`}
-        aria-label={ariaLabel}
-        value={draft}
-        onFocus={() => setIsFocused(true)}
-        onChange={handleChange}
-        onBlur={handleBlur}
-        onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-        className="w-16 text-[10px] bg-white/5 border border-white/10 rounded px-2 py-1 text-white text-center tabular-nums outline-none focus:border-[#34B27B]/50"
-      />
-      <span className="text-[10px] font-semibold text-slate-500">×</span>
-    </div>
-  )
-}
-
 interface SettingsPanelProps {
   selected: string
   onWallpaperChange: (path: string) => void
@@ -205,6 +124,8 @@ interface SettingsPanelProps {
   selectedSegment?: import('./types').VideoSegment | null
   onDeleteSegment?: () => void
   onSegmentSpeedChange?: (id: string, speed: number) => void
+  /** The typed speed is settled (blur / Enter): closes the caller's history batch. */
+  onSegmentSpeedCommit?: () => void
   shadowIntensity?: number
   onShadowChange?: (intensity: number) => void
   showBlur?: boolean
@@ -387,6 +308,7 @@ export function SettingsPanel({
   selectedSegment = null,
   onDeleteSegment,
   onSegmentSpeedChange,
+  onSegmentSpeedCommit,
   shadowIntensity = 0,
   onShadowChange,
   showBlur,
@@ -1108,7 +1030,12 @@ export function SettingsPanel({
               {SEGMENT_SPEED_PRESETS.map((speed) => (
                 <button
                   key={speed}
-                  onClick={() => onSegmentSpeedChange?.(selectedSegment.id, speed)}
+                  onClick={() => {
+                    // A preset click is one settled edit: change then commit,
+                    // so it never joins the typed field's history batch.
+                    onSegmentSpeedChange?.(selectedSegment.id, speed)
+                    onSegmentSpeedCommit?.()
+                  }}
                   className={cn(
                     'px-2 py-1 rounded text-[10px] font-medium transition-colors',
                     selectedSegment.speed === speed
@@ -1131,6 +1058,7 @@ export function SettingsPanel({
                 value={selectedSegment.speed}
                 ariaLabel={t('settings.customPlaybackSpeed')}
                 onChange={(speed) => onSegmentSpeedChange?.(selectedSegment.id, speed)}
+                onCommit={onSegmentSpeedCommit}
                 onError={() =>
                   toast.error(t('settings.maxSpeedError', { max: MAX_PLAYBACK_SPEED }))
                 }
