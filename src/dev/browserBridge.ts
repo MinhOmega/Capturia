@@ -267,6 +267,8 @@ export function createBrowserBridge(): BrowserHarness {
   const exports: HarnessExport[] = []
   const sidecars = new Map<string, unknown>()
   let selectedSource: unknown = null
+  // D1: the harness keeps the preference in memory; there is no OS content protection in a tab.
+  let hideHudFromRecording = true
 
   function subscribe(channel: string, callback: (...args: unknown[]) => void): () => void {
     const set = listeners.get(channel) ?? new Set()
@@ -360,6 +362,22 @@ export function createBrowserBridge(): BrowserHarness {
         console.warn(`${LOG_PREFIX} the source selector popup was blocked by the browser`)
       }
     },
+    // D1: the harness has no OS content protection; report the preference back
+    // unchanged so the HUD toggle still round-trips.
+    getHideHudFromRecording: async () => ({
+      enabled: hideHudFromRecording,
+      protected: [],
+      unprotected: [],
+    }),
+    setHideHudFromRecording: async (enabled: boolean) => {
+      hideHudFromRecording = enabled
+      return { enabled, protected: [], unprotected: enabled ? ['HUD'] : [] }
+    },
+    reassertHudRecordingPrivacy: async () => ({
+      enabled: hideHudFromRecording,
+      protected: [],
+      unprotected: hideHudFromRecording ? ['HUD'] : [],
+    }),
     openNotes: async () => {
       const opened = window.open('?showNotes=true', '_blank')
       if (!opened) return { success: false, message: 'popup blocked' }

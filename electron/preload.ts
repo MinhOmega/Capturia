@@ -247,6 +247,16 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.on('countdown-overlay-value', listener)
     return () => ipcRenderer.removeListener('countdown-overlay-value', listener)
   },
+  // D1: keep the HUD family out of the recording.
+  getHideHudFromRecording: () => {
+    return ipcRenderer.invoke('hud-hide-from-recording-get')
+  },
+  setHideHudFromRecording: (enabled: boolean) => {
+    return ipcRenderer.invoke('hud-hide-from-recording-set', enabled)
+  },
+  reassertHudRecordingPrivacy: () => {
+    return ipcRenderer.invoke('hud-hide-from-recording-reassert')
+  },
   // Notes window (W3-e): opens once, focuses on repeat; `closed` is echoed to the HUD.
   openNotes: () => {
     return ipcRenderer.invoke('open-notes')

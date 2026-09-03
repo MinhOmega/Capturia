@@ -47,6 +47,13 @@ export interface UserPreferences {
   hudOrientation: HudOrientation
   /** Notes window teleprompter: scroll speed (px/s) and font size (px) */
   notesTeleprompter: NotesTeleprompterSettings
+  /**
+   * D1: ask the OS to keep Capturia's own HUD, countdown overlay and source
+   * selector out of every screen capture. On by default. The same OS flag also
+   * hides those windows from remote-desktop and screen-sharing tools, which is
+   * why the HUD spells that out next to the toggle.
+   */
+  hideHudFromRecording: boolean
 }
 
 export const DEFAULT_PREFS: UserPreferences = {
@@ -59,6 +66,10 @@ export const DEFAULT_PREFS: UserPreferences = {
   previewPlaybackRate: DEFAULT_PLAYBACK_SETTINGS.previewPlaybackRate,
   hudOrientation: DEFAULT_HUD_ORIENTATION,
   notesTeleprompter: { ...DEFAULT_NOTES_TELEPROMPTER_SETTINGS },
+  // Mirrored by DEFAULT_HIDE_HUD_FROM_RECORDING in electron/recordingPrivacy.ts
+  // (main cannot import the renderer's preference module); userPreferences.test.ts
+  // asserts the two agree. Nothing in src/ may import from electron/.
+  hideHudFromRecording: true,
 }
 
 /** Parses stored preferences without throwing on malformed JSON. */
@@ -124,6 +135,10 @@ export function loadUserPreferences(): UserPreferences {
       ? raw.hudOrientation
       : DEFAULT_PREFS.hudOrientation,
     notesTeleprompter: normalizeNotesTeleprompterSettings(raw.notesTeleprompter),
+    hideHudFromRecording:
+      typeof raw.hideHudFromRecording === 'boolean'
+        ? raw.hideHudFromRecording
+        : DEFAULT_PREFS.hideHudFromRecording,
   }
 }
 

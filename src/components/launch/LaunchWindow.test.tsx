@@ -144,6 +144,21 @@ function stubElectronAPI() {
     setHudOverlayIgnoreMouseEvents: vi.fn(async () => ({ applied: true })),
     moveHudOverlayBy: vi.fn(async () => ({ applied: true })),
     setHudOverlaySize: vi.fn(async () => ({ applied: true })),
+    getHideHudFromRecording: vi.fn(async () => ({
+      enabled: true,
+      protected: [],
+      unprotected: [],
+    })),
+    setHideHudFromRecording: vi.fn(async (enabled: boolean) => ({
+      enabled,
+      protected: enabled ? ['HUD'] : [],
+      unprotected: [],
+    })),
+    reassertHudRecordingPrivacy: vi.fn(async () => ({
+      enabled: true,
+      protected: ['HUD'],
+      unprotected: [],
+    })),
     onSelectedSourceChanged: vi.fn((callback: SelectedSourceChangedListener) => {
       selectedSourceChangedListeners.push(callback)
       return () => {
@@ -656,6 +671,68 @@ describe('LaunchWindow stop shortcut on mount', () => {
     })
     await waitFor(() => {
       expect(screen.getByTestId('launch-stop-shortcut-button')).toHaveTextContent('⌘⇧5')
+    })
+  })
+})
+
+describe('LaunchWindow hide-HUD-from-recording toggle (D1)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', StubResizeObserver)
+    resizeObservers.length = 0
+    window.localStorage.clear()
+    selectedSourceChangedListeners = []
+    sourceSelectorClosedListeners = []
+    mainSelectedSource = null
+    stubElectronAPI()
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+  })
+
+  it('starts on and pushes the stored preference to main on mount', async () => {
+    render(<LaunchWindow />)
+    const toggle = await screen.findByTestId('launch-hide-hud-from-recording')
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    await waitFor(() => {
+      expect(window.electronAPI.setHideHudFromRecording).toHaveBeenCalledWith(true)
+    })
+  })
+
+  it('spells out that the setting also hides the HUD from screen sharing', async () => {
+    render(<LaunchWindow />)
+    const toggle = await screen.findByTestId('launch-hide-hud-from-recording')
+    expect(toggle.getAttribute('title')).toContain(
+      'The same setting also hides them from remote-desktop and screen-sharing tools.',
+    )
+  })
+
+  it('persists the choice and pushes it to main when toggled off', async () => {
+    render(<LaunchWindow />)
+    const toggle = await screen.findByTestId('launch-hide-hud-from-recording')
+    fireEvent.click(toggle)
+
+    await waitFor(() => {
+      expect(window.electronAPI.setHideHudFromRecording).toHaveBeenCalledWith(false)
+    })
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    expect(
+      JSON.parse(window.localStorage.getItem('capturia.userPreferences') ?? '{}')
+        .hideHudFromRecording,
+    ).toBe(false)
+  })
+
+  it('restores a stored "off" instead of re-enabling protection', async () => {
+    window.localStorage.setItem(
+      'capturia.userPreferences',
+      JSON.stringify({ hideHudFromRecording: false }),
+    )
+    render(<LaunchWindow />)
+    const toggle = await screen.findByTestId('launch-hide-hud-from-recording')
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    await waitFor(() => {
+      expect(window.electronAPI.setHideHudFromRecording).toHaveBeenCalledWith(false)
     })
   })
 })

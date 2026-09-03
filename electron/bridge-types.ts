@@ -24,6 +24,12 @@
  * compiler cannot check them for us — when a handler's result changes, this
  * file has to change with it.
  */
+export type HudRecordingPrivacy = {
+  enabled: boolean
+  protected: string[]
+  unprotected: string[]
+}
+
 export interface ElectronAPI {
   getSources: (opts: Electron.SourcesOptions) => Promise<ProcessedDesktopSource[]>
   getScreenCaptureAccessStatus: () => Promise<{
@@ -300,6 +306,17 @@ export interface ElectronAPI {
     message?: string
     analysis?: VideoAnalysisMetadata
   }>
+  /**
+   * D1: `hideHudFromRecording`. The stored preference lives in the renderer
+   * (`src/lib/userPreferences.ts`); these push it to main, which applies OS
+   * content protection to the HUD, countdown and source-selector windows.
+   * `unprotected` names the windows the OS refused (Linux has no equivalent
+   * API, and macOS 26 never paints a content-protected window).
+   */
+  getHideHudFromRecording: () => Promise<HudRecordingPrivacy>
+  setHideHudFromRecording: (enabled: boolean) => Promise<HudRecordingPrivacy>
+  /** Re-assert content protection immediately before capture starts. */
+  reassertHudRecordingPrivacy: () => Promise<HudRecordingPrivacy>
   hudOverlayHide: () => void
   hudOverlayClose: () => void
   hudOverlayResize: (width?: number, height?: number) => void

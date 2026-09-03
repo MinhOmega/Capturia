@@ -11,6 +11,7 @@ import {
   type HudSize,
   hudAnchorOf,
 } from '../src/hooks/useHudLayout'
+import { getHideHudFromRecording } from './recordingPrivacy'
 import { rememberWindowType } from './windowPermissions'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -135,22 +136,45 @@ const CONTENT_PROTECTION_BREAKS_DISPLAY =
 /**
  * Keep a window out of screen captures (including Capturia's own recording)
  * where the OS supports it. Linux has no equivalent; callers hide the feature
- * there instead of calling this.
+ * there instead of calling this. Answers whether protection is now on, so a
+ * caller can tell "the OS is keeping this window out of the capture" from
+ * "an env override or the macOS 26 gate turned it off".
  */
-export function applyContentProtection(win: BrowserWindow, label: string): void {
+export function applyContentProtection(win: BrowserWindow, label: string): boolean {
   if (CONTENT_PROTECTION_DISABLED) {
     console.warn(
       `[content-protection] OFF for the ${label} window (CAPTURIA_DISABLE_CONTENT_PROTECTION=1) - it will appear in screen captures, including recordings. Unset it for anything but automated testing.`,
     )
-    return
+    return false
   }
   if (CONTENT_PROTECTION_BREAKS_DISPLAY && !CONTENT_PROTECTION_FORCED) {
     console.warn(
       `[content-protection] OFF for the ${label} window - macOS ${process.getSystemVersion()} never displays a content-protected window, so enabling it would make this window permanently invisible. It may therefore appear in screen captures. Set CAPTURIA_FORCE_CONTENT_PROTECTION=1 to re-test.`,
     )
-    return
+    return false
   }
   win.setContentProtection(true)
+  return true
+}
+
+/**
+ * D1: the HUD family (launch HUD, countdown overlay, source selector) follows
+ * the `hideHudFromRecording` preference rather than being protected
+ * unconditionally like Notes. Turning the preference off has to *clear*
+ * protection on windows that already carry it, so this is not simply a guarded
+ * call to `applyContentProtection`.
+ *
+ * The same call re-asserts protection: the HUD is hidden and restored around
+ * every take and some window managers drop the flag on re-show, so the
+ * renderer calls this again right before capture starts.
+ */
+export function applyHudContentProtection(win: BrowserWindow, label: string): boolean {
+  if (win.isDestroyed()) return false
+  if (!getHideHudFromRecording()) {
+    win.setContentProtection(false)
+    return false
+  }
+  return applyContentProtection(win, label)
 }
 
 /**
@@ -244,6 +268,11 @@ export function createCountdownOverlayWindow(): BrowserWindow {
   })
 
   attachDevWindowLogging(win, 'countdown-overlay')
+
+  // The countdown sits over the very area about to be captured, so it follows
+  // the `hideHudFromRecording` preference like the rest of the HUD family.
+  applyHudContentProtection(win, 'Countdown')
+  win.once('ready-to-show', () => applyHudContentProtection(win, 'Countdown'))
 
   // Purely decorative: clicks fall through to whatever is underneath.
   win.setIgnoreMouseEvents(true)
@@ -392,6 +421,9 @@ export function createHudOverlayWindow(): BrowserWindow {
   })
 
   attachDevWindowLogging(win, 'launch')
+
+  applyHudContentProtection(win, 'HUD')
+  win.once('show', () => applyHudContentProtection(win, 'HUD'))
 
   // Re-apply always-on-top after creation and after show — some Linux X11 WMs
   // ignore the constructor option and need a post-show re-apply.
@@ -554,6 +586,9 @@ export function createSourceSelectorWindow(): BrowserWindow {
   })
 
   attachDevWindowLogging(win, 'source-selector')
+
+  applyHudContentProtection(win, 'Source selector')
+  win.once('ready-to-show', () => applyHudContentProtection(win, 'Source selector'))
 
   // Follow the user across macOS Spaces so the picker appears on the active
   // desktop (or over a fullscreen app) regardless of where the HUD was opened.

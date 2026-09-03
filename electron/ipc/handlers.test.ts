@@ -94,6 +94,10 @@ const HUD_CHANNELS = [
   'countdown-overlay-set-value',
   'countdown-overlay-hide',
   'open-notes',
+  // P2-D1: keep the HUD family out of the recording (hideHudFromRecording)
+  'hud-hide-from-recording-get',
+  'hud-hide-from-recording-set',
+  'hud-hide-from-recording-reassert',
 ]
 
 const HUD_WINDOWS = {

@@ -29,6 +29,7 @@ import {
   createCountdownOverlayWindow,
   createNotesWindow,
   getHudOverlayWindow,
+  applyHudContentProtection,
   HEADLESS,
 } from './windows'
 import { atomicWriteFile } from './ipc/atomicSave'
@@ -1707,6 +1708,8 @@ appReady?.then(async () => {
       createNotesWindow: createNotesWindowWrapper,
       getNotesWindow: () => notesWindow,
       getHudOverlayWindow,
+      getSourceSelectorWindow: () => sourceSelectorWindow,
+      applyHudContentProtection,
     },
   )
   if (e2eStartupVideoPath()) {

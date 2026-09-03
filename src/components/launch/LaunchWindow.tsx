@@ -24,6 +24,8 @@ import {
   Keyboard,
   Mic,
   MicOff,
+  Monitor,
+  MonitorOff,
   NotebookPen,
   Pause,
   Play,
@@ -418,6 +420,23 @@ export function LaunchWindow() {
     saveUserPreferences({ hudOrientation: next })
     setHudOrientation(next)
   }, [hudOrientation])
+
+  // D1: keep Capturia's own windows out of the recording. The preference is
+  // stored here; main owns applying OS content protection, so the stored value
+  // is pushed up on mount and on every change.
+  const [hideHudFromRecording, setHideHudFromRecording] = useState<boolean>(
+    () => loadUserPreferences().hideHudFromRecording,
+  )
+  useEffect(() => {
+    void window.electronAPI?.setHideHudFromRecording?.(hideHudFromRecording)
+  }, [hideHudFromRecording])
+  const toggleHideHudFromRecording = useCallback(() => {
+    setHideHudFromRecording((current) => {
+      const next = !current
+      saveUserPreferences({ hideHudFromRecording: next })
+      return next
+    })
+  }, [])
 
   // Boxes the user can interact with (bar + open popovers), viewport-relative.
   // Both the content-fit size and the main-process cursor poll derive from them.
@@ -1876,6 +1895,30 @@ export function LaunchWindow() {
           <EyeOff size={13} className={autoHideHudOnRecord ? 'text-cyan-300' : 'text-white/60'} />
           <span className={autoHideHudOnRecord ? 'text-cyan-300' : 'text-white/80'}>
             {t('launch.autoHideHudOnRecord')}
+          </span>
+        </Button>
+
+        <Button
+          variant="link"
+          size="sm"
+          className={`gap-1 shrink-0 min-w-[104px] text-white bg-transparent hover:bg-transparent px-1 text-center text-xs ${styles.electronNoDrag}`}
+          onClick={toggleHideHudFromRecording}
+          disabled={controlsLocked}
+          aria-pressed={hideHudFromRecording}
+          data-testid="launch-hide-hud-from-recording"
+          title={`${
+            hideHudFromRecording
+              ? t('launch.hideHudFromRecordingOn')
+              : t('launch.hideHudFromRecordingOff')
+          } ${t('launch.hideHudFromRecordingCaveat')}`}
+        >
+          {hideHudFromRecording ? (
+            <MonitorOff size={13} className="text-cyan-300" />
+          ) : (
+            <Monitor size={13} className="text-white/60" />
+          )}
+          <span className={hideHudFromRecording ? 'text-cyan-300' : 'text-white/80'}>
+            {t('launch.hideHudFromRecording')}
           </span>
         </Button>
 
