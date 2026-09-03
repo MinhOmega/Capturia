@@ -21,9 +21,35 @@ declare namespace NodeJS {
   }
 }
 
+/** Keep in sync with `src/lib/cursor/cursorKinds.ts` (`CURSOR_KINDS`). */
+type CursorTrackCursorKind =
+  | 'arrow'
+  | 'text'
+  | 'pointer'
+  | 'crosshair'
+  | 'open-hand'
+  | 'closed-hand'
+  | 'resize-ew'
+  | 'resize-ns'
+  | 'resize-nesw'
+  | 'resize-nwse'
+  | 'move'
+  | 'not-allowed'
+  | 'wait'
+  | 'app-starting'
+  | 'help'
+  | 'up-arrow'
+
 type CursorTrackMetadata = {
   source?: 'recorded' | 'synthetic'
-  samples: Array<{ timeMs: number; x: number; y: number; click?: boolean; visible?: boolean; cursorKind?: 'arrow' | 'ibeam' }>
+  samples: Array<{
+    timeMs: number
+    x: number
+    y: number
+    click?: boolean
+    visible?: boolean
+    cursorKind?: CursorTrackCursorKind
+  }>
   events?: Array<{
     type: 'click' | 'selection'
     startMs: number
@@ -70,6 +96,8 @@ type TranscriptWordMetadata = {
   startMs: number
   endMs: number
   confidence?: number
+  synthetic?: boolean
+  phraseIndex?: number
 }
 
 type RoughCutSuggestionMetadata = {
@@ -79,6 +107,39 @@ type RoughCutSuggestionMetadata = {
   reason: 'silence' | 'filler'
   confidence: number
   label: string
+}
+
+type CaptionModelStatusPayload = {
+  modelId: string
+  present: boolean
+  dir: string
+  downloadedBytes: number
+  totalBytes: number
+  missingFiles: string[]
+}
+
+type UpdateProgressEvent =
+  | { phase: 'checking' }
+  | { phase: 'current'; version: string }
+  | { phase: 'available'; version: string }
+  | {
+      phase: 'downloading'
+      version: string
+      percent: number
+      transferred: number
+      total: number
+      bytesPerSecond: number
+    }
+  | { phase: 'downloaded'; version: string }
+  | { phase: 'error'; kind: 'offline' | 'no-release' | 'unsigned' | 'unknown'; message: string }
+
+type CaptionModelProgressPayload = {
+  modelId: string
+  file: string
+  fileIndex: number
+  fileCount: number
+  downloadedBytes: number
+  totalBytes: number
 }
 
 type VideoAnalysisMetadata = {
@@ -143,9 +204,13 @@ interface Window {
       canOpenSystemSettings: boolean
     }>
     getCapturePermissionSnapshot: () => Promise<CapturePermissionSnapshot>
-    requestCapturePermissionAccess: (target: CapturePermissionKey) => Promise<CapturePermissionActionResult>
+    requestCapturePermissionAccess: (
+      target: CapturePermissionKey,
+    ) => Promise<CapturePermissionActionResult>
     openScreenCaptureSettings: () => Promise<{ success: boolean; message?: string }>
-    openPermissionSettings: (target: PermissionSettingsTarget) => Promise<{ success: boolean; message?: string }>
+    openPermissionSettings: (
+      target: PermissionSettingsTarget,
+    ) => Promise<{ success: boolean; message?: string }>
     openPermissionChecker: () => Promise<{ success: boolean }>
     switchToEditor: () => Promise<void>
     switchToLaunch: () => Promise<void>
@@ -155,13 +220,38 @@ interface Window {
     storeRecordedVideo: (
       videoData: ArrayBuffer,
       fileName: string,
-      metadata?: { frameRate?: number; width?: number; height?: number; mimeType?: string; capturedAt?: number; systemCursorMode?: 'always' | 'never'; hasMicrophoneAudio?: boolean; cursorTrack?: CursorTrackMetadata }
+      metadata?: {
+        frameRate?: number
+        width?: number
+        height?: number
+        mimeType?: string
+        capturedAt?: number
+        systemCursorMode?: 'always' | 'never'
+        hasMicrophoneAudio?: boolean
+        durationMs?: number
+        cursorTrack?: CursorTrackMetadata
+      },
     ) => Promise<{
       success: boolean
       path?: string
       message?: string
-      metadata?: { frameRate?: number; width?: number; height?: number; mimeType?: string; capturedAt?: number; systemCursorMode?: 'always' | 'never'; hasMicrophoneAudio?: boolean; cursorTrack?: CursorTrackMetadata }
+      metadata?: {
+        frameRate?: number
+        width?: number
+        height?: number
+        mimeType?: string
+        capturedAt?: number
+        systemCursorMode?: 'always' | 'never'
+        hasMicrophoneAudio?: boolean
+        cursorTrack?: CursorTrackMetadata
+      }
     }>
+    openRecordingStream: (fileName: string) => Promise<{ success: boolean; error?: string }>
+    appendRecordingChunk: (
+      fileName: string,
+      chunk: ArrayBuffer,
+    ) => Promise<{ success: boolean; error?: string }>
+    closeRecordingStream: (fileName: string) => Promise<{ success: boolean; error?: string }>
     getRecordedVideoPath: () => Promise<{ success: boolean; path?: string; message?: string }>
     setRecordingState: (recording: boolean) => Promise<void>
     startNativeScreenRecording: (options?: {
@@ -172,6 +262,13 @@ interface Window {
       cameraEnabled?: boolean
       cameraShape?: 'rounded' | 'square' | 'circle'
       cameraSizePercent?: number
+      cameraDeviceId?: string
+      cameraDeviceName?: string
+      /** Microphone chosen in the HUD picker (Chromium deviceId + label); helper matches by label. */
+      microphoneDeviceId?: string
+      microphoneDeviceName?: string
+      /** Capture system audio on the native path (mixed with the mic into one track). */
+      systemAudio?: boolean
       frameRate?: number
       maxLongEdge?: number
       bitrateScale?: number
@@ -186,11 +283,29 @@ interface Window {
       frameRate?: number
       sourceKind?: 'display' | 'window' | 'unknown'
       hasMicrophoneAudio?: boolean
+      hasSystemAudio?: boolean
+      /** The running helper accepts `pause` / `resume`; false for an old binary. */
+      canPause?: boolean
+      /** The running helper honours `systemAudio`; false for an old binary. */
+      canCaptureSystemAudio?: boolean
+      /** Non-fatal helper warning codes, e.g. `mic_device_not_found`. */
+      warnings?: string[]
     }>
-    stopNativeScreenRecording: () => Promise<{
+    pauseNativeScreenRecording: () => Promise<{
+      success: boolean
+      supported: boolean
+      message?: string
+    }>
+    resumeNativeScreenRecording: () => Promise<{
+      success: boolean
+      supported: boolean
+      message?: string
+    }>
+    stopNativeScreenRecording: (options?: { discard?: boolean }) => Promise<{
       success: boolean
       path?: string
       message?: string
+      discarded?: boolean
       metadata?: {
         frameRate?: number
         width?: number
@@ -199,6 +314,7 @@ interface Window {
         capturedAt?: number
         systemCursorMode?: 'always' | 'never'
         hasMicrophoneAudio?: boolean
+        hasSystemAudio?: boolean
       }
     }>
     startCursorTracking: (options?: {
@@ -206,32 +322,90 @@ interface Window {
       captureSize?: { width?: number; height?: number }
     }) => Promise<{ success: boolean; warningCode?: string; warningMessage?: string }>
     stopCursorTracking: () => Promise<{ success: boolean; track?: CursorTrackMetadata }>
+    pauseCursorTracking: () => Promise<{ success: boolean; changed?: boolean; message?: string }>
+    resumeCursorTracking: () => Promise<{ success: boolean; changed?: boolean; message?: string }>
     onStopRecordingFromTray: (callback: () => void) => () => void
-    setStopRecordingShortcut: (accelerator: string) => Promise<{ success: boolean; accelerator: string; message?: string }>
-    getStopRecordingShortcut: () => Promise<{ success: boolean; accelerator: string; message?: string }>
+    onSelectedSourceChanged: (callback: (source: unknown) => void) => () => void
+    onSourceSelectorClosed: (callback: () => void) => () => void
+    showCountdownOverlay: (value: number, runId: number) => Promise<void>
+    setCountdownOverlayValue: (value: number, runId: number) => Promise<void>
+    hideCountdownOverlay: (runId: number) => Promise<void>
+    onCountdownOverlayValue: (callback: (value: number | null, runId: number) => void) => () => void
+    openNotes: () => Promise<{ success: boolean; focused?: boolean; message?: string }>
+    onNotesWindowClosed: (callback: () => void) => () => void
+    setStopRecordingShortcut: (
+      accelerator: string,
+    ) => Promise<{ success: boolean; accelerator: string; message?: string }>
+    getStopRecordingShortcut: () => Promise<{
+      success: boolean
+      accelerator: string
+      message?: string
+    }>
     openExternalUrl: (url: string) => Promise<{ success: boolean; error?: string }>
-    revealInFolder: (filePath: string) => Promise<{ success: boolean; error?: string; message?: string }>
-    pickSaveFilePath: (fileName: string, locale?: string) => Promise<{ success: boolean; path?: string; message?: string; cancelled?: boolean }>
-    pickExportDirectory: (locale?: string) => Promise<{ success: boolean; path?: string; message?: string; cancelled?: boolean }>
+    revealInFolder: (
+      filePath: string,
+    ) => Promise<{ success: boolean; error?: string; message?: string }>
+    pickSaveFilePath: (
+      fileName: string,
+      locale?: string,
+      exportFolder?: string,
+    ) => Promise<{ success: boolean; path?: string; message?: string; cancelled?: boolean }>
+    pickExportDirectory: (
+      locale?: string,
+      exportFolder?: string,
+    ) => Promise<{ success: boolean; path?: string; message?: string; cancelled?: boolean }>
     saveExportedVideo: (
       videoData: ArrayBuffer,
       fileName: string,
       locale?: string,
-      options?: { directoryPath?: string | null; targetFilePath?: string | null }
+      options?: { directoryPath?: string | null; targetFilePath?: string | null },
     ) => Promise<{ success: boolean; path?: string; message?: string; cancelled?: boolean }>
-    openVideoFilePicker: (locale?: string) => Promise<{ success: boolean; path?: string; cancelled?: boolean }>
+    openVideoFilePicker: (
+      locale?: string,
+    ) => Promise<{ success: boolean; path?: string; cancelled?: boolean }>
     setCurrentVideoPath: (
       path: string,
-      metadata?: { frameRate?: number; width?: number; height?: number; mimeType?: string; capturedAt?: number; systemCursorMode?: 'always' | 'never'; hasMicrophoneAudio?: boolean; cursorTrack?: CursorTrackMetadata }
+      metadata?: {
+        frameRate?: number
+        width?: number
+        height?: number
+        mimeType?: string
+        capturedAt?: number
+        systemCursorMode?: 'always' | 'never'
+        hasMicrophoneAudio?: boolean
+        cursorTrack?: CursorTrackMetadata
+      },
     ) => Promise<{ success: boolean }>
     getCurrentVideoPath: () => Promise<{
       success: boolean
       path?: string
-      metadata?: { frameRate?: number; width?: number; height?: number; mimeType?: string; capturedAt?: number; systemCursorMode?: 'always' | 'never'; hasMicrophoneAudio?: boolean; cursorTrack?: CursorTrackMetadata }
+      metadata?: {
+        frameRate?: number
+        width?: number
+        height?: number
+        mimeType?: string
+        capturedAt?: number
+        systemCursorMode?: 'always' | 'never'
+        hasMicrophoneAudio?: boolean
+        cursorTrack?: CursorTrackMetadata
+      }
     }>
     clearCurrentVideoPath: () => Promise<{ success: boolean }>
-    saveProjectState: (videoPath: string, state: unknown) => Promise<{ success: boolean; error?: string }>
-    loadProjectState: (videoPath: string) => Promise<{ success: boolean; notFound?: boolean; state?: unknown; error?: string }>
+    saveProjectState: (
+      videoPath: string,
+      state: unknown,
+    ) => Promise<{ success: boolean; error?: string }>
+    loadProjectState: (videoPath: string) => Promise<{
+      success: boolean
+      notFound?: boolean
+      state?: unknown
+      error?: string
+      /** The recording was moved or renamed; its state was recovered by fingerprint. */
+      relinked?: boolean
+      relinkedFrom?: string
+    }>
+    /** `process.platform` snapshotted by the preload (`darwin` | `win32` | `linux`). */
+    platform: string
     getPlatform: () => Promise<string>
     getShortcuts: () => Promise<Record<string, unknown> | null>
     saveShortcuts: (shortcuts: unknown) => Promise<{ success: boolean; error?: string }>
@@ -252,6 +426,8 @@ interface Window {
         startedAt?: number
         finishedAt?: number
         error?: string
+        /** Native transcriber failure code (e.g. `unsupported_platform`) when status is `failed`. */
+        code?: string
       }
     }>
     getVideoAnalysisResult: (jobId: string) => Promise<{
@@ -264,6 +440,8 @@ interface Window {
         startedAt?: number
         finishedAt?: number
         error?: string
+        /** Native transcriber failure code (e.g. `unsupported_platform`) when status is `failed`. */
+        code?: string
       }
       result?: VideoAnalysisMetadata
     }>
@@ -272,12 +450,134 @@ interface Window {
       message?: string
       analysis?: VideoAnalysisMetadata
     }>
-    hudOverlayHide: () => void;
-    hudOverlayClose: () => void;
-    hudOverlayResize: (width?: number, height?: number) => void;
-    hudOverlayRestore: () => void;
+    hudOverlayHide: () => void
+    hudOverlayClose: () => void
+    hudOverlayResize: (width?: number, height?: number) => void
+    hudOverlayRestore: () => void
+    // A24: HUD click-through / drag / content-fit. `applied: false` carries a reason
+    // ('wayland', 'countdown', 'no-window', 'wrong-sender', 'bad-args', 'no-rects').
+    setHudOverlayIgnoreMouseEvents: (
+      ignore: boolean,
+      interactiveRects?: Array<{ x: number; y: number; width: number; height: number }>,
+    ) => Promise<{ applied: boolean; reason?: string }>
+    moveHudOverlayBy: (
+      deltaX: number,
+      deltaY: number,
+    ) => Promise<{
+      applied: boolean
+      reason?: string
+      bounds?: { x: number; y: number; width: number; height: number }
+    }>
+    setHudOverlaySize: (
+      width: number,
+      height: number,
+    ) => Promise<{
+      applied: boolean
+      reason?: string
+      bounds?: { x: number; y: number; width: number; height: number }
+    }>
+    setLocale: (locale: string) => Promise<void>
+    // Auto-update (electron/auto-updater.ts): launch-check preference, manual
+    // check and download/install progress events.
+    getAutoUpdateCheck: () => Promise<{ success: boolean; enabled: boolean }>
+    setAutoUpdateCheck: (
+      enabled: boolean,
+    ) => Promise<{ success: boolean; enabled?: boolean; error?: string }>
+    checkForUpdates: () => Promise<{ success: boolean }>
+    onUpdateProgress: (callback: (event: UpdateProgressEvent) => void) => () => void
+    // W1-c: approved-file reads for the exporter (localSourceFile.ts)
+    readBinaryFile: (filePath: string) => Promise<{
+      success: boolean
+      data?: ArrayBuffer
+      path?: string | null
+      message?: string
+      error?: string
+    }>
+    getReadableFileInfo: (filePath: string) => Promise<{
+      success: boolean
+      size?: number
+      mtimeMs?: number
+      path?: string
+      message?: string
+      error?: string
+    }>
+    readFileChunk: (
+      filePath: string,
+      offset: number,
+      length: number,
+    ) => Promise<{
+      success: boolean
+      data?: ArrayBuffer
+      bytesRead?: number
+      message?: string
+      error?: string
+    }>
+    // C-1: in-browser Whisper caption fallback (model cache in userData + sidecar write)
+    /** `file://` URL (trailing slash) of the resources dir, from `--asset-base-url`. Empty outside the editor window. */
+    assetBaseUrl: string
+    /** `file://` URL (trailing slash) of `userData/caption-models/`, from `--caption-model-dir`. Empty outside the editor window. */
+    captionModelDirUrl: string
+    getCaptionModelDir: () => Promise<{ success: boolean; dir?: string; message?: string }>
+    getCaptionModelStatus: (modelId?: string) => Promise<{
+      success: boolean
+      status?: CaptionModelStatusPayload
+      message?: string
+    }>
+    downloadCaptionModel: (
+      modelId?: string,
+    ) => Promise<{ success: boolean; aborted?: boolean; message?: string }>
+    cancelCaptionModelDownload: () => Promise<{ success: boolean }>
+    onCaptionModelProgress: (
+      callback: (progress: CaptionModelProgressPayload) => void,
+    ) => () => void
+    saveVideoAnalysisSidecar: (
+      videoPath: string,
+      analysis: VideoAnalysisMetadata,
+    ) => Promise<{ success: boolean; path?: string; message?: string }>
+    // W3-c: global shortcuts, application menu, lifecycle flush, diagnostics
+    updateGlobalShortcut: (
+      action: GlobalShortcutActionName,
+      binding: { key: string; ctrl?: boolean; shift?: boolean; alt?: boolean },
+    ) => Promise<GlobalShortcutUpdateResult>
+    getGlobalShortcuts: () => Promise<Partial<Record<GlobalShortcutActionName, string>>>
+    appQuit: () => void
+    showAbout: () => Promise<void>
+    onEditorMenuAction: (callback: (action: EditorMenuActionName) => void) => () => void
+    onRequestSaveBeforeClose: (callback: () => void) => () => void
+    saveBeforeCloseDone: () => void
+    saveDiagnostic: (payload?: DiagnosticPayloadInput) => Promise<SaveDiagnosticResult>
+    getMainLogTail: (lines?: number) => Promise<string[]>
   }
 }
+
+type GlobalShortcutActionName = 'openApp' | 'stopRecording'
+
+type GlobalShortcutUpdateResult = {
+  ok: boolean
+  /** Accelerator now bound to the action (the previous one when `ok` is false). */
+  accelerator: string
+  error?: 'empty' | 'conflict' | 'unavailable' | 'invalid' | 'needsModifier'
+}
+
+type EditorMenuActionName =
+  | 'menu-undo'
+  | 'menu-redo'
+  | 'menu-import-video'
+  | 'menu-export'
+  | 'menu-return-to-recorder'
+  | 'menu-toggle-timeline'
+  | 'menu-toggle-settings'
+  | 'menu-open-shortcuts'
+
+type DiagnosticPayloadInput = {
+  error?: string
+  stack?: string
+  projectState?: unknown
+  logs?: string[]
+  locale?: string
+}
+
+type SaveDiagnosticResult = { success: boolean; path?: string; cancelled?: boolean; error?: string }
 
 interface ProcessedDesktopSource {
   id: string

@@ -1,11 +1,498 @@
-import { describe, expect, it } from 'vitest';
-import { DEFAULT_CURSOR_STYLE, type CursorTrack } from './types';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { CURSOR_GLYPH_SCALE, resolveCursorGlyphDrawPlan } from './cursorGlyphs'
+import { CURSOR_KINDS } from './cursorKinds'
+import { DEFAULT_CURSOR_STYLE, type CursorTrack } from './types'
+
+/** Visible, unscaled, effect-free cursor state for the glyph tests. */
+const GLYPH_STATE = {
+  visible: true,
+  x: 0.5,
+  y: 0.5,
+  scale: 1,
+  highlightAlpha: 0,
+  rippleScale: 1,
+  rippleAlpha: 0,
+  cursorKind: 'arrow' as const,
+}
 import {
+  CURSOR_REFERENCE_WIDTH,
+  createCursorMotionBlurState,
   drawCompositedCursor,
+  getCursorMotionBlurPx,
   normalizePointerSample,
   projectCursorToViewport,
+  resetCursorMotionBlurState,
+  resolveCursorClipRect,
+  resolveCursorContentScale,
+  resolveCursorSizeNorm,
   resolveCursorState,
-} from './cursorComposer';
+} from './cursorComposer'
+
+interface RecordedContext {
+  ctx: CanvasRenderingContext2D
+  scaleCalls: Array<{ x: number; y: number }>
+  arcCalls: Array<{ x: number; y: number; radius: number }>
+  translateCalls: Array<{ x: number; y: number }>
+  gradientRadii: number[]
+}
+
+function createRecordingContext(): RecordedContext {
+  const scaleCalls: Array<{ x: number; y: number }> = []
+  const arcCalls: Array<{ x: number; y: number; radius: number }> = []
+  const translateCalls: Array<{ x: number; y: number }> = []
+  const gradientRadii: number[] = []
+  const noop = () => undefined
+  // Style properties are plain writable fields; only the calls we assert on are recorded.
+  const ctx = {
+    save: noop,
+    restore: noop,
+    translate: (x: number, y: number) => {
+      translateCalls.push({ x, y })
+    },
+    scale: (x: number, y: number) => {
+      scaleCalls.push({ x, y })
+    },
+    beginPath: noop,
+    moveTo: noop,
+    lineTo: noop,
+    arcTo: noop,
+    closePath: noop,
+    fill: noop,
+    stroke: noop,
+    clip: noop,
+    arc: (x: number, y: number, radius: number) => {
+      arcCalls.push({ x, y, radius })
+    },
+    createRadialGradient: (
+      _x0: number,
+      _y0: number,
+      _r0: number,
+      _x1: number,
+      _y1: number,
+      r1: number,
+    ) => {
+      gradientRadii.push(r1)
+      return { addColorStop: noop }
+    },
+    globalAlpha: 1,
+    fillStyle: '',
+    strokeStyle: '',
+    lineWidth: 1,
+    lineCap: 'butt',
+    lineJoin: 'miter',
+    shadowColor: '',
+    shadowBlur: 0,
+    shadowOffsetX: 0,
+    shadowOffsetY: 0,
+    filter: 'none',
+  } as unknown as CanvasRenderingContext2D
+
+  return { ctx, scaleCalls, arcCalls, translateCalls, gradientRadii }
+}
+
+describe('cursor size normalisation', () => {
+  it('normalises the cursor by the displayed full-video width', () => {
+    expect(resolveCursorSizeNorm({ maskRect: { width: CURSOR_REFERENCE_WIDTH } })).toBeCloseTo(1, 6)
+    expect(resolveCursorSizeNorm({ maskRect: { width: 3840 } })).toBeCloseTo(2, 6)
+    expect(resolveCursorSizeNorm({ maskRect: { width: 960 } })).toBeCloseTo(0.5, 6)
+  })
+
+  it('is crop invariant: cropping enlarges the cursor together with the content', () => {
+    const full = resolveCursorSizeNorm({ maskRect: { width: 1920 }, cropRegion: { width: 1 } })
+    const halfCrop = resolveCursorSizeNorm({ maskRect: { width: 960 }, cropRegion: { width: 0.5 } })
+    expect(halfCrop).toBeCloseTo(full, 6)
+  })
+
+  it('multiplies camera zoom into the content scale', () => {
+    const scale = resolveCursorContentScale({
+      cameraScale: { x: 2, y: 2 },
+      maskRect: { width: 3840 },
+      cropRegion: { x: 0, y: 0, width: 1, height: 1 },
+    })
+    expect(scale).toBeCloseTo(4, 6)
+  })
+
+  it('draws glyph, highlight and ripple proportionally to the canvas width', () => {
+    const state = {
+      visible: true,
+      x: 0.5,
+      y: 0.5,
+      scale: 2.2,
+      highlightAlpha: 0.5,
+      rippleScale: 1.6,
+      rippleAlpha: 0.4,
+      cursorKind: 'arrow' as const,
+    }
+    const style = { ...DEFAULT_CURSOR_STYLE, shadow: 0 }
+    const cameraScale = { x: 1.3, y: 1.3 }
+    const cropRegion = { x: 0.1, y: 0.1, width: 0.8, height: 0.8 }
+
+    const render = (canvasWidth: number) => {
+      const recorded = createRecordingContext()
+      drawCompositedCursor(
+        recorded.ctx,
+        { x: canvasWidth / 2, y: canvasWidth / 4 },
+        state,
+        style,
+        resolveCursorContentScale({
+          cameraScale,
+          maskRect: { width: canvasWidth * 0.8 },
+          cropRegion,
+        }),
+      )
+      return recorded
+    }
+
+    const hd = render(1920)
+    const uhd = render(3840)
+
+    // Glyph scale (the ctx.scale call that precedes drawing the glyph).
+    expect(uhd.scaleCalls[0].x / hd.scaleCalls[0].x).toBeCloseTo(2, 6)
+    expect(uhd.scaleCalls[0].y / hd.scaleCalls[0].y).toBeCloseTo(2, 6)
+    // Ripple radius, then highlight radius (both drawn with ctx.arc).
+    expect(hd.arcCalls).toHaveLength(2)
+    expect(uhd.arcCalls).toHaveLength(2)
+    expect(uhd.arcCalls[0].radius / hd.arcCalls[0].radius).toBeCloseTo(2, 6)
+    expect(uhd.arcCalls[1].radius / hd.arcCalls[1].radius).toBeCloseTo(2, 6)
+    expect(uhd.gradientRadii[0] / hd.gradientRadii[0]).toBeCloseTo(2, 6)
+    // At the reference width the glyph is `28 * size * camera` px.
+    expect(hd.scaleCalls[0].x).toBeCloseTo(2.2 * 1.3, 6)
+  })
+})
+
+describe('cursor clip to bounds', () => {
+  const VISIBLE_STATE = {
+    visible: true,
+    x: 0.5,
+    y: 0.5,
+    scale: 1,
+    highlightAlpha: 0,
+    rippleScale: 1,
+    rippleAlpha: 0,
+    cursorKind: 'arrow' as const,
+  }
+
+  it('returns null when clipping is disabled (default) or the mask is empty', () => {
+    const base = {
+      maskRect: { x: 100, y: 50, width: 800, height: 400 },
+      maskBorderRadius: 24,
+      cameraScale: { x: 1, y: 1 },
+      cameraPosition: { x: 0, y: 0 },
+    }
+    expect(resolveCursorClipRect({ ...base, style: DEFAULT_CURSOR_STYLE })).toBeNull()
+    expect(resolveCursorClipRect({ ...base, style: { clipToBounds: false } })).toBeNull()
+    expect(
+      resolveCursorClipRect({
+        ...base,
+        style: { clipToBounds: true },
+        maskRect: { x: 0, y: 0, width: 0, height: 0 },
+      }),
+    ).toBeNull()
+  })
+
+  it('applies the camera transform to the mask rect and scales the radius', () => {
+    const rect = resolveCursorClipRect({
+      style: { clipToBounds: true },
+      maskRect: { x: 100, y: 50, width: 800, height: 400 },
+      maskBorderRadius: 24,
+      cameraScale: { x: 1.5, y: 1.5 },
+      cameraPosition: { x: -200, y: -100 },
+    })
+
+    expect(rect).toEqual({
+      x: -200 + 1.5 * 100,
+      y: -100 + 1.5 * 50,
+      width: 1200,
+      height: 600,
+      radius: 36,
+    })
+  })
+
+  it('is a pure function of the mask so preview and export produce the same clip rect', () => {
+    const args = {
+      style: { clipToBounds: true },
+      maskRect: { x: 120, y: 60, width: 1680, height: 960 },
+      maskBorderRadius: 16,
+      cameraScale: { x: 2, y: 2 },
+      cameraPosition: { x: -900, y: -500 },
+    }
+    expect(resolveCursorClipRect(args)).toEqual(resolveCursorClipRect({ ...args }))
+  })
+
+  it('clips the drawing context only when a clip rect is provided', () => {
+    const clipCalls: number[] = []
+    const arcToCalls: number[] = []
+    const recorded = createRecordingContext()
+    const ctx = recorded.ctx as unknown as { clip: () => void; arcTo: () => void }
+    ctx.clip = () => {
+      clipCalls.push(1)
+    }
+    ctx.arcTo = () => {
+      arcToCalls.push(1)
+    }
+
+    drawCompositedCursor(
+      recorded.ctx,
+      { x: 10, y: 10 },
+      VISIBLE_STATE,
+      { ...DEFAULT_CURSOR_STYLE, shadow: 0 },
+      1,
+    )
+    expect(clipCalls).toHaveLength(0)
+
+    drawCompositedCursor(
+      recorded.ctx,
+      { x: 10, y: 10 },
+      VISIBLE_STATE,
+      { ...DEFAULT_CURSOR_STYLE, shadow: 0 },
+      1,
+      {
+        clipRect: { x: 0, y: 0, width: 200, height: 100, radius: 12 },
+      },
+    )
+    expect(clipCalls).toHaveLength(1)
+    expect(arcToCalls).toHaveLength(4)
+  })
+})
+
+describe('cursor motion blur', () => {
+  it('snaps (no blur) on the first sample, when blur is off, and when time does not advance', () => {
+    const state = createCursorMotionBlurState()
+    expect(getCursorMotionBlurPx({ motionBlur: 1, point: { x: 0, y: 0 }, state, timeMs: 0 })).toBe(
+      0,
+    )
+    // Same time again (paused re-render) snaps.
+    expect(
+      getCursorMotionBlurPx({ motionBlur: 1, point: { x: 500, y: 0 }, state, timeMs: 0 }),
+    ).toBe(0)
+    // Backwards time (scrub/seek) snaps.
+    expect(
+      getCursorMotionBlurPx({ motionBlur: 1, point: { x: 900, y: 0 }, state, timeMs: -16 }),
+    ).toBe(0)
+    // Blur disabled never blurs, even on fast moves.
+    const off = createCursorMotionBlurState()
+    getCursorMotionBlurPx({ motionBlur: 0, point: { x: 0, y: 0 }, state: off, timeMs: 0 })
+    expect(
+      getCursorMotionBlurPx({ motionBlur: 0, point: { x: 900, y: 0 }, state: off, timeMs: 16 }),
+    ).toBe(0)
+  })
+
+  it('scales with speed, is frame-rate independent and clamps at 6 px', () => {
+    // 100 px in 16 ms = 6250 px/s -> 6250 * 0.5 * 0.004 = 12.5 -> clamped to 6.
+    const fast = createCursorMotionBlurState()
+    getCursorMotionBlurPx({ motionBlur: 0.5, point: { x: 0, y: 0 }, state: fast, timeMs: 0 })
+    expect(
+      getCursorMotionBlurPx({ motionBlur: 0.5, point: { x: 100, y: 0 }, state: fast, timeMs: 16 }),
+    ).toBe(6)
+
+    // 8 px in 16 ms = 500 px/s -> 500 * 1 * 0.004 = 2 px.
+    const slow60 = createCursorMotionBlurState()
+    getCursorMotionBlurPx({ motionBlur: 1, point: { x: 0, y: 0 }, state: slow60, timeMs: 0 })
+    expect(
+      getCursorMotionBlurPx({ motionBlur: 1, point: { x: 8, y: 0 }, state: slow60, timeMs: 16 }),
+    ).toBeCloseTo(2, 6)
+
+    // Same speed sampled at 30 fps (16 px in 32 ms) gives the same blur.
+    const slow30 = createCursorMotionBlurState()
+    getCursorMotionBlurPx({ motionBlur: 1, point: { x: 0, y: 0 }, state: slow30, timeMs: 0 })
+    expect(
+      getCursorMotionBlurPx({ motionBlur: 1, point: { x: 16, y: 0 }, state: slow30, timeMs: 32 }),
+    ).toBeCloseTo(2, 6)
+
+    // Static cursor: no blur.
+    expect(
+      getCursorMotionBlurPx({ motionBlur: 1, point: { x: 16, y: 0 }, state: slow30, timeMs: 48 }),
+    ).toBe(0)
+  })
+
+  it('produces the same blur relative to the frame for preview and export sizes', () => {
+    // The same content-space move rendered on a 960 px preview (sizeNorm 0.5)
+    // and a 3840 px export (sizeNorm 2): blur px scales with the canvas.
+    const preview = createCursorMotionBlurState()
+    getCursorMotionBlurPx({
+      motionBlur: 1,
+      point: { x: 0, y: 0 },
+      state: preview,
+      timeMs: 0,
+      sizeNorm: 0.5,
+    })
+    const previewPx = getCursorMotionBlurPx({
+      motionBlur: 1,
+      point: { x: 4, y: 0 },
+      state: preview,
+      timeMs: 16,
+      sizeNorm: 0.5,
+    })
+
+    const exportState = createCursorMotionBlurState()
+    getCursorMotionBlurPx({
+      motionBlur: 1,
+      point: { x: 0, y: 0 },
+      state: exportState,
+      timeMs: 0,
+      sizeNorm: 2,
+    })
+    const exportPx = getCursorMotionBlurPx({
+      motionBlur: 1,
+      point: { x: 16, y: 0 },
+      state: exportState,
+      timeMs: 16,
+      sizeNorm: 2,
+    })
+
+    expect(previewPx).toBeGreaterThan(0)
+    expect(exportPx / previewPx).toBeCloseTo(4, 6)
+    expect(previewPx / 0.5).toBeCloseTo(exportPx / 2, 6)
+  })
+
+  it('resets to an uninitialised state', () => {
+    const state = createCursorMotionBlurState()
+    getCursorMotionBlurPx({ motionBlur: 1, point: { x: 0, y: 0 }, state, timeMs: 0 })
+    getCursorMotionBlurPx({ motionBlur: 1, point: { x: 8, y: 0 }, state, timeMs: 16 })
+    resetCursorMotionBlurState(state)
+    expect(state).toEqual({ x: 0, y: 0, lastTimeMs: null, initialized: false })
+    expect(
+      getCursorMotionBlurPx({ motionBlur: 1, point: { x: 100, y: 0 }, state, timeMs: 32 }),
+    ).toBe(0)
+  })
+
+  it('applies ctx.filter only when a blur radius is requested', () => {
+    const filters: string[] = []
+    const recorded = createRecordingContext()
+    Object.defineProperty(recorded.ctx, 'filter', {
+      set(value: string) {
+        filters.push(value)
+      },
+      configurable: true,
+    })
+    const state = {
+      visible: true,
+      x: 0.5,
+      y: 0.5,
+      scale: 1,
+      highlightAlpha: 0,
+      rippleScale: 1,
+      rippleAlpha: 0,
+      cursorKind: 'arrow' as const,
+    }
+
+    drawCompositedCursor(
+      recorded.ctx,
+      { x: 10, y: 10 },
+      state,
+      { ...DEFAULT_CURSOR_STYLE, shadow: 0 },
+      1,
+      { motionBlurPx: 0 },
+    )
+    expect(filters).toHaveLength(0)
+
+    drawCompositedCursor(
+      recorded.ctx,
+      { x: 10, y: 10 },
+      state,
+      { ...DEFAULT_CURSOR_STYLE, shadow: 0 },
+      1,
+      { motionBlurPx: 3.5 },
+    )
+    expect(filters).toEqual(['blur(3.50px)'])
+  })
+
+  it('normalises motionBlur into the resolved style range', () => {
+    expect(
+      resolveCursorState({
+        timeMs: 0,
+        style: { ...DEFAULT_CURSOR_STYLE, enabled: false, motionBlur: 4 },
+      }).visible,
+    ).toBe(false)
+    expect(DEFAULT_CURSOR_STYLE.motionBlur).toBe(0)
+    expect(DEFAULT_CURSOR_STYLE.clipToBounds).toBe(false)
+  })
+})
+
+// Crop mapping checked through projectCursorToViewport with an identity
+// camera, where the viewport is simply baseOffset + maskRect.
+describe('projectCursorToViewport crop handling', () => {
+  const FULL_CROP = { x: 0, y: 0, width: 1, height: 1 }
+  const VIEWPORT = { x: 100, y: 50, width: 800, height: 400 }
+
+  const project = (normX: number, normY: number, cropRegion = FULL_CROP) =>
+    projectCursorToViewport({
+      normalizedX: normX,
+      normalizedY: normY,
+      cropRegion,
+      baseOffset: { x: VIEWPORT.x, y: VIEWPORT.y },
+      maskRect: { width: VIEWPORT.width, height: VIEWPORT.height },
+      cameraScale: { x: 1, y: 1 },
+      cameraPosition: { x: 0, y: 0 },
+      stageSize: { width: 1000, height: 500 },
+    })
+
+  it('maps positions directly onto the viewport when there is no crop', () => {
+    expect(project(0.5, 0.5)).toMatchObject({ x: 500, y: 250, inViewport: true, inCrop: true })
+    expect(project(0, 0)).toMatchObject({ x: 100, y: 50, inViewport: true })
+    expect(project(1, 1)).toMatchObject({ x: 900, y: 450, inViewport: true })
+  })
+
+  it('re-normalizes a full-frame position into the cropped viewport', () => {
+    // Crop the right-bottom half of the frame. A point at the frame centre
+    // (0.5, 0.5) sits at the top-left corner of this crop.
+    const crop = { x: 0.5, y: 0.5, width: 0.5, height: 0.5 }
+    expect(project(0.5, 0.5, crop)).toMatchObject({ x: 100, y: 50, inViewport: true })
+    // The centre of the crop (0.75, 0.75) maps to the viewport centre.
+    expect(project(0.75, 0.75, crop)).toMatchObject({ x: 500, y: 250, inViewport: true })
+  })
+
+  it('does not drift: a point on the visible cropped content keeps its relative offset', () => {
+    const crop = { x: 0.2, y: 0.1, width: 0.6, height: 0.6 }
+    const normX = 0.6
+    const normY = 0.4
+    const mapped = project(normX, normY, crop)
+
+    const expectedPx = VIEWPORT.x + ((normX - crop.x) / crop.width) * VIEWPORT.width
+    const expectedPy = VIEWPORT.y + ((normY - crop.y) / crop.height) * VIEWPORT.height
+    expect(mapped.x).toBeCloseTo(expectedPx, 6)
+    expect(mapped.y).toBeCloseTo(expectedPy, 6)
+    expect(mapped.inViewport).toBe(true)
+
+    // The naive projection (full-frame coordinate straight onto the crop
+    // viewport) would land somewhere else.
+    const buggyPx = VIEWPORT.x + normX * VIEWPORT.width
+    expect(Math.abs(mapped.x - buggyPx)).toBeGreaterThan(1)
+  })
+
+  it('hides the cursor when the position falls outside the visible crop', () => {
+    const crop = { x: 0.5, y: 0.5, width: 0.5, height: 0.5 }
+    // (0.1, 0.1) is in the top-left of the frame, outside the bottom-right
+    // crop, even though it projects to a point that is still on the stage.
+    const outside = project(0.1, 0.1, crop)
+    expect(outside.inCrop).toBe(false)
+    expect(outside.inViewport).toBe(false)
+    // Just past the crop edge is hidden too.
+    expect(project(1.0001, 0.75, crop).inViewport).toBe(false)
+    expect(project(0.75, 0.4999, crop).inViewport).toBe(false)
+  })
+
+  it('hides the cursor for a degenerate crop', () => {
+    const projected = project(0.5, 0.5, { x: 0, y: 0, width: 0, height: 0 })
+    expect(projected.inCrop).toBe(false)
+    expect(projected.inViewport).toBe(false)
+  })
+
+  it('still hides the cursor when the camera pushes it far off the stage', () => {
+    const projected = projectCursorToViewport({
+      normalizedX: 1,
+      normalizedY: 1,
+      cropRegion: FULL_CROP,
+      baseOffset: { x: VIEWPORT.x, y: VIEWPORT.y },
+      maskRect: { width: VIEWPORT.width, height: VIEWPORT.height },
+      cameraScale: { x: 3, y: 3 },
+      cameraPosition: { x: 0, y: 0 },
+      stageSize: { width: 1000, height: 500 },
+    })
+    expect(projected.inCrop).toBe(true)
+    expect(projected.inViewport).toBe(false)
+  })
+})
 
 describe('cursorComposer', () => {
   it('interpolates and smooths recorded cursor track', () => {
@@ -16,37 +503,53 @@ describe('cursorComposer', () => {
         { timeMs: 100, x: 0.2, y: 0.2, visible: true },
         { timeMs: 200, x: 0.4, y: 0.4, visible: true },
       ],
-    };
+    }
 
     const state = resolveCursorState({
       timeMs: 100,
       track,
       style: { ...DEFAULT_CURSOR_STYLE, smoothingMs: 0 },
-    });
+    })
 
-    expect(state.visible).toBe(true);
-    expect(state.x).toBeCloseTo(0.2, 2);
-    expect(state.y).toBeCloseTo(0.2, 2);
-    expect(state.cursorKind).toBe('arrow');
-  });
+    expect(state.visible).toBe(true)
+    expect(state.x).toBeCloseTo(0.2, 2)
+    expect(state.y).toBeCloseTo(0.2, 2)
+    expect(state.cursorKind).toBe('arrow')
+  })
 
-  it('resolves ibeam cursor kind from recorded samples', () => {
+  it('resolves the cursor kind from recorded samples, mapping the legacy ibeam name to text', () => {
     const track: CursorTrack = {
       source: 'recorded',
       samples: [
         { timeMs: 0, x: 0.2, y: 0.2, visible: true, cursorKind: 'arrow' },
-        { timeMs: 120, x: 0.3, y: 0.3, visible: true, cursorKind: 'ibeam' },
+        // Old sidecars carry `ibeam`; the widened set calls it `text`.
+        { timeMs: 120, x: 0.3, y: 0.3, visible: true, cursorKind: 'ibeam' as unknown as 'text' },
+        { timeMs: 240, x: 0.4, y: 0.4, visible: true, cursorKind: 'pointer' },
+        { timeMs: 360, x: 0.5, y: 0.5, visible: true, cursorKind: 'resize-nwse' },
       ],
-    };
+    }
+    const style = { ...DEFAULT_CURSOR_STYLE, smoothingMs: 0 }
 
-    const state = resolveCursorState({
-      timeMs: 100,
-      track,
-      style: { ...DEFAULT_CURSOR_STYLE, smoothingMs: 0 },
-    });
+    expect(resolveCursorState({ timeMs: 100, track, style }).cursorKind).toBe('text')
+    expect(resolveCursorState({ timeMs: 220, track, style }).cursorKind).toBe('pointer')
+    expect(resolveCursorState({ timeMs: 340, track, style }).cursorKind).toBe('resize-nwse')
+  })
 
-    expect(state.cursorKind).toBe('ibeam');
-  });
+  it('smoothing votes the dominant kind inside the window (arrow on ties)', () => {
+    const track: CursorTrack = {
+      source: 'recorded',
+      samples: [
+        { timeMs: 0, x: 0.2, y: 0.2, visible: true, cursorKind: 'pointer' },
+        { timeMs: 20, x: 0.2, y: 0.2, visible: true, cursorKind: 'pointer' },
+        { timeMs: 40, x: 0.2, y: 0.2, visible: true, cursorKind: 'pointer' },
+        { timeMs: 60, x: 0.2, y: 0.2, visible: true, cursorKind: 'text' },
+      ],
+    }
+    expect(
+      resolveCursorState({ timeMs: 30, track, style: { ...DEFAULT_CURSOR_STYLE, smoothingMs: 60 } })
+        .cursorKind,
+    ).toBe('pointer')
+  })
 
   it('returns default position when cursor track has no samples', () => {
     const state = resolveCursorState({
@@ -54,13 +557,13 @@ describe('cursorComposer', () => {
       track: { samples: [] },
       zoomRegions: [],
       fallbackFocus: { cx: 0.62, cy: 0.34 },
-    });
+    })
 
     // Empty samples → getPreparedCursorTrack returns null → default (0.5, 0.5)
-    expect(state.x).toBeCloseTo(0.5, 3);
-    expect(state.y).toBeCloseTo(0.5, 3);
-    expect(state.visible).toBe(false);
-  });
+    expect(state.x).toBeCloseTo(0.5, 3)
+    expect(state.y).toBeCloseTo(0.5, 3)
+    expect(state.visible).toBe(false)
+  })
 
   it('projects normalized point through crop and camera transform', () => {
     const projected = projectCursorToViewport({
@@ -72,19 +575,19 @@ describe('cursorComposer', () => {
       cameraScale: { x: 1.2, y: 1.2 },
       cameraPosition: { x: -40, y: 20 },
       stageSize: { width: 1280, height: 720 },
-    });
+    })
 
-    expect(projected.x).toBeCloseTo(560, 2);
-    expect(projected.y).toBeCloseTo(320, 2);
-    expect(projected.inViewport).toBe(true);
-  });
+    expect(projected.x).toBeCloseTo(560, 2)
+    expect(projected.y).toBeCloseTo(320, 2)
+    expect(projected.inViewport).toBe(true)
+  })
 
   it('normalizes pointer samples to 0..1', () => {
-    const sample = normalizePointerSample(16, 960, 540, 1920, 1080, true);
-    expect(sample.x).toBe(0.5);
-    expect(sample.y).toBe(0.5);
-    expect(sample.click).toBe(true);
-  });
+    const sample = normalizePointerSample(16, 960, 540, 1920, 1080, true)
+    expect(sample.x).toBe(0.5)
+    expect(sample.y).toBe(0.5)
+    expect(sample.click).toBe(true)
+  })
 
   it('supports time offset alignment for cursor track', () => {
     const track: CursorTrack = {
@@ -93,22 +596,22 @@ describe('cursorComposer', () => {
         { timeMs: 0, x: 0.1, y: 0.1, visible: true },
         { timeMs: 100, x: 0.5, y: 0.5, visible: true },
       ],
-    };
+    }
 
     const withoutOffset = resolveCursorState({
       timeMs: 0,
       track,
       style: { ...DEFAULT_CURSOR_STYLE, smoothingMs: 0, timeOffsetMs: 0 },
-    });
+    })
     const withOffset = resolveCursorState({
       timeMs: 0,
       track,
       style: { ...DEFAULT_CURSOR_STYLE, smoothingMs: 0, timeOffsetMs: 100 },
-    });
+    })
 
-    expect(withoutOffset.x).toBeCloseTo(0.1, 3);
-    expect(withOffset.x).toBeCloseTo(0.5, 3);
-  });
+    expect(withoutOffset.x).toBeCloseTo(0.1, 3)
+    expect(withOffset.x).toBeCloseTo(0.5, 3)
+  })
 
   it('auto-hides static cursor after inactivity window', () => {
     const track: CursorTrack = {
@@ -117,7 +620,7 @@ describe('cursorComposer', () => {
         { timeMs: 0, x: 0.42, y: 0.42, visible: true },
         { timeMs: 120, x: 0.42, y: 0.42, visible: true },
       ],
-    };
+    }
 
     const hiddenState = resolveCursorState({
       timeMs: 280,
@@ -129,11 +632,11 @@ describe('cursorComposer', () => {
         staticHideDelayMs: 100,
         staticHideFadeMs: 120,
       },
-    });
+    })
 
-    expect(hiddenState.visible).toBe(false);
-    expect(hiddenState.highlightAlpha).toBeCloseTo(0, 3);
-  });
+    expect(hiddenState.visible).toBe(false)
+    expect(hiddenState.highlightAlpha).toBeCloseTo(0, 3)
+  })
 
   it('keeps cursor visible when track remains active', () => {
     const track: CursorTrack = {
@@ -143,7 +646,7 @@ describe('cursorComposer', () => {
         { timeMs: 120, x: 0.25, y: 0.2, visible: true },
         { timeMs: 260, x: 0.4, y: 0.35, visible: true },
       ],
-    };
+    }
 
     const state = resolveCursorState({
       timeMs: 280,
@@ -155,20 +658,20 @@ describe('cursorComposer', () => {
         staticHideDelayMs: 180,
         staticHideFadeMs: 120,
       },
-    });
+    })
 
-    expect(state.visible).toBe(true);
-    expect(state.highlightAlpha).toBeGreaterThan(0.05);
-  });
+    expect(state.visible).toBe(true)
+    expect(state.highlightAlpha).toBeGreaterThan(0.05)
+  })
 
   it('loops cursor back toward start near the end of the track', () => {
     const track: CursorTrack = {
       source: 'recorded',
       samples: [
         { timeMs: 0, x: 0.12, y: 0.2, visible: true, cursorKind: 'arrow' },
-        { timeMs: 1000, x: 0.9, y: 0.8, visible: true, cursorKind: 'ibeam' },
+        { timeMs: 1000, x: 0.9, y: 0.8, visible: true, cursorKind: 'text' },
       ],
-    };
+    }
 
     const state = resolveCursorState({
       timeMs: 1000,
@@ -179,20 +682,20 @@ describe('cursorComposer', () => {
         loopCursorPosition: true,
         loopBlendMs: 400,
       },
-    });
+    })
 
-    expect(state.x).toBeCloseTo(0.12, 3);
-    expect(state.y).toBeCloseTo(0.2, 3);
-    expect(state.cursorKind).toBe('arrow');
-  });
+    expect(state.x).toBeCloseTo(0.12, 3)
+    expect(state.y).toBeCloseTo(0.2, 3)
+    expect(state.cursorKind).toBe('arrow')
+  })
 
   it('applies cursor offset before drawing glyph', () => {
-    const translateCalls: Array<{ x: number; y: number }> = [];
+    const translateCalls: Array<{ x: number; y: number }> = []
     const context = {
       save: () => {},
       restore: () => {},
       translate: (x: number, y: number) => {
-        translateCalls.push({ x, y });
+        translateCalls.push({ x, y })
       },
       scale: () => {},
       beginPath: () => {},
@@ -210,7 +713,7 @@ describe('cursorComposer', () => {
       set shadowBlur(_: number) {},
       set shadowOffsetX(_: number) {},
       set shadowOffsetY(_: number) {},
-    } as unknown as CanvasRenderingContext2D;
+    } as unknown as CanvasRenderingContext2D
 
     drawCompositedCursor(
       context,
@@ -226,19 +729,19 @@ describe('cursorComposer', () => {
         cursorKind: 'arrow',
       },
       { ...DEFAULT_CURSOR_STYLE, offsetX: 12, offsetY: -6, shadow: 0 },
-    );
+    )
 
-    expect(translateCalls[0]).toEqual({ x: 112, y: 54 });
-  });
+    expect(translateCalls[0]).toEqual({ x: 112, y: 54 })
+  })
 
   it('scales cursor glyph with zoom content scale', () => {
-    const scaleCalls: Array<{ x: number; y: number }> = [];
+    const scaleCalls: Array<{ x: number; y: number }> = []
     const context = {
       save: () => {},
       restore: () => {},
       translate: () => {},
       scale: (x: number, y: number) => {
-        scaleCalls.push({ x, y });
+        scaleCalls.push({ x, y })
       },
       beginPath: () => {},
       moveTo: () => {},
@@ -255,7 +758,7 @@ describe('cursorComposer', () => {
       set shadowBlur(_: number) {},
       set shadowOffsetX(_: number) {},
       set shadowOffsetY(_: number) {},
-    } as unknown as CanvasRenderingContext2D;
+    } as unknown as CanvasRenderingContext2D
 
     drawCompositedCursor(
       context,
@@ -272,24 +775,26 @@ describe('cursorComposer', () => {
       },
       { ...DEFAULT_CURSOR_STYLE, shadow: 0 },
       2,
-    );
+    )
 
-    expect(scaleCalls[0]).toEqual({ x: 2, y: 2 });
-  });
+    expect(scaleCalls[0]).toEqual({ x: 2, y: 2 })
+  })
 
-  it('draws ibeam glyph with center hotspot alignment', () => {
-    const translateCalls: Array<{ x: number; y: number }> = [];
-    const moveCalls: Array<{ x: number; y: number }> = [];
+  it('draws the text glyph as a stroked I-beam at the hotspot when Path2D is unavailable', () => {
+    // Plain Node has no Path2D: the composer must still draw something sensible.
+    expect(typeof Path2D).toBe('undefined')
+    const translateCalls: Array<{ x: number; y: number }> = []
+    const moveCalls: Array<{ x: number; y: number }> = []
     const context = {
       save: () => {},
       restore: () => {},
       translate: (x: number, y: number) => {
-        translateCalls.push({ x, y });
+        translateCalls.push({ x, y })
       },
       scale: () => {},
       beginPath: () => {},
       moveTo: (x: number, y: number) => {
-        moveCalls.push({ x, y });
+        moveCalls.push({ x, y })
       },
       lineTo: () => {},
       closePath: () => {},
@@ -306,28 +811,166 @@ describe('cursorComposer', () => {
       set shadowBlur(_: number) {},
       set shadowOffsetX(_: number) {},
       set shadowOffsetY(_: number) {},
-    } as unknown as CanvasRenderingContext2D;
+    } as unknown as CanvasRenderingContext2D
 
     drawCompositedCursor(
       context,
       { x: 100, y: 60 },
-      {
-        visible: true,
-        x: 0.5,
-        y: 0.5,
-        scale: 1,
-        highlightAlpha: 0,
-        rippleScale: 1,
-        rippleAlpha: 0,
-        cursorKind: 'ibeam',
-      },
+      { ...GLYPH_STATE, cursorKind: 'text' },
       { ...DEFAULT_CURSOR_STYLE, shadow: 0 },
-    );
+    )
 
-    expect(translateCalls[0]).toEqual({ x: 100, y: 60 });
-    expect(translateCalls[1].x).toBeCloseTo(0, 6);
-    expect(translateCalls[1].y).toBeCloseTo(0, 6);
-    expect(moveCalls[0]).toEqual({ x: 0, y: -10 });
-  });
+    expect(translateCalls[0]).toEqual({ x: 100, y: 60 })
+    expect(moveCalls[0]).toEqual({ x: 0, y: -10 })
+  })
+})
 
-});
+/**
+ * A `Path2D` stand-in that only remembers its path data, so a Node test can
+ * observe which SVG paths the composer fills / strokes and with what transform.
+ */
+class FakePath2D {
+  constructor(public readonly d: string) {}
+}
+
+interface GlyphRecording {
+  ctx: CanvasRenderingContext2D
+  ops: string[]
+}
+
+function createGlyphRecordingContext(): GlyphRecording {
+  const ops: string[] = []
+  const fmt = (n: number) => n.toFixed(4)
+  const ctx = {
+    save: () => ops.push('save'),
+    restore: () => ops.push('restore'),
+    translate: (x: number, y: number) => ops.push(`translate ${fmt(x)} ${fmt(y)}`),
+    scale: (x: number, y: number) => ops.push(`scale ${fmt(x)} ${fmt(y)}`),
+    beginPath: () => ops.push('beginPath'),
+    moveTo: (x: number, y: number) => ops.push(`moveTo ${fmt(x)} ${fmt(y)}`),
+    lineTo: (x: number, y: number) => ops.push(`lineTo ${fmt(x)} ${fmt(y)}`),
+    arcTo: () => ops.push('arcTo'),
+    closePath: () => ops.push('closePath'),
+    clip: () => ops.push('clip'),
+    arc: () => ops.push('arc'),
+    fill: (path?: FakePath2D | string, rule?: string) =>
+      ops.push(
+        path instanceof FakePath2D
+          ? `fillPath ${rule ?? 'nonzero'} ${path.d.slice(0, 24)}`
+          : 'fill',
+      ),
+    stroke: (path?: FakePath2D) =>
+      ops.push(path instanceof FakePath2D ? `strokePath ${path.d.slice(0, 24)}` : 'stroke'),
+    createRadialGradient: () => ({ addColorStop: () => undefined }),
+    globalAlpha: 1,
+    fillStyle: '',
+    strokeStyle: '',
+    lineWidth: 1,
+    lineCap: 'butt',
+    lineJoin: 'miter',
+    shadowColor: '',
+    shadowBlur: 0,
+    shadowOffsetX: 0,
+    shadowOffsetY: 0,
+    filter: 'none',
+  } as unknown as CanvasRenderingContext2D
+  return { ctx, ops }
+}
+
+describe('bundled SVG cursor glyphs (B2-5)', () => {
+  beforeAll(() => {
+    ;(globalThis as { Path2D?: unknown }).Path2D = FakePath2D
+  })
+  afterAll(() => {
+    delete (globalThis as { Path2D?: unknown }).Path2D
+  })
+
+  it('draws every non-arrow kind from its SVG paths with the hotspot at the cursor point', () => {
+    for (const kind of CURSOR_KINDS) {
+      if (kind === 'arrow') continue
+      const recorded = createGlyphRecordingContext()
+      drawCompositedCursor(
+        recorded.ctx,
+        { x: 100, y: 60 },
+        { ...GLYPH_STATE, cursorKind: kind },
+        { ...DEFAULT_CURSOR_STYLE, shadow: 0 },
+      )
+      const plan = resolveCursorGlyphDrawPlan(kind)
+      expect(plan, kind).not.toBeNull()
+      expect(recorded.ops[1], kind).toBe('translate 100.0000 60.0000')
+      // viewBox -> glyph scale, then the hotspot is moved onto the origin.
+      expect(recorded.ops, kind).toContain(
+        `scale ${CURSOR_GLYPH_SCALE.toFixed(4)} ${CURSOR_GLYPH_SCALE.toFixed(4)}`,
+      )
+      expect(recorded.ops, kind).toContain(
+        `translate ${(-plan!.hotspot.x).toFixed(4)} ${(-plan!.hotspot.y).toFixed(4)}`,
+      )
+      expect(
+        recorded.ops.some((op) => op.startsWith('fillPath') || op.startsWith('strokePath')),
+        kind,
+      ).toBe(true)
+      // No hand-drawn fallback polygon.
+      expect(recorded.ops, kind).not.toContain('moveTo 0.0000 -10.0000')
+    }
+  })
+
+  it('keeps the arrow on its tuned Path2D (tip at the origin, no SVG plan)', () => {
+    expect(resolveCursorGlyphDrawPlan('arrow')).toBeNull()
+    const recorded = createGlyphRecordingContext()
+    drawCompositedCursor(recorded.ctx, { x: 10, y: 10 }, GLYPH_STATE, {
+      ...DEFAULT_CURSOR_STYLE,
+      shadow: 0,
+    })
+    expect(recorded.ops.filter((op) => op.startsWith('fillPath'))).toHaveLength(2)
+    expect(recorded.ops).not.toContain(
+      `scale ${CURSOR_GLYPH_SCALE.toFixed(4)} ${CURSOR_GLYPH_SCALE.toFixed(4)}`,
+    )
+  })
+
+  it('preview and export issue the same glyph operations, differing only by the content scale', () => {
+    const style = { ...DEFAULT_CURSOR_STYLE, shadow: 0 }
+    const cameraScale = { x: 1.3, y: 1.3 }
+    const cropRegion = { x: 0.1, y: 0.1, width: 0.8, height: 0.8 }
+    const render = (canvasWidth: number) => {
+      const recorded = createGlyphRecordingContext()
+      drawCompositedCursor(
+        recorded.ctx,
+        { x: canvasWidth / 2, y: canvasWidth / 4 },
+        { ...GLYPH_STATE, scale: 2.2, cursorKind: 'pointer' },
+        style,
+        resolveCursorContentScale({
+          cameraScale,
+          maskRect: { width: canvasWidth * 0.8 },
+          cropRegion,
+        }),
+      )
+      return recorded.ops
+    }
+    const preview = render(960)
+    const exported = render(3840)
+    // ops: save, translate(point), save, scale(cursor scale), then the glyph plan.
+    expect(preview[1].startsWith('translate ')).toBe(true)
+    expect(preview[3].startsWith('scale ')).toBe(true)
+    const glyphScaleOf = (ops: string[]) => Number(ops[3].split(' ')[1])
+    const shape = (ops: string[]) =>
+      ops.map((op, i) => (i === 1 || i === 3 ? op.split(' ')[0] : op))
+    // Same op sequence (including the SVG paths and the hotspot translate)...
+    expect(shape(preview)).toEqual(shape(exported))
+    // ...and the glyph scale follows the canvas width 1:1 (4x wider canvas -> 4x glyph).
+    expect(glyphScaleOf(exported) / glyphScaleOf(preview)).toBeCloseTo(4, 6)
+  })
+
+  it('a legacy ibeam state draws the text glyph', () => {
+    const recorded = createGlyphRecordingContext()
+    drawCompositedCursor(
+      recorded.ctx,
+      { x: 0, y: 0 },
+      { ...GLYPH_STATE, cursorKind: 'ibeam' as unknown as 'text' },
+      { ...DEFAULT_CURSOR_STYLE, shadow: 0 },
+    )
+    const plan = resolveCursorGlyphDrawPlan('text')
+    expect(recorded.ops).toContain(
+      `translate ${(-plan!.hotspot.x).toFixed(4)} ${(-plan!.hotspot.y).toFixed(4)}`,
+    )
+  })
+})

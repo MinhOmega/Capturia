@@ -1,0 +1,4 @@
+# Revisions to skip in git blame (git config blame.ignoreRevsFile .git-blame-ignore-revs)
+
+# style: one-shot Biome format (no semantic change)
+a6564c355a16c91f7889664bb4f3dfc7cc484ddf

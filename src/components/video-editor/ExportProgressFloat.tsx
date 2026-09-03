@@ -1,21 +1,21 @@
-import { Loader2, CheckCircle2, XCircle, ChevronUp } from 'lucide-react';
-import type { ExportProgress } from '@/lib/exporter';
-import { useI18n } from '@/i18n';
+import { Loader2, CheckCircle2, XCircle, ChevronUp } from 'lucide-react'
+import type { ExportProgress } from '@/lib/exporter'
+import { useI18n } from '@/i18n'
 
 interface ExportProgressFloatProps {
-  progress: ExportProgress | null;
-  isExporting: boolean;
-  error: string | null;
-  exportFormat: 'mp4' | 'gif';
+  progress: ExportProgress | null
+  isExporting: boolean
+  error: string | null
+  exportFormat: 'mp4' | 'gif'
   batchProgress?: {
-    current: number;
-    total: number;
-    aspectRatio: string;
-  } | null;
-  onClick: () => void;
-  isExiting?: boolean;
-  onExitEnd?: () => void;
-  isEntering?: boolean;
+    current: number
+    total: number
+    aspectRatio: string
+  } | null
+  onClick: () => void
+  isExiting?: boolean
+  onExitEnd?: () => void
+  isEntering?: boolean
 }
 
 export function ExportProgressFloat({
@@ -29,30 +29,37 @@ export function ExportProgressFloat({
   onExitEnd,
   isEntering = false,
 }: ExportProgressFloatProps) {
-  const { t } = useI18n();
+  const { t } = useI18n()
 
-  const isCompiling = isExporting && progress && progress.percentage >= 100 && exportFormat === 'gif';
-  const isFinalizing = progress?.phase === 'finalizing';
-  const renderProgress = progress?.renderProgress;
-  const percentage = isCompiling || (isFinalizing && exportFormat === 'gif')
-    ? (renderProgress !== undefined && renderProgress > 0 ? renderProgress : undefined)
-    : progress?.percentage ?? 0;
+  const isCompiling =
+    isExporting && progress && progress.percentage >= 100 && exportFormat === 'gif'
+  const isFinalizing = progress?.phase === 'finalizing'
+  const renderProgress = progress?.renderProgress
+  const percentage =
+    isCompiling || (isFinalizing && exportFormat === 'gif')
+      ? renderProgress !== undefined && renderProgress > 0
+        ? renderProgress
+        : undefined
+      : (progress?.percentage ?? 0)
 
   const getPhaseLabel = () => {
-    if (error) return t('export.titleFailed');
-    if (isCompiling) return t('export.titleCompilingGif');
-    if (isFinalizing) return exportFormat === 'gif' ? t('export.titleCompilingGif') : t('export.titleFinalizingVideo');
-    return t('export.phaseRendering');
-  };
+    if (error) return t('dialogs.export.titleFailed')
+    if (isCompiling) return t('dialogs.export.titleCompilingGif')
+    if (isFinalizing)
+      return exportFormat === 'gif'
+        ? t('dialogs.export.titleCompilingGif')
+        : t('dialogs.export.titleFinalizingVideo')
+    return t('dialogs.export.phaseRendering')
+  }
 
   const formatEta = (seconds: number) => {
-    const safe = Math.max(0, Math.floor(seconds));
-    const m = Math.floor(safe / 60);
-    const s = safe % 60;
-    return `${m}:${String(s).padStart(2, '0')}`;
-  };
+    const safe = Math.max(0, Math.floor(seconds))
+    const m = Math.floor(safe / 60)
+    const s = safe % 60
+    return `${m}:${String(s).padStart(2, '0')}`
+  }
 
-  const isDone = !isExporting && progress && progress.percentage >= 100 && !error;
+  const isDone = !isExporting && progress && progress.percentage >= 100 && !error
 
   return (
     <div
@@ -66,7 +73,7 @@ export function ExportProgressFloat({
             : 'float-enter 300ms ease-out forwards',
       }}
       onAnimationEnd={() => {
-        if (isExiting && onExitEnd) onExitEnd();
+        if (isExiting && onExitEnd) onExitEnd()
       }}
     >
       <div className="bg-[#0a0a0c] border border-white/10 rounded-xl shadow-2xl shadow-black/40 px-4 py-3 min-w-[280px] max-w-[340px] hover:border-white/20 transition-colors">
@@ -81,16 +88,20 @@ export function ExportProgressFloat({
           )}
           <div className="flex-1 min-w-0">
             <div className="text-sm font-medium text-slate-200 truncate">
-              {isDone ? t('export.complete') : getPhaseLabel()}
+              {isDone ? t('dialogs.export.complete') : getPhaseLabel()}
             </div>
             <div className="text-[11px] text-slate-500">
               {error
-                ? t('export.statusTryAgain')
+                ? t('dialogs.export.statusTryAgain')
                 : isDone
-                  ? t('export.ready', { format: exportFormat === 'gif' ? 'gif' : 'video' })
+                  ? t('dialogs.export.ready', { format: exportFormat === 'gif' ? 'gif' : 'video' })
                   : batchProgress && batchProgress.total > 1
-                    ? t('export.batchProgress', { current: batchProgress.current, total: batchProgress.total })
-                    : progress?.estimatedTimeRemaining != null && progress.estimatedTimeRemaining > 0
+                    ? t('dialogs.export.batchProgress', {
+                        current: batchProgress.current,
+                        total: batchProgress.total,
+                      })
+                    : progress?.estimatedTimeRemaining != null &&
+                        progress.estimatedTimeRemaining > 0
                       ? `ETA ${formatEta(progress.estimatedTimeRemaining)}`
                       : progress
                         ? `${progress.currentFrame} / ${progress.totalFrames} frames`
@@ -128,12 +139,10 @@ export function ExportProgressFloat({
         {/* Percentage label */}
         {percentage !== undefined && (
           <div className="mt-1 text-right">
-            <span className="text-[11px] font-mono text-slate-400">
-              {percentage.toFixed(0)}%
-            </span>
+            <span className="text-[11px] font-mono text-slate-400">{percentage.toFixed(0)}%</span>
           </div>
         )}
       </div>
     </div>
-  );
+  )
 }

@@ -1,26 +1,37 @@
-import { useEffect, useState } from 'react';
-import { X, Download, Loader2, FolderOpen } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { toast } from 'sonner';
-import type { ExportProgress } from '@/lib/exporter';
-import { useI18n } from '@/i18n';
+import { useEffect, useState } from 'react'
+import { X, Download, Loader2, FolderOpen } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { toast } from 'sonner'
+import type { ExportProgress } from '@/lib/exporter'
+import {
+  classifyExportErrorMessage,
+  type ExportErrorKind,
+  getExportErrorMessageKey,
+} from '@/lib/exporter/exportErrors'
+import { useI18n } from '@/i18n'
 
 interface ExportDialogProps {
-  isOpen: boolean;
-  onClose: () => void;
-  progress: ExportProgress | null;
-  isExporting: boolean;
-  error: string | null;
-  onCancel?: () => void;
-  exportFormat?: 'mp4' | 'gif';
-  exportedFilePath?: string;
+  isOpen: boolean
+  onClose: () => void
+  progress: ExportProgress | null
+  isExporting: boolean
+  /** Raw failure message; shown as-is unless it maps to a localised kind. */
+  error: string | null
+  /** `ExportResult.errorKind` when the caller has it; otherwise derived from `error`. */
+  errorKind?: ExportErrorKind | null
+  onCancel?: () => void
+  exportFormat?: 'mp4' | 'gif'
+  exportedFilePath?: string
   batchProgress?: {
-    current: number;
-    total: number;
-    aspectRatio: string;
-  } | null;
-  isMinimizing?: boolean;
-  onMinimizeEnd?: () => void;
+    current: number
+    total: number
+    aspectRatio: string
+  } | null
+  isMinimizing?: boolean
+  onMinimizeEnd?: () => void
+  /** Finished export whose write failed; offers "Save again". */
+  unsavedExport?: { fileName: string; format: 'mp4' | 'gif' } | null
+  onSaveUnsavedExport?: () => void
 }
 
 export function ExportDialog({
@@ -29,118 +40,137 @@ export function ExportDialog({
   progress,
   isExporting,
   error,
+  errorKind = null,
   onCancel,
   exportFormat = 'mp4',
   exportedFilePath,
   batchProgress = null,
   isMinimizing = false,
   onMinimizeEnd,
+  unsavedExport = null,
+  onSaveUnsavedExport,
 }: ExportDialogProps) {
-  const { t } = useI18n();
-  const [showSuccess, setShowSuccess] = useState(false);
-  const [nowMs, setNowMs] = useState(() => Date.now());
+  const { t } = useI18n()
+  const [showSuccess, setShowSuccess] = useState(false)
+  const [nowMs, setNowMs] = useState(() => Date.now())
+
+  // Encoder / decoder failures get a translated line; the raw message stays
+  // underneath for diagnostics. Anything unclassified is shown as before.
+  const resolvedErrorKind = error ? (errorKind ?? classifyExportErrorMessage(error)) : null
+  const errorMessageKey = resolvedErrorKind ? getExportErrorMessageKey(resolvedErrorKind) : null
+  const displayError = errorMessageKey ? t(errorMessageKey) : error
 
   // Reset showSuccess when a new export starts or dialog reopens
   useEffect(() => {
     if (isExporting) {
-      setShowSuccess(false);
+      setShowSuccess(false)
     }
-  }, [isExporting]);
+  }, [isExporting])
 
   // Reset showSuccess when dialog opens fresh
   useEffect(() => {
     if (isOpen && !isExporting && !progress) {
-      setShowSuccess(false);
+      setShowSuccess(false)
     }
-  }, [isOpen, isExporting, progress]);
+  }, [isOpen, isExporting, progress])
 
   useEffect(() => {
     if (!isExporting && progress && progress.percentage >= 100 && !error) {
-      setShowSuccess(true);
+      setShowSuccess(true)
       const timer = setTimeout(() => {
-        setShowSuccess(false);
-        onClose();
-      }, 4000);
-      return () => clearTimeout(timer);
+        setShowSuccess(false)
+        onClose()
+      }, 4000)
+      return () => clearTimeout(timer)
     }
-  }, [isExporting, progress, error, onClose]);
+  }, [isExporting, progress, error, onClose])
 
   useEffect(() => {
-    if (!isOpen || !isExporting) return;
-    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [isOpen, isExporting]);
+    if (!isOpen || !isExporting) return
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [isOpen, isExporting])
 
-  if (!isOpen) return null;
+  if (!isOpen) return null
 
-  const formatLabel = exportFormat === 'gif' ? 'GIF' : 'Video';
-  
+  const formatLabel = exportFormat === 'gif' ? 'GIF' : 'Video'
+
   // Determine if we're in the compiling phase (frames done but still exporting)
-  const isCompiling = isExporting && progress && progress.percentage >= 100 && exportFormat === 'gif';
-  const isFinalizing = progress?.phase === 'finalizing';
-  const renderProgress = progress?.renderProgress;
-  const updatedAtMs = progress?.updatedAtMs ?? nowMs;
-  const staleMs = Math.max(0, nowMs - updatedAtMs);
-  const elapsedMs = progress?.elapsedMs ?? 0;
-  const etaSeconds = progress?.estimatedTimeRemaining ?? 0;
+  const isCompiling =
+    isExporting && progress && progress.percentage >= 100 && exportFormat === 'gif'
+  const isFinalizing = progress?.phase === 'finalizing'
+  const isPreparing = progress?.phase === 'preparing'
+  // Source-copy fast path: the file is handed over verbatim, no frames rendered.
+  const isCopying = progress?.phase === 'copying'
+  const renderProgress = progress?.renderProgress
+  const updatedAtMs = progress?.updatedAtMs ?? nowMs
+  const staleMs = Math.max(0, nowMs - updatedAtMs)
+  const elapsedMs = progress?.elapsedMs ?? 0
+  const etaSeconds = progress?.estimatedTimeRemaining ?? 0
 
   const formatElapsed = (valueMs: number) => {
-    const totalSeconds = Math.max(0, Math.floor(valueMs / 1000));
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}:${String(seconds).padStart(2, '0')}`;
-  };
+    const totalSeconds = Math.max(0, Math.floor(valueMs / 1000))
+    const minutes = Math.floor(totalSeconds / 60)
+    const seconds = totalSeconds % 60
+    return `${minutes}:${String(seconds).padStart(2, '0')}`
+  }
 
   const formatEta = (seconds: number) => {
-    const safe = Math.max(0, Math.floor(seconds));
-    const minutes = Math.floor(safe / 60);
-    const remaining = safe % 60;
-    return `${minutes}:${String(remaining).padStart(2, '0')}`;
-  };
+    const safe = Math.max(0, Math.floor(seconds))
+    const minutes = Math.floor(safe / 60)
+    const remaining = safe % 60
+    return `${minutes}:${String(remaining).padStart(2, '0')}`
+  }
 
   const resolveActivityState = () => {
-    if (staleMs < 3_000) return 'active';
-    if (staleMs < 12_000) return 'waiting';
-    return 'stalled';
-  };
+    if (staleMs < 3_000) return 'active'
+    if (staleMs < 12_000) return 'waiting'
+    return 'stalled'
+  }
 
-  const activityState = resolveActivityState();
+  const activityState = resolveActivityState()
 
   const resolvePhaseDetail = () => {
-    const key = progress?.phaseDetailKey;
-    if (!key) return '';
-    return t(key);
-  };
+    const key = progress?.phaseDetailKey
+    if (!key) return ''
+    return t(key)
+  }
 
-  const phaseDetailText = resolvePhaseDetail();
-  
+  const phaseDetailText = resolvePhaseDetail()
+
   // Get status message based on phase
   const getStatusMessage = () => {
-    if (error) return t('export.statusTryAgain');
+    if (error) return t('dialogs.export.statusTryAgain')
+    if (isPreparing) return t('dialogs.export.statusPreparing')
+    if (isCopying) return t('dialogs.export.statusCopying')
     if (isCompiling) {
       if (renderProgress !== undefined && renderProgress > 0) {
-        return t('export.statusCompilingPct', { progress: renderProgress });
+        return t('dialogs.export.statusCompilingPct', { progress: renderProgress })
       }
-      return t('export.statusCompiling');
+      return t('dialogs.export.statusCompiling')
     }
     if (isFinalizing) {
       if (phaseDetailText) {
-        return t('export.statusFinalizingVideoStep', { step: phaseDetailText });
+        return t('dialogs.export.statusFinalizingVideoStep', { step: phaseDetailText })
       }
-      return exportFormat === 'gif' ? t('export.statusCompiling') : t('export.statusFinalizingVideo');
+      return exportFormat === 'gif'
+        ? t('dialogs.export.statusCompiling')
+        : t('dialogs.export.statusFinalizingVideo')
     }
-    return t('export.statusMoment');
-  };
+    return t('dialogs.export.statusMoment')
+  }
 
   // Get title based on phase
   const getTitle = () => {
-    if (error) return t('export.titleFailed');
-    if (isCompiling) return t('export.titleCompilingGif');
+    if (error) return t('dialogs.export.titleFailed')
+    if (isCompiling) return t('dialogs.export.titleCompilingGif')
     if (isFinalizing) {
-      return exportFormat === 'gif' ? t('export.titleCompilingGif') : t('export.titleFinalizingVideo');
+      return exportFormat === 'gif'
+        ? t('dialogs.export.titleCompilingGif')
+        : t('dialogs.export.titleFinalizingVideo')
     }
-    return t('export.title', { format: formatLabel });
-  };
+    return t('dialogs.export.title', { format: formatLabel })
+  }
 
   return (
     <>
@@ -151,6 +181,7 @@ export function ExportDialog({
         onClick={onClose}
       />
       <div
+        data-testid="export-dialog"
         className="fixed top-1/2 left-1/2 z-[60] bg-[#09090b] rounded-2xl shadow-2xl border border-white/10 p-8 w-[90vw] max-w-md"
         style={{
           animation: isMinimizing
@@ -158,7 +189,7 @@ export function ExportDialog({
             : 'export-maximize 250ms ease-out forwards',
         }}
         onAnimationEnd={() => {
-          if (isMinimizing && onMinimizeEnd) onMinimizeEnd();
+          if (isMinimizing && onMinimizeEnd) onMinimizeEnd()
         }}
       >
         <div className="flex items-center justify-between mb-6">
@@ -170,7 +201,9 @@ export function ExportDialog({
                 </div>
                 <div>
                   <span className="text-xl font-bold text-slate-200 block">Export Complete</span>
-                  <span className="text-sm text-slate-400">{t('export.ready', { format: formatLabel.toLowerCase() })}</span>
+                  <span className="text-sm text-slate-400">
+                    {t('dialogs.export.ready', { format: formatLabel.toLowerCase() })}
+                  </span>
                 </div>
               </>
             ) : (
@@ -185,12 +218,8 @@ export function ExportDialog({
                   </div>
                 )}
                 <div>
-                  <span className="text-xl font-bold text-slate-200 block">
-                    {getTitle()}
-                  </span>
-                  <span className="text-sm text-slate-400">
-                    {getStatusMessage()}
-                  </span>
+                  <span className="text-xl font-bold text-slate-200 block">{getTitle()}</span>
+                  <span className="text-sm text-slate-400">{getStatusMessage()}</span>
                 </div>
               </>
             )}
@@ -207,13 +236,33 @@ export function ExportDialog({
         </div>
 
         {error && (
-          <div className="mb-6 animate-in slide-in-from-top-2">
+          <div data-testid="export-error" className="mb-6 animate-in slide-in-from-top-2">
             <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 flex items-start gap-3">
               <div className="p-1 bg-red-500/20 rounded-full">
                 <X className="w-3 h-3 text-red-400" />
               </div>
-              <p className="text-sm text-red-400 leading-relaxed">{error}</p>
+              <p className="whitespace-pre-line break-words text-sm text-red-400 leading-relaxed">
+                {displayError}
+                {errorMessageKey && error !== displayError && (
+                  <span className="block mt-2 text-[11px] text-red-400/70 break-all">{error}</span>
+                )}
+              </p>
             </div>
+            {unsavedExport && !isExporting && onSaveUnsavedExport && (
+              <div className="mt-3 space-y-2">
+                <p className="text-xs text-slate-400">{t('dialogs.export.unsavedExportHint')}</p>
+                <Button
+                  onClick={onSaveUnsavedExport}
+                  className="w-full py-5 text-sm font-semibold flex items-center justify-center gap-2 bg-[#34B27B] text-white rounded-xl hover:bg-[#3fc98d] transition-all"
+                >
+                  <Download className="w-4 h-4" />
+                  {t('dialogs.export.saveAgain')}
+                </Button>
+                <span className="block text-[10px] text-slate-500 break-all">
+                  {unsavedExport.fileName}
+                </span>
+              </div>
+            )}
           </div>
         )}
 
@@ -222,23 +271,32 @@ export function ExportDialog({
             {batchProgress && batchProgress.total > 1 && (
               <div className="rounded-xl border border-[#34B27B]/30 bg-[#34B27B]/10 p-3">
                 <div className="text-[10px] uppercase tracking-wider text-[#34B27B]">
-                  {t('export.batchProgress', { current: batchProgress.current, total: batchProgress.total })}
+                  {t('dialogs.export.batchProgress', {
+                    current: batchProgress.current,
+                    total: batchProgress.total,
+                  })}
                 </div>
                 <div className="mt-1 text-sm font-medium text-slate-200">
-                  {batchProgress.aspectRatio}
+                  {batchProgress.aspectRatio === 'native'
+                    ? t('settings.aspectRatioNative')
+                    : batchProgress.aspectRatio}
                 </div>
               </div>
             )}
             <div className="space-y-2">
               <div className="flex justify-between text-xs font-medium text-slate-400 uppercase tracking-wider">
-                  <span>
-                    {isCompiling
-                      ? t('export.phaseCompiling')
-                      : isFinalizing
-                        ? t('export.phaseFinalizing')
-                        : t('export.phaseRendering')}
-                  </span>
-                <span className="font-mono text-slate-200">
+                <span>
+                  {isCompiling
+                    ? t('dialogs.export.phaseCompiling')
+                    : isFinalizing
+                      ? t('dialogs.export.phaseFinalizing')
+                      : isPreparing
+                        ? t('dialogs.export.phasePreparing')
+                        : isCopying
+                          ? t('dialogs.export.phaseCopying')
+                          : t('dialogs.export.phaseRendering')}
+                </span>
+                <span data-testid="export-progress-percentage" className="font-mono text-slate-200">
                   {isCompiling || (isFinalizing && exportFormat === 'gif') ? (
                     renderProgress !== undefined && renderProgress > 0 ? (
                       `${renderProgress}%`
@@ -263,7 +321,7 @@ export function ExportDialog({
                     />
                   ) : (
                     <div className="h-full w-full relative overflow-hidden">
-                      <div 
+                      <div
                         className="absolute h-full w-1/3 bg-[#34B27B] shadow-[0_0_10px_rgba(52,178,123,0.3)]"
                         style={{
                           animation: 'indeterminate 1.5s ease-in-out infinite',
@@ -288,61 +346,70 @@ export function ExportDialog({
 
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-white/5 rounded-xl p-3 border border-white/5">
-                  <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">
+                <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">
                   {isCompiling || isFinalizing ? t('common.status') : t('common.format')}
                 </div>
                 <div className="text-slate-200 font-medium text-sm">
                   {isCompiling
-                    ? t('export.titleCompilingGif')
+                    ? t('dialogs.export.titleCompilingGif')
                     : isFinalizing
                       ? exportFormat === 'gif'
-                        ? t('export.titleCompilingGif')
-                        : t('export.titleFinalizingVideo')
+                        ? t('dialogs.export.titleCompilingGif')
+                        : t('dialogs.export.titleFinalizingVideo')
                       : formatLabel}
                 </div>
               </div>
               <div className="bg-white/5 rounded-xl p-3 border border-white/5">
-                <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">{t('common.frames')}</div>
+                <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">
+                  {t('common.frames')}
+                </div>
                 <div className="text-slate-200 font-medium text-sm">
                   {progress.currentFrame} / {progress.totalFrames}
                 </div>
               </div>
               <div className="bg-white/5 rounded-xl p-3 border border-white/5">
-                <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">{t('export.elapsed')}</div>
+                <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">
+                  {t('dialogs.export.elapsed')}
+                </div>
                 <div className="text-slate-200 font-medium text-sm">{formatElapsed(elapsedMs)}</div>
               </div>
               <div className="bg-white/5 rounded-xl p-3 border border-white/5">
-                <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">{t('export.eta')}</div>
+                <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">
+                  {t('dialogs.export.eta')}
+                </div>
                 <div className="text-slate-200 font-medium text-sm">
                   {isFinalizing ? t('common.processing') : formatEta(etaSeconds)}
                 </div>
               </div>
               <div className="bg-white/5 rounded-xl p-3 border border-white/5">
-                <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">{t('export.activity')}</div>
+                <div className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">
+                  {t('dialogs.export.activity')}
+                </div>
                 <div className="text-slate-200 font-medium text-sm">
                   {activityState === 'active'
-                    ? t('export.activityActive')
+                    ? t('dialogs.export.activityActive')
                     : activityState === 'waiting'
-                      ? t('export.activityWaiting')
-                      : t('export.activityStalled')}
+                      ? t('dialogs.export.activityWaiting')
+                      : t('dialogs.export.activityStalled')}
                 </div>
               </div>
             </div>
 
             {activityState === 'stalled' && (
               <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-amber-300 text-xs">
-                {t('export.activityStalledHint', { seconds: Math.floor(staleMs / 1000) })}
+                {t('dialogs.export.activityStalledHint', { seconds: Math.floor(staleMs / 1000) })}
               </div>
             )}
 
             {onCancel && (
               <div className="pt-2">
                 <Button
+                  data-testid="export-cancel-button"
                   onClick={onCancel}
                   variant="destructive"
                   className="w-full py-6 bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 transition-all rounded-xl"
                 >
-                  {t('export.cancelExport')}
+                  {t('dialogs.export.cancelExport')}
                 </Button>
               </div>
             )}
@@ -350,31 +417,39 @@ export function ExportDialog({
         )}
 
         {showSuccess && (
-          <div className="text-center py-4 animate-in zoom-in-95 flex flex-col items-center gap-2">
+          <div
+            data-testid="export-success"
+            className="text-center py-4 animate-in zoom-in-95 flex flex-col items-center gap-2"
+          >
             <p className="text-lg text-slate-200 font-medium">
-              {t('export.saved', { format: formatLabel })}
+              {t('dialogs.export.saved', { format: formatLabel })}
             </p>
             {exportedFilePath && (
               <Button
                 variant="secondary"
                 onClick={async () => {
                   try {
-                    const result = await window.electronAPI.revealInFolder(exportedFilePath);
+                    const result = await window.electronAPI.revealInFolder(exportedFilePath)
                     if (!result.success) {
-                      toast.error(result.error || result.message || t('export.revealFailed'));
+                      toast.error(
+                        result.error || result.message || t('dialogs.export.revealFailed'),
+                      )
                     }
                   } catch (err) {
-                    toast.error(String(err));
+                    toast.error(String(err))
                   }
                 }}
                 className="mt-1 px-3 py-1.5 text-sm rounded-lg bg-white/10 hover:bg-white/20 text-slate-200 border border-white/10 gap-2"
               >
                 <FolderOpen className="w-3.5 h-3.5" />
-                {t('export.showInFolder')}
+                {t('dialogs.export.showInFolder')}
               </Button>
             )}
             {exportedFilePath && (
-              <span className="text-[10px] text-slate-500 break-all max-w-xs">
+              <span
+                data-testid="export-saved-filename"
+                className="text-[10px] text-slate-500 break-all max-w-xs"
+              >
                 {exportedFilePath.replace(/^.*[\\/]/, '')}
               </span>
             )}
@@ -382,5 +457,5 @@ export function ExportDialog({
         )}
       </div>
     </>
-  );
+  )
 }

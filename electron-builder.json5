@@ -4,8 +4,19 @@
   "appId": "com.capturia.app",
   "asar": true,
   "productName": "Capturia",
-  "npmRebuild": true,
-  "buildDependenciesFromSource": true,
+  // Must stay byte-identical to COPYRIGHT in electron/about.ts (about.test.ts pins it).
+  "copyright": "© 2025-2026 MinhOmega and contributors — MIT License",
+  // Capturia loads no native npm module at runtime: the macOS helpers are standalone Swift
+  // binaries under extraResources, onnxruntime-node is stubbed out of the renderer bundle and
+  // sharp only arrives as an optional dependency of @xenova/transformers. Rebuilding those
+  // prebuilt (napi) modules against Electron's ABI is wasted CI time and sharp built from
+  // source needs a system libvips the runners do not have (upstream c6331bad).
+  "npmRebuild": false,
+  "buildDependenciesFromSource": false,
+  // Any .node that does get packaged cannot be dlopen'd from inside the asar.
+  "asarUnpack": [
+    "**/*.node"
+  ],
   "compression": "normal",
   "directories": {
     "output": "release/${version}"
@@ -24,26 +35,26 @@
     {
       "from": "public/wallpapers",
       "to": "assets/wallpapers"
-    },
+    }
+  ],
+  // Where electron-updater looks for `latest*.yml`. Having a publish provider is also what
+  // makes electron-builder write those feeds (plus `.blockmap`s) next to the installers and the
+  // `package-type` marker install-channel.ts reads. Nothing is uploaded by electron-builder
+  // itself: every build script passes `--publish never`; release.yml attaches the artifacts.
+  "publish": [
     {
-      "from": "electron/native/bin/sck-recorder",
-      "to": "native/sck-recorder"
-    },
-    {
-      "from": "electron/native/bin/cursor-kind-monitor",
-      "to": "native/cursor-kind-monitor"
-    },
-    {
-      "from": "electron/native/bin/mouse-button-monitor",
-      "to": "native/mouse-button-monitor"
-    },
-    {
-      "from": "electron/native/bin/speech-transcriber",
-      "to": "native/speech-transcriber"
+      "provider": "github",
+      "owner": "MinhOmega",
+      "repo": "Capturia",
+      "releaseType": "release"
     }
   ],
 
   "mac": {
+    // Notarization is done by the release workflow (notarytool + stapler on the DMG), gated on
+    // the signing secrets. Explicit false so electron-builder 26 does not try to notarize on its
+    // own whenever APPLE_ID happens to be in the environment.
+    "notarize": false,
     "hardenedRuntime": true,
     "gatekeeperAssess": false,
     "entitlements": "build/entitlements.mac.plist",
@@ -52,12 +63,42 @@
       "NSScreenCaptureUsageDescription": "Capturia needs screen recording access to capture your screen.",
       "NSCameraUsageDescription": "Capturia needs camera access to render camera overlays while recording.",
       "NSMicrophoneUsageDescription": "Capturia needs microphone access to record your voice during screen capture.",
-      "NSSpeechRecognitionUsageDescription": "Capturia needs speech recognition access to generate subtitles from recordings."
+      "NSSpeechRecognitionUsageDescription": "Capturia needs speech recognition access to generate subtitles from recordings.",
+      "NSCameraUseContinuityCameraDeviceType": true
     },
+    // The DMG is what people download; the ZIP is what electron-updater (Squirrel.Mac) installs
+    // from, so both ship. An unsigned .app cannot be auto-updated: Squirrel refuses it, and the
+    // updater then falls back to the release page.
     "target": [
       {
         "target": "dmg",
         "arch": ["x64", "arm64"]
+      },
+      {
+        "target": "zip",
+        "arch": ["x64", "arm64"]
+      }
+    ],
+    "extraResources": [
+      {
+        "from": "electron/native/bin/sck-recorder",
+        "to": "native/sck-recorder"
+      },
+      {
+        "from": "electron/native/bin/cursor-kind-monitor",
+        "to": "native/cursor-kind-monitor"
+      },
+      {
+        "from": "electron/native/bin/mouse-button-monitor",
+        "to": "native/mouse-button-monitor"
+      },
+      {
+        "from": "electron/native/bin/speech-transcriber",
+        "to": "native/speech-transcriber"
+      },
+      {
+        "from": "electron/native/bin/window-bounds-helper",
+        "to": "native/window-bounds-helper"
       }
     ],
     "icon": "icons/icons/mac/icon.icns",
@@ -65,11 +106,23 @@
   },
   "linux": {
     "target": [
-      "AppImage"
+      "AppImage",
+      "deb"
     ],
     "icon": "icons/icons/png",
     "artifactName": "${productName}-Linux-${version}.${ext}",
-    "category": "AudioVideo"
+    "category": "AudioVideo",
+    "maintainer": "MinhOmega",
+    "executableArgs": [
+      "--disable-gpu",
+      "--disable-gpu-compositing"
+    ],
+    // electron-builder 26 moved the flat key map under `desktop.entry` (24.x took the keys directly).
+    "desktop": {
+      "entry": {
+        "StartupWMClass": "Capturia"
+      }
+    }
   },
   "win": {
     "target": [
@@ -77,5 +130,10 @@
     ],
     "icon": "icons/icons/win/icon.ico",
     "artifactName": "${productName}-Setup-${version}.${ext}"
+  },
+  // Assisted installer so the user can pick the install directory (upstream 56988e86).
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true
   }
 }

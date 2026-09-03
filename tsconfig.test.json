@@ -1,0 +1,28 @@
+// Typechecks what tsconfig.json deliberately leaves out.
+//
+// The main config is `include: ["src", "electron"]` with
+// `exclude: ["**/*.test.ts", "**/*.test.tsx"]`, so no test file ever reaches
+// `tsc --noEmit` — and vitest transpiles without checking. Kept separate from
+// tsconfig.json rather than folded in: test files use vitest globals and
+// `any`-ish mock shapes that would have to be loosened for the whole app if
+// they shared one config. Same strictness, wider include.
+//
+// Run with `npm run typecheck:test`.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // Vitest's `describe`/`it`/`expect` are ambient in test files only.
+    "types": ["vitest/globals", "node"],
+    // Mocks legitimately shadow parameters they never read.
+    "noUnusedParameters": false
+  },
+  "include": [
+    "src",
+    "electron",
+    "e2e",
+    "vitest.config.ts",
+    "vitest.browser.config.ts",
+    "playwright.config.ts"
+  ],
+  "exclude": []
+}

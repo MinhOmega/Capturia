@@ -1,99 +1,147 @@
-
-name: Build Electron App
+name: Build Desktop Apps
 
 on:
+  push:
+    branches:
+      - main
+  pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: build-desktop-apps-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build-windows:
-    runs-on: windows-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '22'
-          
-      - name: Install dependencies
-        run: npm ci
-        
-      - name: Install app dependencies
-        run: npx electron-builder install-app-deps
-        
-      - name: Build Windows app
-        run: npm run build:win
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        
-      - name: Upload Windows build
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-installer
-          path: release/**/*.exe
-          retention-days: 30
-
-  build-macos:
-    runs-on: macos-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '22'
-
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Install app dependencies
-        run: npx electron-builder install-app-deps
-
-      - name: Build macOS app
-        run: npm run build:mac
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload macOS build
-        uses: actions/upload-artifact@v4
-        with:
-          name: macos-installer
-          path: release/**/*.dmg
-          retention-days: 30
-
-  build-linux:
+  validate:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version-file: .nvmrc
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Install app dependencies
-        run: npx electron-builder install-app-deps
+      # `biome check` is lint + formatting + import order in one pass. The
+      # separate `lint` and `format:check` scripts stay for local use.
+      - name: Biome check (lint, format, import order)
+        run: npm run check
 
-      - name: Build Linux app
-        run: npm run build:linux
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Type check
+        run: npx tsc --noEmit
 
-      - name: Upload Linux build
+      - name: Type check tests
+        run: npm run typecheck:test
+
+      - name: Check translations
+        run: npm run i18n:check
+
+      - name: Run unit tests
+        run: npm test
+
+      # Catches the errors `tsc` cannot see: a bad import, a missing asset, a
+      # chunk that fails to resolve. Far cheaper than waiting for the installers.
+      - name: Build renderer and main process
+        run: npm run build:vite
+
+  test-browser:
+    name: Browser tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Chromium for Playwright
+        run: npx playwright install --with-deps chromium
+
+      # Headless Chromium with SwiftShader: the exporter specs need WebGL,
+      # WebCodecs and Web Audio, none of which jsdom provides.
+      - name: Run browser tests
+        run: npm run test:browser
+
+  build:
+    needs: validate
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - id: windows
+            os: windows-latest
+            build_script: npm run build:win
+            artifact_name: windows-installer
+          - id: linux
+            os: ubuntu-latest
+            build_script: npm run build:linux
+            artifact_name: linux-installers
+          - id: macos-x64
+            os: macos-15-intel
+            build_script: npm run build:mac:x64
+            artifact_name: macos-x64-installer
+          - id: macos-arm64
+            os: macos-15
+            build_script: npm run build:mac:arm64
+            artifact_name: macos-arm64-installer
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build app
+        run: ${{ matrix.build_script }}
+
+      - name: Upload Windows installer
+        if: matrix.id == 'windows'
         uses: actions/upload-artifact@v4
         with:
-          name: linux-installer
-          path: release/**/*.AppImage
+          name: ${{ matrix.artifact_name }}
+          path: release/**/*.exe
+          if-no-files-found: error
           retention-days: 30
 
+      - name: Upload Linux installers
+        if: matrix.id == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
+            release/**/*.AppImage
+            release/**/*.deb
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload macOS installers
+        if: startsWith(matrix.id, 'macos-')
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: release/**/*.dmg
+          if-no-files-found: error
+          retention-days: 30

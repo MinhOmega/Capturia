@@ -8,11 +8,11 @@
  * Segment-aware variants handle both deletion and per-segment speed.
  */
 
-import type { VideoSegment } from '@/components/video-editor/types';
+import type { VideoSegment } from '@/components/video-editor/types'
 
 export interface NormalizedTrimRange {
-  startMs: number;
-  endMs: number;
+  startMs: number
+  endMs: number
 }
 
 /**
@@ -29,19 +29,19 @@ export function normalizeTrimRanges(
       endMs: Math.max(0, Math.min(r.endMs, totalDurationMs)),
     }))
     .filter((r) => r.endMs > r.startMs)
-    .sort((a, b) => a.startMs - b.startMs);
+    .sort((a, b) => a.startMs - b.startMs)
 
   // Merge overlapping / adjacent ranges
-  const merged: NormalizedTrimRange[] = [];
+  const merged: NormalizedTrimRange[] = []
   for (const range of ranges) {
     if (merged.length > 0 && range.startMs <= merged[merged.length - 1].endMs) {
-      merged[merged.length - 1].endMs = Math.max(merged[merged.length - 1].endMs, range.endMs);
+      merged[merged.length - 1].endMs = Math.max(merged[merged.length - 1].endMs, range.endMs)
     } else {
-      merged.push({ ...range });
+      merged.push({ ...range })
     }
   }
 
-  return merged;
+  return merged
 }
 
 /**
@@ -54,24 +54,24 @@ export function sourceToEffectiveMs(
   sourceMs: number,
   normalizedTrims: NormalizedTrimRange[],
 ): number {
-  let effectiveMs = sourceMs;
+  let effectiveMs = sourceMs
 
   for (const trim of normalizedTrims) {
     if (sourceMs <= trim.startMs) {
-      break;
+      break
     }
 
     if (sourceMs >= trim.endMs) {
       // Past this trim — subtract its full duration
-      effectiveMs -= trim.endMs - trim.startMs;
+      effectiveMs -= trim.endMs - trim.startMs
     } else {
       // Inside this trim — clamp to start boundary in effective space
-      effectiveMs -= sourceMs - trim.startMs;
-      break;
+      effectiveMs -= sourceMs - trim.startMs
+      break
     }
   }
 
-  return Math.max(0, effectiveMs);
+  return Math.max(0, effectiveMs)
 }
 
 /**
@@ -83,17 +83,17 @@ export function effectiveToSourceMs(
   effectiveMs: number,
   normalizedTrims: NormalizedTrimRange[],
 ): number {
-  let sourceMs = effectiveMs;
+  let sourceMs = effectiveMs
 
   for (const trim of normalizedTrims) {
     if (sourceMs < trim.startMs) {
-      break;
+      break
     }
 
-    sourceMs += trim.endMs - trim.startMs;
+    sourceMs += trim.endMs - trim.startMs
   }
 
-  return sourceMs;
+  return sourceMs
 }
 
 /**
@@ -103,8 +103,8 @@ export function getEffectiveDurationMs(
   totalDurationMs: number,
   normalizedTrims: NormalizedTrimRange[],
 ): number {
-  const totalTrimMs = normalizedTrims.reduce((sum, t) => sum + (t.endMs - t.startMs), 0);
-  return Math.max(0, totalDurationMs - totalTrimMs);
+  const totalTrimMs = normalizedTrims.reduce((sum, t) => sum + (t.endMs - t.startMs), 0)
+  return Math.max(0, totalDurationMs - totalTrimMs)
 }
 
 // ---------------------------------------------------------------------------
@@ -119,24 +119,24 @@ export function sourceToEffectiveMsWithSegments(
   sourceMs: number,
   segments: VideoSegment[],
 ): number {
-  let effectiveMs = 0;
+  let effectiveMs = 0
 
   for (const seg of segments) {
     if (seg.deleted) {
-      if (sourceMs >= seg.endMs) continue;  // past deleted — skip
-      if (sourceMs >= seg.startMs) return effectiveMs; // inside deleted — clamp
-      continue;
+      if (sourceMs >= seg.endMs) continue // past deleted — skip
+      if (sourceMs >= seg.startMs) return effectiveMs // inside deleted — clamp
+      continue
     }
 
     if (sourceMs >= seg.endMs) {
-      effectiveMs += (seg.endMs - seg.startMs) / seg.speed;
+      effectiveMs += (seg.endMs - seg.startMs) / seg.speed
     } else if (sourceMs >= seg.startMs) {
-      effectiveMs += (sourceMs - seg.startMs) / seg.speed;
-      return effectiveMs;
+      effectiveMs += (sourceMs - seg.startMs) / seg.speed
+      return effectiveMs
     }
   }
 
-  return Math.max(0, effectiveMs);
+  return Math.max(0, effectiveMs)
 }
 
 /**
@@ -147,34 +147,32 @@ export function effectiveToSourceMsWithSegments(
   effectiveMs: number,
   segments: VideoSegment[],
 ): number {
-  let remaining = effectiveMs;
+  let remaining = effectiveMs
 
   for (const seg of segments) {
-    if (seg.deleted) continue;
+    if (seg.deleted) continue
 
-    const segEffDuration = (seg.endMs - seg.startMs) / seg.speed;
+    const segEffDuration = (seg.endMs - seg.startMs) / seg.speed
 
     if (remaining <= segEffDuration) {
-      return seg.startMs + remaining * seg.speed;
+      return seg.startMs + remaining * seg.speed
     }
 
-    remaining -= segEffDuration;
+    remaining -= segEffDuration
   }
 
   // Past end — return last kept segment's end
-  const lastKept = [...segments].reverse().find((s) => !s.deleted);
-  return lastKept ? lastKept.endMs : 0;
+  const lastKept = [...segments].reverse().find((s) => !s.deleted)
+  return lastKept ? lastKept.endMs : 0
 }
 
 /**
  * Calculate effective duration from segments (sum of kept segments / speed).
  */
-export function getEffectiveDurationMsWithSegments(
-  segments: VideoSegment[],
-): number {
+export function getEffectiveDurationMsWithSegments(segments: VideoSegment[]): number {
   return segments
     .filter((s) => !s.deleted)
-    .reduce((sum, s) => sum + (s.endMs - s.startMs) / s.speed, 0);
+    .reduce((sum, s) => sum + (s.endMs - s.startMs) / s.speed, 0)
 }
 
 /**
@@ -185,7 +183,7 @@ export function segmentsToTrimRegions(
 ): { id: string; startMs: number; endMs: number }[] {
   return segments
     .filter((s) => s.deleted)
-    .map((s) => ({ id: s.id, startMs: s.startMs, endMs: s.endMs }));
+    .map((s) => ({ id: s.id, startMs: s.startMs, endMs: s.endMs }))
 }
 
 /**
@@ -195,7 +193,5 @@ export function findSegmentAtSourceTime(
   sourceMs: number,
   segments: VideoSegment[],
 ): VideoSegment | null {
-  return segments.find(
-    (s) => sourceMs >= s.startMs && sourceMs < s.endMs,
-  ) ?? null;
+  return segments.find((s) => sourceMs >= s.startMs && sourceMs < s.endMs) ?? null
 }

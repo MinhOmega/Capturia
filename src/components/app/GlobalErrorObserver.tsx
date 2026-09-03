@@ -24,7 +24,7 @@ export function GlobalErrorObserver() {
 
       reportUserActionError({
         t,
-        userMessage: t('error.unexpected'),
+        userMessage: t('common.error.unexpected'),
         error: event.error ?? event.message,
         context: 'renderer.window.error',
         details: {
@@ -46,7 +46,7 @@ export function GlobalErrorObserver() {
 
       reportUserActionError({
         t,
-        userMessage: t('error.unexpected'),
+        userMessage: t('common.error.unexpected'),
         error: reason,
         context: 'renderer.window.unhandledrejection',
         dedupeKey: `renderer-unhandled-rejection:${message}`,

@@ -1,0 +1,38 @@
+{
+	"cancel": "取消",
+	"close": "關閉",
+	"done": "完成",
+	"loading": "載入中…",
+	"processing": "處理中...",
+	"status": "狀態",
+	"format": "格式",
+	"frames": "影格",
+	"loop": "循環",
+	"language": "語言",
+	"playback": {
+		"play": "播放",
+		"pause": "暫停",
+		"fullscreen": "全螢幕",
+		"exitFullscreen": "退出全螢幕"
+	},
+	"apply": "套用",
+	"electron": {
+		"tray": {
+			"recording": "錄製中：{{source}}",
+			"stopRecording": "停止錄製",
+			"open": "開啟",
+			"quit": "退出"
+		},
+		"saveGif": "儲存匯出的 GIF",
+		"saveVideo": "儲存匯出的影片",
+		"exportCancelled": "匯出已取消",
+		"exportSaveFailed": "儲存匯出的影片失敗",
+		"selectVideoFile": "選擇影片檔案",
+		"videoFiles": "影片檔案",
+		"allFiles": "所有檔案"
+	},
+	"locale": {
+		"name": "繁體中文",
+		"short": "繁中"
+	}
+}

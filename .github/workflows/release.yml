@@ -1,4 +1,21 @@
-name: Release
+name: Release Desktop Apps
+
+# Tag-driven release: push a `v*` tag whose version equals package.json, the four
+# installer legs build, and the artifacts are attached to a GitHub release.
+#
+# macOS signing + notarization is optional and gated on repository secrets; when any
+# of them is missing the mac legs still build an unsigned DMG (forks keep working).
+# Required to enable it (all six):
+#   MAC_CERTIFICATE_P12          base64 of the "Developer ID Application" .p12 export
+#   MAC_CERTIFICATE_PASSWORD     password of that .p12
+#   MAC_CSC_NAME                 identity name, e.g. "Developer ID Application: Name (TEAMID)"
+#   APPLE_ID                     Apple ID used for notarytool
+#   APPLE_TEAM_ID                10-character team id
+#   APPLE_APP_SPECIFIC_PASSWORD  app-specific password for that Apple ID
+# electron-builder imports the certificate itself (CSC_LINK/CSC_KEY_PASSWORD) and signs
+# the .app + DMG with the hardened runtime and build/entitlements.mac*.plist; the
+# workflow then notarizes and staples the DMG (electron-builder.json5 has
+# `mac.notarize: false` so it never tries on its own).
 
 on:
   push:
@@ -23,8 +40,26 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version-file: .nvmrc
           cache: npm
+
+      # A release built from a tag must carry that tag's version (upstream build.yml:294-301).
+      # Pre-release tags (v1.6.0-rc.1) compare against the full pre-release version.
+      - name: Check package.json version matches the tag
+        if: github.ref_type == 'tag'
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::Release tag must look like v1.5.0 or v1.5.0-rc.1; got '${TAG}'"
+            exit 1
+          fi
+          VERSION="${TAG#v}"
+          PACKAGE_VERSION="$(node -p 'require("./package.json").version')"
+          if [[ "$PACKAGE_VERSION" != "$VERSION" ]]; then
+            echo "::error::package.json version ${PACKAGE_VERSION} does not match ${VERSION} from tag ${TAG}"
+            exit 1
+          fi
+          echo "package.json version ${PACKAGE_VERSION} matches tag ${TAG}"
 
       - name: Install dependencies
         run: npm ci
@@ -37,21 +72,28 @@ jobs:
 
   build:
     needs: validate
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
-            build_script: npm run build:mac
-            artifact_name: macos-installers
           - os: windows-latest
             build_script: npm run build:win
             artifact_name: windows-installers
+            id: windows
           - os: ubuntu-latest
             build_script: npm run build:linux
             artifact_name: linux-installers
+            id: linux
+          - os: macos-15-intel
+            build_script: npm run build:mac:x64
+            artifact_name: macos-x64-installers
+            id: macos-x64
+          - os: macos-15
+            build_script: npm run build:mac:arm64
+            artifact_name: macos-arm64-installers
+            id: macos-arm64
 
-    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -59,55 +101,123 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version-file: .nvmrc
           cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Install app dependencies
-        run: npx electron-builder install-app-deps
+      # Signing is on only when every secret is present; a fork without them builds unsigned.
+      - name: Resolve macOS signing
+        id: signing
+        if: startsWith(matrix.id, 'macos-')
+        env:
+          MAC_CERTIFICATE_P12: ${{ secrets.MAC_CERTIFICATE_P12 }}
+          MAC_CERTIFICATE_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}
+          MAC_CSC_NAME: ${{ secrets.MAC_CSC_NAME }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          if [[ -n "$MAC_CERTIFICATE_P12" && -n "$MAC_CERTIFICATE_PASSWORD" && -n "$MAC_CSC_NAME" && -n "$APPLE_ID" && -n "$APPLE_TEAM_ID" && -n "$APPLE_APP_SPECIFIC_PASSWORD" ]]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            # electron-builder signs the .app (hardened runtime + entitlements, every Mach-O
+            # in Contents/ including the Swift helpers under Resources/native/) and the DMG
+            # when CSC_LINK / CSC_KEY_PASSWORD are set; it imports the .p12 into a temporary
+            # keychain itself. Only exported when enabled: electron-builder treats an empty
+            # CSC_LINK as a value, not as "unset".
+            {
+              echo "CSC_LINK=$MAC_CERTIFICATE_P12"
+              echo "CSC_KEY_PASSWORD=$MAC_CERTIFICATE_PASSWORD"
+              echo "CSC_NAME=$MAC_CSC_NAME"
+            } >> "$GITHUB_ENV"
+            echo "macOS signing + notarization: enabled"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            # Never pick up a stray identity from the runner keychain when signing is off.
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+            echo "macOS signing + notarization: skipped (secrets not configured)"
+          fi
 
       - name: Build app
         run: ${{ matrix.build_script }}
 
-      - name: Collect and create -latest copies
-        shell: bash
+      - name: Locate macOS artifacts
+        id: mac_artifacts
+        if: startsWith(matrix.id, 'macos-')
         run: |
-          mkdir -p dist-release
+          APP_BUNDLE="$(find release -maxdepth 3 -name '*.app' -type d | head -n1)"
+          DMG_PATH="$(find release -maxdepth 2 -name '*.dmg' -type f | head -n1)"
+          if [[ -z "$APP_BUNDLE" || -z "$DMG_PATH" ]]; then
+            echo "::error::No .app / .dmg found under release/"
+            find release -maxdepth 3 -print || true
+            exit 1
+          fi
+          echo "app_bundle=$APP_BUNDLE" >> "$GITHUB_OUTPUT"
+          echo "dmg_path=$DMG_PATH" >> "$GITHUB_OUTPUT"
 
-          # Collect installer files (.dmg, .AppImage, and Setup .exe only)
-          find release -type f \( -name '*.dmg' -o -name '*.AppImage' \) -exec cp {} dist-release/ \;
-          find release -type f -name '*Setup*' -name '*.exe' -exec cp {} dist-release/ \;
+      - name: Verify code signature
+        if: steps.signing.outputs.enabled == 'true'
+        run: |
+          codesign --verify --deep --strict --verbose=2 "${{ steps.mac_artifacts.outputs.app_bundle }}"
+          codesign --display --entitlements - "${{ steps.mac_artifacts.outputs.app_bundle }}"
+          codesign --verify --verbose=2 "${{ steps.mac_artifacts.outputs.dmg_path }}"
 
-          # Normalize any spaces in filenames to dashes
-          for f in dist-release/*; do
-            base=$(basename "$f")
-            normalized=$(echo "$base" | tr ' ' '-')
-            if [ "$base" != "$normalized" ]; then
-              mv "$f" "dist-release/$normalized"
-            fi
-          done
+      - name: Notarize DMG
+        if: steps.signing.outputs.enabled == 'true'
+        timeout-minutes: 20
+        run: |
+          xcrun notarytool submit "${{ steps.mac_artifacts.outputs.dmg_path }}" \
+            --apple-id "${{ secrets.APPLE_ID }}" \
+            --team-id "${{ secrets.APPLE_TEAM_ID }}" \
+            --password "${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}" \
+            --wait
 
-          # Create -latest copies
-          for f in dist-release/*; do
-            [ -f "$f" ] || continue
-            base=$(basename "$f")
-            latest=$(echo "$base" | sed -E 's/[.-][0-9]+\.[0-9]+\.[0-9]+/-latest/g')
-            if [ "$base" != "$latest" ] && [ ! -f "dist-release/$latest" ]; then
-              cp "$f" "dist-release/$latest"
-              echo "Created: $latest"
-            fi
-          done
+      - name: Staple and validate DMG
+        if: steps.signing.outputs.enabled == 'true'
+        run: |
+          xcrun stapler staple "${{ steps.mac_artifacts.outputs.dmg_path }}"
+          xcrun stapler validate "${{ steps.mac_artifacts.outputs.dmg_path }}"
+          spctl -a -vv -t install "${{ steps.mac_artifacts.outputs.dmg_path }}"
 
-          echo "--- Final artifacts ---"
-          ls -lh dist-release/
-
-      - name: Upload build artifacts
+      # Each leg also carries its electron-updater feed (`latest*.yml`) and the
+      # differential-download sidecars (`.blockmap`, and `.zsync` where produced).
+      - name: Upload Windows installers
+        if: matrix.id == 'windows'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: dist-release/*
+          path: |
+            release/**/*.exe
+            release/**/*.blockmap
+            release/**/latest.yml
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload Linux installers
+        if: matrix.id == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
+            release/**/*.AppImage
+            release/**/*.deb
+            release/**/*.zsync
+            release/**/latest-linux*.yml
+          if-no-files-found: error
+          retention-days: 30
+
+      # The ZIP is what electron-updater installs from on macOS; the DMG is for people.
+      - name: Upload macOS installers
+        if: startsWith(matrix.id, 'macos-')
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
+            release/**/*.dmg
+            release/**/*.zip
+            release/**/*.blockmap
+            release/**/latest-mac.yml
           if-no-files-found: error
           retention-days: 30
 
@@ -116,10 +226,34 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+
+      # The Intel and Apple-silicon legs each wrote a one-entry latest-mac.yml;
+      # electron-updater reads a single feed per platform, so combine them.
+      - name: Merge macOS update feeds
+        run: |
+          set -euo pipefail
+          mapfile -t FEEDS < <(find artifacts -name latest-mac.yml -type f | sort)
+          if [[ ${#FEEDS[@]} -eq 0 ]]; then
+            echo "::error::No latest-mac.yml found in the macOS artifacts"
+            exit 1
+          fi
+          node scripts/merge-update-feeds.mjs feeds/latest-mac.yml "${FEEDS[@]}"
+          for feed in "${FEEDS[@]}"; do rm "$feed"; done
+          find artifacts/windows-installers -name latest.yml -exec mv {} feeds/ \;
+          find artifacts/linux-installers -name 'latest-linux*.yml' -exec mv {} feeds/ \;
+          ls -l feeds
 
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
@@ -128,5 +262,10 @@ jobs:
           prerelease: ${{ contains(github.ref_name, '-') }}
           files: |
             artifacts/**/*.dmg
+            artifacts/**/*.zip
             artifacts/**/*.exe
             artifacts/**/*.AppImage
+            artifacts/**/*.deb
+            artifacts/**/*.blockmap
+            artifacts/**/*.zsync
+            feeds/*.yml

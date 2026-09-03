@@ -1,0 +1,71 @@
+name: E2E (nightly)
+
+# Electron Playwright specs (`e2e/*.spec.ts`): a launch smoke and a GIF export.
+# Nightly + manual only, never a PR gate: booting a real Electron app on a
+# hosted runner is too flaky to block a merge on.
+# Linux runs under xvfb because Electron needs a display even with HEADLESS=1.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: E2E (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-15]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Electron ships its own Chromium; only the Linux system libraries are needed.
+      - name: Install Electron system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb libgbm1 libnss3 libatk-bridge2.0-0 libgtk-3-0 libxss1 libasound2t64 || sudo apt-get install -y xvfb libgbm1 libnss3 libatk-bridge2.0-0 libgtk-3-0 libxss1 libasound2
+
+      - name: Build renderer + main process
+        run: npm run build:vite
+
+      - name: Run e2e (Linux, xvfb)
+        if: runner.os == 'Linux'
+        run: xvfb-run --auto-servernum npm run test:e2e
+        env:
+          CI: "1"
+
+      - name: Run e2e (macOS)
+        if: runner.os == 'macOS'
+        run: npm run test:e2e
+        env:
+          CI: "1"
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report-${{ matrix.os }}
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7

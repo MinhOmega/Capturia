@@ -53,6 +53,24 @@ function serializeDetails(details?: Record<string, unknown>): string {
   }
 }
 
+const ISSUE_LOG_TAIL_LINES = 30
+
+/**
+ * Last main-process log lines, fetched lazily when the user actually clicks
+ * "Report" so the toast itself stays synchronous. Empty when the IPC is not
+ * available (tests, non-Electron).
+ */
+async function fetchMainLogTail(): Promise<string[]> {
+  try {
+    const tail = await window.electronAPI?.getMainLogTail?.(ISSUE_LOG_TAIL_LINES)
+    return Array.isArray(tail)
+      ? tail.filter((line): line is string => typeof line === 'string')
+      : []
+  } catch {
+    return []
+  }
+}
+
 async function openReportUrl(t: Translator, url: string): Promise<void> {
   try {
     if (window.electronAPI?.openExternalUrl) {
@@ -66,7 +84,7 @@ async function openReportUrl(t: Translator, url: string): Promise<void> {
     window.open(url, '_blank', 'noopener,noreferrer')
   } catch (error) {
     console.error('Failed to open issue report URL:', error)
-    toast.error(t('error.reportOpenFailed'))
+    toast.error(t('common.error.reportOpenFailed'))
   }
 }
 
@@ -116,18 +134,24 @@ export function reportUserActionError(input: ReportUserActionErrorInput): string
     issueLines.push('', '## Stack', '```', errorStack, '```')
   }
 
-  const issueUrl = buildIssueReportUrl({
-    title: issueTitle,
-    bodyLines: issueLines,
-  })
+  // The log tail goes last: buildIssueReportUrl truncates the body from the
+  // end to keep the URL openable, so the reference and stack always survive.
+  const buildIssueUrl = (logTail: string[]) =>
+    buildIssueReportUrl({
+      title: issueTitle,
+      bodyLines:
+        logTail.length > 0
+          ? [...issueLines, '', '## Main process log (tail)', '```', ...logTail, '```']
+          : issueLines,
+    })
 
   toast.error(input.userMessage, {
-    description: `${input.t('error.reference', { id: errorId })}\n${errorMessage}`,
+    description: `${input.t('common.error.reference', { id: errorId })}\n${errorMessage}`,
     duration: 12_000,
     action: {
-      label: input.t('error.reportAction'),
+      label: input.t('common.error.reportAction'),
       onClick: () => {
-        void openReportUrl(input.t, issueUrl)
+        void fetchMainLogTail().then((logTail) => openReportUrl(input.t, buildIssueUrl(logTail)))
       },
     },
   })

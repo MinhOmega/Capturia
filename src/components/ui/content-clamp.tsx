@@ -1,22 +1,17 @@
-"use client"
+'use client'
 
-import * as React from "react"
+import * as React from 'react'
 
-import { cn } from "@/lib/utils"
-import { Popover, PopoverArrow, PopoverContent, PopoverTrigger } from "./popover"
+import { cn } from '@/lib/utils'
+import { Popover, PopoverArrow, PopoverContent, PopoverTrigger } from './popover'
 
 interface ContentClampProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode
   truncateLength?: number
 }
 
-function ContentClamp({
-  children,
-  className,
-  truncateLength = 50,
-  ...props
-}: ContentClampProps) {
-  const text = typeof children === "string" ? children : String(children ?? "")
+function ContentClamp({ children, className, truncateLength = 50, ...props }: ContentClampProps) {
+  const text = typeof children === 'string' ? children : String(children ?? '')
   const isTruncated = text.length > truncateLength
 
   const [open, setOpen] = React.useState(false)
@@ -46,13 +41,13 @@ function ContentClamp({
 
   if (!isTruncated) {
     return (
-      <div className={cn("inline", className)} {...props}>
+      <div className={cn('inline', className)} {...props}>
         {children}
       </div>
     )
   }
 
-  const truncatedText = text.slice(0, truncateLength) + "..."
+  const truncatedText = text.slice(0, truncateLength) + '...'
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

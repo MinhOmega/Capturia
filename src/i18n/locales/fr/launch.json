@@ -1,0 +1,27 @@
+{
+	"sourceFallback": "Écran",
+	"stopRecording": "Arrêter l'enregistrement",
+	"pauseRecording": "Mettre en pause l'enregistrement",
+	"resumeRecording": "Reprendre l'enregistrement",
+	"open": "Ouvrir",
+	"camera": "Caméra",
+	"shape": {
+		"rounded": "Arrondi",
+		"square": "Carré",
+		"circle": "Cercle"
+	},
+	"captureFrameRate": "Fréquence d'images",
+	"stopShortcutReset": "Réinitialiser",
+	"hideHud": "Masquer le HUD",
+	"closeApp": "Fermer l'application",
+	"source": {
+		"loading": "Chargement des sources...",
+		"cancel": "Annuler",
+		"share": "Partager"
+	},
+	"permission": {
+		"rowScreenCaptureTitle": "Enregistrement d'écran",
+		"rowCameraTitle": "Caméra",
+		"rowMicrophoneTitle": "Microphone"
+	}
+}

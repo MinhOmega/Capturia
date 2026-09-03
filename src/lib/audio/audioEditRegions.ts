@@ -29,8 +29,14 @@ function normalizeAudioEditRegion(
     endMs,
     mode: region.mode === 'duck' ? 'duck' : 'mute',
     gain: normalizeAudioEditGain(region.gain),
-    source: region.source === 'manual' ? 'manual' : region.source === 'rough-cut' ? 'rough-cut' : undefined,
-    reason: region.reason === 'filler' ? 'filler' : region.reason === 'silence' ? 'silence' : undefined,
+    source:
+      region.source === 'manual'
+        ? 'manual'
+        : region.source === 'rough-cut'
+          ? 'rough-cut'
+          : undefined,
+    reason:
+      region.reason === 'filler' ? 'filler' : region.reason === 'silence' ? 'silence' : undefined,
   }
 }
 
@@ -54,7 +60,9 @@ export function normalizeAudioEditRegions(
     const previous = merged[merged.length - 1]
     const sameMode = previous?.mode === region.mode
     const sameGain = previous ? Math.abs(previous.gain - region.gain) <= AUDIO_GAIN_EPSILON : false
-    const canMerge = Boolean(previous && sameMode && sameGain && region.startMs <= previous.endMs + 1)
+    const canMerge = Boolean(
+      previous && sameMode && sameGain && region.startMs <= previous.endMs + 1,
+    )
 
     if (!canMerge || !previous) {
       merged.push({

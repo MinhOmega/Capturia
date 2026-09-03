@@ -1,0 +1,27 @@
+{
+	"sourceFallback": "الشاشة",
+	"stopRecording": "إيقاف التسجيل",
+	"pauseRecording": "إيقاف التسجيل مؤقتاً",
+	"resumeRecording": "استئناف التسجيل",
+	"open": "فتح",
+	"camera": "الكاميرا",
+	"shape": {
+		"rounded": "زوايا مستديرة",
+		"square": "مربع",
+		"circle": "دائرة"
+	},
+	"captureFrameRate": "معدل الإطارات",
+	"stopShortcutReset": "إعادة التعيين",
+	"hideHud": "إخفاء واجهة العرض",
+	"closeApp": "إغلاق التطبيق",
+	"source": {
+		"loading": "جاري تحميل المصادر...",
+		"cancel": "الغاء",
+		"share": "مشاركة"
+	},
+	"permission": {
+		"rowScreenCaptureTitle": "تسجيل الشاشة",
+		"rowCameraTitle": "الكاميرا",
+		"rowMicrophoneTitle": "الميكروفون"
+	}
+}
