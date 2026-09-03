@@ -7,9 +7,8 @@ export interface MicrophoneDevice {
 }
 
 /**
- * Enumerates audio inputs for the HUD microphone picker (adapted from upstream
- * v1.7.0 `useMicrophoneDevices`). Unlike upstream this does not open a
- * permission stream: the level meter opens the mic while the popover is
+ * Enumerates audio inputs for the HUD microphone picker. Deliberately does not
+ * open a permission stream: the level meter opens the mic while the popover is
  * visible, and the recorder opens it at record time.
  *
  * `""` means "system default" (no `deviceId` constraint). A persisted id is kept

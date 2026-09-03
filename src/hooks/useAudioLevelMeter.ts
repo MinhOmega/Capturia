@@ -8,9 +8,9 @@ export interface AudioLevelMeterOptions {
 }
 
 /**
- * Opens the microphone and reports a 0-100 input level while `enabled` (ported
- * from upstream v1.7.0). Meant for the HUD mic popover only: the stream and
- * AudioContext are released as soon as the meter is disabled or unmounted.
+ * Opens the microphone and reports a 0-100 input level while `enabled`. Meant
+ * for the HUD mic popover only: the stream and AudioContext are released as
+ * soon as the meter is disabled or unmounted.
  */
 export function useAudioLevelMeter(options: AudioLevelMeterOptions) {
   const [level, setLevel] = useState(0)

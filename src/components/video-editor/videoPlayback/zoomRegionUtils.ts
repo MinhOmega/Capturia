@@ -187,8 +187,9 @@ function getActiveRegion(
     }
 
     // The camera arrived through the pan, so the incoming region is already at
-    // full zoom: don't replay the tail of its own zoom-in ease (upstream lets
-    // the strength dip to ~0.99 here between transitionEnd and startMs + overlap).
+    // full zoom: don't replay the tail of its own zoom-in ease, which would
+    // otherwise let the strength dip to ~0.99 between transitionEnd and
+    // startMs + overlap.
     const strength =
       incomingPair && timeMs <= region.endMs ? 1 : computeRegionStrength(region, timeMs)
     if (strength <= 0) continue

@@ -1,4 +1,4 @@
-// Lightweight i18n for the Electron main process (ported from OpenScreen v1.7.0).
+// Lightweight i18n for the Electron main process.
 // Imports the same JSON translation files the renderer uses, restricted to the
 // namespaces main needs (tray, native dialogs, runtime-error box).
 //

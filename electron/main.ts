@@ -233,7 +233,7 @@ function showMainWindow() {
   createWindow()
 }
 
-// Only `app.requestSingleInstanceLock()`: upstream's PID-file lock was removed
+// Only `app.requestSingleInstanceLock()`: an earlier PID-file lock was removed
 // because a recycled PID made the app exit silently. Dev and packaged builds use
 // different userData dirs, so they still run side by side.
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
@@ -1302,8 +1302,8 @@ app.on('before-quit', (event) => {
 })
 
 // Web permissions the renderer may hold/request. Everything else (notifications,
-// geolocation, clipboard, ...) is denied. `fullscreen` is a Capturia addition for the
-// editor's fullscreen preview (`requestFullscreen()`); the rest mirrors upstream.
+// geolocation, clipboard, ...) is denied. `fullscreen` is here for the editor's
+// fullscreen preview (`requestFullscreen()`); the rest is what capture needs.
 const ALLOWED_WEB_PERMISSIONS: ReadonlySet<string> = new Set([
   'media',
   'audioCapture',

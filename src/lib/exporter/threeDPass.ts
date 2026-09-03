@@ -9,7 +9,7 @@ import {
  * WebGL2 quad pass that tilts the export foreground (video + shadow + cursor)
  * with the same rotation / perspective the preview applies through CSS
  * (`perspective` + `rotateX/Y/Z`, see VideoPlayback composite3D), so an
- * exported frame matches the preview. Ported from OpenScreen v1.7.0.
+ * exported frame matches the preview.
  *
  * Rotation math is done in CSS convention (+y down) to match the preview,
  * then gl_Position.y is flipped so WebGL clip space (+y up) lands the input's

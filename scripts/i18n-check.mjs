@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * Translation health check (ported from OpenScreen v1.7.0, extended).
+ * Translation health check.
  *
  * 1. Key parity against `en` for every locale folder and namespace.
  *    - Complete locales (COMPLETE_LOCALES, parsed from src/i18n/config.ts so
  *      the two lists cannot drift) fail the check on any missing or extra key.
- *    - Every other locale is *partial* on purpose: only keys with an upstream
- *      translation exist, the rest fall back to en at runtime. For those,
+ *    - Every other locale is *partial* on purpose: only the keys that have
+ *      actually been translated exist, the rest fall back to en at runtime. For those,
  *      missing keys are reported as warnings; extra keys (not in en) are still
  *      errors because they can never be reached.
  * 2. Placeholder parity: every `{{var}}` in en must appear in the translation.

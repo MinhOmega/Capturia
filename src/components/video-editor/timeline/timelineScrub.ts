@@ -1,7 +1,7 @@
 /**
- * Decides whether a pointer-down on the timeline should start a press-drag scrub
- * (upstream OpenScreen T5). Walks up from the event target to the timeline root
- * and refuses when the press landed on anything interactive: a dnd-timeline item
+ * Decides whether a pointer-down on the timeline should start a press-drag
+ * scrub. Walks up from the event target to the timeline root and refuses when
+ * the press landed on anything interactive: a dnd-timeline item
  * (`group`), a drag/resize handle, the playhead, or an element that opted out
  * explicitly with `data-timeline-scrub="off"` (Capturia's segment blocks, which
  * select on click instead).

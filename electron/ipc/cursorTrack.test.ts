@@ -20,7 +20,7 @@ const clickAt = (timeMs: number) => ({
   point: { x: 0.5, y: 0.5 },
 })
 
-describe('compactCursorTrackPauseRanges (A5 port of compactPendingCursorTelemetryPauseRanges)', () => {
+describe('compactCursorTrackPauseRanges', () => {
   it('returns the input untouched when there are no usable ranges', () => {
     const track = { samples: [sampleAt(0), sampleAt(100)], events: [clickAt(50)] }
     expect(compactCursorTrackPauseRanges(track, [])).toBe(track)

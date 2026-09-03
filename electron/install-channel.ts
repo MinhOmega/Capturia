@@ -1,4 +1,4 @@
-// How this copy of Capturia was installed (ported from OpenScreen).
+// How this copy of Capturia was installed.
 //
 // The channel feeds the About box and the diagnostic / bug-report bodies, and is
 // the single fact any future updater must key off: on the Microsoft Store,

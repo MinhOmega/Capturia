@@ -1882,7 +1882,7 @@ export default function VideoEditor() {
       // Drafts keep their static focus (click / selection centroid, dwell point)
       // by default. With Auto-Focus all on, movement drafts follow the cursor;
       // click / selection drafts stay on their centroid, which is the point of
-      // that generator (deliberate deviation from upstream 1b5de03f).
+      // that generator.
       return drafts.map((draft) => ({
         id: `zoom-${nextZoomIdRef.current++}`,
         startMs: draft.startMs,

@@ -10,9 +10,6 @@
 //
 // The stretcher is streaming: push() feeds decoded PCM incrementally and returns
 // finished output, so a multi-hour region never has to be held in memory at once.
-//
-// Ported from upstream OpenScreen v1.7.0 `src/lib/exporter/audioTimeStretch.ts`
-// (16dea49f, 5e62ad32, 4d4b08db, 27363e70, 42a14016, fcea2b15).
 
 export interface WsolaOptions {
   sampleRate: number

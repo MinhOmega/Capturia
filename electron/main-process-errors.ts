@@ -1,7 +1,7 @@
 // Renderer reload / DevTools detach routinely produces EPIPE (and friends) on
 // in-flight IPC replies. That is churn, not a bug: keep it out of the runtime
-// error dialog. Ported from upstream `electron/main-process-errors.ts`; Capturia
-// keeps its own dialog-based reporter, so only the filter is used here.
+// error dialog. Capturia's runtime-error reporter is dialog-based, so this
+// module only supplies the predicate that reporter consults.
 
 const SWALLOWED_ERROR_CODES: ReadonlySet<string> = new Set([
   'EPIPE',

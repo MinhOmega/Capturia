@@ -1,12 +1,11 @@
 // OS-level (global) shortcuts: "open Capturia" and "stop recording".
 //
-// Generalised from OpenScreen's `globalShortcut.ts` (openApp only) so both
-// Capturia global actions share one registry, one persistence file
+// Both global actions share one registry, one persistence file
 // (`shortcuts.json`, the same file the editor's ShortcutsConfigDialog writes)
 // and one accelerator conversion. The Electron `globalShortcut` API is injected
 // (`GlobalShortcutRegistry`) so the registration logic runs under vitest.
 //
-// Rules (upstream 480890bc, d86c1740, 59c9a192, 902d4e4d):
+// Rules:
 // - register the NEW accelerator before unregistering the old one, so a failure
 //   leaves the previous binding working;
 // - a failure is reported to the caller (`{ ok: false, error }`), never thrown;

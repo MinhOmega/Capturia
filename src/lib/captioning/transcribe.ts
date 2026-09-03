@@ -2,10 +2,9 @@ import type { TrimRegion } from '@/components/video-editor/types'
 import { CAPTION_MODEL_ID } from './captionConstants'
 
 /**
- * Renderer entry point for in-browser Whisper transcription (upstream OpenScreen
- * v1.7.0 `transcribe.ts`, adapted). The heavy lifting runs in
- * `transcribe.worker.ts`; this module only owns the worker lifecycle and the
- * message contract.
+ * Renderer entry point for in-browser Whisper transcription. The heavy lifting
+ * runs in `transcribe.worker.ts`; this module only owns the worker lifecycle
+ * and the message contract.
  */
 
 export interface CaptionSegment {

@@ -1,7 +1,7 @@
 /**
  * Pure helpers behind the timeline's drag/resize behaviour (snap guides,
- * neighbour clamping, bounds clamping). Extracted from upstream OpenScreen's
- * `TimelineWrapper.tsx` (v1.7.0) so they can be unit-tested without dnd-timeline.
+ * neighbour clamping, bounds clamping). Kept out of `TimelineWrapper.tsx` so
+ * they can be unit-tested without standing up dnd-timeline.
  *
  * All times are in the timeline's own space (Capturia: EFFECTIVE milliseconds).
  */
@@ -181,8 +181,9 @@ export function clampToNeighbours(
 }
 
 /**
- * Clamp a span inside [0, totalMs], enforcing the minimum duration. Unlike the
- * pre-sync version, `end` can never exceed `totalMs` (upstream T8 handle fix).
+ * Clamp a span inside [0, totalMs], enforcing the minimum duration. `end` can
+ * never exceed `totalMs`, so dragging a resize handle past the end of the
+ * timeline stops at the end instead of extending it.
  */
 export function clampSpanToBounds(
   span: TimeSpan,

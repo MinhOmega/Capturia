@@ -1,10 +1,10 @@
-// Dependency-free message loader (ported from OpenScreen v1.7.0).
+// Dependency-free message loader.
 //
 // Every `locales/<locale>/<namespace>.json` is bundled eagerly via
 // `import.meta.glob`. Lookup order for `translate(locale, ns, key)`:
 //   requested locale -> DEFAULT_LOCALE -> the literal `${ns}.${key}` marker.
 // Nothing here touches localStorage: the stored preference is owned by
-// I18nContext, which guards its access (upstream fix 8e0a6268).
+// I18nContext, which guards its access.
 
 import { DEFAULT_LOCALE, I18N_NAMESPACES, type I18nNamespace, type Locale } from './config'
 

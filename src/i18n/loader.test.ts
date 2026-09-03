@@ -26,7 +26,8 @@ describe('i18n loader', () => {
   })
 
   it('falls back to en for a key missing in a partial locale', () => {
-    // Capturia-only key: no upstream twin, so fr has no value.
+    // Capturia-only key: the partial locales carry no translation for it, so
+    // fr has no value.
     expect(translate('fr', 'launch', 'captureProfile.balanced')).toBe('Smooth 30')
     // but a translated key still resolves in fr
     expect(translate('fr', 'timeline', 'addZoom')).toBe('Ajouter un zoom (Z)')
@@ -42,7 +43,7 @@ describe('i18n loader', () => {
     expect(translate('en', 'nope' as I18nNamespace, 'x')).toBe('nope.x')
   })
 
-  it('returns the marker for a branch key instead of rendering an object (8e0a6268)', () => {
+  it('returns the marker for a branch key instead of rendering an object', () => {
     expect(translate('en', 'launch', 'captureProfile')).toBe('launch.captureProfile')
     expect(translate('en', 'common', 'app')).toBe('common.app')
   })

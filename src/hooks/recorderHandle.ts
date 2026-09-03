@@ -35,8 +35,8 @@ type RecordingStreamApi = Partial<
  * stream confirms open; if the open fails (or the stream IPC is missing), that buffer
  * is the complete in-memory fallback and the caller writes it via `store-recorded-video`.
  *
- * Capturia constructs the recorder itself (codec/bitrate fallback chain), so unlike
- * upstream this takes the recorder rather than `(stream, options)`. The handle owns
+ * Capturia constructs the recorder itself (codec/bitrate fallback chain), so this
+ * takes an already-built recorder rather than `(stream, options)`. The handle owns
  * `ondataavailable`, `onstop` and `onerror`; callers attach `onstart` if they need it.
  */
 export function createRecorderHandle(recorder: MediaRecorder, fileName?: string): RecorderHandle {

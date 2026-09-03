@@ -79,7 +79,7 @@ describe('ApprovedPathRegistry', () => {
 })
 
 describe('extension allowlists', () => {
-  it('mirrors upstream import extensions', () => {
+  it('pins the import video extension allowlist', () => {
     expect([...ALLOWED_IMPORT_VIDEO_EXTENSIONS].sort()).toEqual(
       ['.avi', '.flv', '.m4v', '.mkv', '.mov', '.mp4', '.ts', '.webm', '.wmv'].sort(),
     )

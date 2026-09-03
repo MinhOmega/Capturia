@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
-// Ported from upstream v1.7.0 `useCameraDevices.test.ts`; one extra case covers
-// Capturia's persisted-selection seed.
+// Camera enumeration for the HUD picker, including the persisted-selection
+// seed and what happens when the seeded device is unplugged.
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useCameraDevices } from './useCameraDevices'
