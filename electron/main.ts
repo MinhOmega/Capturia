@@ -41,6 +41,7 @@ import {
 } from './ipc/paths'
 import { shouldSwallowMainProcessError } from './main-process-errors'
 import { attachNavigationPolicy } from './navigationPolicy'
+import { isPermissionAllowed, windowTypeForContents } from './windowPermissions'
 import { checkLatestRelease } from './update-checker'
 import {
   type AutoUpdaterController,
@@ -1301,20 +1302,6 @@ app.on('before-quit', (event) => {
   })()
 })
 
-// Web permissions the renderer may hold/request. Everything else (notifications,
-// geolocation, clipboard, ...) is denied. `fullscreen` is here for the editor's
-// fullscreen preview (`requestFullscreen()`); the rest is what capture needs.
-const ALLOWED_WEB_PERMISSIONS: ReadonlySet<string> = new Set([
-  'media',
-  'audioCapture',
-  'microphone',
-  'videoCapture',
-  'camera',
-  'screen',
-  'display-capture',
-  'fullscreen',
-])
-
 // Register all IPC handlers when app is ready
 const appReady = hasSingleInstanceLock ? app.whenReady() : null
 
@@ -1327,13 +1314,32 @@ appReady?.then(async () => {
     app.dock?.show()
   }
 
-  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
-    return ALLOWED_WEB_PERMISSIONS.has(permission)
+  // Capture belongs to the recorder HUD; every other window only plays back.
+  // See `./windowPermissions` for why the window's identity comes from what
+  // the main process created rather than from the URL the page reports.
+  session.defaultSession.setPermissionCheckHandler((webContents, permission, _origin, details) => {
+    return isPermissionAllowed({
+      permission,
+      windowType: windowTypeForContents(webContents),
+      isMainFrame: details?.isMainFrame !== false,
+    })
   })
 
-  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-    callback(ALLOWED_WEB_PERMISSIONS.has(permission))
-  })
+  session.defaultSession.setPermissionRequestHandler(
+    (webContents, permission, callback, details) => {
+      callback(
+        isPermissionAllowed({
+          permission,
+          windowType: windowTypeForContents(webContents),
+          isMainFrame: details?.isMainFrame !== false,
+        }),
+      )
+    },
+  )
+
+  // Capturia talks to no USB, HID or serial device. Chromium would otherwise
+  // remember a grant made by any page that managed to ask.
+  session.defaultSession.setDevicePermissionHandler(() => false)
 
   app.on('web-contents-created', (_event, contents) => {
     contents.on('render-process-gone', (_goneEvent, details) => {
