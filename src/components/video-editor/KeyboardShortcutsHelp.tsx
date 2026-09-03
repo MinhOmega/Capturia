@@ -53,7 +53,9 @@ export function KeyboardShortcutsHelp() {
             <div key={fixed.labelKey} className="flex items-center justify-between">
               <span className="text-slate-400">{t(fixed.labelKey)}</span>
               <kbd className="px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[#34B27B] font-mono">
-                {fixed.bindings.length > 0
+                {/* One binding formats per platform (⌘ vs Ctrl); a range of
+                    keys can only be shown as its own display string. */}
+                {fixed.bindings.length === 1
                   ? formatBinding(fixed.bindings[0], isMac)
                   : fixed.display}
               </kbd>

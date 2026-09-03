@@ -8,8 +8,11 @@ import {
   isTextEditingTarget,
   isArrowKeyOwningTarget,
   DEFAULT_SHORTCUTS,
+  FIXED_SHORTCUTS,
   SHORTCUT_ACTIONS,
   SHORTCUT_LABEL_KEYS,
+  TRANSPORT_SHORTCUT_KEYS,
+  ZOOM_DEPTH_SHORTCUT_KEYS,
   type ShortcutBinding,
   type ShortcutsConfig,
 } from './shortcuts'
@@ -317,6 +320,75 @@ describe('DEFAULT_SHORTCUTS', () => {
     const merged = mergeWithDefaults(legacy)
     expect(merged.copySelected).toEqual(DEFAULT_SHORTCUTS.copySelected)
     expect(merged.paste).toEqual(DEFAULT_SHORTCUTS.paste)
+  })
+
+  it('leaves Ctrl/Cmd+D to the fixed duplicate shortcut and deletes with Delete', () => {
+    expect(DEFAULT_SHORTCUTS.deleteSelected).toEqual({ key: 'delete' })
+    expect(findConflict({ key: 'd', ctrl: true }, 'addZoom', DEFAULT_SHORTCUTS)).toEqual({
+      type: 'fixed',
+      labelKey: 'shortcuts.duplicateRegion',
+    })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Fixed table — the shortcuts P2-B added
+// ---------------------------------------------------------------------------
+describe('FIXED_SHORTCUTS', () => {
+  const byLabel = (labelKey: string) => FIXED_SHORTCUTS.find((f) => f.labelKey === labelKey)
+
+  it('has a label key and a display string for every entry', () => {
+    for (const fixed of FIXED_SHORTCUTS) {
+      expect(fixed.labelKey).toMatch(/^shortcuts\./)
+      expect(fixed.display.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('lists the zoom level keys 1-6', () => {
+    expect(ZOOM_DEPTH_SHORTCUT_KEYS).toEqual(['1', '2', '3', '4', '5', '6'])
+    const entry = byLabel('shortcuts.zoomLevel')
+    expect(entry?.bindings).toEqual([
+      { key: '1' },
+      { key: '2' },
+      { key: '3' },
+      { key: '4' },
+      { key: '5' },
+      { key: '6' },
+    ])
+    // A plain digit is reserved; the stop-recording accelerator carries
+    // modifiers, so it is not caught by the reservation.
+    expect(findConflict({ key: '3' }, 'addZoom', DEFAULT_SHORTCUTS)).toEqual({
+      type: 'fixed',
+      labelKey: 'shortcuts.zoomLevel',
+    })
+    expect(
+      findConflict({ key: '2', ctrl: true, shift: true }, 'stopRecording', DEFAULT_SHORTCUTS),
+    ).toBeNull()
+  })
+
+  it('lists J / K / L transport and the duplicate combo', () => {
+    expect(TRANSPORT_SHORTCUT_KEYS).toEqual({ slower: 'j', pause: 'k', faster: 'l' })
+    expect(byLabel('shortcuts.transportSlower')?.bindings).toEqual([{ key: 'j' }])
+    expect(byLabel('shortcuts.transportPause')?.bindings).toEqual([{ key: 'k' }])
+    expect(byLabel('shortcuts.transportFaster')?.bindings).toEqual([{ key: 'l' }])
+    expect(byLabel('shortcuts.duplicateRegion')?.bindings).toEqual([{ key: 'd', ctrl: true }])
+  })
+
+  it('matches the transport keys only without modifiers', () => {
+    const press = (init: Partial<KeyboardEvent> & { key: string }) =>
+      ({
+        ctrlKey: false,
+        metaKey: false,
+        shiftKey: false,
+        altKey: false,
+        ...init,
+      }) as unknown as KeyboardEvent
+    const j = byLabel('shortcuts.transportSlower')?.bindings[0]
+    if (!j) throw new Error('missing transport binding')
+    expect(matchesShortcut(press({ key: 'j' }), j, false)).toBe(true)
+    expect(matchesShortcut(press({ key: 'J' }), j, false)).toBe(true)
+    expect(matchesShortcut(press({ key: 'j', ctrlKey: true }), j, false)).toBe(false)
+    expect(matchesShortcut(press({ key: 'j', shiftKey: true }), j, false)).toBe(false)
   })
 })
 

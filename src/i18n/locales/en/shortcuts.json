@@ -42,5 +42,10 @@
 	"globalHint": "Work in any app. A global shortcut needs Ctrl/⌘ or Alt.",
 	"globalNeedsModifier": "Global shortcuts need Ctrl/⌘ or Alt",
 	"registrationFailed": "Could not register \"{{label}}\" ({{shortcut}}). Another app may already use it.",
-	"saveFailed": "Failed to save shortcuts"
+	"saveFailed": "Failed to save shortcuts",
+	"zoomLevel": "Set Zoom Level",
+	"transportSlower": "Playback Slower",
+	"transportPause": "Pause Playback",
+	"transportFaster": "Playback Faster",
+	"duplicateRegion": "Duplicate Region"
 }
