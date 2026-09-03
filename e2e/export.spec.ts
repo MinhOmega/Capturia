@@ -151,7 +151,7 @@ test('exports a GIF from the fixture recording', async () => {
       // The dialog carries the phase and percentage; without them a timeout
       // here says nothing about where the pipeline stopped.
       const state = await editor.getByTestId('export-dialog').innerText()
-      throw new Error(`export never reported success. Dialog said:\n${state}`, { cause: error })
+      throw new Error(`export never reported success (${String(error)}). Dialog said:\n${state}`)
     }
     await expect(editor.getByTestId('export-saved-filename')).toHaveText('export.gif')
 
