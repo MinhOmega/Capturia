@@ -36,6 +36,7 @@
 	"customPlaybackSpeed": "自定义速度",
 	"maxSpeedError": "速度不能超过 {{max}}×",
 	"previewGpuRecoveryFailed": "预览失去了图形上下文且无法重建。请关闭并重新打开编辑器以恢复。",
+	"speedPreviewFrameSteppingHint": "超过 {{native}}× 时，预览将逐帧跳转并静音；导出不受影响。",
 	"videoEffects": "视频效果",
 	"motionBlur": "运动模糊",
 	"motionBlurOff": "关闭",
