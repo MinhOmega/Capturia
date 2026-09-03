@@ -40,11 +40,22 @@ import {
 } from './videoPlayback/zoomTransform'
 import { createVideoEventHandlers } from './videoPlayback/videoEventHandlers'
 import {
+  FRAME_STEP_PREVIEW_HINT_KEY,
+  MAX_NATIVE_PLAYBACK_RATE,
+  probeNativePlaybackRateCap,
+} from './videoPlayback/frameStepPreview'
+import {
+  type ContextLossRecovery,
+  createContextLossRecovery,
+} from './videoPlayback/webglContextLoss'
+import {
   type AspectRatio,
   formatAspectRatioForCSS,
   getNativeAspectRatioValue,
 } from '@/utils/aspectRatioUtils'
 import { AnnotationOverlay } from './AnnotationOverlay'
+import { toast } from 'sonner'
+import { useI18n } from '@/i18n'
 import {
   getRenderableAnnotations,
   getSelectionCycleAnnotations,
@@ -126,6 +137,11 @@ interface VideoPlaybackProps {
   onVideoDimensionsChange?: (dimensions: { width: number; height: number }) => void
   segmentsRef?: React.MutableRefObject<import('./types').VideoSegment[]>
   previewPlaybackRateRef?: React.MutableRefObject<number>
+  /**
+   * Fires when the preview switches between native playback and the muted,
+   * frame-stepped mode used for speeds above the element's playbackRate cap.
+   */
+  onFrameSteppingChange?: (active: boolean) => void
 }
 
 export interface VideoPlaybackRef {
@@ -136,6 +152,15 @@ export interface VideoPlaybackRef {
   containerRef: React.RefObject<HTMLDivElement>
   play: () => Promise<void>
   pause: () => void
+  /**
+   * True while the preview is frame-stepped (segment speed x preview rate above
+   * the element's playbackRate cap): the element is muted and its time is driven
+   * from the animation loop. The speed UI shows `frameSteppingHintKey` then.
+   */
+  isFrameStepping: boolean
+  frameSteppingHintKey: typeof FRAME_STEP_PREVIEW_HINT_KEY
+  /** Highest playbackRate this element accepts (probed once per source; Chromium: 16). */
+  nativePlaybackRateCap: number
 }
 
 const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
@@ -181,6 +206,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
       onVideoDimensionsChange,
       segmentsRef,
       previewPlaybackRateRef,
+      onFrameSteppingChange,
     },
     ref,
   ) => {
@@ -197,7 +223,18 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
     const cameraContainerRef = useRef<Container | null>(null)
     const timeUpdateAnimationRef = useRef<number | null>(null)
     const [pixiReady, setPixiReady] = useState(false)
+    // Bumped when the WebGL context is lost: the stage setup effect re-runs and
+    // rebuilds the Pixi application from scratch (see videoPlayback/webglContextLoss.ts).
+    const [pixiGeneration, setPixiGeneration] = useState(0)
     const [videoReady, setVideoReady] = useState(false)
+    // Frame-stepped preview (speeds above the element's playbackRate cap): the
+    // handler set mutes the element and drives its time; the audio effect keeps
+    // it muted for as long as this is true. See videoPlayback/frameStepPreview.ts.
+    const [isFrameStepping, setIsFrameStepping] = useState(false)
+    const frameSteppingRef = useRef(false)
+    const nativePlaybackRateCapRef = useRef(MAX_NATIVE_PLAYBACK_RATE)
+    const onFrameSteppingChangeRef = useRef(onFrameSteppingChange)
+    onFrameSteppingChangeRef.current = onFrameSteppingChange
     const overlayRef = useRef<HTMLDivElement | null>(null)
     const focusIndicatorRef = useRef<HTMLDivElement | null>(null)
     const currentTimeRef = useRef(0)
@@ -284,6 +321,28 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
     }, [])
 
     const audioGraphFailedRef = useRef(false)
+
+    const { t } = useI18n()
+    const tRef = useRef(t)
+    tRef.current = t
+    const contextLossRecoveryRef = useRef<ContextLossRecovery | null>(null)
+    const getContextLossRecovery = useCallback(() => {
+      if (!contextLossRecoveryRef.current) {
+        contextLossRecoveryRef.current = createContextLossRecovery({
+          regenerate: () => setPixiGeneration((generation) => generation + 1),
+          onGiveUp: () => {
+            toast.error(tRef.current('settings.previewGpuRecoveryFailed'))
+          },
+        })
+      }
+      return contextLossRecoveryRef.current
+    }, [])
+
+    useEffect(() => {
+      return () => {
+        contextLossRecoveryRef.current?.dispose()
+      }
+    }, [])
 
     const ensurePreviewAudioGraph = useCallback(() => {
       const video = videoRef.current
@@ -474,6 +533,9 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
       videoSprite: videoSpriteRef.current,
       videoContainer: videoContainerRef.current,
       containerRef,
+      isFrameStepping,
+      frameSteppingHintKey: FRAME_STEP_PREVIEW_HINT_KEY,
+      nativePlaybackRateCap: nativePlaybackRateCapRef.current,
       play: async () => {
         const vid = videoRef.current
         if (!vid) {
@@ -674,7 +736,9 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
             gainNode.gain.setValueAtTime(targetGain, context.currentTime)
           }
 
-          video.muted = false
+          // Frame-stepped preview is silent by design (the element is seeked,
+          // not played); otherwise the graph's gain node owns the volume.
+          video.muted = isFrameStepping
           if (Math.abs(video.volume - 1) > 0.0005) {
             video.volume = 1
           }
@@ -687,7 +751,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
         }
       }
 
-      video.muted = nextState.muted
+      video.muted = nextState.muted || isFrameStepping
       const clampedVolume = Math.max(0, Math.min(1, nextState.volume))
       if (Math.abs(video.volume - clampedVolume) > 0.0005) {
         video.volume = clampedVolume
@@ -701,6 +765,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
       audioEditRegions,
       videoPath,
       ensurePreviewAudioGraph,
+      isFrameStepping,
     ])
 
     useEffect(() => {
@@ -824,7 +889,9 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
       }
 
       let ctx = cursorCanvasCtxRef.current
-      if (!ctx) {
+      // The canvas element is remounted whenever the stage is rebuilt (context
+      // loss, new source); a context from the previous element draws nowhere.
+      if (!ctx || ctx.canvas !== canvas) {
         ctx = canvas.getContext('2d', { alpha: true })
         cursorCanvasCtxRef.current = ctx
       }
@@ -947,19 +1014,31 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 
       let mounted = true
       let app: Application | null = null
+      const recovery = getContextLossRecovery()
+      // Declared outside the async IIFE so the cleanup can detach them.
+      let handleContextLost: ((event: Event) => void) | null = null
+      let handleContextRestored: (() => void) | null = null
 
       ;(async () => {
         app = new Application()
 
-        await app.init({
-          width: container.clientWidth,
-          height: container.clientHeight,
-          backgroundAlpha: 0,
-          antialias: true,
-          // Keep high-DPI sharpness in preview while still guarding extreme render cost.
-          resolution: preferredFpsRef.current > 60 ? 1 : Math.min(window.devicePixelRatio || 1, 2),
-          autoDensity: true,
-        })
+        try {
+          await app.init({
+            width: container.clientWidth,
+            height: container.clientHeight,
+            backgroundAlpha: 0,
+            antialias: true,
+            // Keep high-DPI sharpness in preview while still guarding extreme render cost.
+            resolution:
+              preferredFpsRef.current > 60 ? 1 : Math.min(window.devicePixelRatio || 1, 2),
+            autoDensity: true,
+          })
+        } catch (error) {
+          console.error('[VideoPlayback] Pixi init failed:', error)
+          app = null
+          if (mounted) recovery.rebuildFailed(error)
+          return
+        }
 
         app.ticker.maxFPS = normalizeTickerFps(preferredFpsRef.current)
         idleResolutionRef.current = app.renderer.resolution
@@ -971,6 +1050,21 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 
         appRef.current = app
         container.appendChild(app.canvas)
+        recovery.rebuildSucceeded()
+
+        // Context-loss recovery: preventDefault opts in to the browser's restore
+        // attempt, then the generation bump tears this app down and rebuilds it.
+        // The texture, filter, ticker and cursor-layer effects all key on
+        // pixiReady, which toggles with the rebuild, so they re-attach on their
+        // own; the video element is untouched, so playback resumes where it was.
+        handleContextLost = (event: Event) => {
+          recovery.handleContextLost(event)
+        }
+        handleContextRestored = () => {
+          recovery.handleContextRestored()
+        }
+        app.canvas.addEventListener('webglcontextlost', handleContextLost)
+        app.canvas.addEventListener('webglcontextrestored', handleContextRestored)
 
         // Camera container - this will be scaled/positioned for zoom
         const cameraContainer = new Container()
@@ -989,14 +1083,29 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
         mounted = false
         setPixiReady(false)
         if (app && app.renderer) {
-          app.destroy(true, { children: true, texture: true, textureSource: true })
+          const canvas = app.canvas
+          if (handleContextLost) {
+            canvas.removeEventListener('webglcontextlost', handleContextLost)
+          }
+          if (handleContextRestored) {
+            canvas.removeEventListener('webglcontextrestored', handleContextRestored)
+          }
+          try {
+            app.destroy(true, { children: true, texture: true, textureSource: true })
+          } catch (error) {
+            // Destroying a renderer whose GL context is already gone can throw
+            // from inside Pixi; the canvas must still leave the DOM so the
+            // rebuilt one is the only child.
+            console.warn('[VideoPlayback] Pixi destroy threw during teardown:', error)
+            canvas.remove()
+          }
         }
         appRef.current = null
         cameraContainerRef.current = null
         videoContainerRef.current = null
         videoSpriteRef.current = null
       }
-    }, [])
+    }, [pixiGeneration, getContextLossRecovery, normalizeTickerFps])
 
     useEffect(() => {
       const video = videoRef.current
@@ -1066,6 +1175,10 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
       console.warn('[VideoPlayback] pixi-texture setup pausing video')
       video.pause()
 
+      // Browsers cap playbackRate (Chromium throws above 16); segment speeds go
+      // higher, so the handler set frame-steps above whatever this element accepts.
+      nativePlaybackRateCapRef.current = probeNativePlaybackRateCap(video)
+
       const { handlePlay, handlePause, handleSeeked, handleSeeking, dispose } =
         createVideoEventHandlers({
           video,
@@ -1082,6 +1195,12 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
           isScrubbingRef,
           scrubEndTimerRef,
           onScrubChange: (scrubbing) => setIsScrubbing(scrubbing),
+          nativePlaybackRateCap: nativePlaybackRateCapRef.current,
+          frameSteppingRef,
+          onFrameSteppingChange: (active) => {
+            setIsFrameStepping(active)
+            onFrameSteppingChangeRef.current?.(active)
+          },
         })
 
       video.addEventListener('play', handlePlay)
@@ -1098,6 +1217,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
         video.removeEventListener('seeking', handleSeeking)
         dispose()
         isScrubbingRef.current = false
+        setIsFrameStepping(false)
 
         if (timeUpdateAnimationRef.current) {
           cancelAnimationFrame(timeUpdateAnimationRef.current)

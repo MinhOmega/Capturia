@@ -84,11 +84,12 @@ describe('buildMvpMatrix', () => {
     // `scale(s) rotate...`) it is applied in 3D before the perspective divide,
     // which also scales z and softens the perspective. It is therefore slightly
     // conservative: the quad lands just inside the clip square, never outside.
+    // The closer the camera (lower perspective factor), the more conservative.
     for (const preset of ROTATION_3D_PRESET_ORDER) {
       const { maxX, maxY } = maxExtent(ROTATION_3D_PRESETS[preset], W, H)
       expect(maxX).toBeLessThanOrEqual(1 + 1e-5)
       expect(maxY).toBeLessThanOrEqual(1 + 1e-5)
-      expect(Math.max(maxX, maxY)).toBeGreaterThan(0.95)
+      expect(Math.max(maxX, maxY)).toBeGreaterThan(0.9)
     }
   })
 
@@ -122,14 +123,68 @@ describe('buildMvpMatrix', () => {
     expect(ltr.y).toBeCloseTo(tl.y, 5)
   })
 
-  it('"iso" brings the top edge toward the viewer (rotateX -10) and recedes the left edge (rotateY -16)', () => {
+  it('"iso" brings the top edge toward the viewer (rotateX -12) and recedes the left edge (rotateY -18)', () => {
     const mvp = buildMvpMatrix(ROTATION_3D_PRESETS.iso, W, H)
     const [tl, tr, br, bl] = corners(W, H).map(([x, y]) => projectCorner(mvp, x, y))
-    // CSS rotateX(-10) with +y down: z' = y sin(-10deg), so the top (y < 0) gets z' > 0,
+    // CSS rotateX(-12) with +y down: z' = y sin(-12deg), so the top (y < 0) gets z' > 0,
     // i.e. moves toward the viewer and projects wider than the bottom edge.
     expect(tr.x - tl.x).toBeGreaterThan(br.x - bl.x)
-    // CSS rotateY(-16): z' = -x sin(-16deg) < 0 for x < 0, so the left edge recedes (shorter).
+    // CSS rotateY(-18): z' = -x sin(-18deg) < 0 for x < 0, so the left edge recedes (shorter).
     expect(Math.abs(bl.y - tl.y)).toBeLessThan(Math.abs(br.y - tr.y))
+  })
+
+  it('no preset projects an edge parallel to the frame (the "truncated" look)', () => {
+    // Each projected edge must be at least 1 degree off the horizontal / vertical it
+    // would otherwise coincide with; a parallel edge reads as a clipping rectangle.
+    const MIN_DEG = 1
+    for (const preset of ROTATION_3D_PRESET_ORDER) {
+      const mvp = buildMvpMatrix(ROTATION_3D_PRESETS[preset], W, H)
+      const [tl, tr, br, bl] = corners(W, H).map(([x, y]) => projectCorner(mvp, x, y))
+      // Compare in pixel-ish units so the clip-space aspect does not skew the angle.
+      const px = (p: { x: number; y: number }) => ({ x: (p.x * W) / 2, y: (p.y * H) / 2 })
+      const horizontal: Array<[{ x: number; y: number }, { x: number; y: number }]> = [
+        [px(tl), px(tr)],
+        [px(bl), px(br)],
+      ]
+      const vertical: Array<[{ x: number; y: number }, { x: number; y: number }]> = [
+        [px(tl), px(bl)],
+        [px(tr), px(br)],
+      ]
+      for (const [a, b] of horizontal) {
+        const deg = Math.abs((Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI)
+        expect(Math.min(deg, 180 - deg)).toBeGreaterThanOrEqual(MIN_DEG)
+      }
+      for (const [a, b] of vertical) {
+        const deg = Math.abs((Math.atan2(b.x - a.x, b.y - a.y) * 180) / Math.PI)
+        expect(Math.min(deg, 180 - deg)).toBeGreaterThanOrEqual(MIN_DEG)
+      }
+    }
+  })
+
+  it('applies the rotations in CSS order (Z, then Y, then X) like the preview contain scale', () => {
+    // Project each corner by hand in CSS order with the same viewer distance and
+    // contain scale; the MVP must land on the same clip-space points.
+    const rot = ROTATION_3D_PRESETS.iso
+    const d = rotation3DPerspective(W, H)
+    const s = computeRotation3DContainScale(rot, W, H, d)
+    const a = (rot.rotationX * Math.PI) / 180
+    const b = (rot.rotationY * Math.PI) / 180
+    const g = (rot.rotationZ * Math.PI) / 180
+    const mvp = buildMvpMatrix(rot, W, H)
+    for (const [x0, y0] of corners(W, H)) {
+      let x = x0 * s
+      let y = y0 * s
+      let z = 0
+      ;[x, y] = [x * Math.cos(g) - y * Math.sin(g), x * Math.sin(g) + y * Math.cos(g)]
+      ;[x, z] = [x * Math.cos(b) + z * Math.sin(b), -x * Math.sin(b) + z * Math.cos(b)]
+      ;[y, z] = [y * Math.cos(a) - z * Math.sin(a), y * Math.sin(a) + z * Math.cos(a)]
+      const f = d / (d - z)
+      // projectCorner flips y (clip-space up = pixel-space top).
+      const expected = { x: (x * f) / (W / 2), y: -(y * f) / (H / 2) }
+      const got = projectCorner(mvp, x0, y0)
+      expect(got.x).toBeCloseTo(expected.x, 5)
+      expect(got.y).toBeCloseTo(expected.y, 5)
+    }
   })
 
   it('is resolution independent: 1080p and 4K project to the same clip-space corners', () => {

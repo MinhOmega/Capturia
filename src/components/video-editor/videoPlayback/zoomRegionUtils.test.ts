@@ -316,15 +316,26 @@ describe('findDominantRegion - 3D rotation presets (B1-e)', () => {
     const p = mid.transition?.progress ?? 0
     expect(p).toBeGreaterThan(0)
     expect(p).toBeLessThan(1)
-    expect(mid.rotation3D.rotationX).toBeCloseTo(-10 + (0 - -10) * p, 6)
-    expect(mid.rotation3D.rotationY).toBeCloseTo(-16 + (22 - -16) * p, 6)
-    expect(mid.rotation3D.rotationZ).toBe(0)
+    const from = ROTATION_3D_PRESETS.iso
+    const to = ROTATION_3D_PRESETS.right
+    expect(mid.rotation3D.rotationX).toBeCloseTo(
+      from.rotationX + (to.rotationX - from.rotationX) * p,
+      6,
+    )
+    expect(mid.rotation3D.rotationY).toBeCloseTo(
+      from.rotationY + (to.rotationY - from.rotationY) * p,
+      6,
+    )
+    expect(mid.rotation3D.rotationZ).toBeCloseTo(
+      from.rotationZ + (to.rotationZ - from.rotationZ) * p,
+      6,
+    )
 
     const end = findDominantRegion(regions, iso.endMs + CONNECTED_ZOOM_PAN_DURATION_MS, {
       connectZooms: true,
     })
-    expect(end.rotation3D.rotationY).toBeCloseTo(22, 6)
-    expect(end.rotation3D.rotationX).toBeCloseTo(0, 6)
+    expect(end.rotation3D.rotationY).toBeCloseTo(ROTATION_3D_PRESETS.right.rotationY, 6)
+    expect(end.rotation3D.rotationX).toBeCloseTo(ROTATION_3D_PRESETS.right.rotationX, 6)
 
     const hold = findDominantRegion(regions, iso.endMs + CONNECTED_ZOOM_PAN_DURATION_MS + 1, {
       connectZooms: true,
@@ -337,7 +348,7 @@ describe('findDominantRegion - 3D rotation presets (B1-e)', () => {
     const flatNext = region({ id: 'flat-next', startMs: 5200, endMs: 9000, depth: 4 })
     const mid = findDominantRegion([iso, flatNext], iso.endMs + 500, { connectZooms: true })
     const p = mid.transition?.progress ?? 0
-    expect(mid.rotation3D.rotationY).toBeCloseTo(-16 * (1 - p), 6)
+    expect(mid.rotation3D.rotationY).toBeCloseTo(ROTATION_3D_PRESETS.iso.rotationY * (1 - p), 6)
     const hold = findDominantRegion(
       [iso, flatNext],
       iso.endMs + CONNECTED_ZOOM_PAN_DURATION_MS + 1,
