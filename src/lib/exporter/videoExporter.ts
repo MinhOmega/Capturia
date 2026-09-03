@@ -25,6 +25,10 @@ import {
 import { PlanarChunkQueue } from '@/lib/audio/planarChunkQueue'
 import { isBackgroundLoadError } from './backgroundErrors'
 import {
+  EXPORT_WARNING_DECODE_ENDED_EARLY,
+  EXPORT_WARNING_DECODER_FALLBACK,
+} from './decoderFallback'
+import {
   classifyExportError,
   DecoderFallbackError,
   EXPORT_ERROR_MESSAGE_PREFIXES,
@@ -189,8 +193,6 @@ async function* planarChunksFromBuffers(
     }
   }
 }
-const EXPORT_WARNING_DECODER_FALLBACK = 'editor.exportWarningDecoderFallback'
-const EXPORT_WARNING_DECODE_ENDED_EARLY = 'editor.exportWarningDecodeEndedEarly'
 
 function isExportAudioDebugEnabled(): boolean {
   try {
