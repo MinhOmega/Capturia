@@ -83,14 +83,12 @@ export const UNIMPLEMENTED_BRIDGE_METHODS = [
 ] as const
 
 /**
- * `getAssetBasePath` is exposed by the preload but is missing from the
- * `Window['electronAPI']` declaration that wins the interface merge
- * (`electron/electron-env.d.ts` shadows the copy in `src/vite-env.d.ts`), so
- * it is spelled out here to keep the harness a superset of the real bridge.
+ * The shim answers exactly what the preload exposes: `Window['electronAPI']`
+ * is `electron/bridge-types.ts`, the same type the preload's exposed object is
+ * annotated with, so a signature that changes on one side stops compiling on
+ * the other.
  */
-export type HarnessBridge = Window['electronAPI'] & {
-  getAssetBasePath: () => Promise<string | null>
-}
+export type HarnessBridge = Window['electronAPI']
 
 /** One `saveExportedVideo` call, kept in memory instead of written to disk. */
 export interface HarnessExport {
@@ -428,6 +426,13 @@ export function createBrowserBridge(): BrowserHarness {
     setRecordingState: async () => {
       // No tray, no dock badge and no window state to flip in a browser tab.
     },
+    // A5: a browser tab cannot `statfs` anything. `success: false` is the
+    // "unknown" answer, which `assessRecordingDiskSpace` reads as "do not
+    // block" — the harness must never refuse a recording the app would allow.
+    getRecordingsDiskSpace: async () => ({
+      success: false,
+      message: 'Free disk space is not observable in the browser harness.',
+    }),
 
     // ---- Project state ----------------------------------------------------
     saveProjectState: async (videoPath, state) => {
@@ -586,6 +591,10 @@ export function createBrowserBridge(): BrowserHarness {
     // Drive any of these from DevTools, e.g.
     //   __capturiaBrowserHarness.emit('menu-export')
     onStopRecordingFromTray: (callback) => subscribe('stop-recording-from-tray', () => callback()),
+    // A2: `__capturiaBrowserHarness.emit('native-recorder-exited', { ... })`
+    // walks the HUD through a helper that died mid-recording.
+    onNativeRecorderExited: (callback) =>
+      subscribe('native-recorder-exited', (info) => callback(info as NativeRecorderExitPayload)),
     onSelectedSourceChanged: (callback) =>
       subscribe('selected-source-changed', (source) => callback(source)),
     onSourceSelectorClosed: (callback) => subscribe('source-selector-closed', () => callback()),

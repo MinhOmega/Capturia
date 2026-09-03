@@ -45,6 +45,7 @@ const CHANNELS_BEFORE_DECOMPOSITION = [
   'switch-to-editor',
   'store-recorded-video',
   'get-recorded-video-path',
+  'get-recordings-disk-space',
   'set-recording-state',
   'native-screen-recorder-start',
   'native-screen-recorder-stop',

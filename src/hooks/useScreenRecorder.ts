@@ -9,6 +9,7 @@ import {
   canRequestDiscard,
   canRequestRestart,
   planNativeStopSideEffects,
+  planRecorderExitInterruption,
   resolveStopRoute,
   shouldStartAfterRestart,
   type RecordingPhase,
@@ -17,6 +18,7 @@ import {
 import { useI18n } from '@/i18n'
 import { mixAudioTracks, normalizeMicrophoneGain } from '@/lib/audioMix'
 import { resolveNativeRecorderStartFailureMessage } from '@/lib/permissions/nativeRecorderErrors'
+import { assessRecordingDiskSpace, formatAvailableSpace } from '@/lib/recordingDiskSpace'
 import { reportUserActionError } from '@/lib/userErrorFeedback'
 import { webcamDeviceIdentityFrom } from '@/lib/webcamDeviceIdentity'
 
@@ -230,6 +232,10 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
     readNativeSystemAudioSupported,
   )
   const [recordingState, setRecordingPhase] = useState<RecordingPhase>('idle')
+  // The native-helper-exit subscription is registered once; it reads the phase
+  // from here instead of from the closure it was created in.
+  const recordingPhaseRef = useRef<RecordingPhase>('idle')
+  recordingPhaseRef.current = recordingState
   // Mirrors `nativeRecordingActive` for rendering (refs don't re-render): the HUD hides
   // Pause while the native recorder owns the session.
   const [nativeSessionActive, setNativeSessionActive] = useState(false)
@@ -521,9 +527,15 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
       })
       if (plan.reportFailure) {
         console.error('Failed to stop native ScreenCaptureKit recording:', stopResult.message)
+        // A3: the helper was killed before it wrote the MP4 `moov` box, so the
+        // file on disk cannot be decoded. Name the path so the user can point a
+        // repair tool at it instead of losing track of the recording.
+        const unplayable = stopResult.code === 'output_missing_moov'
         reportUserActionError({
           t,
-          userMessage: t('launch.recordStopFailed'),
+          userMessage: unplayable
+            ? t('launch.recordingFileUnplayable', { path: stopResult.path ?? '' })
+            : t('launch.recordStopFailed'),
           error: stopResult.message || 'native-screen-recorder-stop returned no path',
           context: 'recording.stop.native',
           details: stopResult,
@@ -580,6 +592,97 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
     }
   }
 
+  /**
+   * A2: the native helper process ended on its own with a session still open —
+   * it crashed, the OS killed it, or a capture permission was revoked. Main has
+   * already checked what it left on disk, so the HUD returns to idle and offers
+   * the partial recording only when it is actually playable.
+   */
+  const handleNativeRecorderExit = async (info: NativeRecorderExitPayload) => {
+    const plan = planRecorderExitInterruption({
+      state: {
+        phase: recordingPhaseRef.current,
+        recording: nativeRecordingActive.current,
+        transitionInFlight: transitionInFlight.current,
+        discardRequested: discardFlag.current,
+      },
+      // A stop of our own already cleared the session flag; that exit belongs to
+      // the stop path and must not surface as an interruption.
+      stopRequested: !nativeRecordingActive.current,
+      outputPlayable: info.outputPlayable,
+    })
+    if (!plan) return
+
+    console.warn('Native recorder helper exited unexpectedly.', info)
+    const metadata = nativeRecordingMetadata.current
+    nativeRecordingActive.current = false
+    setNativeSessionActive(false)
+    setNativePauseSupported(false)
+    pauseTransitionInFlight.current = false
+    nativeRecordingMetadata.current = null
+
+    let capturedCursorTrack: CursorTrackMetadata | undefined
+    if (cursorTrackingActive.current) {
+      cursorTrackingActive.current = false
+      try {
+        capturedCursorTrack = (await window.electronAPI.stopCursorTracking()).track
+      } catch (error) {
+        console.warn('Failed to retrieve cursor tracking payload after a helper exit.', error)
+      }
+    }
+
+    cleanupActiveMedia({ stopNative: false })
+    discardFlag.current = plan.state.discardRequested
+    transitionInFlight.current = plan.state.transitionInFlight
+    setRecording(plan.state.recording)
+    setRecordingPhase(plan.state.phase)
+    window.electronAPI?.setRecordingState(false)
+
+    if (!plan.offerOpen) {
+      // The file has no `moov` box: handing it to the editor would only produce
+      // a video that will not decode, so name the path and stop there.
+      toast.error(t('launch.recordingFileUnplayable', { path: info.outputPath }))
+      return
+    }
+
+    if (!plan.notify) return
+    toast.warning(t('launch.recordingInterrupted'), {
+      action: {
+        label: t('launch.recordingInterruptedOpenAction'),
+        onClick: () => {
+          void (async () => {
+            try {
+              await window.electronAPI.setCurrentVideoPath(info.outputPath, {
+                frameRate: metadata?.frameRate ?? 60,
+                width: metadata?.width ?? 1920,
+                height: metadata?.height ?? 1080,
+                mimeType: metadata?.mimeType ?? 'video/mp4',
+                capturedAt: Date.now(),
+                systemCursorMode: metadata?.systemCursorMode ?? 'always',
+                hasMicrophoneAudio: metadata?.hasMicrophoneAudio ?? false,
+                cursorTrack: capturedCursorTrack,
+              })
+              await window.electronAPI.switchToEditor()
+            } catch (error) {
+              reportUserActionError({
+                t,
+                userMessage: t('launch.openVideoFailed'),
+                error,
+                context: 'recording.interrupted.open',
+                dedupeKey: 'recording.interrupted.open',
+              })
+            }
+          })()
+        },
+      },
+    })
+  }
+
+  // The subscription below is installed once, so it calls through this ref to
+  // reach the handler of the current render rather than the first one.
+  const nativeRecorderExitHandler = useRef(handleNativeRecorderExit)
+  nativeRecorderExitHandler.current = handleNativeRecorderExit
+
   const stopRecording = useRef(() => {
     if (transitionInFlight.current) {
       return
@@ -626,9 +729,13 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
         stopRecording.current()
       })
     }
+    const exitCleanup = window.electronAPI?.onNativeRecorderExited?.((info) => {
+      void nativeRecorderExitHandler.current(info)
+    })
 
     return () => {
       if (cleanup) cleanup()
+      if (exitCleanup) exitCleanup()
 
       const recorder = recorderHandle.current?.recorder
       if (recorder?.state === 'recording') {
@@ -1070,11 +1177,44 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
     toast.warning(t('launch.microphoneFallback'))
   }
 
+  /**
+   * A5: both recorder paths go through here before anything is opened. Returns
+   * false only when the volume is too full for the recording to be worth
+   * starting; a check that could not run never blocks one.
+   */
+  const hasRoomToRecord = async (): Promise<boolean> => {
+    let snapshot: Awaited<ReturnType<NonNullable<typeof window.electronAPI.getRecordingsDiskSpace>>>
+    try {
+      snapshot = await window.electronAPI?.getRecordingsDiskSpace?.()
+    } catch (error) {
+      console.warn('Could not read the free space of the recordings folder.', error)
+      return true
+    }
+
+    const verdict = assessRecordingDiskSpace(snapshot)
+    if (verdict.level === 'blocked') {
+      toast.error(
+        t('launch.diskSpaceBlocked', { available: formatAvailableSpace(verdict.availableBytes) }),
+      )
+      return false
+    }
+    if (verdict.level === 'warn') {
+      toast.warning(
+        t('launch.diskSpaceLow', { available: formatAvailableSpace(verdict.availableBytes) }),
+      )
+    }
+    return true
+  }
+
   const isNativeMicrophoneFailure = (code: string | undefined): boolean =>
     code === 'microphone_permission_denied' || code === 'microphone_unavailable'
 
   const startRecording = async () => {
     if (transitionInFlight.current || recordingState !== 'idle') {
+      return
+    }
+
+    if (!(await hasRoomToRecord())) {
       return
     }
 

@@ -122,6 +122,43 @@ export function planNativeStopSideEffects(input: {
 }
 
 /**
+ * What the HUD should do when the native helper process disappears on its own.
+ * `null` means "ignore it": either nothing was recording, or a stop is already
+ * running and owns the outcome, so a helper closing under a normal stop must
+ * never be reported as an interruption.
+ */
+export interface InterruptedRecordingPlan {
+  /** State the hook moves to. Always fully idle: the session is gone. */
+  state: RecordingTransitionState
+  /** Tell the user the recording ended by itself. */
+  notify: boolean
+  /**
+   * The partial file passed the MP4 `moov` check, so the HUD may offer to open
+   * it. False means the bytes on disk are unplayable and the editor must not
+   * be handed them.
+   */
+  offerOpen: boolean
+}
+
+export function planRecorderExitInterruption(input: {
+  state: RecordingTransitionState
+  /** A stop / discard is already in flight (or was requested in main). */
+  stopRequested: boolean
+  /** Verdict of the bounded `moov` check main ran on the output file. */
+  outputPlayable: boolean
+}): InterruptedRecordingPlan | null {
+  if (input.stopRequested) return null
+  if (input.state.transitionInFlight) return null
+  if (!isRecordingActive(input.state) && input.state.phase !== 'starting') return null
+
+  return {
+    state: { ...IDLE_RECORDING_STATE },
+    notify: true,
+    offerOpen: input.outputPlayable,
+  }
+}
+
+/**
  * Pause is offered while recording or paused: always on the MediaRecorder path, and
  * on the native path only when the running helper announced pause support (a helper
  * built before the stdin protocol never does, so the button stays hidden).
