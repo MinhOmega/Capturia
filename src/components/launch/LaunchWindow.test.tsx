@@ -136,6 +136,8 @@ function stubElectronAPI() {
       success: true,
       accelerator,
     })),
+    // Nothing registered in main by default: the HUD pushes its persisted value.
+    getStopRecordingShortcut: vi.fn(async () => ({ success: true, accelerator: '' })),
     hudOverlayHide: vi.fn(),
     hudOverlayClose: vi.fn(),
     hudOverlayResize: vi.fn(),
@@ -608,5 +610,53 @@ describe('LaunchWindow popovers close on window blur', () => {
     blurWindow()
     expect(screen.getByTestId('hud-bar')).toBeInTheDocument()
     expect(screen.queryByTestId('launch-capture-settings-popover')).not.toBeInTheDocument()
+  })
+})
+
+describe('LaunchWindow stop shortcut on mount', () => {
+  beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', StubResizeObserver)
+    resizeObservers.length = 0
+    window.localStorage.clear()
+    selectedSourceChangedListeners = []
+    sourceSelectorClosedListeners = []
+    mainSelectedSource = null
+    stubElectronAPI()
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+  })
+
+  it('adopts the shortcut main has registered instead of the persisted one', async () => {
+    window.localStorage.setItem('capturia.stopRecordingShortcut', 'CommandOrControl+Shift+5')
+    window.electronAPI.getStopRecordingShortcut = vi.fn(async () => ({
+      success: true,
+      accelerator: 'CommandOrControl+Shift+9',
+    }))
+    render(<LaunchWindow />)
+    const button = await screen.findByTestId('launch-stop-shortcut-button')
+    // macOS glyphs once the platform probe has answered.
+    await waitFor(() => {
+      expect(button).toHaveTextContent('⌘⇧9')
+    })
+    expect(window.electronAPI.setStopRecordingShortcut).not.toHaveBeenCalled()
+    expect(window.localStorage.getItem('capturia.stopRecordingShortcut')).toBe(
+      'CommandOrControl+Shift+9',
+    )
+  })
+
+  it('pushes the persisted shortcut to main when nothing is registered there', async () => {
+    window.localStorage.setItem('capturia.stopRecordingShortcut', 'CommandOrControl+Shift+5')
+    render(<LaunchWindow />)
+    await waitFor(() => {
+      expect(window.electronAPI.setStopRecordingShortcut).toHaveBeenCalledWith(
+        'CommandOrControl+Shift+5',
+      )
+    })
+    await waitFor(() => {
+      expect(screen.getByTestId('launch-stop-shortcut-button')).toHaveTextContent('⌘⇧5')
+    })
   })
 })
