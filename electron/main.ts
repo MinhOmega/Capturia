@@ -30,6 +30,7 @@ import {
   getHudOverlayWindow,
   HEADLESS,
 } from './windows'
+import { atomicWriteFile } from './ipc/atomicSave'
 import { registerIpcHandlers } from './ipc/handlers'
 import { getRecordingsDir } from './paths'
 import {
@@ -872,11 +873,9 @@ async function readAutoUpdateCheckPreference(): Promise<boolean> {
 }
 
 async function writeAutoUpdateCheckPreference(enabled: boolean): Promise<void> {
-  await fs.mkdir(path.dirname(UPDATE_PREFERENCES_FILE), { recursive: true })
-  await fs.writeFile(
+  await atomicWriteFile(
     UPDATE_PREFERENCES_FILE,
     serializeUpdatePreferences({ autoUpdateCheck: enabled }),
-    'utf-8',
   )
 }
 
