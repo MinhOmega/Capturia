@@ -27,8 +27,8 @@ import { captionSegmentsToTranscriptWords } from './whisperWords'
  * - `macos-speech`: Capturia's native `SFSpeechRecognizer` helper, driven through the
  *   existing `analysis-start` / `analysis-status` / `analysis-result` IPC round trip.
  *   The main process builds and persists the analysis sidecar itself.
- * - `whisper-web`: upstream OpenScreen's in-browser Whisper (Transformers.js in a
- *   Web Worker). Runs entirely in the renderer; the analysis is built here with the
+ * - `whisper-web`: in-browser Whisper (Transformers.js in a Web Worker).
+ *   Runs entirely in the renderer; the analysis is built here with the
  *   same pure pipeline and persisted through `analysis-save-sidecar`.
  *
  * `runCaptionGeneration` picks the engine from the user setting + platform and

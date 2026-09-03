@@ -3,7 +3,7 @@ import { normalizeTrimRanges } from '@/lib/trim/timeMapping'
 import type { SpeedRegion, SpeedTimelineSegment } from './timelineSegments'
 
 /**
- * Adapter between Capturia's timeline model and the upstream decoder model.
+ * Adapter between Capturia's timeline model and the decoder's trim/speed model.
  *
  * Capturia describes an edit as `VideoSegment[]` (a partition of the source
  * into `{startMs, endMs, deleted, speed}` spans) plus legacy `TrimRegion[]`

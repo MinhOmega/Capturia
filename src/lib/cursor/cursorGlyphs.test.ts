@@ -44,7 +44,7 @@ describe('bundled cursor glyph assets', () => {
     }
   })
 
-  it('hotspot table matches upstream semantics: centred for text/crosshair/resize, tip for arrows, fingertip for pointer', () => {
+  it('hotspot table: centred for text/crosshair/resize, tip for arrows, fingertip for pointer', () => {
     const centred = [
       'text',
       'crosshair',

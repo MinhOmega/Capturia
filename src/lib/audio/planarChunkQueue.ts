@@ -4,9 +4,6 @@
 // drains fixed-size slices to the muxer. A grow-and-copy accumulator would be
 // O(N^2) over a long run; this keeps each chunk by reference and only copies the
 // samples that are actually pulled out (O(take) per drain, O(total) overall).
-//
-// Ported from upstream OpenScreen v1.7.0 `src/lib/exporter/planarChunkQueue.ts`
-// (3cb4dd8c).
 
 export class PlanarChunkQueue {
   private readonly channels: number

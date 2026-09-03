@@ -1,8 +1,9 @@
 /**
- * Cursor kinds a recorded sample can carry. Mirrors upstream OpenScreen's
- * `NativeCursorType` set (v1.7 `src/native/contracts.ts`) so sidecars stay
- * interchangeable. Dependency-free: shared by the Electron main process (the
- * tracker + sidecar sanitiser) and the renderer (composer + editor).
+ * Cursor kinds a recorded sample can carry. This is the shared vocabulary
+ * between the native capture helper's cursor type and the renderer, so a
+ * sidecar written by one build stays readable by another. Dependency-free:
+ * shared by the Electron main process (the tracker + sidecar sanitiser) and the
+ * renderer (composer + editor).
  */
 export const CURSOR_KINDS = [
   'arrow',

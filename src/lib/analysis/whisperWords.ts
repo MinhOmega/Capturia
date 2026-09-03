@@ -8,7 +8,7 @@ import type { TranscriptWord } from './types'
  * - `word` granularity: one segment is one word; timestamps are real.
  * - `phrase` granularity: Whisper only timed whole phrases, so each phrase is split
  *   into pseudo-words whose boundaries are interpolated by character weight
- *   (upstream OpenScreen `expandPhraseSegmentToPseudoWords`). Those words carry
+ *   (`expandPhraseSegmentToPseudoWords` below). Those words carry
  *   `synthetic: true` + `phraseIndex` so `roughCutEngine` never reads a gap
  *   between them as silence.
  */
@@ -18,8 +18,7 @@ const WORD_SPLIT_MIN_SPAN_SEC = 0.02
 
 /**
  * Splits one phrase into per-word spans proportional to word length, keeping the
- * spans contiguous and inside `[startSec, endSec]`. Mirrors upstream
- * `splitOneSegmentByWordBounds(start, end, words, 1, 1)`.
+ * spans contiguous and inside `[startSec, endSec]`.
  */
 export function expandPhraseSegmentToPseudoWords(segment: CaptionSegment): CaptionSegment[] {
   const words = segment.text.trim().split(/\s+/).filter(Boolean)

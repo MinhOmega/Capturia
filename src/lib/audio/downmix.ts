@@ -1,6 +1,6 @@
 /**
- * Planar channel downmix for export. Ported from upstream audioEncoder.ts:
- * AAC/Opus encoders are configured for 1 or 2 channels, so multichannel
+ * Planar channel downmix for export. The AAC/Opus encoders are configured for
+ * 1 or 2 channels, so multichannel
  * captures (Windows 5.1/7.1 system audio) are folded to stereo and mono is
  * duplicated rather than dropped.
  */
