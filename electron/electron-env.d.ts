@@ -82,6 +82,21 @@ type CursorTrackMetadata = {
   }
 }
 
+/**
+ * A2: the native macOS helper ended while a recording was still running and no
+ * stop had been asked for. Pushed to the HUD on `native-recorder-exited`.
+ */
+type NativeRecorderExitPayload = {
+  code: number | null
+  signal: string | null
+  /** `killed` when a signal ended it, `crashed` for a non-zero exit of its own. */
+  reason: 'killed' | 'crashed'
+  /** The partial recording left on disk. */
+  outputPath: string
+  /** The partial file has a top-level MP4 `moov` box, so the editor may open it. */
+  outputPlayable: boolean
+}
+
 type SubtitleCueMetadata = {
   id: string
   startMs: number
@@ -306,6 +321,8 @@ interface Window {
       path?: string
       message?: string
       discarded?: boolean
+      /** `output_missing_moov`: the helper died before finalizing a playable MP4. */
+      code?: 'no_session' | 'output_missing' | 'output_missing_moov'
       metadata?: {
         frameRate?: number
         width?: number
@@ -324,6 +341,8 @@ interface Window {
     stopCursorTracking: () => Promise<{ success: boolean; track?: CursorTrackMetadata }>
     pauseCursorTracking: () => Promise<{ success: boolean; changed?: boolean; message?: string }>
     resumeCursorTracking: () => Promise<{ success: boolean; changed?: boolean; message?: string }>
+    /** A2: the native helper died mid-recording; returns an unsubscribe function. */
+    onNativeRecorderExited: (callback: (info: NativeRecorderExitPayload) => void) => () => void
     onStopRecordingFromTray: (callback: () => void) => () => void
     onSelectedSourceChanged: (callback: (source: unknown) => void) => () => void
     onSourceSelectorClosed: (callback: () => void) => () => void

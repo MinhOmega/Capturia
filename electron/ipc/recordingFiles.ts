@@ -6,6 +6,7 @@ import {
   isNativeMacRecorderActive,
   pauseNativeMacRecorder,
   resumeNativeMacRecorder,
+  setNativeRecorderExitListener,
   startNativeMacRecorder,
   stopNativeMacRecorder,
 } from '../native/sckRecorder'
@@ -108,6 +109,21 @@ export function registerRecordingFilesHandlers(ctx: IpcContext): RecordingFilesR
   registerRecordingStreamHandlers(ipcMain, recordingStreams, (fileName) =>
     resolveRecordingOutputPath(recordingsDir, fileName),
   )
+
+  // A2: the native helper can die on its own (crash, SIGKILL from the OS, a
+  // permission revoked mid-capture). Without this the HUD would keep showing
+  // "recording" forever, so push the exit to it and let the tray / main window
+  // recover exactly as they do after a normal stop.
+  setNativeRecorderExitListener((info) => {
+    console.warn(
+      `[native-screen-recorder] helper exited unexpectedly: reason=${info.reason} code=${info.code ?? 'null'} signal=${info.signal ?? 'none'} playable=${info.outputPlayable}`,
+    )
+    onRecordingStateChange?.(false, session.selectedSource?.name || 'Screen')
+    const mainWin = getMainWindow()
+    if (mainWin && !mainWin.isDestroyed()) {
+      mainWin.webContents.send('native-recorder-exited', info)
+    }
+  })
 
   ipcMain.handle('select-source', (_, source) => {
     session.selectedSource = source

@@ -304,6 +304,8 @@ interface Window {
       path?: string
       message?: string
       discarded?: boolean
+      /** `output_missing_moov`: the helper died before finalizing a playable MP4. */
+      code?: 'no_session' | 'output_missing' | 'output_missing_moov'
       metadata?: {
         frameRate?: number
         width?: number
@@ -322,6 +324,8 @@ interface Window {
     stopCursorTracking: () => Promise<{ success: boolean; track?: CursorTrackMetadata }>
     pauseCursorTracking: () => Promise<{ success: boolean; changed?: boolean; message?: string }>
     resumeCursorTracking: () => Promise<{ success: boolean; changed?: boolean; message?: string }>
+    /** A2: the native helper died mid-recording; returns an unsubscribe function. */
+    onNativeRecorderExited: (callback: (info: NativeRecorderExitPayload) => void) => () => void
     onStopRecordingFromTray: (callback: () => void) => () => void
     showCountdownOverlay: (value: number, runId: number) => Promise<void>
     setCountdownOverlayValue: (value: number, runId: number) => Promise<void>

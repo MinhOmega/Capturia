@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { fileHasMp4MoovBox } from '../ipc/mp4Boxes'
 
 export type NativeCursorMode = 'always' | 'never'
 
@@ -48,6 +49,12 @@ export type NativeRecorderStopResult = {
   success: boolean
   path?: string
   message?: string
+  /**
+   * Machine-readable failure reason. `output_missing_moov` means the helper
+   * died before finalizing the MP4, so the file on disk cannot be played and
+   * the editor must not open it.
+   */
+  code?: 'no_session' | 'output_missing' | 'output_missing_moov'
   metadata?: {
     frameRate: number
     width: number
@@ -112,9 +119,42 @@ export type NativeRecorderPauseResult = {
 
 type PauseAck = 'paused' | 'resumed'
 
+/**
+ * The helper process ended while a recording was still running and nobody had
+ * asked it to stop. Pushed to the HUD so the renderer can leave the "recording"
+ * state instead of sitting there forever.
+ */
+export type NativeRecorderExitInfo = {
+  code: number | null
+  signal: NodeJS.Signals | null
+  /** `killed` when a signal ended it, `crashed` for a non-zero exit of its own. */
+  reason: 'killed' | 'crashed'
+  /** The partial recording the helper left behind. */
+  outputPath: string
+  /** The partial file has a top-level `moov` box, so it can be opened (A3). */
+  outputPlayable: boolean
+}
+
+export type NativeRecorderExitListener = (info: NativeRecorderExitInfo) => void
+
+let nativeRecorderExitListener: NativeRecorderExitListener | null = null
+
+/**
+ * Installed by the IPC layer, which owns the HUD window. Kept as a setter
+ * rather than an import so this module stays free of Electron window plumbing.
+ */
+export function setNativeRecorderExitListener(listener: NativeRecorderExitListener | null): void {
+  nativeRecorderExitListener = listener
+}
+
 type ActiveNativeRecorderSession = {
   process: ChildProcess
   outputPath: string
+  /**
+   * Capturia asked the helper to end (stop, discard or shutdown). An exit that
+   * follows is the expected one and must not be reported as an interruption.
+   */
+  stopRequested: boolean
   cursorMode: NativeCursorMode
   ready: RecorderReadyInfo
   capabilities: NativeRecorderCapabilities
@@ -414,6 +454,34 @@ export function isNativeMacRecorderActive(): boolean {
 }
 
 /**
+ * The helper ended on its own with a recording still running. Check what it
+ * left on disk (so the HUD knows whether the partial file can be opened) and
+ * push the event; a missing listener is not an error, it just means no HUD.
+ */
+async function announceUnexpectedExit(
+  session: ActiveNativeRecorderSession,
+  exit: { code: number | null; signal: NodeJS.Signals | null },
+): Promise<void> {
+  const reason: NativeRecorderExitInfo['reason'] = exit.signal ? 'killed' : 'crashed'
+  console.error(
+    `[sck-recorder] helper exited while recording: code=${exit.code ?? 'null'} signal=${exit.signal ?? 'none'} reason=${reason}`,
+  )
+  let outputPlayable = false
+  try {
+    outputPlayable = (await fileHasMp4MoovBox(session.outputPath)).hasMoov
+  } catch {
+    outputPlayable = false
+  }
+  nativeRecorderExitListener?.({
+    code: exit.code,
+    signal: exit.signal,
+    reason,
+    outputPath: session.outputPath,
+    outputPlayable,
+  })
+}
+
+/**
  * Output file of the in-progress native recording, if any. Lets a discard delete
  * the file even when `stopNativeMacRecorder` reports it as missing or empty.
  */
@@ -426,6 +494,8 @@ export function forceTerminateNativeMacRecorder(): void {
   activeSession = null
   if (!session) return
 
+  // Capturia is ending this helper: its exit is expected, not an interruption.
+  session.stopRequested = true
   session.ackWaiters.abortAll()
   try {
     session.process.kill('SIGTERM')
@@ -650,9 +720,10 @@ export async function startNativeMacRecorder(options: NativeRecorderStartOptions
       })
     }
 
-    activeSession = {
+    const session: ActiveNativeRecorderSession = {
       process: helperProcess,
       outputPath: options.outputPath,
+      stopRequested: false,
       cursorMode: options.cursorMode,
       ready: readyInfo,
       capabilities: capabilitiesRef.current,
@@ -661,14 +732,22 @@ export async function startNativeMacRecorder(options: NativeRecorderStartOptions
       exitPromise,
       ackWaiters,
     }
+    activeSession = session
 
-    const helperPid = helperProcess.pid
-    void exitPromise.finally(() => {
-      ackWaiters.abortAll()
-      if (activeSession?.process.pid === helperPid) {
-        activeSession = null
-      }
-    })
+    void exitPromise.then(
+      (exit) => {
+        ackWaiters.abortAll()
+        // Only this session's exit may clear the global; a stop already
+        // replaced it with null and a restart may have installed a new one.
+        const wasActive = activeSession === session
+        if (wasActive) activeSession = null
+        if (!wasActive || session.stopRequested) return
+        void announceUnexpectedExit(session, exit)
+      },
+      () => {
+        ackWaiters.abortAll()
+      },
+    )
 
     return {
       success: true,
@@ -747,9 +826,10 @@ export async function stopNativeMacRecorder(): Promise<NativeRecorderStopResult>
   activeSession = null
 
   if (!session) {
-    return { success: false, message: 'Native recorder is not active.' }
+    return { success: false, code: 'no_session', message: 'Native recorder is not active.' }
   }
 
+  session.stopRequested = true
   session.ackWaiters.abortAll()
   try {
     session.process.kill('SIGINT')
@@ -782,15 +862,31 @@ export async function stopNativeMacRecorder(): Promise<NativeRecorderStopResult>
   if (!hasValidOutput) {
     return {
       success: false,
+      code: 'output_missing',
       message: 'Native recorder output file is missing or empty.',
     }
   }
 
-  const exitedCleanly = exitResult.code === 0
+  const exitedCleanly = exitResult.code === 0 && exitResult.signal === null
   if (!exitedCleanly) {
     console.warn(
       `[sck-recorder] helper exited with non-zero status but produced output. code=${exitResult.code ?? 'null'} signal=${exitResult.signal ?? 'none'}`,
     )
+    // A helper that was killed (including by our own 15 s stop timeout) never
+    // got to write the `moov` box, and the bytes on disk are then a file no
+    // player can open. Size alone does not catch that, so check the boxes.
+    const scan = await fileHasMp4MoovBox(session.outputPath)
+    if (!scan.hasMoov) {
+      console.error(
+        `[sck-recorder] output has no moov box (${scan.reason ?? 'unknown'}; top-level boxes: ${scan.topLevelTypes.join(', ') || 'none'}): ${session.outputPath}`,
+      )
+      return {
+        success: false,
+        code: 'output_missing_moov',
+        path: session.outputPath,
+        message: `The recording was interrupted before it could be finalized, so ${session.outputPath} has no playable movie header.`,
+      }
+    }
   }
 
   return {

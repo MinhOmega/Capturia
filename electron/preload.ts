@@ -216,6 +216,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   resumeCursorTracking: () => {
     return ipcRenderer.invoke('cursor-tracker-resume')
   },
+  // A2: main pushes this when the native helper process ends on its own while a
+  // recording is running; the HUD leaves the recording state instead of hanging.
+  onNativeRecorderExited: (callback: (info: NativeRecorderExitPayload) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, info: NativeRecorderExitPayload) =>
+      callback(info)
+    ipcRenderer.on('native-recorder-exited', listener)
+    return () => ipcRenderer.removeListener('native-recorder-exited', listener)
+  },
   onStopRecordingFromTray: (callback: () => void) => {
     const listener = () => callback()
     ipcRenderer.on('stop-recording-from-tray', listener)

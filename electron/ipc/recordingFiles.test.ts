@@ -10,6 +10,7 @@ vi.mock('../native/sckRecorder', () => ({
   forceTerminateNativeMacRecorder: vi.fn(),
   getNativeMacRecorderOutputPath: vi.fn(() => null),
   isNativeMacRecorderActive: vi.fn(() => false),
+  setNativeRecorderExitListener: vi.fn(),
   startNativeMacRecorder: vi.fn(async () => ({ success: false, message: 'not in test' })),
   stopNativeMacRecorder: vi.fn(async () => ({ success: true })),
   pauseNativeMacRecorder: vi.fn(async () => ({
@@ -70,6 +71,34 @@ describe('recording files IPC handlers', () => {
       'resume-native-recording',
       'native-screen-recorder-stop',
     ])
+  })
+
+  it('pushes an unexpected helper exit to the HUD window and clears the recording state', async () => {
+    const sck = await import('../native/sckRecorder')
+    const mainWindow = fakeWindow()
+    const onRecordingStateChange = vi.fn()
+    const ipc = fakeIpcMain()
+    registerRecordingFilesHandlers(
+      buildContext(ipc, {
+        recordingsDir,
+        getMainWindow: () => mainWindow,
+        onRecordingStateChange,
+      }),
+    )
+
+    const listener = vi.mocked(sck.setNativeRecorderExitListener).mock.calls.at(-1)?.[0]
+    expect(listener).toBeTypeOf('function')
+    const info = {
+      code: null,
+      signal: 'SIGKILL' as const,
+      reason: 'killed' as const,
+      outputPath: path.join(recordingsDir, 'recording-1.mp4'),
+      outputPlayable: false,
+    }
+    listener?.(info)
+
+    expect(onRecordingStateChange).toHaveBeenCalledWith(false, 'Screen')
+    expect(mainWindow.webContents.send).toHaveBeenCalledWith('native-recorder-exited', info)
   })
 
   it('pause / resume forward the helper answer and degrade to unsupported on a throw', async () => {
