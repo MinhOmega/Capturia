@@ -2,34 +2,38 @@
 
 Draft entries for the next release. Bug entries state what a user would have seen.
 
+## Regressions caught before release
+
+The Electron 39 to 41 upgrade on this branch changed how the renderer treats media served over
+the `local-media://` scheme: what used to load as ordinary media became cross-origin data the
+renderer refuses to touch. **Users of the released version were never affected.** This was found
+and repaired here, and is recorded because it must not silently return.
+
+Isolated by a controlled comparison on Linux: unmodified `main` at `4cab381` with Electron
+39.2.7 renders the preview and reads frames from it successfully; installing Electron 41.10.7
+into that same untouched tree flips every symptom below, with no source change.
+
+Three separate failures, three separate elements, all repaired by requesting the media in CORS
+mode and serving the scheme with the matching headers:
+
+- **Every export failed.** The default path threw when the video was uploaded into the WebGL
+  texture: `Failed to execute 'texImage2D' on 'WebGL2RenderingContext': The video element
+  contains cross-origin data, and may not be loaded.` The optional single-pass path did not
+  rescue it; its fetch was blocked outright (`Cross origin requests are only supported for
+  protocol schemes: chrome, chrome-extension, ...`) and it fell back into the same failure.
+- **The editor preview was blank**, with a toast reading "Something went wrong. Please try
+  again." No export needed; opening a recording was enough.
+- **Analyze Video Cursor failed to load its source** with `MEDIA_ELEMENT_ERROR: Format error`.
+  That element already requested CORS mode, so it failed outright rather than tainting.
+
+Verified after the fix: preview renders with no errors, MP4 export 152457 bytes, GIF export
+433033 bytes.
+
 ## Fixed
 
-### Every export failed with a cross-origin error
-
-Recordings are served to the editor over the `local-media://` scheme, which is a different origin
-from the page that loads it. The scheme did not enable CORS and the handler sent no
-`Access-Control-Allow-Origin`, so the media was cross-origin data that the renderer refused to
-touch. **Both decode paths failed, on default settings**, measured on Linux with Electron
-41.10.7:
-
-- The default path failed when the tainted video was uploaded into the preview's WebGL texture:
-  `Failed to execute 'texImage2D' on 'WebGL2RenderingContext': The video element contains
-  cross-origin data, and may not be loaded.` It never reached the frame or canvas read.
-- The optional single-pass path did not rescue it. Its fetch was blocked outright with
-  `Cross origin requests are only supported for protocol schemes: chrome, chrome-extension,
-  chrome-untrusted, data, http, https`, after which it fell back to the default path and hit the
-  same failure.
-
-The same export now succeeds. Development runs were affected too, because the localhost page is
-still a different origin from the media.
-
-### The editor preview was blank, with an error toast
-
-Same cause, separate element. Opening a recording showed an empty preview canvas and a toast
-reading "Something went wrong. Please try again." The preview now requests the media in CORS
-mode. Fixed alongside the export path; the two are separate elements and needed separate fixes.
-
 ### GIF export could hang forever on the first frame
+
+This one is a genuine long-standing bug, independent of the Electron upgrade.
 
 The first-frame wait asked for the next presented video frame only after the seek had already
 completed. That callback fires only on a *new* presentation, so when the frame was already on
