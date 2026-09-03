@@ -1,7 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTimelineContext } from 'dnd-timeline'
 import { Button } from '@/components/ui/button'
-import { Plus, Scissors, ZoomIn, MessageSquare, ChevronDown, Check, EyeOff } from 'lucide-react'
+import {
+  Plus,
+  Scissors,
+  ZoomIn,
+  MessageSquare,
+  ChevronDown,
+  Check,
+  EyeOff,
+  MoreHorizontal,
+  RotateCcw,
+} from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { toast } from 'sonner'
 import { findFreeGapAt } from '../regionPlacement'
 import { cn } from '@/lib/utils'
@@ -70,6 +88,8 @@ interface TimelineEditorProps {
   onSelectZoom: (id: string | null) => void
   segments?: VideoSegment[]
   onSplitAtTime?: (effectiveMs: number) => void
+  /** Restore one full-length segment at speed 1; omitted hides the action. */
+  onResetAllSegmentEdits?: () => void
   onDeleteSegment?: () => void
   selectedSegmentId?: string | null
   onSelectSegment?: (id: string | null) => void
@@ -1079,6 +1099,7 @@ export default function TimelineEditor({
   onSelectZoom,
   segments = [],
   onSplitAtTime,
+  onResetAllSegmentEdits,
   onDeleteSegment,
   selectedSegmentId,
   onSelectSegment,
@@ -1127,6 +1148,11 @@ export default function TimelineEditor({
   })
   const { shortcuts: keyShortcuts, isMac: isMacPlatform } = useShortcuts()
   const [scissorsMode, setScissorsMode] = useState(false)
+  // "Reset all trims and cuts" throws away every split, deletion and speed in
+  // one go, so it asks first. The dialog carries aria-modal, which is how the
+  // editor's global shortcuts (lib/modalDialog.isModalDialogOpen) know to stand
+  // down while it is open.
+  const [resetEditsConfirmOpen, setResetEditsConfirmOpen] = useState(false)
 
   // Waveform peaks (source time). Only decoded when the toggle is on and the
   // source has audio; the hook drops stale peaks as soon as the source changes.
@@ -1894,6 +1920,30 @@ export default function TimelineEditor({
           </DropdownMenu>
           <div className="w-[1px] h-4 bg-white/10" />
           <TutorialHelp />
+          {onResetAllSegmentEdits && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-slate-400 hover:text-slate-200 hover:bg-white/10 transition-all"
+                  title={t('timeline.moreActions')}
+                  aria-label={t('timeline.moreActions')}
+                >
+                  <MoreHorizontal className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="bg-[#1a1a1a] border-white/10">
+                <DropdownMenuItem
+                  onClick={() => setResetEditsConfirmOpen(true)}
+                  className="text-red-400 hover:text-red-300 hover:bg-red-500/10 cursor-pointer gap-2"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>{t('timeline.resetAllEdits')}</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
         <div className="flex-1" />
         <div className="flex items-center gap-4 text-[10px] text-slate-500 font-medium">
@@ -1969,6 +2019,40 @@ export default function TimelineEditor({
           />
         </TimelineWrapper>
       </div>
+      <Dialog open={resetEditsConfirmOpen} onOpenChange={setResetEditsConfirmOpen}>
+        <DialogContent className="bg-[#09090b] border-white/10 text-white max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle className="text-sm">{t('timeline.resetAllEdits')}</DialogTitle>
+            <DialogDescription className="text-xs text-slate-400">
+              {t('timeline.resetAllEditsConfirm')}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setResetEditsConfirmOpen(false)}
+              className="h-8 text-xs text-slate-300 hover:bg-white/10"
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              onClick={() => {
+                setResetEditsConfirmOpen(false)
+                onResetAllSegmentEdits?.()
+              }}
+              className="h-8 gap-2 bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 hover:border-red-500/30 text-xs"
+            >
+              <RotateCcw className="w-3 h-3" />
+              {t('timeline.resetAllEditsConfirmAction')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

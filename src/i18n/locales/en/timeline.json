@@ -36,5 +36,10 @@
 		"pressAnnotation": "Press {{key}} to add annotation",
 		"pressBlur": "Press {{key}} to add a blur region",
 		"noSubtitles": "Generate subtitles from the settings panel"
-	}
+	},
+	"segmentSpeedApplyToAll": "Apply to all segments",
+	"moreActions": "More timeline actions",
+	"resetAllEdits": "Reset all trims and cuts",
+	"resetAllEditsConfirm": "Every split, deleted section and segment speed is thrown away and the recording goes back to one full-length clip at normal speed. Zooms, annotations and blurs are kept. This can be undone.",
+	"resetAllEditsConfirmAction": "Reset"
 }

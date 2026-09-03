@@ -36,5 +36,10 @@
 		"pressAnnotation": "按 {{key}} 添加注释",
 		"pressBlur": "按 {{key}} 添加模糊区域",
 		"noSubtitles": "在设置面板中生成字幕"
-	}
+	},
+	"segmentSpeedApplyToAll": "应用到所有片段",
+	"moreActions": "更多时间轴操作",
+	"resetAllEdits": "重置所有裁剪和剪切",
+	"resetAllEditsConfirm": "将丢弃所有分割、删除的片段和片段速度，录像恢复为一段完整的正常速度片段。缩放、批注和模糊会保留。此操作可以撤销。",
+	"resetAllEditsConfirmAction": "重置"
 }

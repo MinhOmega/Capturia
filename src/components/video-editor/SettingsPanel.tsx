@@ -131,6 +131,8 @@ interface SettingsPanelProps {
   selectedZoomId?: string | null
   onZoomDelete?: (id: string) => void
   selectedSegment?: import('./types').VideoSegment | null
+  /** Give every segment the selected segment's speed, as one undo entry. */
+  onSegmentSpeedApplyToAll?: (speed: number) => void
   onDeleteSegment?: () => void
   onSegmentSpeedChange?: (id: string, speed: number) => void
   /** The typed speed is settled (blur / Enter): closes the caller's history batch. */
@@ -318,6 +320,7 @@ export function SettingsPanel({
   selectedZoomId,
   onZoomDelete,
   selectedSegment = null,
+  onSegmentSpeedApplyToAll,
   onDeleteSegment,
   onSegmentSpeedChange,
   onSegmentSpeedCommit,
@@ -1132,6 +1135,19 @@ export function SettingsPanel({
                 }
               />
             </div>
+
+            {onSegmentSpeedApplyToAll && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => onSegmentSpeedApplyToAll(selectedSegment.speed)}
+                className="w-full gap-2 bg-white/5 text-slate-300 border border-white/10 hover:bg-white/10 hover:border-white/20 hover:text-white transition-all h-7 text-[10px]"
+              >
+                <CopyCheck className="w-3 h-3" />
+                {t('timeline.segmentSpeedApplyToAll')}
+              </Button>
+            )}
 
             {/* Delete / Restore segment */}
             {!selectedSegment.deleted ? (

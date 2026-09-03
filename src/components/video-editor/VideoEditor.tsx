@@ -173,6 +173,7 @@ import {
   segmentsToTrimRegions,
   findSegmentAtSourceTime,
 } from '@/lib/trim/timeMapping'
+import { applySpeedToAllSegments, resetAllSegmentEdits } from '@/lib/trim/segmentEdits'
 import { VideoMouseAnalyzer } from '@/lib/analysis/videoMouseAnalyzer'
 
 function resolvePreviewFrameRate(sourceFrameRate?: number): number {
@@ -1683,6 +1684,22 @@ export default function VideoEditor() {
   const handleSegmentSpeedChange = useCallback((id: string, speed: number) => {
     const clampedSpeed = Math.max(0.25, Math.min(40, speed))
     setSegments((prev) => prev.map((s) => (s.id === id ? { ...s, speed: clampedSpeed } : s)))
+  }, [])
+
+  // "Apply to all segments": one setSegments update, so one undo entry, and
+  // the reducer hands the array back untouched when every segment already runs
+  // at that speed.
+  const handleSegmentSpeedApplyToAll = useCallback((speed: number) => {
+    setSegments((prev) => applySpeedToAllSegments(prev, speed))
+  }, [])
+
+  // "Reset all trims and cuts" (confirmed in the timeline dialog): back to one
+  // segment spanning the whole recording at normal speed, as one undo entry.
+  // The selection is dropped because the segment it pointed at is gone.
+  const handleResetAllSegmentEdits = useCallback(() => {
+    const id = `seg-${nextSegIdRef.current++}`
+    setSegments((prev) => resetAllSegmentEdits(prev, durationRef.current * 1000, id))
+    setSelectedSegmentId(null)
   }, [])
 
   // The speed field applies every keystroke so the preview follows along, but
@@ -4066,6 +4083,7 @@ export default function VideoEditor() {
                   onSelectZoom={handleSelectZoom}
                   segments={segments}
                   onSplitAtTime={handleSplitAtTime}
+                  onResetAllSegmentEdits={handleResetAllSegmentEdits}
                   onDeleteSegment={handleDeleteSegment}
                   selectedSegmentId={selectedSegmentId}
                   onSelectSegment={handleSelectSegment}
@@ -4140,6 +4158,7 @@ export default function VideoEditor() {
               onDeleteSegment={handleDeleteSegment}
               onSegmentSpeedChange={handleSegmentSpeedChangeFromPanel}
               onSegmentSpeedCommit={endHistoryBatch}
+              onSegmentSpeedApplyToAll={handleSegmentSpeedApplyToAll}
               shadowIntensity={shadowIntensity}
               onShadowChange={setShadowIntensity}
               showBlur={showBlur}
