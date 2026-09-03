@@ -205,6 +205,16 @@ const electronAPI: ElectronAPI = {
   resumeCursorTracking: () => {
     return ipcRenderer.invoke('cursor-tracker-resume')
   },
+  // D2: flag the current moment; main answers whether it landed.
+  addRecordingMarker: () => {
+    return ipcRenderer.invoke('cursor-tracker-marker')
+  },
+  onRecordingMarkerAdded: (callback: (result: RecordingMarkerOutcome) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, result: RecordingMarkerOutcome) =>
+      callback(result)
+    ipcRenderer.on('recording-marker-added', listener)
+    return () => ipcRenderer.removeListener('recording-marker-added', listener)
+  },
   // A2: main pushes this when the native helper process ends on its own while a
   // recording is running; the HUD leaves the recording state instead of hanging.
   onNativeRecorderExited: (callback: (info: NativeRecorderExitPayload) => void) => {
@@ -394,7 +404,7 @@ const electronAPI: ElectronAPI = {
 
   // W3-c: global shortcuts, application menu, lifecycle flush, diagnostics
   updateGlobalShortcut: (
-    action: 'openApp' | 'stopRecording',
+    action: GlobalShortcutActionName,
     binding: { key: string; ctrl?: boolean; shift?: boolean; alt?: boolean },
   ) => {
     return ipcRenderer.invoke('update-global-shortcut', action, binding)

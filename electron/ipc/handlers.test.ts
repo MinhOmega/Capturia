@@ -80,6 +80,8 @@ const CHANNELS_ADDED_AFTER_DECOMPOSITION = [
   'resume-native-recording',
   'cursor-tracker-pause',
   'cursor-tracker-resume',
+  // P2-D2: recording flags (markers in the cursor sidecar)
+  'cursor-tracker-marker',
 ]
 
 const EXPECTED_CHANNELS = [...CHANNELS_BEFORE_DECOMPOSITION, ...CHANNELS_ADDED_AFTER_DECOMPOSITION]

@@ -21,6 +21,7 @@ import { FiCamera, FiMinus, FiMousePointer, FiX } from 'react-icons/fi'
 import {
   Columns3,
   EyeOff,
+  Flag,
   Keyboard,
   Mic,
   MicOff,
@@ -90,6 +91,11 @@ const MICROPHONE_ENABLED_STORAGE_KEY = 'capturia.microphoneEnabled'
 const MICROPHONE_DEVICE_STORAGE_KEY = 'capturia.microphoneDeviceId'
 const SYSTEM_AUDIO_ENABLED_STORAGE_KEY = 'capturia.systemAudioEnabled'
 const DEFAULT_STOP_RECORDING_SHORTCUT = 'CommandOrControl+Shift+2'
+/**
+ * D2: shown on the flag button until main answers with the accelerator actually
+ * registered. Mirrors DEFAULT_SHORTCUTS.markMoment; main owns the real binding.
+ */
+const DEFAULT_MARK_MOMENT_SHORTCUT = 'CommandOrControl+Alt+F'
 const AUTO_HIDE_HUD_ON_RECORD_STORAGE_KEY = 'capturia.autoHideHudOnRecord'
 const CAPTURE_MODE_STORAGE_KEY = 'capturia.captureMode'
 const CAPTURE_FRAME_RATE_STORAGE_KEY = 'capturia.captureFrameRate'
@@ -329,6 +335,9 @@ export function LaunchWindow() {
       return DEFAULT_STOP_RECORDING_SHORTCUT
     }
   })
+  // D2: the accelerator main actually registered for "flag this moment", shown
+  // on the flag button. The default stands in until main answers.
+  const [markMomentShortcut, setMarkMomentShortcut] = useState(DEFAULT_MARK_MOMENT_SHORTCUT)
   const [captureStopShortcut, setCaptureStopShortcut] = useState(false)
   const [stopShortcutPopoverOpen, setStopShortcutPopoverOpen] = useState(false)
   const [capturePopoverOpen, setCapturePopoverOpen] = useState(false)
@@ -742,6 +751,61 @@ export function LaunchWindow() {
     const s = (seconds % 60).toString().padStart(2, '0')
     return `${m}:${s}`
   }
+  /**
+   * D2: turn the outcome of a flagged moment into user-visible feedback. Shared
+   * by the HUD button and by the `markMoment` global shortcut, which main pushes
+   * back over `recording-marker-added` so both surfaces confirm identically.
+   */
+  const announceMarkerResult = useCallback(
+    (result: RecordingMarkerOutcome | undefined) => {
+      if (!result) return
+      if (result.added) {
+        toast.success(
+          t('launch.markMomentAdded', {
+            time: formatTime(Math.floor(result.timeMs / 1000)),
+            count: result.count,
+          }),
+        )
+        return
+      }
+      if (result.reason === 'paused') {
+        toast.error(t('launch.markMomentPaused'))
+        return
+      }
+      if (result.reason === 'limit') {
+        toast.error(t('launch.markMomentLimit'))
+      }
+      // 'not-recording': the shortcut is global, so it fires when nothing is
+      // being recorded too. Silence is the right answer there.
+    },
+    [t],
+  )
+
+  const flagRecordingMoment = useCallback(() => {
+    void (async () => {
+      try {
+        announceMarkerResult(await window.electronAPI?.addRecordingMarker?.())
+      } catch (error) {
+        console.warn('[hud] could not flag the moment', error)
+      }
+    })()
+  }, [announceMarkerResult])
+
+  useEffect(() => {
+    return window.electronAPI?.onRecordingMarkerAdded?.(announceMarkerResult)
+  }, [announceMarkerResult])
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const accelerators = await window.electronAPI?.getGlobalShortcuts?.()
+        if (accelerators?.markMoment) setMarkMomentShortcut(accelerators.markMoment)
+      } catch {
+        // Keep the default label; the binding is main's to own either way.
+      }
+    })()
+  }, [])
+
   const [selectedSource, setSelectedSource] = useState(t('launch.sourceFallback'))
   const [hasSelectedSource, setHasSelectedSource] = useState(false)
   // Set when the record button opened the picker: the next `selected-source-changed`
@@ -1339,6 +1403,7 @@ export function LaunchWindow() {
   }, [recording, autoHideHudOnRecord])
 
   const displayedStopShortcut = formatAccelerator(stopRecordingShortcut, isMacPlatform)
+  const displayedMarkMomentShortcut = formatAccelerator(markMomentShortcut, isMacPlatform)
 
   const resetStopRecordingShortcut = () => {
     void (async () => {
@@ -1408,6 +1473,15 @@ export function LaunchWindow() {
           {/* Right: Pause/Resume + Discard. Pause is hidden while the native macOS
               recorder owns the session: it cannot pause yet, so the button would lie. */}
           <div className={`flex items-center gap-1 shrink-0 ${styles.electronNoDrag}`}>
+            <button
+              onClick={flagRecordingMoment}
+              disabled={recordingState === 'paused'}
+              className="p-1 rounded hover:bg-white/10 transition-colors disabled:opacity-40"
+              title={t('launch.markMomentHint', { shortcut: displayedMarkMomentShortcut })}
+              data-testid="launch-mark-moment-button"
+            >
+              <Flag size={13} className="text-white/60 hover:text-cyan-300" />
+            </button>
             {canPause && (
               <button
                 onClick={recordingState === 'paused' ? resumeRecording : pauseRecording}

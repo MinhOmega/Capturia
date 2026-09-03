@@ -27,6 +27,7 @@ import TimelineWrapper from './TimelineWrapper'
 import Row from './Row'
 import Item from './Item'
 import KeyframeMarkers from './KeyframeMarkers'
+import RecordingMarkers from './RecordingMarkers'
 import type { Range, Span } from 'dnd-timeline'
 import type {
   ZoomDepth,
@@ -132,6 +133,11 @@ interface TimelineEditorProps {
   videoUrl?: string | null
   /** Draw the audio waveform behind the AUDIO row. */
   showWaveform?: boolean
+  /**
+   * D2: moments flagged during the recording, already in effective (timeline)
+   * ms. Read-only: they are drawn on the ruler and seek on click.
+   */
+  recordingMarkersMs?: number[]
 }
 
 interface RowHints {
@@ -1136,6 +1142,7 @@ export default function TimelineEditor({
   videoFilePath,
   videoUrl,
   showWaveform = false,
+  recordingMarkersMs = [],
 }: TimelineEditorProps) {
   const { t } = useI18n()
   const totalMs = useMemo(() => Math.max(0, Math.round(videoDuration * 1000)), [videoDuration])
@@ -2016,6 +2023,11 @@ export default function TimelineEditor({
           keyframeTimesMs={keyframeTimesMs}
           extraSnapTimesMs={segmentBoundaryTimesMs}
         >
+          <RecordingMarkers
+            markersMs={recordingMarkersMs}
+            videoDurationMs={totalMs}
+            onSeek={onSeek}
+          />
           <KeyframeMarkers
             keyframes={keyframes}
             selectedKeyframeId={selectedKeyframeId}

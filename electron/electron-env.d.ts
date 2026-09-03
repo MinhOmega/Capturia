@@ -50,22 +50,31 @@ type CursorTrackMetadata = {
     visible?: boolean
     cursorKind?: CursorTrackCursorKind
   }>
-  events?: Array<{
-    type: 'click' | 'selection'
-    startMs: number
-    endMs: number
-    point: { x: number; y: number }
-    startPoint?: { x: number; y: number }
-    endPoint?: { x: number; y: number }
-    bounds?: {
-      minX: number
-      minY: number
-      maxX: number
-      maxY: number
-      width: number
-      height: number
-    }
-  }>
+  /**
+   * Pointer gestures the tracker folded out of the samples, plus (D2) the
+   * moments the user flagged while recording. A marker is an instant with no
+   * place on screen, which is why it is a separate member of the union; a
+   * sidecar written before D2 simply has none.
+   */
+  events?: Array<
+    | {
+        type: 'click' | 'selection'
+        startMs: number
+        endMs: number
+        point: { x: number; y: number }
+        startPoint?: { x: number; y: number }
+        endPoint?: { x: number; y: number }
+        bounds?: {
+          minX: number
+          minY: number
+          maxX: number
+          maxY: number
+          width: number
+          height: number
+        }
+      }
+    | { type: 'marker'; timeMs: number }
+  >
   space?: {
     mode?: 'source-display' | 'virtual-desktop'
     displayId?: string
@@ -96,6 +105,15 @@ type NativeRecorderExitPayload = {
   /** The partial file has a top-level MP4 `moov` box, so the editor may open it. */
   outputPlayable: boolean
 }
+
+/**
+ * D2: outcome of flagging a moment while recording, from the HUD button
+ * (`cursor-tracker-marker`) or from the `markMoment` global shortcut, which
+ * main pushes back on `recording-marker-added`.
+ */
+type RecordingMarkerOutcome =
+  | { added: true; timeMs: number; count: number }
+  | { added: false; reason: 'not-recording' | 'paused' | 'limit' }
 
 type SubtitleCueMetadata = {
   id: string
@@ -210,7 +228,7 @@ type CapturePermissionActionResult = {
   message?: string
 }
 
-type GlobalShortcutActionName = 'openApp' | 'stopRecording'
+type GlobalShortcutActionName = 'openApp' | 'stopRecording' | 'markMoment'
 
 type GlobalShortcutUpdateResult = {
   ok: boolean

@@ -205,16 +205,22 @@ function buildFixtureCursorTrack(): CursorTrackMetadata {
   return {
     source: 'synthetic',
     samples,
-    events: clicked
-      ? [
-          {
-            type: 'click',
-            startMs: clicked.timeMs,
-            endMs: clicked.timeMs + 120,
-            point: { x: clicked.x, y: clicked.y },
-          },
-        ]
-      : [],
+    events: [
+      ...(clicked
+        ? [
+            {
+              type: 'click' as const,
+              startMs: clicked.timeMs,
+              endMs: clicked.timeMs + 120,
+              point: { x: clicked.x, y: clicked.y },
+            },
+          ]
+        : []),
+      // D2: two flagged moments, so the timeline ruler has something to draw
+      // in the harness (a browser tab has no recorder to flag one with).
+      { type: 'marker' as const, timeMs: Math.round(FIXTURE_DURATION_MS * 0.25) },
+      { type: 'marker' as const, timeMs: Math.round(FIXTURE_DURATION_MS * 0.7) },
+    ],
     space: {
       mode: 'source-display',
       displayId: 'harness-display',
@@ -688,6 +694,10 @@ export function createBrowserBridge(): BrowserHarness {
       warnUnimplemented('startCursorTracking', 'the fixture ships a synthetic cursor track instead')
       return { success: false }
     },
+    // D2: the harness has no tracker, so a flagged moment is reported as such.
+    addRecordingMarker: async () => ({ added: false as const, reason: 'not-recording' as const }),
+    onRecordingMarkerAdded: (callback: (result: RecordingMarkerOutcome) => void) =>
+      subscribe('recording-marker-added', callback as (...args: unknown[]) => void),
     stopCursorTracking: async () => {
       warnUnimplemented('stopCursorTracking', 'the fixture ships a synthetic cursor track instead')
       return { success: false }

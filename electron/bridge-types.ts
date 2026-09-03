@@ -178,6 +178,16 @@ export interface ElectronAPI {
   stopCursorTracking: () => Promise<{ success: boolean; track?: CursorTrackMetadata }>
   pauseCursorTracking: () => Promise<{ success: boolean; changed?: boolean; message?: string }>
   resumeCursorTracking: () => Promise<{ success: boolean; changed?: boolean; message?: string }>
+  /**
+   * D2: flag the current moment. The same call the `markMoment` global shortcut
+   * makes, so the HUD button and the shortcut write one kind of event.
+   */
+  addRecordingMarker: () => Promise<RecordingMarkerOutcome>
+  /**
+   * D2: main pushes the outcome of every flagged moment (from either surface)
+   * so the HUD can confirm it. Returns an unsubscribe function.
+   */
+  onRecordingMarkerAdded: (callback: (result: RecordingMarkerOutcome) => void) => () => void
   /** A2: the native helper died mid-recording; returns an unsubscribe function. */
   onNativeRecorderExited: (callback: (info: NativeRecorderExitPayload) => void) => () => void
   onStopRecordingFromTray: (callback: () => void) => () => void

@@ -118,6 +118,7 @@ const displayOneSource: ProcessedDesktopSource = {
   appIcon: null,
 }
 
+let recordingMarkerListeners: Array<(result: RecordingMarkerOutcome) => void> = []
 let selectedSourceChangedListeners: SelectedSourceChangedListener[] = []
 let sourceSelectorClosedListeners: Array<() => void> = []
 // Mirrors main's `selectedSource`: the 500 ms poll must agree with the event.
@@ -159,6 +160,16 @@ function stubElectronAPI() {
       protected: ['HUD'],
       unprotected: [],
     })),
+    addRecordingMarker: vi.fn(async () => ({ added: true, timeMs: 65_000, count: 3 })),
+    onRecordingMarkerAdded: vi.fn((callback: (result: RecordingMarkerOutcome) => void) => {
+      recordingMarkerListeners.push(callback)
+      return () => {
+        recordingMarkerListeners = recordingMarkerListeners.filter(
+          (listener) => listener !== callback,
+        )
+      }
+    }),
+    getGlobalShortcuts: vi.fn(async () => ({ markMoment: 'CommandOrControl+Alt+F' })),
     onSelectedSourceChanged: vi.fn((callback: SelectedSourceChangedListener) => {
       selectedSourceChangedListeners.push(callback)
       return () => {
@@ -733,6 +744,64 @@ describe('LaunchWindow hide-HUD-from-recording toggle (D1)', () => {
     expect(toggle).toHaveAttribute('aria-pressed', 'false')
     await waitFor(() => {
       expect(window.electronAPI.setHideHudFromRecording).toHaveBeenCalledWith(false)
+    })
+  })
+})
+
+describe('LaunchWindow flag-this-moment button (D2)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', StubResizeObserver)
+    resizeObservers.length = 0
+    window.localStorage.clear()
+    selectedSourceChangedListeners = []
+    sourceSelectorClosedListeners = []
+    recordingMarkerListeners = []
+    mainSelectedSource = null
+    stubElectronAPI()
+    recorderState.value = { ...recorderState.value, recording: true, recordingState: 'recording' }
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+    recorderState.value = { ...recorderState.value, recording: false, recordingState: 'idle' }
+  })
+
+  it('shows the flag button while recording, labelled with the registered shortcut', async () => {
+    render(<LaunchWindow />)
+    const button = await screen.findByTestId('launch-mark-moment-button')
+    await waitFor(() => {
+      // macOS glyphs once the platform probe has answered (the stub reports darwin).
+      expect(button.getAttribute('title')).toContain('⌘⌥F')
+    })
+    expect(button).toBeEnabled()
+  })
+
+  it('flags the moment through the same call the global shortcut makes', async () => {
+    render(<LaunchWindow />)
+    fireEvent.click(await screen.findByTestId('launch-mark-moment-button'))
+    await waitFor(() => {
+      expect(window.electronAPI.addRecordingMarker).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('is disabled while the recording is paused', async () => {
+    recorderState.value = { ...recorderState.value, recordingState: 'paused' }
+    render(<LaunchWindow />)
+    expect(await screen.findByTestId('launch-mark-moment-button')).toBeDisabled()
+  })
+
+  it('subscribes so a moment flagged by the global shortcut is confirmed too', async () => {
+    render(<LaunchWindow />)
+    await screen.findByTestId('launch-mark-moment-button')
+    await waitFor(() => {
+      expect(recordingMarkerListeners.length).toBeGreaterThan(0)
+    })
+    // The shortcut path pushes its outcome from main; the HUD must not crash on it.
+    act(() => {
+      for (const listener of recordingMarkerListeners) {
+        listener({ added: true, timeMs: 1_000, count: 1 })
+      }
     })
   })
 })

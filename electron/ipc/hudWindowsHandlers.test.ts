@@ -325,7 +325,7 @@ describe('HUD window IPC handlers', () => {
       const sourceSelector = fakeWindow()
       // Faithful stand-in for `applyHudContentProtection`: it clears protection
       // (and answers false) whenever the preference is off.
-      const apply = vi.fn(() => getHideHudFromRecording())
+      const apply = vi.fn((_win: BrowserWindow, _label: string) => getHideHudFromRecording())
       register(ipc, hud.win, countdown, {
         getSourceSelectorWindow: () => sourceSelector,
         applyHudContentProtection: apply,
