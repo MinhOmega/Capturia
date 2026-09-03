@@ -1,5 +1,5 @@
 // The application menu's Edit submenu, split out of `main.ts` so it can be
-// tested (ported from OpenScreen, upstream #433).
+// tested.
 //
 // Undo/Redo are deliberately NOT `role: "undo"` / `role: "redo"`.
 //

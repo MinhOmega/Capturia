@@ -406,10 +406,10 @@ function isInsideRange(timeMs: number, ranges: readonly CursorTrackPauseRange[])
 }
 
 /**
- * Port of upstream `compactPendingCursorTelemetryPauseRanges` (OpenScreen
- * `electron/ipc/handlers.ts`): the tracker keeps sampling on the wall clock
- * while a recording is paused, but the video timeline (MediaRecorder pause,
- * or the native helper's retimed samples) has no gap. Samples inside a pause
+ * Collapses recording pauses out of the cursor track: the tracker keeps
+ * sampling on the wall clock while a recording is paused, but the video
+ * timeline (MediaRecorder pause, or the native helper's retimed samples) has
+ * no gap. Samples inside a pause
  * are dropped and later samples shift back by the paused duration. Capturia
  * also carries click / selection events: an event entirely inside a pause is
  * dropped, otherwise both of its ends are collapsed the same way.

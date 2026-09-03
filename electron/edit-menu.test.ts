@@ -1,5 +1,5 @@
-// Regression cover for the macOS half of upstream #433: the Edit menu must own
-// Cmd+Z / Shift+Cmd+Z itself (no `role`) and forward them to the editor
+// Regression cover for the macOS Edit menu: it must own Cmd+Z / Shift+Cmd+Z
+// itself (no `role`) and forward them to the editor
 // renderer, falling back to the web-editing undo for non-editor windows.
 
 import { describe, expect, it, vi } from 'vitest'

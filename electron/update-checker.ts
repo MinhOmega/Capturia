@@ -1,6 +1,5 @@
 /**
- * Release check against GitHub (ported from OpenScreen v1.9 `update-checker.ts`,
- * 140859cf + dee0452f hardening). Pure: the caller injects `fetch` and decides
+ * Release check against GitHub. Pure: the caller injects `fetch` and decides
  * what to do with the verdict. No download, no `electron-updater` — the only
  * action offered is opening the release page, and only when that URL is the
  * official one for the reported tag.
