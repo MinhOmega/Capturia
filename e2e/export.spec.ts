@@ -99,6 +99,10 @@ test('exports a GIF from the fixture recording', async () => {
     // resources directory, which an unpackaged run does not have, and that is
     // not what this spec covers.
     const applied = await editor.evaluate(async (videoPath) => {
+      // Every spec shares one real userData profile, so anything an earlier run
+      // wrote is still here. A leftover decode-path override would quietly
+      // decide which decoder this export exercises.
+      window.localStorage.removeItem('capturia.exportDecodePath')
       const bridge = (
         window as unknown as {
           electronAPI: {
