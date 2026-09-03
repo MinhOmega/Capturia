@@ -58,6 +58,38 @@ This conflicts with product expectation: export stage must be silent.
    transients; WSOLA quality below ~0.5x and above ~20x is speech-oriented (music
    smears); output sample rate/channels are fixed by the first decoded slice.
 
+8. **Every source audio track is mixed (batch R5-VX).** A recording that keeps the
+   microphone and the system audio as separate tracks used to export with only the
+   first one. The exporter now opens one `AudioBufferSink` per decodable track at the
+   primary track's sample rate and sums them in `src/lib/audio/multiTrackMix.ts`
+   before the existing chain runs: alignment is sample-accurate on the source time
+   grid (a track that starts late is padded, a track that ends early stops holding the
+   output back), mono is upmixed and anything above stereo is folded to the mix layout
+   by `src/lib/audio/downmix.ts`, per-track gain is applied, and a soft limiter caps
+   the sum. Output is released only once every live track has covered it, so memory
+   stays bounded on long recordings. The gain / loudness / limiter / stretch chain
+   downstream is untouched, and a single-track source still takes the one-sink
+   pass-through path sample for sample (asserted with exact equality in
+   `videoExporterMultiTrack.test.ts`). Still no media element and no real-time
+   capture: mixing is offline arithmetic over decoded buffers. Tracks that cannot be
+   decoded, or that use a different sample rate, are dropped with the
+   `editor.exportWarningAudioTracksSkipped` warning rather than resampled.
+
+9. **Export failures are classified and localised (batch R5-VX).** Encoder stalls,
+   flush timeouts, unsupported encoder configurations, encoder `error` callbacks and
+   decoder failures used to reach the user as raw English strings. `ExportResult` now
+   carries `errorKind` (`src/lib/exporter/exportErrors.ts`): `'encoder-stall'`,
+   `'encoder-flush-timeout'`, `'encoder-unsupported'`, `'encoder-failed'`,
+   `'decoder-failed'`, the pre-existing `'background-load'`, and `'unknown'`. Throw
+   sites tag themselves through `ExportEncoderError.kind`, `ExportDecoderError` and
+   `DecoderFallbackError`; `classifyExportError` prefers those typed errors and falls
+   back to matching the message against the one table of exporter-worded strings that
+   the throw sites themselves use, so the two cannot drift. `ExportDialog` maps the
+   kind to `dialogs.exportError.*` and keeps the raw message underneath for
+   diagnostics. `'background-load'` and `'unknown'` deliberately map to no key: the
+   editor already builds its own localised line naming the background file, and an
+   unrecognised failure is more useful shown verbatim.
+
 ## Remaining Debt
 
 1. `HTMLVideoElement` is still part of the export render path **while `'seek'` is the
@@ -77,6 +109,15 @@ This conflicts with product expectation: export stage must be silent.
 5. The WebCodecs path ships `public/wasm/web-demuxer.wasm` (3.0 MiB) and loads it relative
    to `window.location`; a packaging regression that drops the asset degrades to the seek
    path with the fallback warning rather than failing the export.
+6. The editor does not pass `ExportResult.errorKind` down to the export dialog: it
+   folds the failure into the multi-line diagnostic block first, so the dialog
+   re-derives the kind by parsing that block (each line whole, then again after its
+   first `': '` label separator). That works and is tested, but it is string matching
+   where a field would do. Exit: thread `errorKind` through the editor's export error
+   state and let the dialog's `errorKind` prop, which already exists, carry it.
+7. Only the video encoder and decoder are classified. Mux, renderer, audio-decode and
+   save failures still fall through to `'unknown'` and are shown raw.
+8. `GifExporter` sets `'background-load'` only; its own failures are not classified.
 
 ## Follow-up Plan
 
