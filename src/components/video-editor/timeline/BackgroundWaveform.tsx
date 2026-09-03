@@ -14,6 +14,8 @@ export interface BackgroundWaveformProps {
   topInset?: number
   /** Inset from canvas bottom so the waveform aligns with item content bottom. Defaults to 0. */
   bottomInset?: number
+  /** Shown centred in place of the waveform when there are no peaks to draw. */
+  hint?: string | null
 }
 
 /**
@@ -31,6 +33,7 @@ export default function BackgroundWaveform({
   segments,
   topInset = 0,
   bottomInset = 0,
+  hint = null,
 }: BackgroundWaveformProps) {
   const { range } = useTimelineContext()
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -115,5 +118,16 @@ export default function BackgroundWaveform({
     ctx.stroke()
   }, [peaks, normFactor, range, canvasSize, sourceDurationMs, segments, topInset, bottomInset])
 
-  return <canvas ref={canvasRef} className="absolute inset-0 pointer-events-none w-full h-full" />
+  const showHint = Boolean(hint) && (!peaks || peaks.length === 0)
+
+  return (
+    <>
+      <canvas ref={canvasRef} className="absolute inset-0 pointer-events-none w-full h-full" />
+      {showHint && (
+        <span className="absolute inset-0 flex items-center justify-center pointer-events-none text-[10px] text-slate-500">
+          {hint}
+        </span>
+      )}
+    </>
+  )
 }
