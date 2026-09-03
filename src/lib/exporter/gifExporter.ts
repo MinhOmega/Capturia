@@ -169,10 +169,12 @@ async function waitForPresentedFrame(videoElement: HTMLVideoElement): Promise<vo
     const finish = () => {
       if (settled) return
       settled = true
-      window.clearTimeout(timer)
+      clearTimeout(timer)
       resolve()
     }
-    const timer = window.setTimeout(finish, PRESENTED_FRAME_TIMEOUT_MS)
+    // Bare timer globals, not `window.*`: this runs under the node test
+    // environment too, where `window` is undefined.
+    const timer = setTimeout(finish, PRESENTED_FRAME_TIMEOUT_MS)
     videoElement.requestVideoFrameCallback(() => finish())
   })
 }
