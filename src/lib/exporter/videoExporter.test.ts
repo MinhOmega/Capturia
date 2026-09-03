@@ -16,6 +16,7 @@ import {
   withTimeout,
   type VideoExporterConfig,
 } from './videoExporter'
+import { ExportDecoderError } from './exportErrors'
 import type { OnFrameCallback } from './streamingDecoder'
 import type { ExportProgress, ExportResult } from './types'
 import type { SourceCopyProbe } from './sourceCopyFastPath'
@@ -439,9 +440,12 @@ describe('exportFramesByDecoding', () => {
       },
     }
 
-    await expect(exporter.exportFramesByDecoding(decoder, plan, 10)).rejects.toThrow(
-      'VideoDecoder error: mid-stream',
-    )
+    // Too late to fall back, so the decoder failure ends the export as a
+    // classified ExportDecoderError rather than the bare decoder error.
+    await expect(exporter.exportFramesByDecoding(decoder, plan, 10)).rejects.toMatchObject({
+      name: 'ExportDecoderError',
+      message: 'Video decoding failed: VideoDecoder error: mid-stream',
+    })
   })
 
   it('propagates render/encode errors untouched and cancels the decoder', async () => {
@@ -518,7 +522,11 @@ describe('export() decoder fallback', () => {
 
     const result = await exporter.export()
     expect(calls).toBe(2)
-    expect(result).toEqual({ success: false, error: 'Video element not available' })
+    expect(result).toEqual({
+      success: false,
+      error: 'Video element not available',
+      errorKind: 'unknown',
+    })
   })
 
   it('does not fall back when the export was cancelled', async () => {
@@ -686,7 +694,11 @@ describe('export() encoder retry', () => {
 
     const result = await exporter.export()
     expect(calls).toBe(2)
-    expect(result).toEqual({ success: false, error: 'encoder attempt 2 failed' })
+    expect(result).toEqual({
+      success: false,
+      error: 'encoder attempt 2 failed',
+      errorKind: 'encoder-failed',
+    })
   })
 
   it('does not retry non-encoder failures', async () => {
@@ -699,7 +711,48 @@ describe('export() encoder retry', () => {
 
     const result = await exporter.export()
     expect(calls).toBe(1)
-    expect(result).toEqual({ success: false, error: 'Failed to load video' })
+    // An unrecognised message stays raw; the dialog then shows it verbatim.
+    expect(result).toEqual({
+      success: false,
+      error: 'Failed to load video',
+      errorKind: 'unknown',
+    })
+  })
+
+  it('reports a decoder failure with its kind and does not retry it', async () => {
+    const exporter = createTestExporter()
+    let calls = 0
+    exporter.runExportAttempt = async () => {
+      calls += 1
+      throw new ExportDecoderError(new Error('Failed to load video'))
+    }
+
+    const result = await exporter.export()
+    expect(calls).toBe(1)
+    expect(result).toEqual({
+      success: false,
+      error: 'Video decoding failed: Failed to load video',
+      errorKind: 'decoder-failed',
+    })
+  })
+
+  it('tags the kind of every encoder failure it reports', async () => {
+    for (const kind of [
+      'encoder-stall',
+      'encoder-flush-timeout',
+      'encoder-unsupported',
+      'encoder-failed',
+    ] as const) {
+      const exporter = createTestExporter()
+      exporter.runExportAttempt = async () => {
+        throw new ExportEncoderError('boom', undefined, kind)
+      }
+      await expect(exporter.export()).resolves.toEqual({
+        success: false,
+        error: 'boom',
+        errorKind: kind,
+      })
+    }
   })
 
   it('surfaces a fatal encoder error at the next frame instead of rendering it', async () => {

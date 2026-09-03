@@ -24,6 +24,14 @@ import {
 } from '@/lib/audio/multiTrackMix'
 import { PlanarChunkQueue } from '@/lib/audio/planarChunkQueue'
 import { isBackgroundLoadError } from './backgroundErrors'
+import {
+  classifyExportError,
+  DecoderFallbackError,
+  EXPORT_ERROR_MESSAGE_PREFIXES,
+  EXPORT_ERROR_MESSAGES,
+  ExportDecoderError,
+  ExportEncoderError,
+} from './exportErrors'
 import { FrameRenderer } from './frameRenderer'
 import { VideoMuxer } from './muxer'
 import type {
@@ -251,45 +259,17 @@ export async function waitForEncoderQueueSpace(params: {
     if (now() - stallWaitStartAt > ENCODER_STALL_TIMEOUT_MS) {
       throw new Error(
         params.encoderPreference === 'prefer-hardware'
-          ? 'The hardware video encoder stopped responding. Retrying with a safer encoder.'
-          : 'The video encoder stopped responding during export.',
+          ? EXPORT_ERROR_MESSAGES.encoderStallHardware
+          : EXPORT_ERROR_MESSAGES.encoderStallSoftware,
       )
     }
     await sleep(5)
   }
 }
 
-/**
- * Marks a failure caused by the video encoder itself (unsupported config,
- * `error` callback, queue stall, flush timeout). Only these are retried with
- * the next encoder preference; decoder, renderer, mux and audio failures are
- * reported straight away because a different encoder would not fix them.
- */
-export class ExportEncoderError extends Error {
-  constructor(
-    message: string,
-    readonly cause?: unknown,
-  ) {
-    super(message)
-    this.name = 'ExportEncoderError'
-  }
-}
-
-/**
- * Raised when the WebCodecs decode path fails before delivering a single frame
- * (demux/wasm load failure, unsupported codec, VideoDecoder error). The export
- * restarts on the seek path and reports `editor.exportWarningDecoderFallback`.
- */
-class DecoderFallbackError extends Error {
-  readonly cause: unknown
-
-  constructor(cause: unknown) {
-    const reason = cause instanceof Error ? cause.message : String(cause)
-    super(`WebCodecs decode path unavailable: ${reason}`)
-    this.name = 'DecoderFallbackError'
-    this.cause = cause
-  }
-}
+// Error classes live in ./exportErrors so the UI can classify results without
+// pulling in the exporter; re-exported here for existing importers.
+export { ExportEncoderError }
 
 export function getSeekToleranceSeconds(frameRate: number): number {
   const safeFrameRate = Number.isFinite(frameRate) && frameRate > 0 ? frameRate : 60
@@ -1499,6 +1479,7 @@ export class VideoExporter {
     return {
       success: false,
       error: error instanceof Error ? error.message : String(error),
+      errorKind: classifyExportError(error),
     }
   }
 
@@ -1537,7 +1518,12 @@ export class VideoExporter {
         videoInfo = metadata
       } else {
         this.decoder = new VideoFileDecoder()
-        videoInfo = await this.decoder.loadVideo(this.config.videoUrl)
+        try {
+          videoInfo = await this.decoder.loadVideo(this.config.videoUrl)
+        } catch (error) {
+          if (this.cancelled) throw error
+          throw new ExportDecoderError(error)
+        }
       }
       this.sourceDurationMs = resolveSourceDurationMs(
         videoInfo.duration,
@@ -1768,18 +1754,20 @@ export class VideoExporter {
     if (!this.encoder || this.encoder.state !== 'configured') return
     const stalledMessage =
       this.encoderPreference === 'prefer-hardware'
-        ? 'The hardware video encoder stopped responding while finalizing the export.'
-        : 'The video encoder stopped responding while finalizing the export.'
+        ? EXPORT_ERROR_MESSAGES.encoderFlushTimeoutHardware
+        : EXPORT_ERROR_MESSAGES.encoderFlushTimeoutSoftware
     try {
       await withTimeout(this.encoder.flush(), ENCODER_FLUSH_TIMEOUT_MS, 'encoder flush')
     } catch (error) {
       if (this.fatalEncoderError) throw this.fatalEncoderError
       if (this.cancelled) return
-      const message =
-        error instanceof Error && /timed out/.test(error.message)
-          ? stalledMessage
-          : `Video encoder flush failed: ${error instanceof Error ? error.message : String(error)}`
-      throw new ExportEncoderError(message, error)
+      const timedOut = error instanceof Error && /timed out/.test(error.message)
+      if (timedOut) throw new ExportEncoderError(stalledMessage, error, 'encoder-flush-timeout')
+      throw new ExportEncoderError(
+        `${EXPORT_ERROR_MESSAGE_PREFIXES.encoderFlushFailed}${error instanceof Error ? error.message : String(error)}`,
+        error,
+        'encoder-failed',
+      )
     }
   }
 
@@ -1831,7 +1819,9 @@ export class VideoExporter {
       if (frameIndex === 0 && !this.cancelled) {
         throw new DecoderFallbackError(error)
       }
-      throw error
+      if (this.cancelled) throw error
+      // Frames were already delivered: too late to fall back, the decoder failure ends the export.
+      throw new ExportDecoderError(error)
     }
 
     if (frameIndex === 0 && totalFrames > 0 && !this.cancelled) {
@@ -1998,7 +1988,11 @@ export class VideoExporter {
       })
     } catch (error) {
       exportFrame.close()
-      throw new ExportEncoderError(error instanceof Error ? error.message : String(error), error)
+      throw new ExportEncoderError(
+        error instanceof Error ? error.message : String(error),
+        error,
+        'encoder-stall',
+      )
     }
 
     if (this.fatalEncoderError) {
@@ -2246,8 +2240,9 @@ export class VideoExporter {
         // producing frames for a dead encoder.
         if (!this.fatalEncoderError) {
           this.fatalEncoderError = new ExportEncoderError(
-            `Video encoder error: ${error instanceof Error ? error.message : String(error)}`,
+            `${EXPORT_ERROR_MESSAGE_PREFIXES.encoderFailed}${error instanceof Error ? error.message : String(error)}`,
             error,
+            'encoder-failed',
           )
         }
         this.streamingDecoder?.cancel()
@@ -2274,8 +2269,10 @@ export class VideoExporter {
     if (!support.supported) {
       throw new ExportEncoderError(
         hardwareAcceleration === 'prefer-hardware'
-          ? 'Hardware video encoding is not supported on this system.'
-          : 'Software video encoding is not supported on this system.',
+          ? EXPORT_ERROR_MESSAGES.encoderUnsupportedHardware
+          : EXPORT_ERROR_MESSAGES.encoderUnsupportedSoftware,
+        undefined,
+        'encoder-unsupported',
       )
     }
 
