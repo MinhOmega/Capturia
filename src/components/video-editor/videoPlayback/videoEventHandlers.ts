@@ -1,10 +1,22 @@
 import type React from 'react'
+import { FRAME_DURATION_SEC } from '@/lib/frameStep'
 import type { TrimRegion, VideoSegment } from '../types'
+import {
+  clampNativePlaybackRate,
+  MAX_NATIVE_PLAYBACK_RATE,
+  planFrameStep,
+  resolvePreviewSpeedMode,
+} from './frameStepPreview'
 import { createRafCoalescer } from './rafCoalescer'
 
 // Keep "scrub mode" on for a brief tail after `seeked`: rapid drag-scrubbing fires
 // `seeking`/`seeked` dozens of times a second and toggling effects each time would flicker.
 const SCRUB_END_DEBOUNCE_MS = 150
+// A frame-stepping seek that never reports `seeked` (some sources stall past their
+// buffered end) releases the one-seek-in-flight throttle after this long.
+const STEP_SEEK_TIMEOUT_MS = 500
+// Two positions closer than this are the same frame as far as seeking goes.
+const SEEK_EPSILON_SEC = 0.001
 
 interface VideoEventHandlersParams {
   video: HTMLVideoElement
@@ -22,6 +34,18 @@ interface VideoEventHandlersParams {
   isScrubbingRef?: React.MutableRefObject<boolean>
   scrubEndTimerRef?: React.MutableRefObject<number | null>
   onScrubChange?: (scrubbing: boolean) => void
+  /**
+   * Highest `playbackRate` the element accepts (see `probeNativePlaybackRateCap`).
+   * Speeds above it preview frame-stepped and muted. Default: Chromium's 16.
+   */
+  nativePlaybackRateCap?: number
+  /** Mirrors the frame-stepping state for imperative readers (the playback ref). */
+  frameSteppingRef?: React.MutableRefObject<boolean>
+  onFrameSteppingChange?: (active: boolean) => void
+  /** Source frame length; a stepping seek is only issued once the clock moved at least this far. */
+  frameDurationSec?: number
+  /** Wall clock (ms), injectable for tests; must match the animation-frame timestamps. */
+  now?: () => number
 }
 
 export function createVideoEventHandlers(params: VideoEventHandlersParams) {
@@ -40,10 +64,31 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
     isScrubbingRef,
     scrubEndTimerRef,
     onScrubChange,
+    nativePlaybackRateCap = MAX_NATIVE_PLAYBACK_RATE,
+    frameSteppingRef,
+    onFrameSteppingChange,
+    frameDurationSec = FRAME_DURATION_SEC,
+    now = () => performance.now(),
   } = params
 
   const MAX_SPURIOUS_PAUSE_RETRIES = 3
   let spuriousPauseRetries = 0
+
+  // Frame-stepped preview (segment speed x preview rate above the element's cap):
+  // a virtual clock owns the playhead and the muted element is seeked toward it
+  // every animation frame. See frameStepPreview.ts for the planner.
+  let stepping = false
+  let virtualSec = 0
+  let lastTickMs = 0
+  let mutedBeforeStepping = false
+  let seekInFlight = false
+  let seekIssuedAtMs = 0
+  // Position of the last seek this module issued (stepping or hand-back), so its
+  // own `seeking` event is told apart from a user scrub.
+  let ownSeekTargetSec: number | null = null
+  // The pause that ends a frame-stepped run at the end of the media is ours, not a
+  // spurious native pause to retry.
+  let expectEndPause = false
 
   const clearScrubEndTimer = () => {
     if (scrubEndTimerRef && scrubEndTimerRef.current !== null) {
@@ -92,8 +137,120 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
     return null
   }
 
-  function updateTime() {
+  const setStepping = (active: boolean) => {
+    if (stepping === active) return
+    stepping = active
+    if (frameSteppingRef) frameSteppingRef.current = active
+    onFrameSteppingChange?.(active)
+  }
+
+  const issueOwnSeek = (toSec: number) => {
+    ownSeekTargetSec = toSec
+    video.currentTime = toSec
+  }
+
+  const isOwnSeek = () =>
+    ownSeekTargetSec !== null && Math.abs(video.currentTime - ownSeekTargetSec) < SEEK_EPSILON_SEC
+
+  const beginFrameStepping = (fromSec: number, nowMs: number) => {
+    virtualSec = fromSec
+    lastTickMs = nowMs
+    seekInFlight = false
+    ownSeekTargetSec = null
+    mutedBeforeStepping = video.muted
+    video.muted = true
+    // The element stays in the playing state so play / pause remains observable
+    // through `video.paused`; at 1x it barely moves between two stepping seeks,
+    // and every frame it shows is one the virtual clock asked for.
+    try {
+      video.playbackRate = 1
+    } catch {
+      // Some elements refuse rate changes mid-seek; the seeks still drive time.
+    }
+    setStepping(true)
+  }
+
+  const endFrameStepping = () => {
+    if (!stepping) return
+    setStepping(false)
+    seekInFlight = false
+    video.muted = mutedBeforeStepping
+  }
+
+  const applyNativeRate = (speed: number) => {
+    const targetRate = clampNativePlaybackRate(speed, nativePlaybackRateCap)
+    if (Math.abs(video.playbackRate - targetRate) > 0.001) {
+      video.playbackRate = targetRate
+    }
+  }
+
+  const tickFrameStepping = (nowMs: number) => {
+    const dtSec = (nowMs - lastTickMs) / 1000
+    lastTickMs = nowMs
+    const plan = planFrameStep({
+      fromSec: virtualSec,
+      dtSec,
+      segments: segmentsRef.current,
+      previewRate: previewPlaybackRateRef.current,
+      durationSec: video.duration,
+      nativeCap: nativePlaybackRateCap,
+      frameDurationSec,
+    })
+
+    if (plan.kind === 'end') {
+      virtualSec = plan.toSec
+      endFrameStepping()
+      issueOwnSeek(plan.toSec)
+      emitTime(plan.toSec)
+      expectEndPause = true
+      video.pause()
+      return
+    }
+
+    if (plan.kind === 'hand-back') {
+      // Back below the cap: land the element on the virtual playhead once (no
+      // scrub mode for that seek) and let it play natively from there.
+      virtualSec = plan.toSec
+      endFrameStepping()
+      if (Math.abs(video.currentTime - plan.toSec) > SEEK_EPSILON_SEC) {
+        issueOwnSeek(plan.toSec)
+      }
+      applyNativeRate(plan.speed)
+      emitTime(plan.toSec)
+      return
+    }
+
+    virtualSec = plan.toSec
+    // The playhead advances every frame; the element is seeked toward it only
+    // once the previous seek has landed, so a slow decoder still presents
+    // frames instead of sitting perpetually mid-seek. No seek for less than a
+    // frame of movement: a no-op seek would never report `seeked`.
+    if (seekInFlight && nowMs - seekIssuedAtMs > STEP_SEEK_TIMEOUT_MS) {
+      seekInFlight = false
+    }
+    if (!seekInFlight && Math.abs(plan.toSec - video.currentTime) >= frameDurationSec) {
+      seekInFlight = true
+      seekIssuedAtMs = nowMs
+      issueOwnSeek(plan.toSec)
+    }
+    emitTime(plan.toSec)
+  }
+
+  function updateTime(frameTimeMs?: number) {
     if (!video) return
+    const nowMs = typeof frameTimeMs === 'number' ? frameTimeMs : now()
+
+    if (stepping) {
+      if (video.paused || video.ended) {
+        endFrameStepping()
+      } else {
+        tickFrameStepping(nowMs)
+        if (!video.paused && !video.ended) {
+          timeUpdateAnimationRef.current = requestAnimationFrame(updateTime)
+        }
+        return
+      }
+    }
 
     const currentTimeMs = video.currentTime * 1000
     const segs = segmentsRef.current
@@ -112,13 +269,20 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
           video.pause()
         }
       } else if (seg && !seg.deleted) {
-        // Apply per-segment speed × preview playback rate (clamped to browser limits)
-        const previewRate = previewPlaybackRateRef.current
-        const targetRate = Math.max(0.0625, Math.min(16, seg.speed * previewRate))
-        if (Math.abs(video.playbackRate - targetRate) > 0.001) {
-          video.playbackRate = targetRate
+        // Per-segment speed x preview playback rate. Up to the element's cap the
+        // element plays natively; above it the preview frame-steps (muted).
+        const speed = seg.speed * previewPlaybackRateRef.current
+        if (
+          resolvePreviewSpeedMode(speed, nativePlaybackRateCap) === 'frame-step' &&
+          !video.paused &&
+          !video.ended
+        ) {
+          beginFrameStepping(video.currentTime, nowMs)
+          tickFrameStepping(nowMs)
+        } else {
+          applyNativeRate(speed)
+          emitTime(video.currentTime)
         }
-        emitTime(video.currentTime)
       } else {
         emitTime(video.currentTime)
       }
@@ -167,6 +331,10 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
   }
 
   const handlePause = () => {
+    const endedByStepping = expectEndPause
+    expectEndPause = false
+    endFrameStepping()
+
     // On some platforms (notably Chromium on Linux/Wayland) the browser may
     // emit a native pause event right after play() succeeds — e.g. because
     // of a WebGL video texture interaction.  When allowPlayback is still
@@ -175,6 +343,7 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
       allowPlaybackRef.current &&
       !isSeekingRef.current &&
       !video.ended &&
+      !endedByStepping &&
       spuriousPauseRetries < MAX_SPURIOUS_PAUSE_RETRIES
     ) {
       spuriousPauseRetries += 1
@@ -205,6 +374,15 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
   }
 
   const handleSeeked = () => {
+    if (stepping) {
+      seekInFlight = false
+      // Our own stepping seek landed: the next one may go out. The animation
+      // loop stays the only time authority, so nothing else to do.
+      if (!isSeekingRef.current) return
+      // A user seek landed while stepping: the virtual clock adopts it.
+      virtualSec = video.currentTime
+    }
+    ownSeekTargetSec = null
     isSeekingRef.current = false
 
     if (isScrubbingRef && scrubEndTimerRef) {
@@ -256,6 +434,21 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
   }
 
   const handleSeeking = () => {
+    // Seeks this module issued (per-frame stepping, the hand-back landing) must
+    // not flip the preview into scrub mode: that would soften the canvas and
+    // snap the zoom every frame while stepping.
+    if (isOwnSeek()) {
+      if (!stepping) ownSeekTargetSec = null
+      return
+    }
+    if (stepping) {
+      // A user scrub while stepping: the virtual clock follows the new position
+      // and the next tick continues from there (or hands back if that stretch
+      // is below the cap).
+      virtualSec = video.currentTime
+      seekInFlight = false
+      ownSeekTargetSec = null
+    }
     isSeekingRef.current = true
 
     if (isScrubbingRef) {
@@ -279,6 +472,7 @@ export function createVideoEventHandlers(params: VideoEventHandlersParams) {
     handleSeeking,
     /** Drop any pending coalesced time commit and the scrub tail timer (call on unmount / rewire). */
     dispose: () => {
+      endFrameStepping()
       timeUpdateCoalescer.cancel()
       clearScrubEndTimer()
     },

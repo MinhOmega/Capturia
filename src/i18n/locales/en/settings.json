@@ -36,6 +36,7 @@
 	"customPlaybackSpeed": "Custom speed",
 	"maxSpeedError": "Speed can't go higher than {{max}}×",
 	"previewGpuRecoveryFailed": "The preview lost its graphics context and could not be rebuilt. Close and reopen the editor to restore it.",
+	"speedPreviewFrameSteppingHint": "Above {{native}}×, the preview steps through frames and is muted. Export is unaffected.",
 	"videoEffects": "Video Effects",
 	"motionBlur": "Motion Blur",
 	"motionBlurOff": "Off",

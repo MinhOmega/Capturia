@@ -40,6 +40,11 @@ import {
 } from './videoPlayback/zoomTransform'
 import { createVideoEventHandlers } from './videoPlayback/videoEventHandlers'
 import {
+  FRAME_STEP_PREVIEW_HINT_KEY,
+  MAX_NATIVE_PLAYBACK_RATE,
+  probeNativePlaybackRateCap,
+} from './videoPlayback/frameStepPreview'
+import {
   type ContextLossRecovery,
   createContextLossRecovery,
 } from './videoPlayback/webglContextLoss'
@@ -127,6 +132,11 @@ interface VideoPlaybackProps {
   onVideoDimensionsChange?: (dimensions: { width: number; height: number }) => void
   segmentsRef?: React.MutableRefObject<import('./types').VideoSegment[]>
   previewPlaybackRateRef?: React.MutableRefObject<number>
+  /**
+   * Fires when the preview switches between native playback and the muted,
+   * frame-stepped mode used for speeds above the element's playbackRate cap.
+   */
+  onFrameSteppingChange?: (active: boolean) => void
 }
 
 export interface VideoPlaybackRef {
@@ -137,6 +147,15 @@ export interface VideoPlaybackRef {
   containerRef: React.RefObject<HTMLDivElement>
   play: () => Promise<void>
   pause: () => void
+  /**
+   * True while the preview is frame-stepped (segment speed x preview rate above
+   * the element's playbackRate cap): the element is muted and its time is driven
+   * from the animation loop. The speed UI shows `frameSteppingHintKey` then.
+   */
+  isFrameStepping: boolean
+  frameSteppingHintKey: typeof FRAME_STEP_PREVIEW_HINT_KEY
+  /** Highest playbackRate this element accepts (probed once per source; Chromium: 16). */
+  nativePlaybackRateCap: number
 }
 
 const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
@@ -182,6 +201,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
       onVideoDimensionsChange,
       segmentsRef,
       previewPlaybackRateRef,
+      onFrameSteppingChange,
     },
     ref,
   ) => {
@@ -202,6 +222,14 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
     // rebuilds the Pixi application from scratch (see videoPlayback/webglContextLoss.ts).
     const [pixiGeneration, setPixiGeneration] = useState(0)
     const [videoReady, setVideoReady] = useState(false)
+    // Frame-stepped preview (speeds above the element's playbackRate cap): the
+    // handler set mutes the element and drives its time; the audio effect keeps
+    // it muted for as long as this is true. See videoPlayback/frameStepPreview.ts.
+    const [isFrameStepping, setIsFrameStepping] = useState(false)
+    const frameSteppingRef = useRef(false)
+    const nativePlaybackRateCapRef = useRef(MAX_NATIVE_PLAYBACK_RATE)
+    const onFrameSteppingChangeRef = useRef(onFrameSteppingChange)
+    onFrameSteppingChangeRef.current = onFrameSteppingChange
     const overlayRef = useRef<HTMLDivElement | null>(null)
     const focusIndicatorRef = useRef<HTMLDivElement | null>(null)
     const currentTimeRef = useRef(0)
@@ -482,6 +510,9 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
       videoSprite: videoSpriteRef.current,
       videoContainer: videoContainerRef.current,
       containerRef,
+      isFrameStepping,
+      frameSteppingHintKey: FRAME_STEP_PREVIEW_HINT_KEY,
+      nativePlaybackRateCap: nativePlaybackRateCapRef.current,
       play: async () => {
         const vid = videoRef.current
         if (!vid) {
@@ -682,7 +713,9 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
             gainNode.gain.setValueAtTime(targetGain, context.currentTime)
           }
 
-          video.muted = false
+          // Frame-stepped preview is silent by design (the element is seeked,
+          // not played); otherwise the graph's gain node owns the volume.
+          video.muted = isFrameStepping
           if (Math.abs(video.volume - 1) > 0.0005) {
             video.volume = 1
           }
@@ -695,7 +728,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
         }
       }
 
-      video.muted = nextState.muted
+      video.muted = nextState.muted || isFrameStepping
       const clampedVolume = Math.max(0, Math.min(1, nextState.volume))
       if (Math.abs(video.volume - clampedVolume) > 0.0005) {
         video.volume = clampedVolume
@@ -709,6 +742,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
       audioEditRegions,
       videoPath,
       ensurePreviewAudioGraph,
+      isFrameStepping,
     ])
 
     useEffect(() => {
@@ -1118,6 +1152,10 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
       console.warn('[VideoPlayback] pixi-texture setup pausing video')
       video.pause()
 
+      // Browsers cap playbackRate (Chromium throws above 16); segment speeds go
+      // higher, so the handler set frame-steps above whatever this element accepts.
+      nativePlaybackRateCapRef.current = probeNativePlaybackRateCap(video)
+
       const { handlePlay, handlePause, handleSeeked, handleSeeking, dispose } =
         createVideoEventHandlers({
           video,
@@ -1134,6 +1172,12 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
           isScrubbingRef,
           scrubEndTimerRef,
           onScrubChange: (scrubbing) => setIsScrubbing(scrubbing),
+          nativePlaybackRateCap: nativePlaybackRateCapRef.current,
+          frameSteppingRef,
+          onFrameSteppingChange: (active) => {
+            setIsFrameStepping(active)
+            onFrameSteppingChangeRef.current?.(active)
+          },
         })
 
       video.addEventListener('play', handlePlay)
@@ -1150,6 +1194,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
         video.removeEventListener('seeking', handleSeeking)
         dispose()
         isScrubbingRef.current = false
+        setIsFrameStepping(false)
 
         if (timeUpdateAnimationRef.current) {
           cancelAnimationFrame(timeUpdateAnimationRef.current)
