@@ -403,9 +403,15 @@ interface Window {
       videoPath: string,
       state: unknown,
     ) => Promise<{ success: boolean; error?: string }>
-    loadProjectState: (
-      videoPath: string,
-    ) => Promise<{ success: boolean; notFound?: boolean; state?: unknown; error?: string }>
+    loadProjectState: (videoPath: string) => Promise<{
+      success: boolean
+      notFound?: boolean
+      state?: unknown
+      error?: string
+      /** The recording was moved or renamed; its state was recovered by fingerprint. */
+      relinked?: boolean
+      relinkedFrom?: string
+    }>
     getPlatform: () => Promise<string>
     startVideoAnalysis: (options?: {
       videoPath?: string

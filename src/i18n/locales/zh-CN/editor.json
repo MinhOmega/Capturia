@@ -33,6 +33,8 @@
 	"analysisRunning": "正在分析录制内容并生成字幕与粗剪建议...",
 	"analysisCompleted": "自动字幕与粗剪建议已生成",
 	"analysisNoSubtitles": "未生成字幕片段",
+	"projectRelinked": "检测到该录像已被移动或重命名，已恢复之前的编辑。",
+	"waveformUnavailable": "无法为该录像生成波形",
 	"analysisNoSuggestions": "未生成粗剪建议",
 	"analysisApplyRoughCutSuccess": "已将 {{count}} 条粗剪建议应用到音轨",
 	"captionPhaseNative": "正在使用系统语音识别转写...",
