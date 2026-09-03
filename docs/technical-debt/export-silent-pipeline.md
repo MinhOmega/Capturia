@@ -72,8 +72,20 @@ This conflicts with product expectation: export stage must be silent.
 3. Pixi internals are still involved in video frame ingestion on the seek path
    (`VideoSource.from(video)`). On the WebCodecs path Pixi only wraps a `VideoFrame`
    texture; no media-element semantics are involved.
-4. `GifExporter` still uses `VideoFileDecoder` (seek path) only; it has no `decodePath`
-   yet and keeps the media-element guard.
+4. `GifExporter` follows the same `decodePath` switch as the MP4 exporter
+   (`GifExporterConfig.decodePath`, else the `capturia.exportDecodePath` override, else
+   `DEFAULT_EXPORT_DECODE_PATH`). On `'webcodecs'` it opens the source with
+   `StreamingVideoDecoder`, maps segments/trims/speed through `segmentAdapter`
+   (`gifExportPlan.ts`, frame count = `computeExportMetrics`), and feeds each `VideoFrame`
+   to `FrameRenderer` then `gif.js`; no media element exists on that path. A decoder
+   failure before the first rendered frame (or zero frames) raises the shared
+   `DecoderFallbackError` (`decoderFallback.ts`), the whole attempt restarts on the seek
+   path and `editor.exportWarningDecoderFallback` is returned in `ExportResult.warnings`
+   (the editor already surfaces GIF warnings). While the default stays `'seek'` the GIF
+   path keeps `VideoFileDecoder` and the media-element guard, like MP4. Frame counts on
+   the two paths can differ by the per-segment `ceil` (same as MP4,
+   see `buildVideoFrameCountsForTimeline`); the GIF length follows the frames actually
+   delivered.
 5. The WebCodecs path ships `public/wasm/web-demuxer.wasm` (3.0 MiB) and loads it relative
    to `window.location`; a packaging regression that drops the asset degrades to the seek
    path with the fallback warning rather than failing the export.
@@ -87,5 +99,5 @@ This conflicts with product expectation: export stage must be silent.
    decode paths.
 3. ~~Evaluate migration to a fully explicit decode path (`WebCodecs` + `VideoFrame`) to
    remove media-element playback semantics from export.~~ Done behind `decodePath`;
-   remaining work is flipping the default (item 1 above) and bringing `GifExporter`
-   onto the same decoder (item 4 above).
+   remaining work is flipping the default (item 1 above); `GifExporter` is on the same
+   decoder behind the same switch (item 4 above).
