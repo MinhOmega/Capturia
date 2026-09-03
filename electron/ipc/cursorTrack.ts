@@ -81,7 +81,17 @@ export function resolveCursorSidecarPath(videoPath: string): string {
 export async function readCursorTrackSidecar(
   videoPath: string,
 ): Promise<CurrentVideoMetadata['cursorTrack'] | undefined> {
-  const sidecarPath = resolveCursorSidecarPath(videoPath)
+  return readCursorTrackSidecarFile(resolveCursorSidecarPath(videoPath))
+}
+
+/**
+ * Reads a sidecar by its own path. Used when the sidecar is not next to the
+ * video (the recording was moved and the media-links registry found the old
+ * one by fingerprint); `readCursorTrackSidecar` is the derived-path form.
+ */
+export async function readCursorTrackSidecarFile(
+  sidecarPath: string,
+): Promise<CurrentVideoMetadata['cursorTrack'] | undefined> {
   try {
     const raw = await fs.readFile(sidecarPath, 'utf-8')
     const parsed = JSON.parse(raw) as
