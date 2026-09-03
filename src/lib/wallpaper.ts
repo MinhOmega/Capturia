@@ -8,8 +8,8 @@
  * at render time via `resolveImageWallpaperUrl`, so a project moved between
  * machines or between dev and packaged layouts keeps working.
  *
- * Ported from upstream `src/lib/wallpaper.ts` (adf3855a … 37331980), adapted
- * to Capturia's async `getAssetPath` and `assets/wallpapers` layout.
+ * Resolution goes through the async `getAssetPath` over the
+ * `assets/wallpapers` layout, so it cannot happen at module load.
  */
 import { getAssetPath } from '@/lib/assetPath'
 import { BackgroundLoadError } from '@/lib/exporter/backgroundErrors'

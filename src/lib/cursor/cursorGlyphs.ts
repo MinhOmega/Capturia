@@ -18,9 +18,9 @@ import type { CursorKind } from './cursorKinds'
 /**
  * Bundled cursor glyphs for every kind except `arrow` (which keeps the
  * hand-tuned Path2D in `cursorComposer.ts`). The SVGs are Capturia originals
- * (MIT like the rest of the repository); upstream OpenScreen's `Cursor=*.svg`
- * set was not copied because its provenance is a Figma export with no licence
- * of its own, see docs/native-helper.md.
+ * (MIT like the rest of the repository); the third-party `Cursor=*.svg` set
+ * they replace was deliberately not reused, because its provenance is a Figma
+ * export with no licence of its own, see docs/native-helper.md.
  *
  * The files are imported as raw text and turned into Path2D at draw time, so
  * preview and export draw exactly the same paths synchronously: no image

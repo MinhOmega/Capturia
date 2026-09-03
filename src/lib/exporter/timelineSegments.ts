@@ -1,9 +1,9 @@
 import type { TrimRegion } from '@/components/video-editor/types'
 
 /**
- * Upstream-style speed region: a source-time span played at `speed`.
- * Capturia's editor uses `VideoSegment[]` instead; `segmentAdapter.ts`
- * converts between the two models.
+ * A source-time span played at `speed`. This is the model the streaming decoder
+ * and the export-metrics helpers work in; Capturia's editor uses
+ * `VideoSegment[]` instead, and `segmentAdapter.ts` converts between the two.
  */
 export interface SpeedRegion {
   id: string

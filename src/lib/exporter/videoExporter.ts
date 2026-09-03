@@ -224,9 +224,9 @@ const ENCODER_FLUSH_TIMEOUT_MS = 20_000
 const SOFTWARE_ENCODER_MAX_QUEUE = 32
 /**
  * Platforms that try the software encoder first. Windows hardware encoders
- * were the source of the upstream stall reports (2a2d7e7a), so software goes
- * first there; everywhere else hardware is preferred. Kept as a constant so
- * the ordering can be flipped after measurements.
+ * were the source of the encoder-stall reports, so software goes first there;
+ * everywhere else hardware is preferred. Kept as a constant so the ordering can
+ * be flipped after measurements.
  */
 export const SOFTWARE_FIRST_ENCODER_PLATFORMS: ReadonlySet<string> = new Set(['win32'])
 
@@ -1675,8 +1675,8 @@ export class VideoExporter {
       if (frameIndex < totalFrames && !this.cancelled) {
         if (this.streamingDecoder) {
           // The streaming decoder already reported the short decode as a
-          // warning (upstream semantics: the export is slightly shorter, not
-          // failed). Only a decoder that delivered nothing is treated as fatal.
+          // warning: the export is slightly shorter, not failed. Only a decoder
+          // that delivered nothing is treated as fatal.
           console.warn(
             `[VideoExporter] Streaming decode ended early: rendered ${frameIndex} of ${totalFrames} frames.`,
           )

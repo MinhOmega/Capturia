@@ -409,8 +409,8 @@ describe('cursor motion blur', () => {
   })
 })
 
-// Ported from upstream cursorRenderer.test.ts (mapCursorToCroppedViewport) against
-// projectCursorToViewport with an identity camera: viewport = baseOffset + maskRect.
+// Crop mapping checked through projectCursorToViewport with an identity
+// camera, where the viewport is simply baseOffset + maskRect.
 describe('projectCursorToViewport crop handling', () => {
   const FULL_CROP = { x: 0, y: 0, width: 1, height: 1 }
   const VIEWPORT = { x: 100, y: 50, width: 800, height: 400 }

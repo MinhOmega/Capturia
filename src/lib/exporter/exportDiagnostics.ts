@@ -1,8 +1,8 @@
 /**
  * Pure helpers that turn an export/save failure into a multi-line diagnostic
- * message (rendered with `whitespace-pre-line` in the export dialog). Ported
- * from upstream OpenScreen `VideoEditor.tsx` (156e9c1e), made label-injectable
- * so the editor can pass translated labels.
+ * message (rendered with `whitespace-pre-line` in the export dialog). Kept out
+ * of `VideoEditor.tsx` and label-injectable so the editor can pass translated
+ * labels and the formatting can be unit-tested.
  */
 
 export type ExportFormatLabel = 'GIF' | 'Video'

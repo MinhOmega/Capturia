@@ -9,12 +9,13 @@ import { MAX_IN_MEMORY_SOURCE_BYTES } from './sourceFileLimits'
 import { computeKeepSegments, type SpeedRegion, splitBySpeed } from './timelineSegments'
 
 /*
- * Ported from OpenScreen v1.7.0 `src/lib/exporter/streamingDecoder.ts`
- * (final upstream state, including every follow-up fix listed in
- * docs/upstream-sync/gap/D-export-captions.md D1). Logic is unchanged;
- * only the code style was adapted. Capturia's `VideoSegment[]` timeline is
- * mapped onto the `TrimRegion[]` + `SpeedRegion[]` model this decoder expects
- * by `segmentAdapter.ts`.
+ * Demuxes the recording with web-demuxer and feeds a WebCodecs `VideoDecoder`,
+ * so the exporter renders real decoded frames instead of seeking an
+ * `HTMLVideoElement` frame by frame.
+ *
+ * This decoder works in the `TrimRegion[]` (spans to drop) + `SpeedRegion[]`
+ * (spans played off-speed) model; Capturia's `VideoSegment[]` timeline is
+ * mapped onto it by `segmentAdapter.ts`.
  */
 
 const SOURCE_LOAD_TIMEOUT_MS = 60_000
