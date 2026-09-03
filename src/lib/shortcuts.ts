@@ -174,6 +174,15 @@ export function bindingsEqual(a: ShortcutBinding, b: ShortcutBinding): boolean {
   )
 }
 
+/**
+ * True when the binding belongs to one of the fixed, non-configurable
+ * shortcuts. Those run from their own keydown listeners, so a configurable
+ * action sharing a binding fires alongside them rather than instead of them.
+ */
+export function isReservedBinding(binding: ShortcutBinding): boolean {
+  return FIXED_SHORTCUTS.some((fixed) => fixed.bindings.some((b) => bindingsEqual(b, binding)))
+}
+
 export function findConflict(
   binding: ShortcutBinding,
   forAction: ShortcutAction,
@@ -306,7 +315,12 @@ export function mergeWithDefaults(partial: Partial<ShortcutsConfig>): ShortcutsC
   for (const action of SHORTCUT_ACTIONS) {
     const value = partial[action]
     if (value && typeof value === 'object' && typeof value.key === 'string') {
-      merged[action] = value as ShortcutBinding
+      const binding = value as ShortcutBinding
+      // A config saved before this binding was reserved would now trigger two
+      // handlers on one keystroke - Ctrl/Cmd+D used to delete the selection
+      // and today duplicates it, which would do both. Fall back to the default.
+      if (isReservedBinding(binding)) continue
+      merged[action] = binding
     }
   }
   return merged
