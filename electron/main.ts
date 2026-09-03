@@ -40,6 +40,7 @@ import {
   normalizeExternalUrl,
 } from './ipc/paths'
 import { shouldSwallowMainProcessError } from './main-process-errors'
+import { attachNavigationPolicy } from './navigationPolicy'
 import { checkLatestRelease } from './update-checker'
 import {
   type AutoUpdaterController,
@@ -1340,6 +1341,14 @@ appReady?.then(async () => {
         'renderer.render-process-gone',
         new Error(`reason=${details.reason}; exitCode=${details.exitCode}`),
       )
+    })
+
+    // Every window is one document that never navigates. Anything that tries
+    // is page-driven, and the editor window runs with `webSecurity: false`, so
+    // a navigation it did not ask for is the most valuable thing an attacker
+    // could get. See `./navigationPolicy`.
+    attachNavigationPolicy(contents, {
+      openExternal: (url) => shell.openExternal(url),
     })
   })
 
