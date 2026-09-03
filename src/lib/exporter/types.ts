@@ -1,3 +1,7 @@
+import type { ExportErrorKind } from './exportErrors'
+
+export type { ExportErrorKind }
+
 export interface ExportAudioProcessingConfig {
   normalizeLoudness?: boolean
   targetLufs?: number
@@ -54,13 +58,15 @@ export interface ExportProgress {
 export interface ExportResult {
   success: boolean
   blob?: Blob
+  /** Raw message, kept in English for logs and diagnostics. */
   error?: string
   /**
-   * Set when the failure is a BackgroundLoadError: the editor shows a
+   * What went wrong, for the UI to translate (`dialogs.exportError.*`).
+   * `'background-load'` means a BackgroundLoadError: the editor shows a
    * dedicated, localised toast naming `backgroundUrl` (basename only, never a
-   * full local path). The retry loop never retries these.
+   * full local path), and the retry loop never retries these.
    */
-  errorKind?: 'background-load'
+  errorKind?: ExportErrorKind
   backgroundUrl?: string
   warnings?: string[]
   /** `true` when the source file was copied verbatim (no decode / render / encode). */

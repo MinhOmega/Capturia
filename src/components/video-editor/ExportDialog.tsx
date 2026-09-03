@@ -3,6 +3,11 @@ import { X, Download, Loader2, FolderOpen } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import type { ExportProgress } from '@/lib/exporter'
+import {
+  classifyExportErrorMessage,
+  type ExportErrorKind,
+  getExportErrorMessageKey,
+} from '@/lib/exporter/exportErrors'
 import { useI18n } from '@/i18n'
 
 interface ExportDialogProps {
@@ -10,7 +15,10 @@ interface ExportDialogProps {
   onClose: () => void
   progress: ExportProgress | null
   isExporting: boolean
+  /** Raw failure message; shown as-is unless it maps to a localised kind. */
   error: string | null
+  /** `ExportResult.errorKind` when the caller has it; otherwise derived from `error`. */
+  errorKind?: ExportErrorKind | null
   onCancel?: () => void
   exportFormat?: 'mp4' | 'gif'
   exportedFilePath?: string
@@ -32,6 +40,7 @@ export function ExportDialog({
   progress,
   isExporting,
   error,
+  errorKind = null,
   onCancel,
   exportFormat = 'mp4',
   exportedFilePath,
@@ -44,6 +53,12 @@ export function ExportDialog({
   const { t } = useI18n()
   const [showSuccess, setShowSuccess] = useState(false)
   const [nowMs, setNowMs] = useState(() => Date.now())
+
+  // Encoder / decoder failures get a translated line; the raw message stays
+  // underneath for diagnostics. Anything unclassified is shown as before.
+  const resolvedErrorKind = error ? (errorKind ?? classifyExportErrorMessage(error)) : null
+  const errorMessageKey = resolvedErrorKind ? getExportErrorMessageKey(resolvedErrorKind) : null
+  const displayError = errorMessageKey ? t(errorMessageKey) : error
 
   // Reset showSuccess when a new export starts or dialog reopens
   useEffect(() => {
@@ -226,7 +241,10 @@ export function ExportDialog({
                 <X className="w-3 h-3 text-red-400" />
               </div>
               <p className="whitespace-pre-line break-words text-sm text-red-400 leading-relaxed">
-                {error}
+                {displayError}
+                {errorMessageKey && error !== displayError && (
+                  <span className="block mt-2 text-[11px] text-red-400/70 break-all">{error}</span>
+                )}
               </p>
             </div>
             {unsavedExport && !isExporting && onSaveUnsavedExport && (

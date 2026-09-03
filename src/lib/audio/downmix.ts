@@ -141,3 +141,24 @@ export function downmixPlanarChannelsForExport(
   }
   return output
 }
+
+/**
+ * Brings planar PCM to exactly `targetChannels` (1 or 2) as an array of
+ * planes, for callers that sum several tracks before encoding. Returns the
+ * input planes untouched when the count already matches; mono is duplicated
+ * to stereo and wider layouts go through `downmixPlanarChannelsForExport`.
+ */
+export function conformPlanarChannels(
+  sourcePlanes: Float32Array[],
+  targetChannels: number,
+): Float32Array[] {
+  if (sourcePlanes.length === targetChannels) return sourcePlanes
+  if (sourcePlanes.length === 0) {
+    return Array.from({ length: targetChannels }, () => new Float32Array(0))
+  }
+  const frameCount = sourcePlanes[0].length
+  const packed = downmixPlanarChannelsForExport(sourcePlanes, targetChannels)
+  return Array.from({ length: targetChannels }, (_, channel) =>
+    packed.subarray(channel * frameCount, (channel + 1) * frameCount),
+  )
+}

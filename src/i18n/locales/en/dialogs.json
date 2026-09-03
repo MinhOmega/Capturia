@@ -53,6 +53,13 @@
 			"unavailable": "unavailable"
 		}
 	},
+	"exportError": {
+		"encoderStall": "The video encoder stopped responding, so the export was stopped. Try again; if it keeps happening, close other apps that use the graphics card.",
+		"encoderFlushTimeout": "The video encoder did not finish writing the last frames in time. Try exporting again.",
+		"encoderUnsupported": "No video encoder on this system supports the chosen export settings. Try a lower resolution or frame rate.",
+		"encoderFailed": "The video encoder reported an error and the export was stopped. Try again, or export at a lower resolution.",
+		"decoderFailed": "The recording could not be decoded, so the export was stopped. The file may be damaged or use an unsupported codec."
+	},
 	"format": {
 		"mp4": {
 			"label": "MP4 Video",
