@@ -5,8 +5,8 @@ import { defineConfig } from '@playwright/test'
  * (`npm run build:vite` first) through `_electron.launch` with `HEADLESS=1`,
  * so no window is ever shown; Linux still needs a display server
  * (`xvfb-run --auto-servernum npm run test:e2e`). Run nightly / on dispatch
- * (`.github/workflows/e2e.yml`), never as a PR gate: upstream dropped the
- * same job from PR CI as flaky (d4c50c9a).
+ * (`.github/workflows/e2e.yml`), never as a PR gate: booting a real Electron
+ * app on a hosted runner is too flaky to block a merge on.
  */
 export default defineConfig({
   testDir: './e2e',
