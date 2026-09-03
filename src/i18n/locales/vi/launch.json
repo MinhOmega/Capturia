@@ -144,8 +144,11 @@
 		"microphoneDevice": "Micro",
 		"noneFound": "Không tìm thấy micro",
 		"level": "Mức đầu vào",
-		"settings": "Cài đặt micro"
+		"settings": "Cài đặt micro",
+		"enableSystemAudio": "Ghi âm thanh hệ thống (âm thanh máy đang phát)",
+		"disableSystemAudio": "Ngừng ghi âm thanh hệ thống"
 	},
+	"systemAudio": "Âm thanh hệ thống",
 	"notes": "Ghi chú",
 	"openNotesFailed": "Không mở được cửa sổ Ghi chú.",
 	"dragHandle": "Kéo để di chuyển thanh khởi động",

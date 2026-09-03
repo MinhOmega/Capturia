@@ -367,3 +367,39 @@ Four commits on `832f5be`; note in `reviews/W5-A12-notes-teleprompter.md`.
 - Open: no live Electron run (RAF timing, tiptap `setEditable` interplay with autofocus, real
   wheel/scrollbar behaviour); see the smoke list in the note.
 
+
+## 2026-09-03 — wave 5 round 1: R5-A1 browser-path system audio + HUD leftovers (agent branch, pending review)
+
+Four commits on `ff05c01..deedc23`; note in `reviews/R5-A1-system-audio-hud.md`.
+
+- **R5-A1** `src/lib/audioMix.ts` (new, 10 tests): pure mix-graph builder over a minimal
+  `AudioContext` surface. Mic → gain (0 → user gain over a 20 ms ramp) and system → unity gain
+  feed one soft limiter into a `MediaStream` destination; a lone system track passes through
+  verbatim; no Web Audio records the raw tracks. `normalizeMicrophoneGain` moved here.
+  `useScreenRecorder` gains `systemAudioEnabled`: the desktop capture asks for audio on both
+  request shapes and retries video-only when refused, a missing track shows
+  `editor.recordingSystemAudioUnavailable` and recording continues, and `hasMicrophoneAudio` is
+  true when either input is present. Platforms: Windows loopback from the display-media handler
+  (`request.audioRequested`), Linux the renderer's desktop-audio constraint, macOS the native
+  helper only — so the HUD toggle (`capturia.systemAudioEnabled`, default off) is hidden on
+  macOS until the helper reports `canCaptureSystemAudio`. macOS also gets
+  `disable-features=MacCatapLoopbackAudioForScreenShare`, without which an audio request goes
+  through the CoreAudio tap API and crashes the renderer in dev.
+- **Camera** the overlay drops on the webcam track's `ended` event instead of freezing on the
+  last frame (`editor.recordingCameraDisconnected`, recording continues), and the constraints no
+  longer ask for an ideal 1280x720, so portrait cameras keep their native orientation and are
+  centre-cropped into the overlay box.
+- **A-5** every HUD popover closes on window `blur`. On a click-through window an outside click
+  never reaches the renderer and Escape is undeliverable, so a stale picker blocked the bar.
+  Capture-settings and camera-shape became controlled; the listener is on the window in bubble
+  phase, and element blur does not bubble, so focus moving inside an open popover is ignored.
+- **A-14** the HUD reads the registered stop shortcut from main on mount and adopts it instead
+  of pushing its own `localStorage` copy over whatever main had; the push remains as the
+  fallback when main reports nothing registered.
+- Gate: lint 0 errors / 116 warnings (unchanged); tsc + test types clean; i18n 640 en keys
+  (zh-CN, vi in parity); `biome format .` clean; vitest **124 files / 1370 tests** (was 121 /
+  1306).
+- Open: no live Electron run — loopback on Windows, the Linux monitor source and the macOS
+  switch are argued from the API contract, not observed; the `blur` dismissal is jsdom-only; a
+  real camera unplug was not tried; `hasSystemAudio` / `warnings` and the native batch's
+  `launch.microphoneDeviceNotFound` / `launch.systemAudioUnavailable` keys have no consumer yet.
