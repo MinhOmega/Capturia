@@ -905,8 +905,31 @@ export function LaunchWindow() {
     [t],
   )
 
+  // Mount: main owns the registered stop shortcut (it persists it with the other
+  // global shortcuts), so ask it first and mirror the answer into localStorage.
+  // Only when main has nothing registered (older main, first run) is the persisted
+  // HUD value pushed through as before.
   useEffect(() => {
-    void applyStopRecordingShortcut(stopRecordingShortcut, { silent: true })
+    let cancelled = false
+    void (async () => {
+      let registered = ''
+      try {
+        const result = await window.electronAPI?.getStopRecordingShortcut?.()
+        registered = result?.accelerator || ''
+      } catch {
+        registered = ''
+      }
+      if (cancelled) return
+      if (registered) {
+        setStopRecordingShortcut(registered)
+        writeStoredString(STOP_SHORTCUT_STORAGE_KEY, registered)
+        return
+      }
+      void applyStopRecordingShortcut(stopRecordingShortcut, { silent: true })
+    })()
+    return () => {
+      cancelled = true
+    }
     // apply once using persisted value
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
