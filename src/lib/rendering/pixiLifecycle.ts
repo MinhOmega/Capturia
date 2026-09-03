@@ -86,6 +86,16 @@ const DEFAULT_BACKENDS: readonly (PixiBackendPreference | undefined)[] = ['webgl
 
 const FULL_DESTROY_OPTIONS = { children: true, texture: true, textureSource: true } as const
 
+/**
+ * `{ removeView: true }`, never a bare `true`. `true` additionally means
+ * `releaseGlobalResources`, and Pixi's batch, texture and canvas pools are
+ * module-level globals shared with every other renderer on the page — the
+ * preview and the export renderer run side by side. Releasing them from one
+ * destroys pooled objects the other's cached instruction sets still point at,
+ * and its next frame throws.
+ */
+const RENDERER_DESTROY_OPTIONS = { removeView: true } as const
+
 /** Thrown when one backend's `init` does not settle inside its budget. */
 export class PixiInitTimeoutError extends Error {
   constructor(
@@ -114,9 +124,12 @@ export function destroyPixiApplication(
 ): void {
   if (!app) return
 
-  if (typeof app.destroy === 'function' && app.renderer) {
+  // `renderer === null` means init is known not to have built one, and Pixi's
+  // application destroy would throw reaching for it. `undefined` is "unknown":
+  // attempt it, and let the catch below fall back.
+  if (typeof app.destroy === 'function' && app.renderer !== null) {
     try {
-      app.destroy(true, FULL_DESTROY_OPTIONS)
+      app.destroy(RENDERER_DESTROY_OPTIONS, FULL_DESTROY_OPTIONS)
       return
     } catch (error) {
       log.warn('[pixi] application destroy threw; tearing the parts down separately:', error)

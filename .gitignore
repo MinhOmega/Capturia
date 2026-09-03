@@ -39,3 +39,4 @@ electron/native/bin/*
 # Playwright (npm run test:e2e)
 playwright-report/
 test-results/
+.claude/notes/

@@ -7,7 +7,11 @@ import type {
   Rotation3D,
 } from '@/components/video-editor/types'
 import { DEFAULT_ROTATION_3D, isRotation3DIdentity } from '@/components/video-editor/types'
-import { createPixiLifecycle, type PixiLifecycle } from '@/lib/rendering/pixiLifecycle'
+import {
+  createPixiLifecycle,
+  destroyPixiApplication,
+  type PixiLifecycle,
+} from '@/lib/rendering/pixiLifecycle'
 import { createThreeDPass, type ThreeDPass } from './threeDPass'
 import {
   applyZoomTransform,
@@ -962,9 +966,16 @@ export class FrameRenderer {
     this.currentVideoSource = null
     this.backgroundSprite = null
     // Through the lifecycle so a destroy that arrives while `initialize` is
-    // still waiting on the driver is honoured when that init lands.
-    this.appLifecycle?.destroy()
-    this.appLifecycle = null
+    // still waiting on the driver is honoured when that init lands. Both paths
+    // pass `{ removeView: true }` rather than `true`: `true` also releases
+    // Pixi's global batch, texture and canvas pools, which the editor's preview
+    // renderer is using at the same time, and its next frame then throws.
+    if (this.appLifecycle) {
+      this.appLifecycle.destroy()
+      this.appLifecycle = null
+    } else {
+      destroyPixiApplication(this.app)
+    }
     this.app = null
     this.cameraContainer = null
     this.videoContainer = null

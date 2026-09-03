@@ -21,7 +21,8 @@ function stripLeadingSlash(relativePath: string): string {
 
 function readAssetBaseUrl(): string | null {
   if (typeof window === 'undefined') return null
-  const api = (window as any).electronAPI
+  // Declared, but absent in a plain browser tab and in older preloads.
+  const api: Window['electronAPI'] | undefined = window.electronAPI
   const base = api?.assetBaseUrl
   return typeof base === 'string' && base.length > 0 ? base : null
 }
@@ -52,11 +53,9 @@ export async function getAssetPath(relativePath: string): Promise<string> {
       const sync = getAssetPathSync(relativePath)
       if (sync) return sync
 
-      if (
-        (window as any).electronAPI &&
-        typeof (window as any).electronAPI.getAssetBasePath === 'function'
-      ) {
-        const base = await (window as any).electronAPI.getAssetBasePath()
+      const api: Window['electronAPI'] | undefined = window.electronAPI
+      if (typeof api?.getAssetBasePath === 'function') {
+        const base = await api.getAssetBasePath()
         if (base) {
           const normalized = base.replace(/\\/g, '/')
           return `file://${normalized}/${relativePath}`

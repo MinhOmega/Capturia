@@ -50,8 +50,11 @@ class FakeApplication implements PixiApplicationLike {
     this.settle?.reject(error)
   }
 
-  destroy = (_rendererOptions?: unknown, _options?: unknown): void => {
+  destroyArgs: unknown[][] = []
+
+  destroy = (rendererOptions?: unknown, options?: unknown): void => {
     this.destroyCalls += 1
+    this.destroyArgs.push([rendererOptions, options])
     if (this.destroyThrows) throw new Error('destroy reached into a renderer that is not there')
   }
 }
@@ -117,6 +120,18 @@ describe('destroyPixiApplication', () => {
     expect(app.destroyCalls).toBe(1)
     expect(app.stageDestroyCalls).toBe(0)
     expect(app.rendererDestroyCalls).toBe(0)
+  })
+
+  it('never releases the Pixi pools the other live renderer shares', () => {
+    const app = new FakeApplication()
+    destroyPixiApplication(app, { warn: vi.fn() })
+
+    // A bare `true` would also mean `releaseGlobalResources`, and the preview
+    // and the export renderer are both alive at export time.
+    expect(app.destroyArgs[0]).toEqual([
+      { removeView: true },
+      { children: true, texture: true, textureSource: true },
+    ])
   })
 
   it('destroys the parts separately when the application destroy throws', () => {
