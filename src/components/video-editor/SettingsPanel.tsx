@@ -2,6 +2,7 @@ import { cn } from '@/lib/utils'
 import { useEffect, useRef } from 'react'
 import { Slider } from '@/components/ui/slider'
 import { Switch } from '@/components/ui/switch'
+import { Tooltip, TooltipProvider } from '@/components/ui/tooltip'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { useState } from 'react'
@@ -1289,8 +1290,19 @@ export function SettingsPanel({
                 </div>
                 <div className="rounded-md bg-black/20 border border-white/5 p-2 mb-2">
                   <div className="flex items-center justify-between">
-                    <div className="text-[10px] text-slate-300">
-                      {t('settings.cursorClipToBounds')}
+                    <div className="flex items-center gap-1 text-[10px] text-slate-300">
+                      <span>{t('settings.cursorClipToBounds')}</span>
+                      <TooltipProvider>
+                        <Tooltip content={t('settings.cursorClipToBoundsDescription')}>
+                          <button
+                            type="button"
+                            aria-label={t('settings.cursorClipToBoundsDescription')}
+                            className="text-slate-500 hover:text-slate-300 transition-colors"
+                          >
+                            <Info size={11} />
+                          </button>
+                        </Tooltip>
+                      </TooltipProvider>
                     </div>
                     <Switch
                       checked={cursorStyle.clipToBounds ?? false}
