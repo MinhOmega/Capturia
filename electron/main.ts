@@ -18,7 +18,8 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import os from 'node:os'
 import fs from 'node:fs/promises'
-import { readFileSync, statSync, openSync, readSync, closeSync } from 'node:fs'
+import { createReadStream, statSync, openSync, readSync, closeSync } from 'node:fs'
+import { Readable } from 'node:stream'
 import {
   createHudOverlayWindow,
   createEditorWindow,
@@ -41,6 +42,11 @@ import {
 } from './ipc/paths'
 import { shouldSwallowMainProcessError } from './main-process-errors'
 import { attachNavigationPolicy } from './navigationPolicy'
+import {
+  contentRangeHeader,
+  parseRangeHeader,
+  unsatisfiableContentRangeHeader,
+} from './media/rangeRequests'
 import { isPermissionAllowed, windowTypeForContents } from './windowPermissions'
 import { checkLatestRelease } from './update-checker'
 import {
@@ -1302,6 +1308,30 @@ app.on('before-quit', (event) => {
   })()
 })
 
+/**
+ * Bodies larger than this are streamed rather than buffered. 8 MiB is roughly
+ * a second of a high-bitrate screen recording: below it the whole response is
+ * a rounding error against the renderer's own decode buffers, above it the
+ * main process would be holding a copy of something the renderer is already
+ * holding.
+ */
+const LOCAL_MEDIA_STREAM_THRESHOLD_BYTES = 8 * 1024 * 1024
+
+const LOCAL_MEDIA_CONTENT_TYPES: Readonly<Record<string, string>> = {
+  '.webm': 'video/webm',
+  '.mp4': 'video/mp4',
+  '.mov': 'video/quicktime',
+  '.m4v': 'video/x-m4v',
+  '.mkv': 'video/x-matroska',
+  '.json': 'application/json',
+}
+
+function localMediaContentType(filePath: string): string {
+  return (
+    LOCAL_MEDIA_CONTENT_TYPES[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream'
+  )
+}
+
 // Register all IPC handlers when app is ready
 const appReady = hasSingleInstanceLock ? app.whenReady() : null
 
@@ -1358,12 +1388,18 @@ appReady?.then(async () => {
     })
   })
 
-  // Handle local-media:// requests by reading local files into Buffer.
-  // Uses Buffer (not Node.js streams) because Electron's Response constructor
-  // reliably accepts Buffer. Supports Range requests for video seeking.
-  // Only files inside the recordings dir or explicitly approved by the user
-  // (file picker) are served; the editor runs with webSecurity off, so this
-  // gate is what keeps the scheme from being an arbitrary file reader.
+  // Serve `local-media://` from disk. Only files inside the recordings dir or
+  // explicitly approved by the user (file picker) are served; the editor runs
+  // with webSecurity off, so this gate is what keeps the scheme from being an
+  // arbitrary file reader.
+  //
+  // Bodies above LOCAL_MEDIA_STREAM_THRESHOLD_BYTES are streamed. The old
+  // handler read whole files with readFileSync and allocated the remainder of
+  // the file for an open-ended range, which on a long recording meant hundreds
+  // of megabytes resident in the main process for a request that only moved
+  // the playhead. Smaller bodies stay on the Buffer path: for a few hundred KB
+  // a stream is more moving parts than it is worth, and Electron's Response
+  // has always accepted a Buffer.
   protocol.handle('local-media', async (request) => {
     const filePath = localMediaUrlToPath(request.url)
     if (!filePath || !isReadablePathAllowed(filePath, { recordingsDir: RECORDINGS_DIR })) {
@@ -1372,60 +1408,64 @@ appReady?.then(async () => {
     }
     try {
       const stat = statSync(filePath)
-      const ext = path.extname(filePath).toLowerCase()
-      const mimeMap: Record<string, string> = {
-        '.webm': 'video/webm',
-        '.mp4': 'video/mp4',
-        '.mov': 'video/quicktime',
-        '.m4v': 'video/x-m4v',
-        '.mkv': 'video/x-matroska',
-        '.json': 'application/json',
-      }
-      const contentType = mimeMap[ext] || 'application/octet-stream'
-
-      const rangeHeader = request.headers.get('range')
-      if (rangeHeader) {
-        const match = rangeHeader.match(/bytes=(\d+)-(\d*)/)
-        if (match) {
-          const start = parseInt(match[1], 10)
-          const end = match[2] ? parseInt(match[2], 10) : stat.size - 1
-          const chunkSize = end - start + 1
-          const buffer = Buffer.alloc(chunkSize)
-          const fd = openSync(filePath, 'r')
-          readSync(fd, buffer, 0, chunkSize, start)
-          closeSync(fd)
-          console.log('[local-media] range:', start, '-', end, '/', stat.size, filePath)
-          return new Response(buffer, {
-            status: 206,
-            headers: {
-              'Content-Type': contentType,
-              'Content-Range': `bytes ${start}-${end}/${stat.size}`,
-              'Content-Length': String(chunkSize),
-              'Accept-Ranges': 'bytes',
-              // See the note on the 200 response below.
-              'Access-Control-Allow-Origin': '*',
-            },
-          })
-        }
+      const contentType = localMediaContentType(filePath)
+      // `local-media://` is a different origin from the page that loads it, so
+      // without this a <video> reading from it is CORS-tainted and every pixel
+      // read fails: `new VideoFrame(video)` throws SecurityError and canvases
+      // go opaque. The exporter's decoder asks for the file in CORS mode; the
+      // request is already refused unless the path is approved, so the wildcard
+      // adds no reach beyond what the gate above allows. No credentials are
+      // involved, so `*` is the whole story.
+      const baseHeaders = {
+        'Content-Type': contentType,
+        'Accept-Ranges': 'bytes',
+        'Access-Control-Allow-Origin': '*',
       }
 
-      console.log('[local-media] full:', stat.size, 'bytes', contentType, filePath)
-      const buffer = readFileSync(filePath)
-      return new Response(buffer, {
-        status: 200,
-        headers: {
-          'Content-Type': contentType,
-          'Content-Length': String(stat.size),
-          'Accept-Ranges': 'bytes',
-          // `local-media://` is a different origin from the page that loads it,
-          // so without this a <video> reading from it is CORS-tainted and every
-          // pixel read fails: `new VideoFrame(video)` throws SecurityError and
-          // canvases go opaque. The exporter's decoder asks for the file in CORS
-          // mode; the request is already refused unless the path is approved, so
-          // the wildcard adds no reach beyond what the handler above allows.
-          'Access-Control-Allow-Origin': '*',
-        },
-      })
+      const range = parseRangeHeader(request.headers.get('range'), stat.size)
+
+      if (range.kind === 'unsatisfiable') {
+        console.warn('[local-media] range past the end of the file:', request.url)
+        return new Response(null, {
+          status: 416,
+          headers: {
+            ...baseHeaders,
+            'Content-Range': unsatisfiableContentRangeHeader(stat.size),
+          },
+        })
+      }
+
+      const start = range.kind === 'partial' ? range.start : 0
+      const end = range.kind === 'partial' ? range.end : Math.max(0, stat.size - 1)
+      const length = range.kind === 'partial' ? range.length : stat.size
+      const headers =
+        range.kind === 'partial'
+          ? {
+              ...baseHeaders,
+              'Content-Range': contentRangeHeader(start, end, stat.size),
+              'Content-Length': String(length),
+            }
+          : { ...baseHeaders, 'Content-Length': String(length) }
+      const status = range.kind === 'partial' ? 206 : 200
+
+      if (length > LOCAL_MEDIA_STREAM_THRESHOLD_BYTES) {
+        const stream = createReadStream(filePath, { start, end })
+        return new Response(Readable.toWeb(stream) as ReadableStream<Uint8Array>, {
+          status,
+          headers,
+        })
+      }
+
+      if (stat.size === 0) return new Response(null, { status, headers })
+
+      const buffer = Buffer.alloc(length)
+      const fd = openSync(filePath, 'r')
+      try {
+        readSync(fd, buffer, 0, length, start)
+      } finally {
+        closeSync(fd)
+      }
+      return new Response(buffer, { status, headers })
     } catch (error) {
       console.error('[local-media] failed to serve file:', request.url, error)
       return new Response('Not Found', { status: 404 })
