@@ -19,6 +19,7 @@ import {
   ROTATION_3D_PRESET_ORDER,
   ROTATION_3D_PRESETS,
   rotation3DPerspective,
+  type Rotation3D,
   type Rotation3DPreset,
 } from './types'
 

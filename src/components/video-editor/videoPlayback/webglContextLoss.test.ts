@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createContextLossRecovery } from './webglContextLoss'
 
-const silentLog = { warn: () => {}, error: () => {}, info: () => {} }
+const noop = () => undefined
+const silentLog = { warn: noop, error: noop, info: noop }
 
 function harness(overrides: Partial<Parameters<typeof createContextLossRecovery>[0]> = {}) {
   let clock = 0
