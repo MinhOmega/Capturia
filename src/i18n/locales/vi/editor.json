@@ -32,6 +32,7 @@
 	"analysisCompleted": "Phụ đề tự động và gợi ý cắt thô đã sẵn sàng",
 	"analysisNoSubtitles": "Không tạo được phụ đề nào",
 	"projectRelinked": "Bản ghi này đã được di chuyển hoặc đổi tên. Các chỉnh sửa trước đó đã được khôi phục.",
+	"waveformUnavailable": "Không hiển thị được dạng sóng cho bản ghi này",
 	"analysisNoSuggestions": "Không tìm thấy gợi ý cắt thô",
 	"analysisApplyRoughCutSuccess": "Đã áp dụng {{count}} gợi ý cắt thô vào luồng âm thanh",
 	"captionPhaseNative": "Đang chuyển giọng nói thành văn bản bằng bộ nhận dạng của hệ thống...",

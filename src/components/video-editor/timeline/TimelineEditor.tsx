@@ -567,6 +567,7 @@ function Timeline({
   onRangeChange,
   rowHints,
   waveform,
+  waveformHint,
 }: {
   items: TimelineRenderItem[]
   videoDurationMs: number
@@ -594,6 +595,8 @@ function Timeline({
   rowHints?: RowHints
   /** Decoded peaks in source time; null while loading / disabled. */
   waveform?: { peaks: Float32Array; durationMs: number } | null
+  /** Shown in the audio row when no waveform could be decoded. */
+  waveformHint?: string | null
 }) {
   const { t } = useI18n()
   const { setTimelineRef, style, sidebarWidth, range, pixelsToValue, valueToPixels } =
@@ -999,13 +1002,14 @@ function Timeline({
       <Row
         id={AUDIO_ROW_ID}
         background={
-          waveform ? (
+          waveform || waveformHint ? (
             <BackgroundWaveform
-              peaks={waveform.peaks}
-              sourceDurationMs={waveform.durationMs}
+              peaks={waveform?.peaks ?? null}
+              sourceDurationMs={waveform?.durationMs ?? 0}
               segments={segments}
               topInset={4}
               bottomInset={4}
+              hint={waveformHint}
             />
           ) : undefined
         }
@@ -1124,7 +1128,14 @@ export default function TimelineEditor({
     [showWaveform, hasAudioTrack, videoFilePath, videoUrl],
   )
   const audioPeaks = useAudioPeaks(waveformSource)
-  const waveform = showWaveform && audioPeaks && audioPeaks.peaks.length > 0 ? audioPeaks : null
+  const waveform =
+    showWaveform && audioPeaks.data && audioPeaks.data.peaks.length > 0 ? audioPeaks.data : null
+  // Neither decode path could read this recording's audio: say so quietly in the
+  // row instead of leaving an empty strip that looks like a silent track.
+  const waveformHint =
+    showWaveform && !waveform && audioPeaks.status === 'unavailable'
+      ? t('editor.waveformUnavailable')
+      : null
 
   const rowHints = useMemo<RowHints>(
     () => ({
@@ -1919,6 +1930,7 @@ export default function TimelineEditor({
             onRangeChange={setRange}
             rowHints={rowHints}
             waveform={waveform}
+            waveformHint={waveformHint}
           />
         </TimelineWrapper>
       </div>
