@@ -151,6 +151,10 @@ protocol.registerSchemesAsPrivileged([
       supportFetchAPI: true,
       standard: true,
       secure: true,
+      // The exporter's decoder loads a recording in CORS mode so the frames it
+      // reads are not tainted; without this the scheme refuses such a request
+      // outright and the media element reports a format error.
+      corsEnabled: true,
     },
   },
 ])
@@ -1341,6 +1345,8 @@ appReady?.then(async () => {
               'Content-Range': `bytes ${start}-${end}/${stat.size}`,
               'Content-Length': String(chunkSize),
               'Accept-Ranges': 'bytes',
+              // See the note on the 200 response below.
+              'Access-Control-Allow-Origin': '*',
             },
           })
         }
@@ -1354,6 +1360,13 @@ appReady?.then(async () => {
           'Content-Type': contentType,
           'Content-Length': String(stat.size),
           'Accept-Ranges': 'bytes',
+          // `local-media://` is a different origin from the page that loads it,
+          // so without this a <video> reading from it is CORS-tainted and every
+          // pixel read fails: `new VideoFrame(video)` throws SecurityError and
+          // canvases go opaque. The exporter's decoder asks for the file in CORS
+          // mode; the request is already refused unless the path is approved, so
+          // the wildcard adds no reach beyond what the handler above allows.
+          'Access-Control-Allow-Origin': '*',
         },
       })
     } catch (error) {
