@@ -154,7 +154,7 @@ this order:
 HEADLESS=1 xvfb-run --auto-servernum systemd-run --user --scope -q -p MemoryMax=8G npm run test:e2e
 ```
 
-Two things bite before any assertion does.
+Three things bite before any assertion does.
 
 **The lane builds itself.** The specs launch `dist-electron/main.js`, not
 `src/`, so a stale build silently tests yesterday's app: every spec boots, runs
@@ -178,6 +178,14 @@ Use it locally only when you know the artifacts are current.
 instance holds the single-instance lock, and every spec then fails for a reason
 that has nothing to do with the code. Check with `pgrep -fa electron` before
 blaming a spec — a `npm run dev` left running is the usual culprit.
+
+**The fixture is two seconds long.** `src/__fixtures__/sample.webm` runs out
+fast, and the editor's warm-up blocks the renderer for up to a second while it
+plays, so a spec that drives playback can find the clip already ended by its
+first assertion. `e2e/editor-shortcuts.spec.ts` sets `video.loop = true` before
+its J/K/L ladder for exactly this reason (nothing in the app touches `loop`) and
+waits for `currentTime` to actually advance rather than for `paused === false`,
+which is also true while the element is stalled on a decode.
 
 ## Keeping the shim honest
 
