@@ -49,6 +49,7 @@
 	"hideHudFromRecordingOn": "Các cửa sổ của Capturia không xuất hiện trong bản ghi.",
 	"hideHudFromRecordingOff": "Các cửa sổ của Capturia xuất hiện trong bản ghi.",
 	"hideHudFromRecordingCaveat": "Cùng thiết lập này cũng ẩn chúng khỏi công cụ điều khiển từ xa và chia sẻ màn hình.",
+	"hideHudFromRecordingUnsupported": "Hệ thống này không thể ẩn cửa sổ khỏi việc ghi màn hình, nên tự động ẩn là cách giữ HUD ngoài bản ghi ở đây.",
 	"markMomentHint": "Đánh dấu khoảnh khắc này ({{shortcut}}) — sẽ hiển thị trên dòng thời gian của trình chỉnh sửa",
 	"markMomentAdded": "Đã đánh dấu tại {{time}} ({{count}} dấu trong bản ghi này)",
 	"markMomentPaused": "Hãy tiếp tục ghi trước khi đánh dấu.",

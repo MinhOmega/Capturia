@@ -174,6 +174,10 @@ export function applyHudContentProtection(win: BrowserWindow, label: string): bo
     win.setContentProtection(false)
     return false
   }
+  // Linux has no equivalent API - `setContentProtection` is accepted and does
+  // nothing there - so report the truth rather than promise privacy the OS will
+  // not deliver. The HUD's auto-hide is what keeps it out of a Linux recording.
+  if (process.platform === 'linux') return false
   return applyContentProtection(win, label)
 }
 

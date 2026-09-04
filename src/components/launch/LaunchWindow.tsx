@@ -465,8 +465,16 @@ export function LaunchWindow() {
   const [hideHudFromRecording, setHideHudFromRecording] = useState<boolean>(
     () => loadUserPreferences().hideHudFromRecording,
   )
+  // Windows the OS refused to keep out of the capture. Non-empty on Linux,
+  // which has no content-protection API at all, and on macOS 26, which never
+  // paints a protected window; the tooltip says so rather than letting the
+  // toggle imply a privacy the platform cannot give.
+  const [hudPrivacyUnprotected, setHudPrivacyUnprotected] = useState<string[]>([])
   useEffect(() => {
-    void window.electronAPI?.setHideHudFromRecording?.(hideHudFromRecording)
+    void (async () => {
+      const result = await window.electronAPI?.setHideHudFromRecording?.(hideHudFromRecording)
+      setHudPrivacyUnprotected(result?.unprotected ?? [])
+    })()
   }, [hideHudFromRecording])
   const toggleHideHudFromRecording = useCallback(() => {
     setHideHudFromRecording((current) => {
@@ -2016,11 +2024,17 @@ export function LaunchWindow() {
           disabled={controlsLocked}
           aria-pressed={hideHudFromRecording}
           data-testid="launch-hide-hud-from-recording"
-          title={`${
+          title={[
             hideHudFromRecording
               ? t('launch.hideHudFromRecordingOn')
-              : t('launch.hideHudFromRecordingOff')
-          } ${t('launch.hideHudFromRecordingCaveat')}`}
+              : t('launch.hideHudFromRecordingOff'),
+            hideHudFromRecording && hudPrivacyUnprotected.length > 0
+              ? t('launch.hideHudFromRecordingUnsupported')
+              : null,
+            t('launch.hideHudFromRecordingCaveat'),
+          ]
+            .filter(Boolean)
+            .join(' ')}
         >
           {hideHudFromRecording ? (
             <MonitorOff size={13} className="text-cyan-300" />

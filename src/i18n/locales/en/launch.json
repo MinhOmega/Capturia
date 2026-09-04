@@ -49,6 +49,7 @@
 	"hideHudFromRecordingOn": "Capturia's own windows stay out of the recording.",
 	"hideHudFromRecordingOff": "Capturia's own windows appear in the recording.",
 	"hideHudFromRecordingCaveat": "The same setting also hides them from remote-desktop and screen-sharing tools.",
+	"hideHudFromRecordingUnsupported": "This system cannot hide a window from screen capture, so auto-hide is what keeps the HUD out of the recording here.",
 	"markMomentHint": "Flag this moment ({{shortcut}}) — it shows on the editor timeline",
 	"markMomentAdded": "Moment flagged at {{time}} ({{count}} in this recording)",
 	"markMomentPaused": "Resume the recording before flagging a moment.",
