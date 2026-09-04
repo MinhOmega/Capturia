@@ -148,6 +148,45 @@ this order:
    (`.github/workflows/e2e.yml`); a unit or browser-mode vitest is the right
    home for anything that does not need a real app boot.
 
+## Running the Electron lane
+
+```
+HEADLESS=1 xvfb-run --auto-servernum systemd-run --user --scope -q -p MemoryMax=8G npm run test:e2e
+```
+
+Three things bite before any assertion does.
+
+**The lane builds itself.** The specs launch `dist-electron/main.js`, not
+`src/`, so a stale build silently tests yesterday's app: every spec boots, runs
+and reports, and none of it has anything to do with the working tree. This
+has already cost a debugging session. `e2e/globalSetup.ts` therefore compares
+the newest non-test file under `src/` and `electron/` (plus `index.html`,
+`vite.config.ts`, the tsconfigs and the package files) against the oldest of
+`dist/index.html`, `dist-electron/main.js` and `dist-electron/preload.mjs`, and
+runs `npm run build:vite` when the artifacts are behind. Up to date it costs a
+directory walk — a few milliseconds; behind, it costs one build, measured at
+about **2 minutes** on a loaded box. That is worth paying automatically: a
+single spec already takes tens of seconds, and the alternative is a whole lane
+of meaningless results.
+
+`CAPTURIA_E2E_SKIP_BUILD=1` turns the build off and turns staleness into a
+loud failure instead. CI sets it, because `.github/workflows/e2e.yml` builds in
+its own step and a second build inside the test timeout would look like a hang.
+Use it locally only when you know the artifacts are current.
+
+**One Electron at a time.** `_electron.launch` exits immediately if another
+instance holds the single-instance lock, and every spec then fails for a reason
+that has nothing to do with the code. Check with `pgrep -fa electron` before
+blaming a spec — a `npm run dev` left running is the usual culprit.
+
+**The fixture is two seconds long.** `src/__fixtures__/sample.webm` runs out
+fast, and the editor's warm-up blocks the renderer for up to a second while it
+plays, so a spec that drives playback can find the clip already ended by its
+first assertion. `e2e/editor-shortcuts.spec.ts` sets `video.loop = true` before
+its J/K/L ladder for exactly this reason (nothing in the app touches `loop`) and
+waits for `currentTime` to actually advance rather than for `paused === false`,
+which is also true while the element is stalled on a decode.
+
 ## Keeping the shim honest
 
 `src/dev/browserBridge.test.ts` parses `electron/preload.ts` and fails if the
