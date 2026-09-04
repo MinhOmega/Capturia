@@ -18,10 +18,11 @@ import { VideoExporter } from './videoExporter'
  *     npx vitest --config vitest.browser.config.ts --run \
  *     src/lib/exporter/encoderQueueDepth.browser.test.ts
  *
- * The renderer's resident memory is sampled from outside the page (see
- * `scripts/…` in the batch notes); what the page can report is the JS heap and
- * the peak queue occupancy, and the occupancy is the number that decides the
- * question.
+ * The renderer's resident memory is sampled from outside the page by
+ * `scripts/sample-renderer-rss.mjs`, because a queued frame lives in native
+ * memory that `performance.memory` cannot see. What the page can report is the
+ * JS heap and the peak queue occupancy — and the occupancy is the number that
+ * decides the question: a limit that is never reached cannot matter.
  */
 
 const ENABLED = import.meta.env['CAPTURIA_EXPORT_PERF'] === '1'
