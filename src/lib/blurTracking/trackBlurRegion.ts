@@ -40,6 +40,19 @@ export class BlurTrackingRefusedError extends Error {
   }
 }
 
+declare global {
+  interface Window {
+    /**
+     * Dev-only handle installed by `VideoEditor` when `BLUR_TRACKING_ENABLED`
+     * is on, for checking a track by hand in the browser harness. Phase 1 has
+     * no UI; see `docs/specs/tracked-blur-regions.md` §4.3.
+     */
+    __capturiaBlurTracking?: {
+      track: (regionId?: string) => Promise<BlurTrack | null>
+    }
+  }
+}
+
 export interface TrackBlurRegionProgress {
   /** Source milliseconds decoded so far, across both passes. */
   decodedMs: number
@@ -111,6 +124,9 @@ class LocalAnalyser implements Analyser {
       release: closeImage,
       gridTimes,
     })
+    // Ownership of the anchor image passes here, matching the worker, which
+    // has it transferred and closes it.
+    closeImage(anchorImage)
     if (!created.ok) throw new BlurTrackingRefusedError(created.reason, created.stdDev)
     return new LocalAnalyser(created.session)
   }
@@ -304,7 +320,14 @@ class WebCodecsFrameStream implements FrameStream {
     const carried: { frame: { image: ImageBitmap; timeMs: number } | null } = { frame: null }
 
     await this.decoder.decodeRange(
-      { startSec: gridTimes[0] / 1000, endSec: gridTimes[gridTimes.length - 1] / 1000 },
+      {
+        startSec: gridTimes[0] / 1000,
+        // A tail past the last instant: without a frame on the far side of it
+        // the nearest-frame rule has nothing to compare against and the last
+        // instant goes unfilled, which shifts every sample of a backward chunk
+        // by one grid interval.
+        endSec: gridTimes[gridTimes.length - 1] / 1000 + 0.2,
+      },
       async (frame, timestampMs) => {
         try {
           this.onDecoded(timestampMs)
@@ -333,7 +356,10 @@ class WebCodecsFrameStream implements FrameStream {
       },
       { signal: this.signal },
     )
-    carried.frame?.image.close()
+    // The recording ended before a frame past the last instant: the frame in
+    // hand is the nearest one there will ever be.
+    if (cursor.index < gridTimes.length && carried.frame) kept.push(carried.frame)
+    else carried.frame?.image.close()
     return kept
   }
 
@@ -479,13 +505,35 @@ export async function trackBlurRegion(
       let analyser: Analyser | null = null
       if (decodePath === 'webcodecs') {
         const started = performance.now()
-        await stream.forEachFrame(anchorMs, endMs, async (frame, timeMs) => {
+        // The template must come from the frame *nearest* the anchor, not the
+        // first one past it: at 30 fps the first frame past can be a full frame
+        // period late, and the whole track then sits that far off its content.
+        const beforeAnchor: { image: TrackerImage | null; timeMs: number } = {
+          image: null,
+          timeMs: 0,
+        }
+        await stream.forEachFrame(anchorMs - 100, endMs, async (frame, timeMs) => {
           throwIfAborted(signal)
           if (!analyser) {
-            // The first frame at or after the anchor defines the template.
-            analyser = await openAnalyser(frame, anchorMs, grid.forward)
-            analysed++
-            return
+            if (timeMs < anchorMs) {
+              if (beforeAnchor.image) closeImage(beforeAnchor.image)
+              beforeAnchor.image = frame
+              beforeAnchor.timeMs = timeMs
+              return
+            }
+            const held = beforeAnchor.image
+            beforeAnchor.image = null
+            if (held !== null && anchorMs - beforeAnchor.timeMs < timeMs - anchorMs) {
+              analyser = await openAnalyser(held, anchorMs, grid.forward)
+              analysed++
+              // `frame` is past the anchor and still belongs to this interval;
+              // fall through and let the session have it.
+            } else {
+              if (held) closeImage(held)
+              analyser = await openAnalyser(frame, anchorMs, grid.forward)
+              analysed++
+              return
+            }
           }
           if (analyser.isComplete()) {
             closeImage(frame)

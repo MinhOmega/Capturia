@@ -85,10 +85,11 @@ describe('resolveTrackedBlurRect', () => {
     expect(resolveTrackedBlurRect(lost, 5000)).toBeNull()
   })
 
-  it('unions the two rects when the gap is long and the displacement large', () => {
-    // 200 source px in 100 ms: the lerp would leave the content uncovered for
-    // whole frames, so the rendered rect must cover both ends.
-    const jump = track([at(0, 100), at(100, 300)])
+  it('unions the two rects across an interval the tracker never saw', () => {
+    // 200 source px in 100 ms with no frames in between: the lerp would leave
+    // the content uncovered for whole frames, so the rendered rect covers both
+    // ends. The `gap` flag is what says the interval was unobserved.
+    const jump = track([at(0, 100, { gap: true }), at(100, 300)])
     const mid = resolveTrackedBlurRect(jump, 50)!
     expect(mid.rect.y * SOURCE.height).toBeCloseTo(100, 6)
     expect(mid.rect.h * SOURCE.height).toBeCloseTo(240, 6)
@@ -103,11 +104,21 @@ describe('resolveTrackedBlurRect', () => {
 
   it('lerps instead of unioning when the gap is short or the displacement small', () => {
     // Same 200 px, but 40 ms apart: densified frames, so the lerp is accurate.
-    const dense = track([at(0, 100), at(40, 300)])
+    const dense = track([at(0, 100, { gap: true }), at(40, 300)])
     expect(resolveTrackedBlurRect(dense, 20)!.rect.y * SOURCE.height).toBeCloseTo(200, 6)
     // Long gap, 5 px displacement: under the union threshold.
-    const slow = track([at(0, 100), at(100, 105)])
+    const slow = track([at(0, 100, { gap: true }), at(100, 105)])
     expect(resolveTrackedBlurRect(slow, 50)!.rect.y * SOURCE.height).toBeCloseTo(102.5, 6)
+  })
+
+  it('lerps across the long gaps simplification leaves behind', () => {
+    // Simplification keeps only the ends of a smooth scroll because it checked
+    // that a straight line reproduces every sample it dropped. Unioning here
+    // would freeze the blur at the corner instead of following the content -
+    // which is what it did before `gap` existed.
+    const simplified = track([at(0, 100), at(1000, 300)])
+    expect(resolveTrackedBlurRect(simplified, 500)!.rect.y * SOURCE.height).toBeCloseTo(200, 6)
+    expect(resolveTrackedBlurRect(simplified, 500)!.rect.h * SOURCE.height).toBeCloseTo(40, 6)
   })
 
   it('clamps to the first and last keyframe outside the track', () => {
@@ -129,6 +140,13 @@ describe('unionRect', () => {
 })
 
 describe('simplifyKeyframes', () => {
+  it('never drops a keyframe that opens an unobserved interval', () => {
+    const withGap = [at(0, 0), at(100, 10, { gap: true }), at(200, 20), at(300, 30)]
+    const simplified = simplifyKeyframes(withGap, SOURCE)
+    expect(simplified.some((k) => k.gap && k.timeMs === 100)).toBe(true)
+    expect(simplified.some((k) => k.timeMs === 200)).toBe(true)
+  })
+
   it('drops keyframes a lerp already predicts and keeps the endpoints', () => {
     const linear = [at(0, 0), at(100, 10), at(200, 20), at(300, 30), at(400, 40)]
     const simplified = simplifyKeyframes(linear, SOURCE)

@@ -289,6 +289,15 @@ export interface BlurTrackKeyframe {
   h: number
   /** Content not visible from here until the next non-lost keyframe. Rect = last known. */
   lost?: true
+  /**
+   * The interval from here to the next keyframe was never observed at the
+   * source frame rate, so what the content did inside it is unknown and the
+   * renderer covers both ends instead of interpolating. Set when the decode
+   * path could not densify a fast movement; absent everywhere else, including
+   * across the long gaps simplification leaves behind, where the lerp is known
+   * to be accurate.
+   */
+  gap?: true
   /** `'user'` = placed or dragged by the user; a pin the tracker never moves. Missing = tracked. */
   origin?: 'user'
 }

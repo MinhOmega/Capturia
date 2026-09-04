@@ -58,7 +58,7 @@ import {
 } from './editorDefaults'
 import { EditorMenuBar } from './EditorMenuBar'
 import { ANNOTATION_ID_PREFIX, BLUR_ID_PREFIX, maxIdNum } from './idCounters'
-import { BLUR_REGIONS_ENABLED } from './featureFlags'
+import { BLUR_REGIONS_ENABLED, BLUR_TRACKING_ENABLED } from './featureFlags'
 import { normalizeAnnotationBlurData } from '@/lib/blurEffects'
 import { findFreeGapAt, planDuplicateSpan } from './regionPlacement'
 import { editorSnapshotsEqual, type EditorSnapshot } from './editorHistory'
@@ -2702,6 +2702,90 @@ export default function VideoEditor() {
       setSelectedAnnotationId(null)
     }
   }, [selectedAnnotationId, annotationRegions])
+
+  /**
+   * Dev-only handle for checking the blur tracker by hand in the browser
+   * harness (`docs/testing/browser-harness.md`, and
+   * `docs/specs/tracked-blur-regions.md` §4.3). Phase 1 has no UI: this runs
+   * the tracker on a selected blur region and logs a summary of the keyframes.
+   *
+   *   __capturiaBlurTracking.track('blur-1')
+   *
+   * `import.meta.env.DEV` is statically false in a production build, so rollup
+   * drops the effect and the dynamic import with it.
+   */
+  useEffect(() => {
+    if (!import.meta.env.DEV) return
+    if (!BLUR_TRACKING_ENABLED) return
+    const handle = {
+      async track(regionId?: string) {
+        const region = annotationRegions.find(
+          (candidate) => candidate.type === 'blur' && (regionId ? candidate.id === regionId : true),
+        )
+        if (!region) {
+          console.warn('[blur-tracking] no blur region to track')
+          return null
+        }
+        const video = videoPlaybackRef.current?.video
+        if (!video || !videoPath) {
+          console.warn('[blur-tracking] no source video loaded')
+          return null
+        }
+        const sourceWidth = video.videoWidth || 1920
+        const sourceHeight = video.videoHeight || 1080
+        const anchorMs = Math.min(Math.max(video.currentTime * 1000, region.startMs), region.endMs)
+        // Phase 1 has no source-space box yet, so the region's stage-percent
+        // geometry is read as a fraction of the source frame. That is only
+        // correct when the stage shows the whole uncropped frame, which is what
+        // the harness check is set up to do.
+        const anchorRect = {
+          x: (region.position.x - region.size.width / 2) / 100,
+          y: (region.position.y - region.size.height / 2) / 100,
+          w: region.size.width / 100,
+          h: region.size.height / 100,
+        }
+        const { trackBlurRegion } = await import('@/lib/blurTracking/trackBlurRegion')
+        console.log('[blur-tracking] tracking', region.id, { anchorMs, anchorRect })
+        const started = performance.now()
+        const result = await trackBlurRegion({
+          videoUrl: videoPath,
+          startMs: region.startMs,
+          endMs: region.endMs,
+          anchorMs,
+          anchorRect,
+          onProgress: ({ decodedMs, totalMs }) =>
+            console.log(`[blur-tracking] ${Math.round(decodedMs)} / ${Math.round(totalMs)} ms`),
+        })
+        const lost = result.track.keyframes.filter((keyframe) => keyframe.lost)
+        console.log('[blur-tracking] done', {
+          decodePath: result.decodePath,
+          keyframes: result.track.keyframes.length,
+          analysedSamples: result.analysedSamples,
+          hiddenSpans: lost.length,
+          quality: result.track.quality,
+          decodeMs: Math.round(result.decodeMs),
+          analyseMs: Math.round(result.analyseMs),
+          msPerSample: (result.analyseMs / Math.max(1, result.analysedSamples)).toFixed(2),
+          wallMs: Math.round(performance.now() - started),
+          sourceSize: result.track.sourceSize,
+        })
+        console.table(
+          result.track.keyframes.map((keyframe) => ({
+            timeMs: Math.round(keyframe.timeMs),
+            xPx: Math.round(keyframe.x * sourceWidth),
+            yPx: Math.round(keyframe.y * sourceHeight),
+            lost: keyframe.lost ?? false,
+            gap: keyframe.gap ?? false,
+          })),
+        )
+        return result.track
+      },
+    }
+    window.__capturiaBlurTracking = handle
+    return () => {
+      if (window.__capturiaBlurTracking === handle) delete window.__capturiaBlurTracking
+    }
+  }, [annotationRegions, videoPath])
 
   useEffect(() => {
     setCropRegionsByAspect((previous) => {

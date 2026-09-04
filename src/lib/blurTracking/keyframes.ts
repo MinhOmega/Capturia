@@ -132,13 +132,18 @@ export function resolveTrackedBlurRect(
 
   const a = rectOf(current)
   const b = rectOf(next)
-  const sourceHeight = Math.max(1, track.sourceSize.height)
-  const sourceWidth = Math.max(1, track.sourceSize.width)
-  const dxPx = (b.x - a.x) * sourceWidth
-  const dyPx = (b.y - a.y) * sourceHeight
-  const displacementPx = Math.hypot(dxPx, dyPx)
-  if (span > BLUR_TRACK_UNION_GAP_MS && displacementPx > BLUR_TRACK_UNION_PX) {
-    return { rect: unionRect(a, b), opacity: 1 }
+  // Union safety: only across an interval the tracker never saw at frame rate.
+  // A long gap on its own is not enough - simplification leaves those behind
+  // precisely because it checked that a straight line reproduces every sample
+  // it dropped, and unioning there would freeze the blur at the corner of a
+  // smooth scroll instead of following it.
+  if (current.gap) {
+    const sourceHeight = Math.max(1, track.sourceSize.height)
+    const sourceWidth = Math.max(1, track.sourceSize.width)
+    const displacementPx = Math.hypot((b.x - a.x) * sourceWidth, (b.y - a.y) * sourceHeight)
+    if (span > BLUR_TRACK_UNION_GAP_MS && displacementPx > BLUR_TRACK_UNION_PX) {
+      return { rect: unionRect(a, b), opacity: 1 }
+    }
   }
 
   const u = (timeMs - current.timeMs) / span
@@ -168,7 +173,9 @@ export function simplifyKeyframes(
     const isTransition =
       Boolean(current.lost) !== Boolean(previous.lost) ||
       Boolean(current.lost) !== Boolean(next.lost)
-    if (isTransition || current.origin === 'user' || previous.lost) {
+    // A keyframe that opens an unobserved interval, and the one that closes
+    // it, both carry information no lerp can recover.
+    if (isTransition || current.origin === 'user' || previous.lost || current.gap || previous.gap) {
       kept.push(current)
       continue
     }
@@ -213,6 +220,7 @@ function normalizeKeyframe(value: unknown): BlurTrackKeyframe | null {
     h: raw.h,
   }
   if (raw.lost === true) keyframe.lost = true
+  if (raw.gap === true) keyframe.gap = true
   if (raw.origin === 'user') keyframe.origin = 'user'
   return keyframe
 }

@@ -54,8 +54,15 @@ function ortWasmPlugin(): Plugin {
  *  - the recording fixture the shim points the editor at is served over HTTP.
  */
 const BROWSER_HARNESS = process.env.VITE_BROWSER_HARNESS === '1'
-const HARNESS_FIXTURE_URL_PATH = '/dev-fixtures/sample.webm'
-const HARNESS_FIXTURE_FILE = path.resolve(__dirname, 'src/__fixtures__/sample.webm')
+const HARNESS_FIXTURE_DIR = path.resolve(__dirname, 'src/__fixtures__')
+/**
+ * Recordings the harness serves, by URL path. `sample.webm` is what the editor
+ * opens by default; `scrolling-table.webm` is the one with content that moves,
+ * which is the only way to check a tracked blur by hand
+ * (docs/specs/tracked-blur-regions.md §4.3). Point the editor at another with
+ * `electronAPI.setCurrentVideoPath('/dev-fixtures/scrolling-table.webm')`.
+ */
+const HARNESS_FIXTURES = ['sample.webm', 'scrolling-table.webm']
 
 function browserHarnessPlugin(): Plugin {
   return {
@@ -64,9 +71,11 @@ function browserHarnessPlugin(): Plugin {
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         const url = (req.url ?? '').split('?')[0]
-        if (url !== HARNESS_FIXTURE_URL_PATH) return next()
-        if (!fs.existsSync(HARNESS_FIXTURE_FILE)) return next()
-        const size = fs.statSync(HARNESS_FIXTURE_FILE).size
+        const fixtureMatch = /^\/dev-fixtures\/([A-Za-z0-9._-]+)$/.exec(url)
+        if (!fixtureMatch || !HARNESS_FIXTURES.includes(fixtureMatch[1])) return next()
+        const fixtureFile = path.join(HARNESS_FIXTURE_DIR, fixtureMatch[1])
+        if (!fs.existsSync(fixtureFile)) return next()
+        const size = fs.statSync(fixtureFile).size
         res.setHeader('Content-Type', 'video/webm')
         res.setHeader('Cache-Control', 'no-cache')
         // `<video>` seeking and the exporter's chunked reads both ask for ranges.
@@ -80,11 +89,11 @@ function browserHarnessPlugin(): Plugin {
           res.statusCode = 206
           res.setHeader('Content-Range', `bytes ${from}-${to}/${size}`)
           res.setHeader('Content-Length', String(to - from + 1))
-          fs.createReadStream(HARNESS_FIXTURE_FILE, { start: from, end: to }).pipe(res)
+          fs.createReadStream(fixtureFile, { start: from, end: to }).pipe(res)
           return
         }
         res.setHeader('Content-Length', String(size))
-        fs.createReadStream(HARNESS_FIXTURE_FILE).pipe(res)
+        fs.createReadStream(fixtureFile).pipe(res)
       })
     },
   }

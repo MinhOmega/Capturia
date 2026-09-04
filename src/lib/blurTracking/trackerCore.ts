@@ -106,8 +106,18 @@ export const BLUR_TRACKER_TUNING = {
   maxCandidates: 24,
   /** Candidates that survive screening and get the full fine-scale refinement. */
   maxFineCandidates: 4,
-  /** Half-width of the ranking pass around each candidate, coarse px. */
+  /** Half-width of the ranking pass around each candidate, screen px. */
   screenRadius: 1,
+  /**
+   * Largest screening template the tracker will match, in pixels. The frame's
+   * coarse width is fixed at 480, so on a 480-wide recording the "coarse"
+   * scale is 1:1 and a wide patch makes the screening pass cost more than the
+   * fine pass it exists to cheapen. Another octave or two of downscale, chosen
+   * per patch, keeps it a screening stage.
+   */
+  maxScreenTemplatePixels: 1024,
+  /** The screening template is never taken below this on its short side. */
+  minScreenTemplateSide: 4,
   /**
    * Half-width of the relocation pass around each surviving candidate, coarse
    * px. Wide enough that an axis whose profile peak was missed is still found
@@ -195,6 +205,29 @@ export function boxBlur3(image: GrayImage): GrayImage {
       const x0 = x === 0 ? 0 : x - 1
       const x1 = x === width - 1 ? width - 1 : x + 1
       out[y * width + x] = ((rowSum[x0] + rowSum[x] + rowSum[x1]) / 9) | 0
+    }
+  }
+  return { data: out, width, height }
+}
+
+/** 2x2 box downscale. Odd edges keep their own pixels rather than being dropped. */
+export function halveGray(image: GrayImage): GrayImage {
+  const width = Math.max(1, image.width >> 1)
+  const height = Math.max(1, image.height >> 1)
+  const out = new Uint8Array(width * height)
+  for (let y = 0; y < height; y++) {
+    const row0 = 2 * y * image.width
+    const row1 = Math.min(image.height - 1, 2 * y + 1) * image.width
+    for (let x = 0; x < width; x++) {
+      const x0 = 2 * x
+      const x1 = Math.min(image.width - 1, x0 + 1)
+      out[y * width + x] =
+        (image.data[row0 + x0] +
+          image.data[row0 + x1] +
+          image.data[row1 + x0] +
+          image.data[row1 + x1] +
+          2) >>
+        2
     }
   }
   return { data: out, width, height }
@@ -664,13 +697,17 @@ function clampRectInside(
 
 export class BlurTracker {
   private readonly template: Template
-  private readonly coarseTemplate: Template | null
+  /** The patch at the screening scale, plus how many halvings below coarse that is. */
+  private readonly screenTemplate: Template | null
+  private readonly screenHalvings: number
   private readonly patchWidthPx: number
   private readonly patchHeightPx: number
   private readonly sourceWidth: number
   private readonly sourceHeight: number
   private readonly patchScale: number
   private readonly coarseScale: number
+  /** Scale the screening template and the screening image are held at. */
+  private readonly screenScale: number
 
   private x: number
   private y: number
@@ -681,19 +718,23 @@ export class BlurTracker {
   private lostSampleCount = 0
   private lastTimeMs: number
   private previousCoarse: GrayImage | null = null
-  /** Blurred coarse frame + integrals for the frame being analysed right now. */
-  private coarseCache: { frame: TrackerFrame; image: GrayImage; integrals: Integrals } | null = null
+  /** The frame being analysed right now, at the screening scale. */
+  private screenCache: { frame: TrackerFrame; image: GrayImage } | null = null
+  /** ...and blurred with integrals, built only when a re-acquisition sweep needs it. */
+  private sweepCache: { frame: TrackerFrame; image: GrayImage; integrals: Integrals } | null = null
 
   private constructor(args: {
     template: Template
-    coarseTemplate: Template | null
+    screenTemplate: Template | null
+    screenHalvings: number
     rect: SourceRectPx
     frame: TrackerFrame
     patchScale: number
     anchorMs: number
   }) {
     this.template = args.template
-    this.coarseTemplate = args.coarseTemplate
+    this.screenTemplate = args.screenTemplate
+    this.screenHalvings = args.screenHalvings
     this.patchWidthPx = args.rect.w
     this.patchHeightPx = args.rect.h
     this.x = args.rect.x
@@ -702,6 +743,7 @@ export class BlurTracker {
     this.sourceHeight = args.frame.sourceHeight
     this.patchScale = args.patchScale
     this.coarseScale = args.frame.coarse.width / args.frame.sourceWidth
+    this.screenScale = this.coarseScale / 2 ** args.screenHalvings
     this.lastTimeMs = args.anchorMs
     // The anchor frame is the previous frame for the first step; without it
     // that step has no profile candidates and a scroll larger than the +/-3
@@ -732,19 +774,43 @@ export class BlurTracker {
       return { ok: false, reason: 'low-detail', stdDev: template.stdDev }
     }
 
+    // The screening scale: the coarse scale, halved until the patch fits the
+    // screening budget. The frame's coarse width is fixed at 480, so on a
+    // 480-wide recording "coarse" is 1:1 and a wide patch would make screening
+    // cost more than the fine pass it exists to cheapen.
     const coarseScale = frame.coarse.width / frame.sourceWidth
-    const coarseWidth = Math.round(rect.w * coarseScale)
-    const coarseHeight = Math.round(rect.h * coarseScale)
-    // Below 8x3 there is not enough of the patch left at the coarse scale for a
-    // sweep to mean anything; re-acquisition falls back to a fine-scale strip.
-    const coarseTemplate =
-      coarseWidth >= 8 && coarseHeight >= 3
-        ? buildTemplate(sampleBlurred(frame, rect, coarseScale))
+    const { minScreenTemplateSide, maxScreenTemplatePixels } = BLUR_TRACKER_TUNING
+    let screenHalvings = 0
+    let screenScale = coarseScale
+    while (
+      rect.w * screenScale * (rect.h * screenScale) > maxScreenTemplatePixels &&
+      Math.min(rect.w, rect.h) * (screenScale / 2) >= minScreenTemplateSide &&
+      screenHalvings < 4
+    ) {
+      screenScale /= 2
+      screenHalvings++
+    }
+
+    const screenWidth = Math.round(rect.w * screenScale)
+    const screenHeight = Math.round(rect.h * screenScale)
+    // Below 8x3 there is not enough of the patch left for a sweep to mean
+    // anything; re-acquisition falls back to a fine-scale strip.
+    const screenTemplate =
+      screenWidth >= 8 && screenHeight >= 3
+        ? buildTemplate(sampleBlurred(frame, rect, screenScale))
         : null
 
     return {
       ok: true,
-      tracker: new BlurTracker({ template, coarseTemplate, rect, frame, patchScale, anchorMs }),
+      tracker: new BlurTracker({
+        template,
+        screenTemplate,
+        screenHalvings,
+        rect,
+        frame,
+        patchScale,
+        anchorMs,
+      }),
     }
   }
 
@@ -781,7 +847,8 @@ export class BlurTracker {
     this.lostSampleCount = snapshot.lostSampleCount
     this.lastTimeMs = snapshot.lastTimeMs
     this.previousCoarse = snapshot.previousCoarse
-    this.coarseCache = null
+    this.screenCache = null
+    this.sweepCache = null
   }
 
   /** Scale the fine template is held at, for the benchmark and the tests. */
@@ -816,7 +883,8 @@ export class BlurTracker {
     const result = this.state === 'lost' ? this.reacquire(frame) : this.locate(frame, dt)
 
     this.previousCoarse = frame.coarse
-    this.coarseCache = null
+    this.screenCache = null
+    this.sweepCache = null
     this.lastTimeMs = timeMs
 
     return this.applyResult(result, timeMs, dt)
@@ -967,15 +1035,26 @@ export class BlurTracker {
     return this.evaluateCandidates(frame, screened, predictedX, predictedY)
   }
 
-  /** Blurred coarse frame and its integral images, computed once per analysed frame. */
-  private coarseAnalysis(frame: TrackerFrame): {
-    image: GrayImage
-    integrals: Integrals
-  } {
-    if (this.coarseCache?.frame === frame) return this.coarseCache
-    const image = boxBlur3(frame.coarse)
+  /** The coarse frame at the screening scale: halved as many times as the template was. */
+  private screenImage(frame: TrackerFrame): GrayImage {
+    if (this.screenCache?.frame === frame) return this.screenCache.image
+    let image = frame.coarse
+    for (let i = 0; i < this.screenHalvings; i++) image = halveGray(image)
+    this.screenCache = { frame, image }
+    return image
+  }
+
+  /**
+   * The screening image blurred, with its integral images. Only the
+   * re-acquisition sweeps need this: they look at tens of thousands of offsets,
+   * where summed-area tables pay for themselves, while the per-frame screening
+   * looks at a couple of hundred and computes its sums directly.
+   */
+  private screenAnalysis(frame: TrackerFrame): { image: GrayImage; integrals: Integrals } {
+    if (this.sweepCache?.frame === frame) return this.sweepCache
+    const image = boxBlur3(this.screenImage(frame))
     const analysis = { frame, image, integrals: integralImages(image) }
-    this.coarseCache = analysis
+    this.sweepCache = analysis
     return analysis
   }
 
@@ -995,11 +1074,11 @@ export class BlurTracker {
     predictedX: number,
     predictedY: number,
   ): Candidate[] {
-    const template = this.coarseTemplate
+    const template = this.screenTemplate
     if (!template || candidates.length <= BLUR_TRACKER_TUNING.maxFineCandidates) return candidates
 
-    const image = frame.coarse
-    const scale = this.coarseScale
+    const image = this.screenImage(frame)
+    const scale = this.screenScale
     const radius = BLUR_TRACKER_TUNING.screenRadius
     const scored = candidates.map((candidate) => {
       const baseU = Math.round(candidate.x * scale)
@@ -1219,7 +1298,7 @@ export class BlurTracker {
     frame: TrackerFrame,
   ): { x: number; y: number; whole: number; maxQuadrant: number } | null {
     const fullSweep = this.lostSampleCount % BLUR_TRACKER_TUNING.reacquireFullSweepEvery === 0
-    const guess = this.coarseTemplate
+    const guess = this.screenTemplate
       ? this.sweepCoarse(frame, fullSweep)
       : this.sweepFineStrip(frame)
     if (!guess) return null
@@ -1231,10 +1310,10 @@ export class BlurTracker {
   }
 
   private sweepCoarse(frame: TrackerFrame, fullSweep: boolean): Candidate | null {
-    const template = this.coarseTemplate
+    const template = this.screenTemplate
     if (!template) return null
-    const { image: coarse, integrals } = this.coarseAnalysis(frame)
-    const scale = this.coarseScale
+    const { image: coarse, integrals } = this.screenAnalysis(frame)
+    const scale = this.screenScale
     const maxU = coarse.width - template.image.width
     const maxV = coarse.height - template.image.height
     if (maxU < 0 || maxV < 0) return null

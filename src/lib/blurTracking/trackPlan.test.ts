@@ -298,7 +298,7 @@ describe('BlurTrackSession', () => {
     // to tell where a chunk boundary fell.
     const gridTimes = [100, 200, 300]
     const screen = createSyntheticScreen(SESSION_SCREEN)
-    const frames = []
+    const frames: Array<{ image: GrayImage; timeMs: number }> = []
     for (let timeMs = 40; timeMs <= 320; timeMs += 40) {
       frames.push({ image: screen.render({ scrollY: Math.round(timeMs / 10) }), timeMs })
     }
