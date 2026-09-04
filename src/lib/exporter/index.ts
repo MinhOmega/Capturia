@@ -34,6 +34,17 @@ export {
   type DecodeTimelinePlan,
 } from './segmentAdapter'
 export { FrameRenderer } from './frameRenderer'
+export {
+  EXPORT_LEGACY_COMPOSITOR_STORAGE_KEY,
+  buildMaskGeometryKey,
+  buildShadowFilter,
+  buildShadowGeometryKey,
+  canReuseTextureSource,
+  getFrameSourceSize,
+  readLegacyCompositorOverride,
+  type MaskGeometryInput,
+  type ShadowGeometryInput,
+} from './compositorKeys'
 export { VideoMuxer } from './muxer'
 export { GifExporter, calculateOutputDimensions } from './gifExporter'
 export {

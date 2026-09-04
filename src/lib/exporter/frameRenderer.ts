@@ -1,4 +1,12 @@
-import { Application, Container, Sprite, Graphics, Texture, VideoSource } from 'pixi.js'
+import {
+  Application,
+  Container,
+  Sprite,
+  Graphics,
+  ImageSource,
+  Texture,
+  VideoSource,
+} from 'pixi.js'
 import { MotionBlurFilter } from 'pixi-filters/motion-blur'
 import type {
   ZoomRegion,
@@ -13,6 +21,14 @@ import {
   type PixiLifecycle,
 } from '@/lib/rendering/pixiLifecycle'
 import { createThreeDPass, type ThreeDPass } from './threeDPass'
+import {
+  buildMaskGeometryKey,
+  buildShadowFilter,
+  buildShadowGeometryKey,
+  canReuseTextureSource,
+  getFrameSourceSize,
+  readLegacyCompositorOverride,
+} from './compositorKeys'
 import {
   applyZoomTransform,
   createMotionBlurState,
@@ -80,6 +96,13 @@ interface FrameRenderConfig {
   cursorStyle?: Partial<CursorStyleConfig>
   /** `process.platform` of the host; enables the Linux CPU readback path. */
   platform?: string
+  /**
+   * Forces the pre-cache compositor: a fresh video texture, a fresh mask
+   * tessellation and a fresh shadow raster on every frame. Only for A/B'ing a
+   * suspected compositing regression; defaults to the
+   * `capturia.exportLegacyCompositor` override, else off.
+   */
+  legacyCompositor?: boolean
 }
 
 /**
@@ -168,9 +191,43 @@ export class FrameRenderer {
   private subtitleCues: SubtitleCue[]
   // Cached CSS filter string — constant across frames, computed once.
   private cachedShadowFilter: string | null = null
+  /**
+   * One `ImageSource` reused for every decoded `VideoFrame`: the frame is
+   * swapped into `.resource` and re-uploaded into the *same* GL texture rather
+   * than allocating and deleting one per frame. Null on the `<video>` path,
+   * which has its own reusable `VideoSource`.
+   */
+  private videoFrameSource: ImageSource | null = null
+  /** Identity of `videoFrameSource`'s pixel size; a change forces a new source. */
+  private videoFrameSourceSize: { width: number; height: number } | null = null
+  /** Mask tessellation identity; `updateLayout` is a no-op while it holds. */
+  private maskGeometryKey: string | null = null
+  /** Silhouette identity of the cached shadow raster. */
+  private shadowGeometryKey: string | null = null
+  /** Black-with-alpha shadow layer for `shadowGeometryKey`, drawn under the video. */
+  private shadowLayerCanvas: HTMLCanvasElement | null = null
+  private shadowLayerCtx: CanvasRenderingContext2D | null = null
+  /** Scratch canvas the silhouette is rasterised on before the filter runs. */
+  private silhouetteCanvas: HTMLCanvasElement | null = null
+  private silhouetteCtx: CanvasRenderingContext2D | null = null
+  /**
+   * Shadow key of the previous frame. The layer is only rasterised once the
+   * same key has been seen twice in a row, so a moving camera — whose key
+   * changes every frame — never pays for a raster it would throw away.
+   */
+  private previousShadowKey: string | null = null
+  private readonly legacyCompositor: boolean
+  /** Counters the perf harness reads; not part of the export contract. */
+  readonly stats = {
+    layoutRebuilds: 0,
+    textureAllocations: 0,
+    shadowRasterisations: 0,
+    framesRendered: 0,
+  }
 
   constructor(config: FrameRenderConfig) {
     this.config = config
+    this.legacyCompositor = config.legacyCompositor ?? readLegacyCompositorOverride() ?? false
     this.isLinux = config.platform === 'linux'
     this.subtitleCues = normalizeSubtitleCues(config.subtitleCues ?? [])
     this.cursorTelemetry = buildCursorTelemetry(config.cursorTrack)
@@ -465,6 +522,22 @@ export class FrameRenderer {
       return
     }
 
+    // Decoded `VideoFrame`s arrive one per frame and are closed by the caller
+    // straight afterwards. `Texture.from` would build a new ImageSource, a new
+    // Texture and a new GL texture for each of them, then `destroy(true)`
+    // would delete all three — an allocate/free pair per exported frame. Swap
+    // the resource into the source we already have instead, which re-uploads
+    // into the same GL texture. Only a change of pixel size needs a new one.
+    if (!this.legacyCompositor && !(videoSource instanceof HTMLVideoElement)) {
+      const size = getFrameSourceSize(videoSource)
+      if (this.videoFrameSource && canReuseTextureSource(this.videoFrameSourceSize, size)) {
+        this.videoFrameSource.resource = videoSource
+        this.videoFrameSource.update()
+        this.currentVideoSource = videoSource
+        return
+      }
+    }
+
     const oldTexture = this.videoSprite.texture
     const newTexture = this.createTextureFromVideoSource(videoSource)
     this.videoSprite.texture = newTexture
@@ -475,9 +548,23 @@ export class FrameRenderer {
   }
 
   private createTextureFromVideoSource(videoSource: HTMLVideoElement | VideoFrame): Texture {
+    this.stats.textureAllocations += 1
     if (!(videoSource instanceof HTMLVideoElement)) {
-      return Texture.from(videoSource as any)
+      if (this.legacyCompositor) {
+        this.videoFrameSource = null
+        this.videoFrameSourceSize = null
+        return Texture.from(videoSource as any)
+      }
+      // Same source class `Texture.from` would pick for a `VideoFrame`
+      // (`ImageSource.test` matches it), built directly so the instance can be
+      // kept and re-fed instead of going through the resource cache.
+      const source = new ImageSource({ resource: videoSource as any })
+      this.videoFrameSource = source
+      this.videoFrameSourceSize = getFrameSourceSize(videoSource)
+      return new Texture({ source })
     }
+    this.videoFrameSource = null
+    this.videoFrameSourceSize = null
 
     // Enforce silent source behavior and explicitly disable Pixi auto-play in export pipeline.
     videoSource.defaultMuted = true
@@ -515,12 +602,11 @@ export class FrameRenderer {
       throw new Error('Renderer not initialized')
     }
 
+    this.stats.framesRendered += 1
     this.currentVideoTime = timestamp / 1000000
     this.updateVideoSpriteSource(videoSource)
 
-    if (!this.layoutCache) {
-      this.updateLayout()
-    }
+    this.updateLayout()
     if (!this.layoutCache) {
       throw new Error('Frame layout is unavailable')
     }
@@ -782,6 +868,28 @@ export class FrameRenderer {
     const videoWidth = this.config.videoWidth
     const videoHeight = this.config.videoHeight
 
+    // The mask path only depends on the crop rect, the corner radius, the
+    // padding and the canvas/preview sizes, none of which move during an
+    // export. Keying on them keeps `Graphics.clear()` + `roundRect()` — a
+    // re-tessellation and a GPU buffer upload — out of the frame loop, and
+    // makes it explicit that a future mid-export crop change would rebuild.
+    const geometryKey = buildMaskGeometryKey({
+      width,
+      height,
+      videoWidth,
+      videoHeight,
+      cropRegion,
+      borderRadius,
+      padding,
+      previewWidth: this.config.previewWidth || 1920,
+      previewHeight: this.config.previewHeight || 1080,
+    })
+    if (this.maskGeometryKey === geometryKey && this.layoutCache) {
+      return
+    }
+    this.maskGeometryKey = geometryKey
+    this.stats.layoutRebuilds += 1
+
     // Calculate cropped video dimensions
     const cropStartX = cropRegion.x
     const cropStartY = cropRegion.y
@@ -924,24 +1032,23 @@ export class FrameRenderer {
       this.shadowCanvas &&
       this.shadowCtx
     ) {
+      // Shadow intensity never changes mid-export, so the filter string is
+      // built once.
+      if (!this.cachedShadowFilter) {
+        this.cachedShadowFilter = buildShadowFilter(this.config.shadowIntensity)
+      }
+
+      if (!this.legacyCompositor && this.drawCachedShadowLayer(videoCanvas)) {
+        // The shadow is behind the video, so `shadow over background` then
+        // `video over that` is the same composite the filter produces in one
+        // step (source-over is associative) — without re-blurring 2 Mpx.
+        ctx.drawImage(videoCanvas, 0, 0, w, h)
+        return
+      }
+
       const shadowCtx = this.shadowCtx
       shadowCtx.clearRect(0, 0, w, h)
       shadowCtx.save()
-
-      // Use cached shadow filter string — shadow intensity is constant across
-      // all frames, so computing the string once avoids per-frame allocation.
-      if (!this.cachedShadowFilter) {
-        const intensity = this.config.shadowIntensity
-        const baseBlur1 = 48 * intensity
-        const baseBlur2 = 16 * intensity
-        const baseBlur3 = 8 * intensity
-        const baseAlpha1 = 0.7 * intensity
-        const baseAlpha2 = 0.5 * intensity
-        const baseAlpha3 = 0.3 * intensity
-        const baseOffset = 12 * intensity
-        this.cachedShadowFilter = `drop-shadow(0 ${baseOffset}px ${baseBlur1}px rgba(0,0,0,${baseAlpha1})) drop-shadow(0 ${baseOffset / 3}px ${baseBlur2}px rgba(0,0,0,${baseAlpha2})) drop-shadow(0 ${baseOffset / 6}px ${baseBlur3}px rgba(0,0,0,${baseAlpha3}))`
-      }
-
       shadowCtx.filter = this.cachedShadowFilter
       shadowCtx.drawImage(videoCanvas, 0, 0, w, h)
       shadowCtx.restore()
@@ -949,6 +1056,128 @@ export class FrameRenderer {
     } else {
       ctx.drawImage(videoCanvas, 0, 0, w, h)
     }
+  }
+
+  /**
+   * Draws the cached drop-shadow layer for the current silhouette onto the
+   * composite canvas and reports whether it did. `false` means the caller must
+   * fall back to filtering this frame directly, which is what happens while the
+   * camera is moving.
+   */
+  private drawCachedShadowLayer(videoCanvas: HTMLCanvasElement): boolean {
+    if (!this.compositeCtx || !this.layoutCache || !this.cameraContainer) return false
+
+    const key = buildShadowGeometryKey({
+      width: this.config.width,
+      height: this.config.height,
+      shadowIntensity: this.config.shadowIntensity,
+      maskWidth: this.layoutCache.maskRect.width,
+      maskHeight: this.layoutCache.maskRect.height,
+      maskBorderRadius: this.layoutCache.maskBorderRadius,
+      baseOffsetX: this.layoutCache.baseOffset.x,
+      baseOffsetY: this.layoutCache.baseOffset.y,
+      cameraScaleX: this.cameraContainer.scale.x,
+      cameraScaleY: this.cameraContainer.scale.y,
+      cameraX: this.cameraContainer.position.x,
+      cameraY: this.cameraContainer.position.y,
+      rotation3D: this.currentRotation3D,
+    })
+
+    // Rasterising costs more than one filtered draw, so it is only worth doing
+    // for a silhouette that is going to be reused. A camera in motion produces
+    // a new key every frame and takes this branch every time, at the price of
+    // one string comparison.
+    if (key !== this.previousShadowKey) {
+      this.previousShadowKey = key
+      return false
+    }
+
+    if (key !== this.shadowGeometryKey) {
+      if (!this.rasteriseShadowLayer(videoCanvas)) return false
+      this.shadowGeometryKey = key
+      this.stats.shadowRasterisations += 1
+    }
+
+    if (!this.shadowLayerCanvas) return false
+    this.compositeCtx.drawImage(this.shadowLayerCanvas, 0, 0, this.config.width, this.config.height)
+    return true
+  }
+
+  /**
+   * Rebuilds `shadowLayerCanvas` so it holds the drop shadow *alone*.
+   *
+   * `ctx.filter = drop-shadow(...)` draws `source over shadow`; the shadow half
+   * is what has to be cached, because the source half is the video and changes
+   * every frame. All three shadows in the chain are pure black, so the layer is
+   * fully described by an alpha channel, and filtering an opaque-black
+   * silhouette with the same alpha as the video gives
+   * `aF = aSil + aShadow * (1 - aSil)`, which inverts exactly.
+   */
+  private rasteriseShadowLayer(videoCanvas: HTMLCanvasElement): boolean {
+    const w = this.config.width
+    const h = this.config.height
+
+    if (!this.silhouetteCanvas || !this.silhouetteCtx) {
+      this.silhouetteCanvas = document.createElement('canvas')
+      this.silhouetteCanvas.width = w
+      this.silhouetteCanvas.height = h
+      this.silhouetteCtx = this.silhouetteCanvas.getContext('2d', { willReadFrequently: true })
+    }
+    if (!this.shadowLayerCanvas || !this.shadowLayerCtx) {
+      this.shadowLayerCanvas = document.createElement('canvas')
+      this.shadowLayerCanvas.width = w
+      this.shadowLayerCanvas.height = h
+      this.shadowLayerCtx = this.shadowLayerCanvas.getContext('2d', { willReadFrequently: true })
+    }
+    const silCtx = this.silhouetteCtx
+    const layerCtx = this.shadowLayerCtx
+    if (!silCtx || !layerCtx || !this.cachedShadowFilter) return false
+
+    silCtx.save()
+    silCtx.globalCompositeOperation = 'source-over'
+    silCtx.clearRect(0, 0, w, h)
+    silCtx.drawImage(videoCanvas, 0, 0, w, h)
+    // Replace the video's colours with black, keeping its alpha: the shadow is
+    // cast from the alpha channel only.
+    silCtx.globalCompositeOperation = 'source-in'
+    silCtx.fillStyle = '#000000'
+    silCtx.fillRect(0, 0, w, h)
+    silCtx.restore()
+
+    layerCtx.save()
+    layerCtx.globalCompositeOperation = 'source-over'
+    layerCtx.clearRect(0, 0, w, h)
+    layerCtx.filter = this.cachedShadowFilter
+    layerCtx.drawImage(this.silhouetteCanvas, 0, 0, w, h)
+    layerCtx.restore()
+
+    let filtered: ImageData
+    let silhouette: ImageData
+    try {
+      filtered = layerCtx.getImageData(0, 0, w, h)
+      silhouette = silCtx.getImageData(0, 0, w, h)
+    } catch {
+      // A tainted or zero-sized canvas: stay on the per-frame filter path.
+      return false
+    }
+
+    const out = filtered.data
+    const sil = silhouette.data
+    for (let i = 3; i < out.length; i += 4) {
+      const aSil = sil[i]
+      if (aSil >= 255) {
+        // Fully covered by the video; the shadow underneath is never visible.
+        out[i] = 0
+        continue
+      }
+      const aFiltered = out[i]
+      const shadowAlpha = ((aFiltered - aSil) * 255) / (255 - aSil)
+      out[i] = shadowAlpha <= 0 ? 0 : shadowAlpha >= 255 ? 255 : Math.round(shadowAlpha)
+    }
+    // The layer is black everywhere, so the colour channels stay at zero and
+    // only the recovered alpha is written back.
+    layerCtx.putImageData(filtered, 0, 0)
+    return true
   }
 
   getCanvas(): HTMLCanvasElement {
@@ -964,6 +1193,14 @@ export class FrameRenderer {
       this.videoSprite = null
     }
     this.currentVideoSource = null
+    // Only the source this renderer built itself: `videoSprite.destroy()`
+    // above leaves the texture alone, and the caller owns the last VideoFrame.
+    if (this.videoFrameSource) {
+      this.videoFrameSource.resource = null as never
+      this.videoFrameSource.destroy()
+      this.videoFrameSource = null
+    }
+    this.videoFrameSourceSize = null
     this.backgroundSprite = null
     // Through the lifecycle so a destroy that arrives while `initialize` is
     // still waiting on the driver is honoured when that init lands. Both paths
@@ -989,6 +1226,13 @@ export class FrameRenderer {
     this.foregroundCtx = null
     this.shadowCanvas = null
     this.shadowCtx = null
+    this.shadowLayerCanvas = null
+    this.shadowLayerCtx = null
+    this.silhouetteCanvas = null
+    this.silhouetteCtx = null
+    this.shadowGeometryKey = null
+    this.previousShadowKey = null
+    this.maskGeometryKey = null
     this.compositeCanvas = null
     this.compositeCtx = null
     this.rasterCanvas = null

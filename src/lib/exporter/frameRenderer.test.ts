@@ -3,9 +3,16 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockTextureConstructor, mockVideoSourceConstructor } = vi.hoisted(() => ({
+const {
+  mockTextureConstructor,
+  mockVideoSourceConstructor,
+  mockImageSourceConstructor,
+  mockImageSourceUpdate,
+} = vi.hoisted(() => ({
   mockTextureConstructor: vi.fn(),
   mockVideoSourceConstructor: vi.fn(),
+  mockImageSourceConstructor: vi.fn(),
+  mockImageSourceUpdate: vi.fn(),
 }))
 
 vi.mock('pixi.js', () => {
@@ -21,6 +28,17 @@ vi.mock('pixi.js', () => {
     }
   }
   class MockGraphics {}
+  class MockImageSource {
+    resource: unknown
+    constructor(options: { resource?: unknown } = {}) {
+      this.resource = options.resource
+      mockImageSourceConstructor(options)
+    }
+    update(): void {
+      mockImageSourceUpdate()
+    }
+    destroy(): void {}
+  }
   class MockBlurFilter {}
 
   class MockVideoSource {
@@ -47,6 +65,7 @@ vi.mock('pixi.js', () => {
     Sprite: MockSprite,
     Graphics: MockGraphics,
     BlurFilter: MockBlurFilter,
+    ImageSource: MockImageSource,
     Texture: MockTexture,
     VideoSource: MockVideoSource,
   }
