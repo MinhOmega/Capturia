@@ -146,12 +146,19 @@ async function report(name: string, lines: string[]): Promise<void> {
 
 let webcodecsSupported = false
 
+/**
+ * Decodes the whole fixture once to read its timecode, which is real work: a
+ * few seconds alone, longer when the rest of the browser lane is decoding and
+ * encoding in the same Chromium. The 30 s `hookTimeout` in
+ * `vitest.browser.config.ts` is sized for hooks that only set state, so this
+ * one carries its own budget rather than failing the suite under load.
+ */
 beforeAll(async () => {
   if (typeof VideoDecoder === 'undefined') return
   const support = await VideoDecoder.isConfigSupported({ codec: 'vp09.00.10.08' }).catch(() => null)
   webcodecsSupported = support?.supported === true
   if (webcodecsSupported) await readTimeline()
-})
+}, 120_000)
 
 describe('trackBlurRegion (real browser)', () => {
   it('recovers the scroll within 3 source px on the WebCodecs path', async () => {
