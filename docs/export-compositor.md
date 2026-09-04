@@ -71,11 +71,28 @@ on a Wayland session runs with `--disable-gpu` for the Electron startup crash
 actually get. On an X11 session with the GPU path the absolute numbers are much
 lower and the ratio will differ.
 
+`CAPTURIA_EXPORT_PERF_FRAMES` sets the sequence length (default 60 frames = 2 s
+of a 30 fps timeline; 120 = 4 s, which the zoom sequence needs to cover both of
+its zoom regions rather than only the first).
+
 Numbers on the development box (2026-09-04, 22-core, 46 GB):
 
 | Sequence | legacy | cached | |
 |---|---|---|---|
 | static camera, 60 frames | 70 701 ms total, 1119.95 ms/frame median, 61 texture allocations | 26 697 ms total, 391.25 ms/frame median, 1 texture allocation, 1 shadow raster | **2.65x** |
+| moving zoom camera, 60 frames | 73 503 ms total, 1200.50 ms/frame median | 47 594 ms total, 441.75 ms/frame median, 2 shadow rasters | **1.54x** |
+| moving zoom camera, 120 frames | 172 378 ms total, 1326.00 ms/frame median | 103 532 ms total, 818.55 ms/frame median, 3 shadow rasters | **1.66x** |
+
+The moving-camera rows are the ones that matter for the invalidation rule. The
+first attempt at the shadow cache — rasterise on the first miss, give up if the
+hit rate turned out bad — measured **0.75x** on the 120-frame zoom sequence
+(301 186 ms legacy against 402 892 ms cached, 22 rasterisations): a real
+regression for zoom-heavy exports, paid for by rasterising layers that the next
+frame threw away. Waiting for the same key on two consecutive frames turns that
+into 1.66x at the same length, with three rasterisations instead of 22 — the
+camera-in-motion frames now stay on the per-frame filter path and the caching
+only happens across the settled stretches, while the texture reuse applies
+throughout.
 
 Output parity is asserted, not assumed:
 `src/lib/exporter/frameRendererCompositor.browser.test.ts` renders the same

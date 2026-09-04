@@ -25,7 +25,14 @@ const FIXTURE_URL = '/src/__fixtures__/perf-1080p.mp4'
 
 const WIDTH = 1920
 const HEIGHT = 1080
-const FRAME_COUNT = 60
+/**
+ * Frames per benchmarked sequence. 60 spans 2 s of a 30 fps timeline; 120 spans
+ * 4 s, which is what the zoom sequence below needs to cover *both* of its zoom
+ * regions rather than only the first. Override with
+ * `CAPTURIA_EXPORT_PERF_FRAMES` so a reported number can be reproduced at the
+ * length it was measured at.
+ */
+const FRAME_COUNT = Number(import.meta.env['CAPTURIA_EXPORT_PERF_FRAMES'] ?? 60) || 60
 const FPS = 30
 
 async function report(line: string): Promise<void> {
