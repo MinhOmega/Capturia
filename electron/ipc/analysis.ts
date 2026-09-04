@@ -72,6 +72,15 @@ export function registerAnalysisHandlers(ctx: IpcContext): void {
     }
   })
 
+  // P2-F4: stop a native transcription that is still queued or running. The
+  // helper process is killed through the job's signal.
+  ipcMain.handle('analysis-cancel', (_, jobId: string) => {
+    const normalizedJobId = String(jobId || '').trim()
+    if (!normalizedJobId) return { success: false, message: 'Analysis job not found.' }
+    const cancelled = analysisService.cancel(normalizedJobId)
+    return { success: true, cancelled }
+  })
+
   ipcMain.handle('analysis-result', (_, jobId: string) => {
     const normalizedJobId = String(jobId || '').trim()
     const status = analysisService.getStatus(normalizedJobId)

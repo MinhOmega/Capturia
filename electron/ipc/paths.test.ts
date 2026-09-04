@@ -17,6 +17,7 @@ import {
   localMediaUrlToPath,
   normalizeExternalUrl,
   normalizeVideoSourcePath,
+  resolveCaptionSidecarPath,
   resolveOutputPathInDir,
   resolveRecordingOutputPath,
 } from './paths'
@@ -334,6 +335,58 @@ describe('isAllowedExportPath', () => {
     expect(isAllowedExportPath('c:\\users\\me\\exports\\OUT.GIF', opts)).toBe(true)
     expect(isAllowedExportPath('C:\\Users\\me\\Exports\\..\\out.mp4', opts)).toBe(false)
     expect(isAllowedExportPath('\\Exports\\out.mp4', opts)).toBe(false)
+  })
+})
+
+describe('resolveCaptionSidecarPath', () => {
+  beforeEach(() => {
+    approvedExportPaths.clear()
+  })
+
+  it('swaps the container extension for the sidecar one', () => {
+    approvedExportPaths.approveFile('/home/u/Downloads/export-1.mp4')
+    expect(resolveCaptionSidecarPath('/home/u/Downloads/export-1.mp4', 'srt')).toBe(
+      '/home/u/Downloads/export-1.srt',
+    )
+    expect(resolveCaptionSidecarPath('/home/u/Downloads/export-1.mp4', 'vtt')).toBe(
+      '/home/u/Downloads/export-1.vtt',
+    )
+  })
+
+  it('works for a file inside an approved export directory', () => {
+    approvedExportPaths.approveDirectory('/home/u/Exports')
+    expect(resolveCaptionSidecarPath('/home/u/Exports/export-1-9x16.gif', 'vtt')).toBe(
+      '/home/u/Exports/export-1-9x16.vtt',
+    )
+  })
+
+  it('refuses an export path the user never approved', () => {
+    expect(resolveCaptionSidecarPath('/home/u/Downloads/export-1.mp4', 'srt')).toBe(null)
+  })
+
+  it('refuses a format that is not a caption sidecar', () => {
+    approvedExportPaths.approveFile('/home/u/Downloads/export-1.mp4')
+    expect(resolveCaptionSidecarPath('/home/u/Downloads/export-1.mp4', 'sh')).toBe(null)
+    expect(resolveCaptionSidecarPath('/home/u/Downloads/export-1.mp4', '../evil')).toBe(null)
+    expect(resolveCaptionSidecarPath('/home/u/Downloads/export-1.mp4', null)).toBe(null)
+  })
+
+  it('accepts the format case-insensitively', () => {
+    approvedExportPaths.approveFile('/home/u/Downloads/export-1.mp4')
+    expect(resolveCaptionSidecarPath('/home/u/Downloads/export-1.mp4', 'SRT')).toBe(
+      '/home/u/Downloads/export-1.srt',
+    )
+  })
+
+  it('supports win32 paths via an isolated registry', () => {
+    const reg = new ApprovedPathRegistry(path.win32)
+    reg.approveFile('C:\\Users\\me\\Exports\\out.mp4')
+    expect(
+      resolveCaptionSidecarPath('C:\\Users\\me\\Exports\\out.mp4', 'srt', {
+        registry: reg,
+        platformPath: path.win32,
+      }),
+    ).toBe('C:\\Users\\me\\Exports\\out.srt')
   })
 })
 

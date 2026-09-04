@@ -14,6 +14,7 @@
  */
 
 import type { AnnotationRegion, AudioEditRegion, VideoSegment } from './types'
+import type { SubtitleCue } from '@/lib/analysis/types'
 import type { ZoomRegionsByAspect } from '@/lib/zoom/aspectZoomState'
 
 export interface EditorSnapshot {
@@ -21,6 +22,8 @@ export interface EditorSnapshot {
   zoomRegionsByAspect: ZoomRegionsByAspect
   annotationRegions: AnnotationRegion[]
   audioEditRegions: AudioEditRegion[]
+  /** P2-F2: caption edits are undoable like any other region edit. */
+  subtitleCues: SubtitleCue[]
 }
 
 /** Same length and the same element identities, in order. */
@@ -60,6 +63,7 @@ export function editorSnapshotsEqual(a: EditorSnapshot | null, b: EditorSnapshot
     arraysShallowEqual(a.segments, b.segments) &&
     arraysShallowEqual(a.annotationRegions, b.annotationRegions) &&
     arraysShallowEqual(a.audioEditRegions, b.audioEditRegions) &&
+    arraysShallowEqual(a.subtitleCues, b.subtitleCues) &&
     zoomRegionsByAspectShallowEqual(a.zoomRegionsByAspect, b.zoomRegionsByAspect)
   )
 }

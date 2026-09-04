@@ -8,6 +8,8 @@ import {
   isWhisperWebAvailable,
 } from '@/lib/captioning/captionModel'
 import { whisperLanguageForLocale } from '@/lib/captioning/captionConstants'
+import { CAPTION_LANGUAGE_AUTO } from '@/lib/captioning/captionTranscriptionSettings'
+import { applyVocabularyHint, parseVocabularyHint } from '@/lib/captioning/vocabularyHint'
 import { extractMono16kFromVideo } from '@/lib/captioning/extractMono16k'
 import {
   shiftTrimRegionsMsForCaptionBuffer,
@@ -17,6 +19,9 @@ import {
   type TranscribeMono16kResult,
   transcribeMono16kToSegments,
 } from '@/lib/captioning/transcribe'
+import { snapCaptionSegmentBoundaries } from '@/lib/captioning/wordBoundarySnap'
+import { TRANSCRIBE_SAMPLE_RATE } from '@/lib/captioning/transcribeCore'
+import { analysisProgressPercent } from './analysisQueue'
 import type { TranscriptionEngineId, VideoAnalysisResult, VideoTranscriptionResult } from './types'
 import { buildVideoAnalysisResult } from './videoAnalysisPipeline'
 import { captionSegmentsToTranscriptWords } from './whisperWords'
@@ -48,8 +53,37 @@ export interface TranscriptionRequest {
   videoWidth: number
   subtitleWidthRatio: number
   trimRegions?: TrimRegion[]
+  /** Whisper weights to run (P2-F4); the default model when omitted. */
+  modelId?: string
+  /**
+   * Language the user forced, `auto` to let Whisper detect, omitted to derive
+   * it from `locale` as before.
+   */
+  language?: string
+  /** Free-text list of product names to correct in the transcript (P2-F4). */
+  vocabulary?: string
   signal?: AbortSignal
   onStatus?: (phase: TranscriptionPhase) => void
+  /**
+   * Whole-percent progress of the current phase, when the engine can measure
+   * it (P2-F4: the native transcriber reports transcribed-vs-total audio).
+   */
+  onProgress?: (percent: number) => void
+}
+
+/**
+ * The Whisper language code for a request: an explicit choice wins, `auto`
+ * means auto-detect, and no choice at all falls back to the UI locale.
+ */
+export function resolveRequestLanguage(request: {
+  language?: string
+  locale: string
+}): string | undefined {
+  if (request.language === CAPTION_LANGUAGE_AUTO) return undefined
+  if (typeof request.language === 'string' && request.language.trim()) {
+    return request.language.trim()
+  }
+  return whisperLanguageForLocale(request.locale)
 }
 
 /** Engine result; the native engine also returns the analysis main already built. */
@@ -108,10 +142,20 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 /** The slice of `window.electronAPI` the native engine uses (mockable in tests). */
 export type NativeAnalysisApi = Pick<
   Window['electronAPI'],
-  'startVideoAnalysis' | 'getVideoAnalysisStatus' | 'getVideoAnalysisResult'
+  'startVideoAnalysis' | 'getVideoAnalysisStatus' | 'getVideoAnalysisResult' | 'cancelVideoAnalysis'
 >
 
 export const NATIVE_POLL_INTERVAL_MS = 900
+
+/**
+ * Boundary snapping (P2-F4) is deliberately *not* applied to this engine.
+ * `SFSpeechRecognizer` already returns per-word timings taken from its own
+ * acoustic alignment, and the renderer never holds this path's audio buffer —
+ * enabling it would mean decoding the whole recording a second time in the
+ * renderer purely to second-guess the OS. It stays off until someone can
+ * measure the two alignments against each other on a Mac; this branch was
+ * developed on Linux, where the native engine cannot run at all.
+ */
 
 export function createNativeSpeechEngine(
   api: NativeAnalysisApi = window.electronAPI,
@@ -138,28 +182,41 @@ export function createNativeSpeechEngine(
       }
 
       const jobId = started.jobId
-      for (;;) {
-        if (request.signal?.aborted) throw abortError()
-        const statusResult = await api.getVideoAnalysisStatus(jobId)
-        if (!statusResult.success || !statusResult.status) {
-          return {
-            success: false,
-            engine: 'macos-speech',
-            code: 'analysis_status_failed',
-            message: statusResult.message,
+      // Cancelling the editor's request has to reach the helper process, not
+      // just stop this loop: the job would otherwise keep a CPU busy.
+      const abortJob = () => {
+        void api.cancelVideoAnalysis(jobId)
+      }
+      request.signal?.addEventListener('abort', abortJob, { once: true })
+      try {
+        for (;;) {
+          if (request.signal?.aborted) throw abortError()
+          const statusResult = await api.getVideoAnalysisStatus(jobId)
+          if (!statusResult.success || !statusResult.status) {
+            return {
+              success: false,
+              engine: 'macos-speech',
+              code: 'analysis_status_failed',
+              message: statusResult.message,
+            }
           }
-        }
-        const status = statusResult.status
-        if (status.status === 'failed') {
-          return {
-            success: false,
-            engine: 'macos-speech',
-            code: status.code ?? 'transcription_failed',
-            message: status.error || statusResult.message,
+          const status = statusResult.status
+          if (status.status === 'failed') {
+            return {
+              success: false,
+              engine: 'macos-speech',
+              code: status.code ?? 'transcription_failed',
+              message: status.error || statusResult.message,
+            }
           }
+          if (status.status === 'cancelled') throw abortError()
+          const percent = analysisProgressPercent(status)
+          if (percent !== null) request.onProgress?.(percent)
+          if (status.status === 'completed') break
+          await sleep(pollIntervalMs, request.signal)
         }
-        if (status.status === 'completed') break
-        await sleep(pollIntervalMs, request.signal)
+      } finally {
+        request.signal?.removeEventListener('abort', abortJob)
       }
 
       const result = await api.getVideoAnalysisResult(jobId)
@@ -259,14 +316,29 @@ export function createWhisperWebEngine(
 
       const raw = await resolved.transcribe(trimmed.samples, {
         trimRegions,
-        language: whisperLanguageForLocale(request.locale),
+        language: resolveRequestLanguage(request),
+        modelId: request.modelId,
         modelDirUrl,
         ortWasmBaseUrl: resolved.ortWasmBaseUrl(),
         signal: request.signal,
         onStatus: (phase) => request.onStatus?.(phase),
       })
-      const shifted = shiftSegmentsBySeconds(raw, trimmed.trimSec)
-      const words = captionSegmentsToTranscriptWords(shifted.segments, shifted.granularity)
+      // Whisper's boundaries sit on its own coarse grid and regularly clip a
+      // word; the audio it was given says where the word really ends (P2-F4).
+      const snapped: TranscribeMono16kResult = {
+        granularity: raw.granularity,
+        segments: snapCaptionSegmentBoundaries(raw.segments, trimmed.samples, {
+          sampleRate: TRANSCRIBE_SAMPLE_RATE,
+        }),
+      }
+      const shifted = shiftSegmentsBySeconds(snapped, trimmed.trimSec)
+      // Product names the model has never heard: corrected after decoding,
+      // because this runtime has no initial-prompt hook (see vocabularyHint.ts).
+      const hinted = applyVocabularyHint(
+        shifted.segments,
+        parseVocabularyHint(request.vocabulary ?? ''),
+      )
+      const words = captionSegmentsToTranscriptWords(hinted, shifted.granularity)
       if (words.length === 0) {
         return {
           success: false,

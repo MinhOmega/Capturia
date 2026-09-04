@@ -226,6 +226,12 @@ export interface ElectronAPI {
     locale?: string,
     options?: { directoryPath?: string | null; targetFilePath?: string | null },
   ) => Promise<{ success: boolean; path?: string; message?: string; cancelled?: boolean }>
+  saveCaptionSidecar: (
+    exportFilePath: string,
+    format: 'srt' | 'vtt',
+    content: string,
+    locale?: string,
+  ) => Promise<{ success: boolean; path?: string; message?: string; error?: string }>
   openVideoFilePicker: (
     locale?: string,
   ) => Promise<{ success: boolean; path?: string; cancelled?: boolean }>
@@ -287,13 +293,15 @@ export interface ElectronAPI {
     message?: string
     status?: {
       id: string
-      status: 'pending' | 'running' | 'completed' | 'failed'
+      status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
       createdAt: number
       startedAt?: number
       finishedAt?: number
       error?: string
       /** Native transcriber failure code (e.g. `unsupported_platform`) when status is `failed`. */
       code?: string
+      /** How much audio has been transcribed so far (P2-F4). */
+      progress?: { completedMs: number; totalMs: number }
     }
   }>
   getVideoAnalysisResult: (jobId: string) => Promise<{
@@ -301,16 +309,22 @@ export interface ElectronAPI {
     message?: string
     status?: {
       id: string
-      status: 'pending' | 'running' | 'completed' | 'failed'
+      status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
       createdAt: number
       startedAt?: number
       finishedAt?: number
       error?: string
       /** Native transcriber failure code (e.g. `unsupported_platform`) when status is `failed`. */
       code?: string
+      /** How much audio has been transcribed so far (P2-F4). */
+      progress?: { completedMs: number; totalMs: number }
     }
     result?: VideoAnalysisMetadata
   }>
+  /** P2-F4: stop a queued or running native transcription. */
+  cancelVideoAnalysis: (
+    jobId: string,
+  ) => Promise<{ success: boolean; cancelled?: boolean; message?: string }>
   getCurrentVideoAnalysis: (videoPath?: string) => Promise<{
     success: boolean
     message?: string

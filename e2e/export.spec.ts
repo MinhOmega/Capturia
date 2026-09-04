@@ -120,6 +120,13 @@ test('exports a GIF from the fixture recording', async () => {
         videoFilePath: videoPath,
         wallpaper: '#101820',
         exportFormat: 'gif',
+        // P2-F3: a caption track plus the SRT box ticked, so the export also has
+        // to produce a sidecar next to the file the save dialog approved.
+        subtitleCues: [
+          { id: 'subtitle-1', startMs: 0, endMs: 900, text: 'first caption', source: 'asr' },
+          { id: 'subtitle-2', startMs: 1000, endMs: 1900, text: 'second caption', source: 'asr' },
+        ],
+        captionSidecarFormats: ['srt'],
       })
       return bridge.setCurrentVideoPath(videoPath)
     }, FIXTURE)
@@ -164,6 +171,14 @@ test('exports a GIF from the fixture recording', async () => {
     const bytes = fs.readFileSync(outputPath)
     expect(bytes.byteLength).toBeGreaterThan(1024)
     expect(bytes.subarray(0, 6).toString('latin1')).toMatch(/^GIF8[79]a$/)
+
+    // The SRT sidecar lands beside the export, numbered from one and timed in
+    // the exported video's own timeline.
+    const srtPath = outputPath.replace(/\.gif$/, '.srt')
+    expect(fs.existsSync(srtPath)).toBe(true)
+    const srt = fs.readFileSync(srtPath, 'utf-8')
+    expect(srt).toContain('1\n00:00:00,000 --> 00:00:00,900\nfirst caption')
+    expect(srt).toContain('2\n00:00:01,000 --> 00:00:01,900\nsecond caption')
   } finally {
     await app
       .evaluate(({ app: electronApp }) => {

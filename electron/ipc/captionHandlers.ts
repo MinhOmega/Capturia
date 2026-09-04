@@ -5,7 +5,11 @@ import path from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
-import { CAPTION_MODEL_ID, CAPTION_MODEL_REVISION } from '../../src/lib/captioning/captionConstants'
+import {
+  CAPTION_MODEL_ID,
+  CAPTION_MODEL_REVISION,
+  captionModelChoice,
+} from '../../src/lib/captioning/captionConstants'
 import { isVideoAnalysisResultLike, saveSidecar } from '../analysis/videoAnalysisService'
 import {
   hasAllowedImportVideoExtension,
@@ -144,8 +148,165 @@ export const WHISPER_TINY_MODEL: CaptionModelDescriptor = {
   ],
 }
 
+/**
+ * Same file set as tiny, at `Xenova/whisper-base`. Sizes and SHA-256 digests
+ * were computed on 2026-09-04 from the bytes served at this model's pinned
+ * revision (`CAPTION_MODEL_CHOICES` in captionConstants.ts).
+ */
+export const WHISPER_BASE_MODEL: CaptionModelDescriptor = {
+  id: captionModelChoice('Xenova/whisper-base').id,
+  revision: captionModelChoice('Xenova/whisper-base').revision,
+  files: [
+    {
+      name: 'config.json',
+      approximateBytes: 2_248,
+      expectedSha256: 'd1d347fdb422e6347c2f843a90d375aa67ea3f4b3e20d2c3075f9a9f6243685b',
+    },
+    {
+      name: 'generation_config.json',
+      approximateBytes: 3_776,
+      expectedSha256: '3bba359e33fdd6dc1c10f71846a477d339b0242f462f70ea1dd73274caa38d05',
+    },
+    {
+      name: 'preprocessor_config.json',
+      approximateBytes: 339,
+      expectedSha256: 'a6a76d28c93edb273669eb9e0b0636a2bddbb1272c3261e47b7ca6dfdbac1b8d',
+    },
+    {
+      name: 'tokenizer.json',
+      approximateBytes: 2_480_466,
+      expectedSha256: '27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566',
+    },
+    {
+      name: 'tokenizer_config.json',
+      approximateBytes: 282_683,
+      expectedSha256: '2a4c4281cf9f51ac6ccc406fdc711a087afe6530f671fa7b80953edc498275ce',
+    },
+    {
+      name: 'added_tokens.json',
+      approximateBytes: 2_082,
+      expectedSha256: 'ce949fe720c14311cb6c446e69cfe340dc669d7b006077a6feed6ae571dd7e88',
+    },
+    {
+      name: 'special_tokens_map.json',
+      approximateBytes: 2_194,
+      expectedSha256: 'e67ae3a0aaa99abcd9f187138e12db1f65c16a14761c50ef10eef2c174a7a691',
+    },
+    {
+      name: 'normalizer.json',
+      approximateBytes: 52_666,
+      expectedSha256: 'bf1c507dc8724ca9cf9903640dacfb69dae2f00edee4f21ceba106a7392f26dd',
+    },
+    {
+      name: 'merges.txt',
+      approximateBytes: 493_869,
+      expectedSha256: '2df2990a395e35e8dfbc7511e08c12d56018d8d04691e0133e5d63b21e154dc6',
+    },
+    {
+      name: 'vocab.json',
+      approximateBytes: 1_036_584,
+      expectedSha256: '50d6a919f0a0601d56a04eb583c780d18553aa388254ba3158eb6a00f13e2c1a',
+    },
+    {
+      name: 'quantize_config.json',
+      approximateBytes: 2_840,
+      expectedSha256: '15ed182b51e68a3a75c1c00d7b9c5464364cbc09b26e1baa840868c938dbad5f',
+    },
+    {
+      name: 'onnx/encoder_model_quantized.onnx',
+      approximateBytes: 23_200_850,
+      expectedSha256: '3e345e977b55620a37c0c2b2af0644e019afdfad562dcf71eb929bb7274285f9',
+    },
+    {
+      name: 'onnx/decoder_model_merged_quantized.onnx',
+      approximateBytes: 53_707_539,
+      expectedSha256: 'a6beb6baabb66f00b6a686d828c95ffca6146d51900cbad0266cad38f64cf861',
+    },
+  ],
+}
+
+/**
+ * Same file set again, at `Xenova/whisper-small`. Digests computed the same way
+ * on 2026-09-04. The tokenizer files are byte-identical across the three repos;
+ * they are still listed and verified per model so a partial cache can never let
+ * one model's tokenizer stand in for another's.
+ */
+export const WHISPER_SMALL_MODEL: CaptionModelDescriptor = {
+  id: captionModelChoice('Xenova/whisper-small').id,
+  revision: captionModelChoice('Xenova/whisper-small').revision,
+  files: [
+    {
+      name: 'config.json',
+      approximateBytes: 2_232,
+      expectedSha256: '5a6429d21d7a3379dd0861b74510f9f7076f32b563bffc9fcb072482d55ab3be',
+    },
+    {
+      name: 'generation_config.json',
+      approximateBytes: 3_837,
+      expectedSha256: '0b7407a4e53a677f826e03c75d409e6f830663932bf43dda3b08c5efa2223279',
+    },
+    {
+      name: 'preprocessor_config.json',
+      approximateBytes: 339,
+      expectedSha256: 'a6a76d28c93edb273669eb9e0b0636a2bddbb1272c3261e47b7ca6dfdbac1b8d',
+    },
+    {
+      name: 'tokenizer.json',
+      approximateBytes: 2_480_466,
+      expectedSha256: '27fc476bfe7f17299480be2273fc0608e4d5a99aba2ab5dec5374b4482d1a566',
+    },
+    {
+      name: 'tokenizer_config.json',
+      approximateBytes: 282_683,
+      expectedSha256: '2a4c4281cf9f51ac6ccc406fdc711a087afe6530f671fa7b80953edc498275ce',
+    },
+    {
+      name: 'added_tokens.json',
+      approximateBytes: 2_082,
+      expectedSha256: 'ce949fe720c14311cb6c446e69cfe340dc669d7b006077a6feed6ae571dd7e88',
+    },
+    {
+      name: 'special_tokens_map.json',
+      approximateBytes: 2_194,
+      expectedSha256: 'e67ae3a0aaa99abcd9f187138e12db1f65c16a14761c50ef10eef2c174a7a691',
+    },
+    {
+      name: 'normalizer.json',
+      approximateBytes: 52_666,
+      expectedSha256: 'bf1c507dc8724ca9cf9903640dacfb69dae2f00edee4f21ceba106a7392f26dd',
+    },
+    {
+      name: 'merges.txt',
+      approximateBytes: 493_869,
+      expectedSha256: '2df2990a395e35e8dfbc7511e08c12d56018d8d04691e0133e5d63b21e154dc6',
+    },
+    {
+      name: 'vocab.json',
+      approximateBytes: 1_036_584,
+      expectedSha256: '50d6a919f0a0601d56a04eb583c780d18553aa388254ba3158eb6a00f13e2c1a',
+    },
+    {
+      name: 'quantize_config.json',
+      approximateBytes: 2_840,
+      expectedSha256: '8d753d43dd1af715b29f7b471008e5161aca34deaadfa347d109b60a1d474d84',
+    },
+    {
+      name: 'onnx/encoder_model_quantized.onnx',
+      approximateBytes: 92_324_809,
+      expectedSha256: '969f5ac12974340386bf7a02ea6626003e5e2dee396ffc6ab0eec282bf55ba06',
+    },
+    {
+      name: 'onnx/decoder_model_merged_quantized.onnx',
+      approximateBytes: 156_780_950,
+      expectedSha256: 'fcfc6100dc7339e7507e10f8b274350be7c4f8d8b575f0293f94cc0e156d6d24',
+    },
+  ],
+}
+
 export const CAPTION_MODELS: Record<string, CaptionModelDescriptor> = {
   [WHISPER_TINY_MODEL.id]: WHISPER_TINY_MODEL,
+  [WHISPER_BASE_MODEL.id]: WHISPER_BASE_MODEL,
+  [WHISPER_SMALL_MODEL.id]: WHISPER_SMALL_MODEL,
 }
 
 export function captionModelsRoot(userDataDir: string): string {

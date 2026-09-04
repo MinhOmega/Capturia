@@ -40,6 +40,7 @@ describe('export files IPC handlers', () => {
       'get-asset-base-path',
       'reveal-in-folder',
       'save-exported-video',
+      'save-caption-sidecar',
       'pick-save-file-path',
       'pick-export-directory',
       'open-video-file-picker',
@@ -126,6 +127,43 @@ describe('export files IPC handlers', () => {
     )
     expect(saved.success).toBe(true)
     expect(await readFile(saved.path)).toEqual(Buffer.from([7, 7]))
+  })
+
+  it('save-caption-sidecar writes beside an approved export and refuses anything else', async () => {
+    const { dialog } = await import('electron')
+    const chosen = path.join(exportDir, 'with-captions.mp4')
+    vi.mocked(dialog.showSaveDialog).mockResolvedValueOnce({ canceled: false, filePath: chosen })
+    const ipc = fakeIpcMain()
+    registerExportFilesHandlers(buildContext(ipc, { recordingsDir }))
+
+    const picked = await ipc.invoke<{ success: boolean; path: string }>(
+      'pick-save-file-path',
+      'with-captions.mp4',
+      'en',
+    )
+    const srt = '1\n00:00:00,000 --> 00:00:01,000\nhello\n'
+    const saved = await ipc.invoke<{ success: boolean; path: string }>(
+      'save-caption-sidecar',
+      picked.path,
+      'srt',
+      srt,
+      'en',
+    )
+    expect(saved.success).toBe(true)
+    expect(saved.path).toBe(path.join(exportDir, 'with-captions.srt'))
+    expect(await readFile(saved.path, 'utf-8')).toBe(srt)
+
+    // A path the user never approved, an unsupported format and empty content
+    // are all refused rather than written.
+    await expect(
+      ipc.invoke('save-caption-sidecar', path.join(exportDir, 'other.mp4'), 'srt', srt, 'en'),
+    ).resolves.toMatchObject({ success: false })
+    await expect(
+      ipc.invoke('save-caption-sidecar', picked.path, 'sh', srt, 'en'),
+    ).resolves.toMatchObject({ success: false })
+    await expect(
+      ipc.invoke('save-caption-sidecar', picked.path, 'vtt', '   ', 'en'),
+    ).resolves.toMatchObject({ success: false })
   })
 
   it('save-exported-video reports cancellation when the dialog is dismissed', async () => {

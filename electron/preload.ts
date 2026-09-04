@@ -304,6 +304,15 @@ const electronAPI: ElectronAPI = {
   ) => {
     return ipcRenderer.invoke('save-exported-video', videoData, fileName, locale, options)
   },
+  // P2-F3: `<name>.srt` / `<name>.vtt` beside a video the user just exported.
+  saveCaptionSidecar: (
+    exportFilePath: string,
+    format: 'srt' | 'vtt',
+    content: string,
+    locale?: string,
+  ) => {
+    return ipcRenderer.invoke('save-caption-sidecar', exportFilePath, format, content, locale)
+  },
   openVideoFilePicker: (locale?: string) => {
     return ipcRenderer.invoke('open-video-file-picker', locale)
   },
@@ -361,6 +370,9 @@ const electronAPI: ElectronAPI = {
   },
   getVideoAnalysisResult: (jobId: string) => {
     return ipcRenderer.invoke('analysis-result', jobId)
+  },
+  cancelVideoAnalysis: (jobId: string) => {
+    return ipcRenderer.invoke('analysis-cancel', jobId)
   },
   getCurrentVideoAnalysis: (videoPath?: string) => {
     return ipcRenderer.invoke('analysis-get-current', videoPath)

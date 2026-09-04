@@ -40,6 +40,9 @@ export const ALLOWED_READABLE_EXTENSIONS: ReadonlySet<string> = new Set([
 /** Export containers `save-exported-video` may write. */
 export const ALLOWED_EXPORT_EXTENSIONS: ReadonlySet<string> = new Set(['.mp4', '.gif'])
 
+/** Caption sidecars `save-caption-sidecar` may write next to an export. */
+export const ALLOWED_CAPTION_SIDECAR_EXTENSIONS: ReadonlySet<string> = new Set(['.srt', '.vtt'])
+
 /** Protocols `open-external-url` may hand to `shell.openExternal`. */
 export const EXTERNAL_URL_PROTOCOLS: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:'])
 
@@ -330,6 +333,29 @@ export function isAllowedExportPath(
   if (registry.isApprovedFile(targetPath)) return true
   const parentDir = platformPath.dirname(platformPath.resolve(targetPath))
   return registry.isApprovedDirectory(parentDir)
+}
+
+/**
+ * Path of a caption sidecar for an approved export: the export's own path with
+ * its container extension swapped for `.srt` / `.vtt`. Returns null unless the
+ * export path itself is one the user approved through a save dialog, so the
+ * renderer can never name an arbitrary file to write.
+ */
+export function resolveCaptionSidecarPath(
+  exportFilePath: unknown,
+  format: unknown,
+  options: ExportPolicyOptions = {},
+): string | null {
+  const platformPath = options.platformPath ?? nodePath
+  if (typeof format !== 'string') return null
+  const extension = `.${format.trim().toLowerCase()}`
+  if (!ALLOWED_CAPTION_SIDECAR_EXTENSIONS.has(extension)) return null
+  if (!isAllowedExportPath(exportFilePath, options)) return null
+  const filePath = platformPath.normalize(String(exportFilePath).trim())
+  const dir = platformPath.dirname(filePath)
+  const base = platformPath.basename(filePath, platformPath.extname(filePath))
+  if (!base) return null
+  return platformPath.join(dir, `${base}${extension}`)
 }
 
 export interface RevealPolicyOptions {

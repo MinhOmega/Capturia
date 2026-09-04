@@ -19,6 +19,7 @@ import type {
   VideoSegment,
 } from '@/components/video-editor/types'
 import type { SubtitleCue } from '@/lib/analysis/types'
+import type { SubtitleStyle } from '@/lib/rendering/subtitleStyle'
 import type { CursorStyleConfig, CursorTrack } from '@/lib/cursor'
 import { getPlatform } from '@/utils/platformUtils'
 import { resolveSourceDurationMs } from './sourceDuration'
@@ -54,6 +55,7 @@ interface GifExporterConfig {
   cropRegion: CropRegion
   annotationRegions?: AnnotationRegion[]
   subtitleCues?: SubtitleCue[]
+  subtitleStyle?: SubtitleStyle
   previewWidth?: number
   previewHeight?: number
   cursorTrack?: CursorTrack | null
@@ -329,6 +331,7 @@ export class GifExporter {
       videoHeight: videoInfo.height,
       annotationRegions: this.config.annotationRegions,
       subtitleCues: this.config.subtitleCues,
+      subtitleStyle: this.config.subtitleStyle,
       previewWidth: this.config.previewWidth,
       previewHeight: this.config.previewHeight,
       cursorTrack: this.config.cursorTrack,
