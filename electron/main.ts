@@ -87,6 +87,7 @@ import {
   SHORTCUTS_FILE_NAME,
 } from './globalShortcut'
 import type { ShortcutBinding } from '../src/lib/shortcuts'
+import { shouldDisableLinuxGpu } from './linuxGpu'
 
 // Capture main-process console output from the very first line so a runtime
 // error dialog / "Save diagnostics" report can include what led up to it.
@@ -94,11 +95,16 @@ mainLogBuffer.install()
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const LINUX_SESSION_TYPE = (process.env['XDG_SESSION_TYPE'] || '').toLowerCase()
-const IS_LINUX_WAYLAND = process.platform === 'linux' && LINUX_SESSION_TYPE === 'wayland'
 
-if (IS_LINUX_WAYLAND) {
+if (shouldDisableLinuxGpu()) {
   // Electron 39 can hard-crash on some Ubuntu Wayland GPU stacks during
   // startup. Use software rendering so the app launches reliably.
+  //
+  // This runtime check is the only gate: the packaged Linux launcher used to
+  // pass the same switches unconditionally through `linux.executableArgs`,
+  // which cost every X11 install its GPU acceleration for a Wayland-only
+  // crash. One build serves both session types, so only the running process
+  // can tell which one it is in.
   app.disableHardwareAcceleration()
   app.commandLine.appendSwitch('disable-gpu')
   app.commandLine.appendSwitch('disable-gpu-compositing')
@@ -1091,6 +1097,9 @@ function buildDiagnosticReport(payload: DiagnosticPayload): string {
     '## Platform',
     `OS: ${process.platform} ${process.arch} (${os.release()})`,
     `Session: ${process.platform === 'linux' ? LINUX_SESSION_TYPE || 'unknown' : 'n/a'}`,
+    // Which way the Linux GPU gate went; the packaged launcher no longer
+    // decides this, so a bug report needs the runtime answer.
+    `GPU acceleration: ${process.platform === 'linux' ? (shouldDisableLinuxGpu() ? 'disabled (Wayland workaround)' : 'enabled') : 'enabled'}`,
     `Electron: ${process.versions.electron}`,
     `Chromium: ${process.versions.chrome}`,
     `Node: ${process.versions.node}`,
