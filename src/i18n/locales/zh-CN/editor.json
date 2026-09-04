@@ -41,6 +41,7 @@
 	"captionPhaseNative": "正在使用系统语音识别转写...",
 	"captionPhaseAudio": "正在提取字幕音频...",
 	"captionPhaseModel": "正在准备本地字幕模型...",
+	"captionPhaseProgress": "{{phase}}（{{percent}}%）",
 	"captionPhaseTranscribe": "正在使用本地 Whisper 转写。此过程在 CPU 上运行，可能需要几分钟...",
 	"captionModelPromptTitle": "下载字幕模型？",
 	"captionModelPromptDescription": "在此平台上，自动字幕使用本地 Whisper 模型（约 {{size}}）。只需下载一次，并保存在应用数据目录中。",

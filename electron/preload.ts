@@ -351,6 +351,9 @@ const electronAPI: ElectronAPI = {
   getVideoAnalysisResult: (jobId: string) => {
     return ipcRenderer.invoke('analysis-result', jobId)
   },
+  cancelVideoAnalysis: (jobId: string) => {
+    return ipcRenderer.invoke('analysis-cancel', jobId)
+  },
   getCurrentVideoAnalysis: (videoPath?: string) => {
     return ipcRenderer.invoke('analysis-get-current', videoPath)
   },

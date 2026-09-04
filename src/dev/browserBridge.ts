@@ -58,6 +58,7 @@ const EXPORT_DIR = '/capturia-harness/exports'
 export const UNIMPLEMENTED_BRIDGE_METHODS = [
   'appendRecordingChunk',
   'cancelCaptionModelDownload',
+  'cancelVideoAnalysis',
   'checkForUpdates',
   'closeRecordingStream',
   'downloadCaptionModel',
@@ -716,6 +717,10 @@ export function createBrowserBridge(): BrowserHarness {
     },
     startVideoAnalysis: async () => {
       warnUnimplemented('startVideoAnalysis', 'there is no native transcriber')
+      return { success: false, message: 'not available in the browser harness' }
+    },
+    cancelVideoAnalysis: async () => {
+      warnUnimplemented('cancelVideoAnalysis', 'there is no native transcriber')
       return { success: false, message: 'not available in the browser harness' }
     },
     getVideoAnalysisStatus: async () => {

@@ -141,36 +141,45 @@ export class VideoAnalysisService {
         : 0.82,
     }
 
-    const { id, promise } = this.queue.enqueueWithId(normalizedInput, async (jobInput) => {
-      const transcription = await transcribeVideoFile({
-        inputPath: jobInput.videoPath,
-        locale: jobInput.locale,
-        durationMs: jobInput.durationMs,
-      })
+    const { id, promise } = this.queue.enqueueWithId(
+      normalizedInput,
+      async (jobInput, controls) => {
+        const transcription = await transcribeVideoFile({
+          inputPath: jobInput.videoPath,
+          locale: jobInput.locale,
+          durationMs: jobInput.durationMs,
+          signal: controls.signal,
+          onProgress: controls.reportProgress,
+        })
 
-      if (!transcription.success || !transcription.words?.length) {
-        const code = transcription.success ? 'no_speech_detected' : transcription.code
-        throw new TranscriptionFailureError(
-          code,
-          formatTranscriptionFailure({
+        if (controls.signal.aborted || transcription.code === 'cancelled') {
+          throw new TranscriptionFailureError('cancelled', 'Transcription cancelled.')
+        }
+
+        if (!transcription.success || !transcription.words?.length) {
+          const code = transcription.success ? 'no_speech_detected' : transcription.code
+          throw new TranscriptionFailureError(
             code,
-            message: transcription.message,
-          }),
-        )
-      }
+            formatTranscriptionFailure({
+              code,
+              message: transcription.message,
+            }),
+          )
+        }
 
-      const pipelineConfig: BuildVideoAnalysisInput = {
-        durationMs: jobInput.durationMs,
-        videoWidth: jobInput.videoWidth,
-        subtitleWidthRatio: Number.isFinite(jobInput.subtitleWidthRatio)
-          ? Number(jobInput.subtitleWidthRatio)
-          : 0.82,
-        locale: jobInput.locale,
-      }
-      const analysis = buildVideoAnalysisResult(transcription.words, pipelineConfig)
-      await saveSidecar(jobInput.videoPath, analysis)
-      return analysis
-    })
+        const pipelineConfig: BuildVideoAnalysisInput = {
+          durationMs: jobInput.durationMs,
+          videoWidth: jobInput.videoWidth,
+          subtitleWidthRatio: Number.isFinite(jobInput.subtitleWidthRatio)
+            ? Number(jobInput.subtitleWidthRatio)
+            : 0.82,
+          locale: jobInput.locale,
+        }
+        const analysis = buildVideoAnalysisResult(transcription.words, pipelineConfig)
+        await saveSidecar(jobInput.videoPath, analysis)
+        return analysis
+      },
+    )
 
     void promise.catch((error: unknown) => {
       // Job failure is tracked in queue status and consumed through IPC polling;
@@ -188,6 +197,11 @@ export class VideoAnalysisService {
     if (!status) return null
     const code = this.failureCodes.get(jobId)
     return code ? { ...status, code } : status
+  }
+
+  /** Stop a pending or running job; false when there was nothing to stop. */
+  cancel(jobId: string): boolean {
+    return this.queue.cancel(jobId)
   }
 
   getResult(jobId: string): VideoAnalysisResult | null {

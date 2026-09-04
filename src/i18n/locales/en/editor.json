@@ -41,6 +41,7 @@
 	"captionPhaseNative": "Transcribing with the system speech recognizer...",
 	"captionPhaseAudio": "Extracting audio for captions...",
 	"captionPhaseModel": "Preparing the on-device caption model...",
+	"captionPhaseProgress": "{{phase}} ({{percent}}%)",
 	"captionPhaseTranscribe": "Transcribing with on-device Whisper. This runs on your CPU and can take a few minutes...",
 	"captionModelPromptTitle": "Download caption model?",
 	"captionModelPromptDescription": "Automatic subtitles on this platform use an on-device Whisper model (~{{size}}). It is downloaded once and kept in the app data folder.",

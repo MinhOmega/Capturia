@@ -21,6 +21,7 @@ import {
 } from '@/lib/captioning/transcribe'
 import { snapCaptionSegmentBoundaries } from '@/lib/captioning/wordBoundarySnap'
 import { TRANSCRIBE_SAMPLE_RATE } from '@/lib/captioning/transcribeCore'
+import { analysisProgressPercent } from './analysisQueue'
 import type { TranscriptionEngineId, VideoAnalysisResult, VideoTranscriptionResult } from './types'
 import { buildVideoAnalysisResult } from './videoAnalysisPipeline'
 import { captionSegmentsToTranscriptWords } from './whisperWords'
@@ -63,6 +64,11 @@ export interface TranscriptionRequest {
   vocabulary?: string
   signal?: AbortSignal
   onStatus?: (phase: TranscriptionPhase) => void
+  /**
+   * Whole-percent progress of the current phase, when the engine can measure
+   * it (P2-F4: the native transcriber reports transcribed-vs-total audio).
+   */
+  onProgress?: (percent: number) => void
 }
 
 /**
@@ -136,7 +142,7 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 /** The slice of `window.electronAPI` the native engine uses (mockable in tests). */
 export type NativeAnalysisApi = Pick<
   Window['electronAPI'],
-  'startVideoAnalysis' | 'getVideoAnalysisStatus' | 'getVideoAnalysisResult'
+  'startVideoAnalysis' | 'getVideoAnalysisStatus' | 'getVideoAnalysisResult' | 'cancelVideoAnalysis'
 >
 
 export const NATIVE_POLL_INTERVAL_MS = 900
@@ -176,28 +182,41 @@ export function createNativeSpeechEngine(
       }
 
       const jobId = started.jobId
-      for (;;) {
-        if (request.signal?.aborted) throw abortError()
-        const statusResult = await api.getVideoAnalysisStatus(jobId)
-        if (!statusResult.success || !statusResult.status) {
-          return {
-            success: false,
-            engine: 'macos-speech',
-            code: 'analysis_status_failed',
-            message: statusResult.message,
+      // Cancelling the editor's request has to reach the helper process, not
+      // just stop this loop: the job would otherwise keep a CPU busy.
+      const abortJob = () => {
+        void api.cancelVideoAnalysis(jobId)
+      }
+      request.signal?.addEventListener('abort', abortJob, { once: true })
+      try {
+        for (;;) {
+          if (request.signal?.aborted) throw abortError()
+          const statusResult = await api.getVideoAnalysisStatus(jobId)
+          if (!statusResult.success || !statusResult.status) {
+            return {
+              success: false,
+              engine: 'macos-speech',
+              code: 'analysis_status_failed',
+              message: statusResult.message,
+            }
           }
-        }
-        const status = statusResult.status
-        if (status.status === 'failed') {
-          return {
-            success: false,
-            engine: 'macos-speech',
-            code: status.code ?? 'transcription_failed',
-            message: status.error || statusResult.message,
+          const status = statusResult.status
+          if (status.status === 'failed') {
+            return {
+              success: false,
+              engine: 'macos-speech',
+              code: status.code ?? 'transcription_failed',
+              message: status.error || statusResult.message,
+            }
           }
+          if (status.status === 'cancelled') throw abortError()
+          const percent = analysisProgressPercent(status)
+          if (percent !== null) request.onProgress?.(percent)
+          if (status.status === 'completed') break
+          await sleep(pollIntervalMs, request.signal)
         }
-        if (status.status === 'completed') break
-        await sleep(pollIntervalMs, request.signal)
+      } finally {
+        request.signal?.removeEventListener('abort', abortJob)
       }
 
       const result = await api.getVideoAnalysisResult(jobId)

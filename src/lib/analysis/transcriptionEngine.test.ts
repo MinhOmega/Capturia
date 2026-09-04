@@ -238,6 +238,7 @@ describe('createNativeSpeechEngine', () => {
         }
       }),
       getVideoAnalysisResult: vi.fn(async () => ({ success: true, result: analysisFixture() })),
+      cancelVideoAnalysis: vi.fn(async () => ({ success: true, cancelled: false })),
     }
 
     const result = await createNativeSpeechEngine(api, 1).transcribe(request())
@@ -266,6 +267,7 @@ describe('createNativeSpeechEngine', () => {
         },
       })),
       getVideoAnalysisResult: vi.fn(async () => ({ success: false })),
+      cancelVideoAnalysis: vi.fn(async () => ({ success: true, cancelled: false })),
     }
 
     const result = await createNativeSpeechEngine(api, 1).transcribe(request())
@@ -285,12 +287,60 @@ describe('createNativeSpeechEngine', () => {
         return { success: true, status: { id: 'job-3', status: 'running' as const, createdAt: 0 } }
       }),
       getVideoAnalysisResult: vi.fn(async () => ({ success: false })),
+      cancelVideoAnalysis: vi.fn(async () => ({ success: true, cancelled: true })),
     }
 
     await expect(
       createNativeSpeechEngine(api, 1).transcribe(request({ signal: controller.signal })),
     ).rejects.toMatchObject({ name: 'AbortError' })
     expect(api.getVideoAnalysisStatus).toHaveBeenCalledTimes(1)
+    // The helper has to be told, or it keeps transcribing after the editor gave up.
+    expect(api.cancelVideoAnalysis).toHaveBeenCalledWith('job-3')
+  })
+
+  it('reports the percentage the job status carries', async () => {
+    let polls = 0
+    const api = {
+      startVideoAnalysis: vi.fn(async () => ({ success: true, jobId: 'job-4' })),
+      getVideoAnalysisStatus: vi.fn(async () => {
+        polls += 1
+        return {
+          success: true,
+          status: {
+            id: 'job-4',
+            status: polls < 3 ? ('running' as const) : ('completed' as const),
+            createdAt: 0,
+            progress: { completedMs: polls * 1_000, totalMs: 4_000 },
+          },
+        }
+      }),
+      getVideoAnalysisResult: vi.fn(async () => ({ success: true, result: analysisFixture() })),
+      cancelVideoAnalysis: vi.fn(async () => ({ success: true, cancelled: false })),
+    }
+
+    const percents: number[] = []
+    const result = await createNativeSpeechEngine(api, 1).transcribe(
+      request({ onProgress: (percent) => percents.push(percent) }),
+    )
+
+    expect(result.success).toBe(true)
+    expect(percents).toEqual([25, 50, 75])
+  })
+
+  it('treats a job cancelled in the main process as an abort', async () => {
+    const api = {
+      startVideoAnalysis: vi.fn(async () => ({ success: true, jobId: 'job-5' })),
+      getVideoAnalysisStatus: vi.fn(async () => ({
+        success: true,
+        status: { id: 'job-5', status: 'cancelled' as const, createdAt: 0 },
+      })),
+      getVideoAnalysisResult: vi.fn(async () => ({ success: false })),
+      cancelVideoAnalysis: vi.fn(async () => ({ success: true, cancelled: false })),
+    }
+
+    await expect(createNativeSpeechEngine(api, 1).transcribe(request())).rejects.toMatchObject({
+      name: 'AbortError',
+    })
   })
 })
 

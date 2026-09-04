@@ -3076,6 +3076,7 @@ export default function VideoEditor() {
       model: t('editor.captionPhaseModel'),
       transcribe: t('editor.captionPhaseTranscribe'),
     }
+    let currentPhase: TranscriptionPhase = 'native'
     const cancelAction = { label: t('common.cancel'), onClick: () => controller.abort() }
     toast.loading(t('editor.analysisRunning'), { id: progressToastId, action: cancelAction })
 
@@ -3096,7 +3097,19 @@ export default function VideoEditor() {
           vocabulary: captionVocabulary,
           signal: controller.signal,
           onStatus: (phase) => {
+            currentPhase = phase
             toast.loading(phaseMessage[phase], { id: progressToastId, action: cancelAction })
+          },
+          onProgress: (percent) => {
+            // Only the native engine reports a percentage today; keep the phase
+            // wording so the toast still says what is happening.
+            toast.loading(
+              t('editor.captionPhaseProgress', {
+                phase: phaseMessage[currentPhase],
+                percent: String(percent),
+              }),
+              { id: progressToastId, action: cancelAction },
+            )
           },
         },
         ensureModel: () =>

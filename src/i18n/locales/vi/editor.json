@@ -41,6 +41,7 @@
 	"captionPhaseNative": "Đang chuyển giọng nói thành văn bản bằng bộ nhận dạng của hệ thống...",
 	"captionPhaseAudio": "Đang trích xuất âm thanh để tạo phụ đề...",
 	"captionPhaseModel": "Đang chuẩn bị mô hình phụ đề trên máy...",
+	"captionPhaseProgress": "{{phase}} ({{percent}}%)",
 	"captionPhaseTranscribe": "Đang chuyển giọng nói bằng Whisper trên máy. Quá trình chạy trên CPU và có thể mất vài phút...",
 	"captionModelPromptTitle": "Tải mô hình phụ đề?",
 	"captionModelPromptDescription": "Trên nền tảng này, phụ đề tự động dùng mô hình Whisper chạy trên máy (~{{size}}). Chỉ tải một lần và được lưu trong thư mục dữ liệu của ứng dụng.",

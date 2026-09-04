@@ -30,11 +30,14 @@ type HelperRunOptions = {
   timeoutMs: number
   segmentStartMs?: number
   segmentDurationMs?: number
+  /** Aborting kills the helper process (P2-F4 cancel). */
+  signal?: AbortSignal
 }
 
 type HelperRunOutcome = {
   exitCode: number | null
   timedOut: boolean
+  cancelled: boolean
   stderr: string
   payload?: HelperPayload
 }
@@ -275,13 +278,25 @@ async function runHelper(options: HelperRunOptions): Promise<HelperRunOutcome> {
   }
 
   let timedOut = false
+  let cancelled = false
   let stderr = ''
   let exitCode: number | null = null
+
+  if (options.signal?.aborted) {
+    return { exitCode: null, timedOut: false, cancelled: true, stderr: '' }
+  }
 
   await new Promise<void>((resolve, reject) => {
     const child = spawn(options.helperPath, args, {
       stdio: ['ignore', 'pipe', 'pipe'],
     })
+    // Cancelling the caption run has to reach the helper: it can hold a whole
+    // segment's worth of audio open, and the queue would otherwise wait it out.
+    const onAbort = () => {
+      cancelled = true
+      child.kill('SIGTERM')
+    }
+    options.signal?.addEventListener('abort', onAbort, { once: true })
 
     child.stderr.on('data', (chunk) => {
       const line = String(chunk)
@@ -303,11 +318,13 @@ async function runHelper(options: HelperRunOptions): Promise<HelperRunOutcome> {
 
     child.on('error', (error) => {
       clearTimeout(timeout)
+      options.signal?.removeEventListener('abort', onAbort)
       reject(error)
     })
 
     child.on('exit', (code) => {
       clearTimeout(timeout)
+      options.signal?.removeEventListener('abort', onAbort)
       exitCode = code
       resolve()
     })
@@ -324,6 +341,7 @@ async function runHelper(options: HelperRunOptions): Promise<HelperRunOutcome> {
   return {
     exitCode,
     timedOut,
+    cancelled,
     stderr,
     payload,
   }
@@ -336,6 +354,7 @@ async function transcribeSingleRange(args: {
   timeoutMs: number
   segmentStartMs?: number
   segmentDurationMs?: number
+  signal?: AbortSignal
 }): Promise<VideoTranscriptionResult> {
   const outputPath = path.join(
     os.tmpdir(),
@@ -351,7 +370,12 @@ async function transcribeSingleRange(args: {
       timeoutMs: args.timeoutMs,
       segmentStartMs: args.segmentStartMs,
       segmentDurationMs: args.segmentDurationMs,
+      signal: args.signal,
     })
+
+    if (outcome.cancelled || args.signal?.aborted) {
+      return { success: false, code: 'cancelled', message: 'Transcription cancelled.' }
+    }
 
     if (outcome.payload?.success) {
       return {
@@ -379,6 +403,10 @@ export async function transcribeVideoFile(args: {
   locale: string
   timeoutMs?: number
   durationMs?: number
+  /** Aborting stops the run and kills the helper (P2-F4). */
+  signal?: AbortSignal
+  /** Called after each transcribed stretch of audio (P2-F4 progress). */
+  onProgress?: (completedMs: number, totalMs: number) => void
 }): Promise<VideoTranscriptionResult> {
   if (process.platform !== 'darwin') {
     return {
@@ -394,16 +422,23 @@ export async function transcribeVideoFile(args: {
     ? Math.max(0, Math.round(Number(args.durationMs)))
     : 0
 
+  // Anything short enough runs as one helper call: there is no intermediate
+  // point to report, so progress goes 0 -> 100 around it.
+  const totalMs = requestedDurationMs > 0 ? requestedDurationMs : 0
+  args.onProgress?.(0, totalMs)
+
   if (requestedDurationMs < SEGMENTED_TRANSCRIPTION_THRESHOLD_MS) {
     const result = await transcribeSingleRange({
       helperPath,
       inputPath: args.inputPath,
       locale: args.locale,
       timeoutMs,
+      signal: args.signal,
     })
     if (!result.success) {
       return result
     }
+    args.onProgress?.(totalMs, totalMs)
     const normalizedWords = normalizeTranscriptWords(result.words)
     return {
       success: normalizedWords.length > 0,
@@ -428,6 +463,9 @@ export async function transcribeVideoFile(args: {
   let resolvedLocale = args.locale
 
   for (let index = 0; index < segments.length; index += 1) {
+    if (args.signal?.aborted) {
+      return { success: false, code: 'cancelled', message: 'Transcription cancelled.' }
+    }
     const segment = segments[index]
     const segmentTimeoutMs = resolveSegmentTimeoutMs(segment.durationMs, timeoutMs)
     const segmentResult = await transcribeSingleRange({
@@ -437,7 +475,12 @@ export async function transcribeVideoFile(args: {
       timeoutMs: segmentTimeoutMs,
       segmentStartMs: segment.startMs,
       segmentDurationMs: segment.durationMs,
+      signal: args.signal,
     })
+
+    // Segments overlap slightly, so progress is reported against where this
+    // segment ends on the timeline rather than the sum of segment lengths.
+    args.onProgress?.(Math.min(segment.startMs + segment.durationMs, totalMs), totalMs)
 
     if (!segmentResult.success) {
       return {
