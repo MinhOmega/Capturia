@@ -558,7 +558,7 @@ export class FrameRenderer {
       // Same source class `Texture.from` would pick for a `VideoFrame`
       // (`ImageSource.test` matches it), built directly so the instance can be
       // kept and re-fed instead of going through the resource cache.
-      const source = new ImageSource({ resource: videoSource as any })
+      const source = new ImageSource({ resource: videoSource })
       this.videoFrameSource = source
       this.videoFrameSourceSize = getFrameSourceSize(videoSource)
       return new Texture({ source })
@@ -1196,7 +1196,6 @@ export class FrameRenderer {
     // Only the source this renderer built itself: `videoSprite.destroy()`
     // above leaves the texture alone, and the caller owns the last VideoFrame.
     if (this.videoFrameSource) {
-      this.videoFrameSource.resource = null as never
       this.videoFrameSource.destroy()
       this.videoFrameSource = null
     }
