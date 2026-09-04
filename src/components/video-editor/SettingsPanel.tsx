@@ -91,6 +91,8 @@ import {
 } from '@/lib/captioning/captionEngineSetting'
 import type { SubtitleStyle } from '@/lib/rendering/subtitleStyle'
 import { SubtitleStylePanel } from './SubtitleStylePanel'
+import { SubtitleCueEditor } from './SubtitleCueEditor'
+import type { SubtitleCue } from '@/lib/analysis/types'
 
 const GRADIENTS = BACKGROUND_GRADIENT_PRESETS
 const ZOOM_FOCUS_MODES: readonly ZoomFocusMode[] = ['manual', 'auto']
@@ -219,6 +221,15 @@ interface SettingsPanelProps {
   /** P2-F1: caption look, shared by the preview overlay and the export renderer. */
   subtitleStyle?: SubtitleStyle
   onSubtitleStyleChange?: (patch: Partial<SubtitleStyle>) => void
+  /** P2-F2: the caption track and the cue selected on the timeline. */
+  subtitleCues?: SubtitleCue[]
+  selectedSubtitleCueId?: string | null
+  onSelectSubtitleCue?: (id: string | null) => void
+  onSubtitleCueTextChange?: (id: string, text: string) => void
+  onSubtitleCueSplit?: (id: string) => void
+  onSubtitleCueMergeNext?: (id: string) => void
+  onSubtitleCueMergePrevious?: (id: string) => void
+  onSubtitleCueDelete?: (id: string) => void
   seekStepSeconds?: number
   onSeekStepSecondsChange?: (step: number) => void
   // Timeline section (W2-b)
@@ -401,6 +412,14 @@ export function SettingsPanel({
   onCaptionEngineChange,
   subtitleStyle,
   onSubtitleStyleChange,
+  subtitleCues = [],
+  selectedSubtitleCueId = null,
+  onSelectSubtitleCue,
+  onSubtitleCueTextChange,
+  onSubtitleCueSplit,
+  onSubtitleCueMergeNext,
+  onSubtitleCueMergePrevious,
+  onSubtitleCueDelete,
   seekStepSeconds = 5,
   onSeekStepSecondsChange,
   showTimelineWaveform = false,
@@ -1078,6 +1097,24 @@ export function SettingsPanel({
               disabled={analysisRunning}
             />
           )}
+          {onSelectSubtitleCue &&
+            onSubtitleCueTextChange &&
+            onSubtitleCueSplit &&
+            onSubtitleCueMergeNext &&
+            onSubtitleCueMergePrevious &&
+            onSubtitleCueDelete && (
+              <SubtitleCueEditor
+                cues={subtitleCues}
+                selectedCueId={selectedSubtitleCueId}
+                onSelectCue={onSelectSubtitleCue}
+                onTextChange={onSubtitleCueTextChange}
+                onSplit={onSubtitleCueSplit}
+                onMergeNext={onSubtitleCueMergeNext}
+                onMergePrevious={onSubtitleCueMergePrevious}
+                onDelete={onSubtitleCueDelete}
+                disabled={analysisRunning}
+              />
+            )}
         </div>
 
         {segmentSelected && selectedSegment && (

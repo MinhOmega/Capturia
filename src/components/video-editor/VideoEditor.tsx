@@ -143,6 +143,14 @@ import {
   normalizeSubtitleStyle,
   type SubtitleStyle,
 } from '@/lib/rendering/subtitleStyle'
+import {
+  deleteCue,
+  mergeCueWithNext,
+  mergeCueWithPrevious,
+  retimeCue,
+  splitCueAtTime,
+  updateCueText,
+} from '@/lib/captions/captionOps'
 import { normalizeRoughCutSuggestions } from '@/lib/analysis/roughCutEngine'
 import { applyRoughCutSuggestionsToAudioEdits } from '@/lib/analysis/roughCutApply'
 import {
@@ -509,6 +517,7 @@ export default function VideoEditor() {
   const [audioEditRegions, setAudioEditRegions] = useState<AudioEditRegion[]>([])
   const [annotationRegions, setAnnotationRegions] = useState<AnnotationRegion[]>([])
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null)
+  const [selectedSubtitleCueId, setSelectedSubtitleCueId] = useState<string | null>(null)
   const [isExporting, setIsExporting] = useState(false)
   const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null)
   const [exportError, setExportError] = useState<string | null>(null)
@@ -1343,6 +1352,7 @@ export default function VideoEditor() {
       zoomRegionsByAspect,
       annotationRegions,
       audioEditRegions,
+      subtitleCues,
     }
 
     // Skip when restoring from undo/redo
@@ -1377,7 +1387,14 @@ export default function VideoEditor() {
       syncHistoryState()
     }
     prevEditableRef.current = current
-  }, [segments, zoomRegionsByAspect, annotationRegions, audioEditRegions, syncHistoryState])
+  }, [
+    segments,
+    zoomRegionsByAspect,
+    annotationRegions,
+    audioEditRegions,
+    subtitleCues,
+    syncHistoryState,
+  ])
 
   const handleUndo = useCallback(() => {
     if (undoStackRef.current.length === 0) return
@@ -1388,6 +1405,7 @@ export default function VideoEditor() {
       zoomRegionsByAspect,
       annotationRegions,
       audioEditRegions,
+      subtitleCues,
     })
     // Restore snapshot
     isRestoringHistoryRef.current = true
@@ -1395,8 +1413,16 @@ export default function VideoEditor() {
     setZoomRegionsByAspect(snapshot.zoomRegionsByAspect)
     setAnnotationRegions(snapshot.annotationRegions)
     setAudioEditRegions(snapshot.audioEditRegions)
+    setSubtitleCues(snapshot.subtitleCues)
     syncHistoryState()
-  }, [segments, zoomRegionsByAspect, annotationRegions, audioEditRegions, syncHistoryState])
+  }, [
+    segments,
+    zoomRegionsByAspect,
+    annotationRegions,
+    audioEditRegions,
+    subtitleCues,
+    syncHistoryState,
+  ])
 
   const handleRedo = useCallback(() => {
     if (redoStackRef.current.length === 0) return
@@ -1407,6 +1433,7 @@ export default function VideoEditor() {
       zoomRegionsByAspect,
       annotationRegions,
       audioEditRegions,
+      subtitleCues,
     })
     // Restore snapshot
     isRestoringHistoryRef.current = true
@@ -1414,8 +1441,16 @@ export default function VideoEditor() {
     setZoomRegionsByAspect(snapshot.zoomRegionsByAspect)
     setAnnotationRegions(snapshot.annotationRegions)
     setAudioEditRegions(snapshot.audioEditRegions)
+    setSubtitleCues(snapshot.subtitleCues)
     syncHistoryState()
-  }, [segments, zoomRegionsByAspect, annotationRegions, audioEditRegions, syncHistoryState])
+  }, [
+    segments,
+    zoomRegionsByAspect,
+    annotationRegions,
+    audioEditRegions,
+    subtitleCues,
+    syncHistoryState,
+  ])
 
   // Reset projectRestoredRef after initial effects have processed.
   // This is a one-shot flag: true during first render cycle (so wallpaper init
@@ -2806,6 +2841,50 @@ export default function VideoEditor() {
   /** Caption look; normalized here so a bad value can never reach the renderers. */
   const handleSubtitleStyleChange = useCallback((patch: Partial<SubtitleStyle>) => {
     setSubtitleStyle((previous) => normalizeSubtitleStyle({ ...previous, ...patch }))
+  }, [])
+
+  // ── Per-cue editing (P2-F2) ──
+  // Every handler runs one pure operation from `captionOps`, which returns the
+  // same array when it rejects the edit; the history effect then sees no change
+  // and no undo entry is spent.
+  const handleSelectSubtitleCue = useCallback((id: string | null) => {
+    setSelectedSubtitleCueId(id)
+  }, [])
+
+  const handleSubtitleCueTextChange = useCallback((id: string, text: string) => {
+    setSubtitleCues((previous) => updateCueText(previous, id, text))
+  }, [])
+
+  const handleSubtitleCueDelete = useCallback((id: string) => {
+    setSubtitleCues((previous) => deleteCue(previous, id))
+    setSelectedSubtitleCueId((current) => (current === id ? null : current))
+  }, [])
+
+  /** Splits at the playhead, snapped to the nearest word boundary inside the cue. */
+  const handleSubtitleCueSplit = useCallback((id: string) => {
+    const sourceMs = Math.round(currentTimeRef.current * 1000)
+    setSubtitleCues((previous) => splitCueAtTime(previous, id, sourceMs))
+  }, [])
+
+  const handleSubtitleCueMergeNext = useCallback((id: string) => {
+    setSubtitleCues((previous) => mergeCueWithNext(previous, id))
+  }, [])
+
+  const handleSubtitleCueMergePrevious = useCallback((id: string) => {
+    setSubtitleCues((previous) => mergeCueWithPrevious(previous, id))
+  }, [])
+
+  /** The timeline hands back effective time; cues are stored in source time. */
+  const handleSubtitleCueSpanChange = useCallback((id: string, span: Span) => {
+    const segs = segmentsRef.current
+    const trims = normalizedTrimsRef.current
+    const toSource = (effectiveMs: number) =>
+      segs.length > 0
+        ? effectiveToSourceMsWithSegments(effectiveMs, segs)
+        : trims.length > 0
+          ? effectiveToSourceMs(effectiveMs, trims)
+          : effectiveMs
+    setSubtitleCues((previous) => retimeCue(previous, id, toSource(span.start), toSource(span.end)))
   }, [])
 
   useEffect(() => {
@@ -4271,6 +4350,10 @@ export default function VideoEditor() {
                   selectedAnnotationId={selectedAnnotationId}
                   onSelectAnnotation={handleSelectAnnotation}
                   subtitleCues={effectiveSubtitleCues}
+                  onSubtitleCueSpanChange={handleSubtitleCueSpanChange}
+                  onSubtitleCueDelete={handleSubtitleCueDelete}
+                  selectedSubtitleCueId={selectedSubtitleCueId}
+                  onSelectSubtitleCue={handleSelectSubtitleCue}
                   aspectRatio={aspectRatio}
                   onAspectRatioChange={setAspectRatio}
                   hasAudioTrack={sourceHasAudio}
@@ -4410,6 +4493,14 @@ export default function VideoEditor() {
               subtitleCueCount={subtitleCues.length}
               subtitleStyle={subtitleStyle}
               onSubtitleStyleChange={handleSubtitleStyleChange}
+              subtitleCues={subtitleCues}
+              selectedSubtitleCueId={selectedSubtitleCueId}
+              onSelectSubtitleCue={handleSelectSubtitleCue}
+              onSubtitleCueTextChange={handleSubtitleCueTextChange}
+              onSubtitleCueSplit={handleSubtitleCueSplit}
+              onSubtitleCueMergeNext={handleSubtitleCueMergeNext}
+              onSubtitleCueMergePrevious={handleSubtitleCueMergePrevious}
+              onSubtitleCueDelete={handleSubtitleCueDelete}
               roughCutSuggestionCount={roughCutSuggestions.length}
               seekStepSeconds={seekStepSeconds}
               onSeekStepSecondsChange={setSeekStepSeconds}
