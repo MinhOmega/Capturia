@@ -4,6 +4,7 @@ import {
   type CaptionGenerationOptions,
   createNativeSpeechEngine,
   createWhisperWebEngine,
+  resolveRequestLanguage,
   runCaptionGeneration,
   selectInitialEngine,
   shouldFallbackToWhisper,
@@ -237,6 +238,7 @@ describe('createNativeSpeechEngine', () => {
         }
       }),
       getVideoAnalysisResult: vi.fn(async () => ({ success: true, result: analysisFixture() })),
+      cancelVideoAnalysis: vi.fn(async () => ({ success: true, cancelled: false })),
     }
 
     const result = await createNativeSpeechEngine(api, 1).transcribe(request())
@@ -265,6 +267,7 @@ describe('createNativeSpeechEngine', () => {
         },
       })),
       getVideoAnalysisResult: vi.fn(async () => ({ success: false })),
+      cancelVideoAnalysis: vi.fn(async () => ({ success: true, cancelled: false })),
     }
 
     const result = await createNativeSpeechEngine(api, 1).transcribe(request())
@@ -284,16 +287,110 @@ describe('createNativeSpeechEngine', () => {
         return { success: true, status: { id: 'job-3', status: 'running' as const, createdAt: 0 } }
       }),
       getVideoAnalysisResult: vi.fn(async () => ({ success: false })),
+      cancelVideoAnalysis: vi.fn(async () => ({ success: true, cancelled: true })),
     }
 
     await expect(
       createNativeSpeechEngine(api, 1).transcribe(request({ signal: controller.signal })),
     ).rejects.toMatchObject({ name: 'AbortError' })
     expect(api.getVideoAnalysisStatus).toHaveBeenCalledTimes(1)
+    // The helper has to be told, or it keeps transcribing after the editor gave up.
+    expect(api.cancelVideoAnalysis).toHaveBeenCalledWith('job-3')
+  })
+
+  it('reports the percentage the job status carries', async () => {
+    let polls = 0
+    const api = {
+      startVideoAnalysis: vi.fn(async () => ({ success: true, jobId: 'job-4' })),
+      getVideoAnalysisStatus: vi.fn(async () => {
+        polls += 1
+        return {
+          success: true,
+          status: {
+            id: 'job-4',
+            status: polls < 3 ? ('running' as const) : ('completed' as const),
+            createdAt: 0,
+            progress: { completedMs: polls * 1_000, totalMs: 4_000 },
+          },
+        }
+      }),
+      getVideoAnalysisResult: vi.fn(async () => ({ success: true, result: analysisFixture() })),
+      cancelVideoAnalysis: vi.fn(async () => ({ success: true, cancelled: false })),
+    }
+
+    const percents: number[] = []
+    const result = await createNativeSpeechEngine(api, 1).transcribe(
+      request({ onProgress: (percent) => percents.push(percent) }),
+    )
+
+    expect(result.success).toBe(true)
+    expect(percents).toEqual([25, 50, 75])
+  })
+
+  it('treats a job cancelled in the main process as an abort', async () => {
+    const api = {
+      startVideoAnalysis: vi.fn(async () => ({ success: true, jobId: 'job-5' })),
+      getVideoAnalysisStatus: vi.fn(async () => ({
+        success: true,
+        status: { id: 'job-5', status: 'cancelled' as const, createdAt: 0 },
+      })),
+      getVideoAnalysisResult: vi.fn(async () => ({ success: false })),
+      cancelVideoAnalysis: vi.fn(async () => ({ success: true, cancelled: false })),
+    }
+
+    await expect(createNativeSpeechEngine(api, 1).transcribe(request())).rejects.toMatchObject({
+      name: 'AbortError',
+    })
+  })
+})
+
+describe('resolveRequestLanguage', () => {
+  it('honours an explicit choice over the UI locale', () => {
+    expect(resolveRequestLanguage({ language: 'ja', locale: 'en-US' })).toBe('ja')
+  })
+
+  it('returns undefined so Whisper detects the language itself', () => {
+    expect(resolveRequestLanguage({ language: 'auto', locale: 'vi' })).toBeUndefined()
+  })
+
+  it('falls back to the UI locale when nothing was chosen', () => {
+    expect(resolveRequestLanguage({ locale: 'zh-CN' })).toBe('zh')
+    expect(resolveRequestLanguage({ language: '   ', locale: 'vi-VN' })).toBe('vi')
   })
 })
 
 describe('createWhisperWebEngine', () => {
+  it('runs the chosen model and corrects the vocabulary hint in the transcript', async () => {
+    const samples = new Float32Array(16_000)
+    for (let i = 0; i < samples.length; i++) samples[i] = 0.5
+    const transcribe = vi.fn(
+      async (_s: Float32Array, opts: { language?: string; modelId?: string }) => {
+        expect(opts.modelId).toBe('Xenova/whisper-small')
+        expect(opts.language).toBeUndefined() // 'auto' means detect
+        const segments: CaptionSegment[] = [{ startSec: 0, endSec: 1, text: 'welcome to captura' }]
+        return { segments, granularity: 'phrase' as const }
+      },
+    )
+
+    const whisper = createWhisperWebEngine({
+      extractAudio: async () => ({ samples, truncated: false, durationSec: 1 }),
+      transcribe,
+      modelDirUrl: () => 'file:///models/',
+      ortWasmBaseUrl: () => 'http://localhost/ort/',
+    })
+
+    const result = await whisper.transcribe(
+      request({
+        modelId: 'Xenova/whisper-small',
+        language: 'auto',
+        vocabulary: 'Capturia',
+      }),
+    )
+
+    expect(result.success).toBe(true)
+    expect(result.words?.map((w) => w.text)).toEqual(['welcome', 'to', 'Capturia'])
+  })
+
   it('extracts audio, trims leading silence, pins the language and shifts segments back', async () => {
     const samples = new Float32Array(16_000 * 3)
     for (let i = 16_000 * 2; i < samples.length; i++) samples[i] = 0.5 // speech from 2.0 s
@@ -321,8 +418,11 @@ describe('createWhisperWebEngine', () => {
     expect(result.success).toBe(true)
     expect(result.truncated).toBe(true)
     expect(result.words?.map((w) => w.text)).toEqual(['xin', 'chào'])
-    // Leading silence trim = 2.0 s - 0.12 s pre-roll; segment start 0.2 s -> ~2.08 s.
-    expect(result.words?.[0]?.startMs).toBe(2_080)
+    // Leading silence trim = 2.0 s - 0.12 s pre-roll, so the worker sees speech
+    // from 0.12 s and reported a start of 0.2 s — 80 ms into the first word.
+    // Boundary snapping (P2-F4) pulls it back to the last quiet 10 ms frame
+    // before the speech starts, 0.11 s, which lands at 1.99 s on the timeline.
+    expect(result.words?.[0]?.startMs).toBe(1_990)
     expect(result.words?.every((w) => w.synthetic)).toBe(true)
     expect(phases).toEqual(['audio'])
   })

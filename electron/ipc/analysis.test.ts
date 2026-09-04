@@ -9,12 +9,14 @@ const service = vi.hoisted(() => ({
   start: vi.fn(() => ({ jobId: 'job-1' })),
   getStatus: vi.fn((jobId: string) => (jobId === 'job-1' ? { status: 'completed' } : null)),
   getResult: vi.fn(() => ({ subtitles: [] })),
+  cancel: vi.fn((jobId: string) => jobId === 'job-1'),
 }))
 vi.mock('../analysis/videoAnalysisService', () => ({
   VideoAnalysisService: class {
     start = service.start
     getStatus = service.getStatus
     getResult = service.getResult
+    cancel = service.cancel
   },
   readAnalysisSidecar: vi.fn(async () => ({ subtitles: [{ text: 'hi' }] })),
 }))
@@ -33,14 +35,28 @@ describe('analysis IPC handlers', () => {
     return { ipc, ctx }
   }
 
-  it('registers the four analysis channels', () => {
+  it('registers the five analysis channels', () => {
     const { ipc } = setup()
     expect(ipc.registered).toEqual([
       'analysis-start',
       'analysis-status',
+      'analysis-cancel',
       'analysis-result',
       'analysis-get-current',
     ])
+  })
+
+  it('analysis-cancel asks the service to stop a known job and refuses a blank id', async () => {
+    const { ipc } = setup()
+    await expect(ipc.invoke('analysis-cancel', 'job-1')).resolves.toEqual({
+      success: true,
+      cancelled: true,
+    })
+    expect(service.cancel).toHaveBeenCalledWith('job-1')
+
+    service.cancel.mockClear()
+    await expect(ipc.invoke('analysis-cancel', '  ')).resolves.toMatchObject({ success: false })
+    expect(service.cancel).not.toHaveBeenCalled()
   })
 
   it('analysis-start needs a video and keeps the read policy', async () => {

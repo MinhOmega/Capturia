@@ -24,6 +24,31 @@ import { defineConfig } from 'vitest/config'
  */
 const channel = process.env['CAPTURIA_BROWSER_CHANNEL'] || undefined
 
+/**
+ * Every `node_modules` at or above this config, so Vite will serve files out of
+ * them.
+ *
+ * A git worktree (`.claude/worktrees/<name>`) has no installed packages of its
+ * own: everything resolves from the main checkout's `node_modules`, which sits
+ * outside the worktree and so outside Vite's default `fs.allow` (the project
+ * root). gif.js loads its encoder worker from that path at runtime; the request
+ * is refused with "outside of Vite serving allow list", the worker never
+ * starts, `render()` never finishes, and the GIF export spec times out with no
+ * hint of why. Allowing the real dependency roots makes the browser lane run
+ * from a worktree exactly as it does from the main checkout.
+ */
+function dependencyRoots(from: string): string[] {
+  const roots: string[] = []
+  let dir = from
+  for (;;) {
+    const candidate = path.join(dir, 'node_modules')
+    if (fs.existsSync(candidate)) roots.push(candidate)
+    const parent = path.dirname(dir)
+    if (parent === dir) return roots
+    dir = parent
+  }
+}
+
 export default defineConfig({
   test: {
     include: ['src/**/*.browser.test.{ts,tsx}'],
@@ -70,6 +95,9 @@ export default defineConfig({
     alias: {
       '@': path.resolve(__dirname, 'src'),
     },
+  },
+  server: {
+    fs: { allow: [__dirname, ...dependencyRoots(__dirname)] },
   },
   // `CAPTURIA_*` reaches the page as `import.meta.env.*`, which is how the
   // redaction OCR spike stays skipped unless it is asked for explicitly

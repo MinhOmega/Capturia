@@ -147,6 +147,25 @@ import { isModalDialogOpen } from '@/lib/modalDialog'
 import { generateAutoZoomDrafts } from '@/lib/autoEdit/screenStudioAutoZoom'
 import type { RoughCutSuggestion, SubtitleCue } from '@/lib/analysis/types'
 import { normalizeSubtitleCues } from '@/lib/analysis/subtitleTrack'
+import {
+  DEFAULT_SUBTITLE_STYLE,
+  isDefaultSubtitleStyle,
+  normalizeSubtitleStyle,
+  type SubtitleStyle,
+} from '@/lib/rendering/subtitleStyle'
+import {
+  deleteCue,
+  mergeCueWithNext,
+  mergeCueWithPrevious,
+  retimeCue,
+  splitCueAtTime,
+  updateCueText,
+} from '@/lib/captions/captionOps'
+import {
+  buildSubtitleSidecar,
+  isSubtitleSidecarFormat,
+  type SubtitleSidecarFormat,
+} from '@/lib/captions/subtitleExport'
 import { normalizeRoughCutSuggestions } from '@/lib/analysis/roughCutEngine'
 import { applyRoughCutSuggestionsToAudioEdits } from '@/lib/analysis/roughCutApply'
 import {
@@ -161,7 +180,13 @@ import {
   ensureCaptionModel,
   formatMegabytes,
   loadCaptionEngineSetting,
+  loadCaptionLanguage,
+  loadCaptionModelId,
+  loadCaptionVocabulary,
   saveCaptionEngineSetting,
+  saveCaptionLanguage,
+  saveCaptionModelId,
+  saveCaptionVocabulary,
 } from '@/lib/captioning'
 import {
   applyZoomLevelToAllAspects,
@@ -533,6 +558,7 @@ export default function VideoEditor() {
   const [audioEditRegions, setAudioEditRegions] = useState<AudioEditRegion[]>([])
   const [annotationRegions, setAnnotationRegions] = useState<AnnotationRegion[]>([])
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null)
+  const [selectedSubtitleCueId, setSelectedSubtitleCueId] = useState<string | null>(null)
   const [isExporting, setIsExporting] = useState(false)
   const [exportProgress, setExportProgress] = useState<ExportProgress | null>(null)
   const [exportError, setExportError] = useState<string | null>(null)
@@ -621,6 +647,9 @@ export default function VideoEditor() {
   const [cursorTrack, setCursorTrack] = useState<CursorTrack | null>(null)
   const [cursorStyle, setCursorStyle] = useState<CursorStyleConfig>(DEFAULT_CURSOR_STYLE)
   const [subtitleCues, setSubtitleCues] = useState<SubtitleCue[]>([])
+  const [subtitleStyle, setSubtitleStyle] = useState<SubtitleStyle>(DEFAULT_SUBTITLE_STYLE)
+  // P2-F3: caption sidecars written next to the export; empty means none.
+  const [captionSidecarFormats, setCaptionSidecarFormats] = useState<SubtitleSidecarFormat[]>([])
   const [roughCutSuggestions, setRoughCutSuggestions] = useState<RoughCutSuggestion[]>([])
   const [analysisInProgress, setAnalysisInProgress] = useState(false)
   // C-1: one in-flight "Generate subtitles" run (native or Whisper); aborted on unmount / video change.
@@ -628,6 +657,10 @@ export default function VideoEditor() {
   const [captionEngine, setCaptionEngine] = useState<CaptionEngineSetting>(() =>
     loadCaptionEngineSetting(),
   )
+  // P2-F4: transcription quality, stored per machine rather than per project.
+  const [captionModelId, setCaptionModelId] = useState<string>(() => loadCaptionModelId())
+  const [captionLanguage, setCaptionLanguage] = useState<string>(() => loadCaptionLanguage())
+  const [captionVocabulary, setCaptionVocabulary] = useState<string>(() => loadCaptionVocabulary())
   const [cursorAnalysisProgress, setCursorAnalysisProgress] = useState<number | null>(null)
   const cursorAnalyzerRef = useRef<VideoMouseAnalyzer | null>(null)
 
@@ -1222,6 +1255,14 @@ export default function VideoEditor() {
               if (Array.isArray(s.subtitleCues) && s.subtitleCues.length > 0) {
                 setSubtitleCues(s.subtitleCues as SubtitleCue[])
               }
+              // Caption look (P2-F1); absent in older projects, which keep the default.
+              if (s.subtitleStyle && typeof s.subtitleStyle === 'object') {
+                setSubtitleStyle(normalizeSubtitleStyle(s.subtitleStyle))
+              }
+              // Caption sidecars (P2-F3); unknown formats are dropped rather than kept.
+              if (Array.isArray(s.captionSidecarFormats)) {
+                setCaptionSidecarFormats(s.captionSidecarFormats.filter(isSubtitleSidecarFormat))
+              }
               // Restore GIF export settings (v1.1)
               if (typeof s.gifFrameRate === 'number')
                 setGifFrameRate(s.gifFrameRate as GifFrameRate)
@@ -1342,6 +1383,9 @@ export default function VideoEditor() {
         playheadPosition: currentTimeRef.current,
         cursorStyle,
         subtitleCues: subtitleCues as ProjectState['subtitleCues'],
+        // Omitted while untouched so an older project re-saves without gaining a key.
+        ...(isDefaultSubtitleStyle(subtitleStyle) ? {} : { subtitleStyle }),
+        ...(captionSidecarFormats.length > 0 ? { captionSidecarFormats } : {}),
         gifFrameRate,
         gifLoop,
         gifSizePreset,
@@ -1385,6 +1429,8 @@ export default function VideoEditor() {
     previewPlaybackRate,
     cursorStyle,
     subtitleCues,
+    subtitleStyle,
+    captionSidecarFormats,
     gifFrameRate,
     gifLoop,
     gifSizePreset,
@@ -1447,6 +1493,7 @@ export default function VideoEditor() {
       zoomRegionsByAspect,
       annotationRegions,
       audioEditRegions,
+      subtitleCues,
     }
 
     // Skip when restoring from undo/redo
@@ -1481,7 +1528,14 @@ export default function VideoEditor() {
       syncHistoryState()
     }
     prevEditableRef.current = current
-  }, [segments, zoomRegionsByAspect, annotationRegions, audioEditRegions, syncHistoryState])
+  }, [
+    segments,
+    zoomRegionsByAspect,
+    annotationRegions,
+    audioEditRegions,
+    subtitleCues,
+    syncHistoryState,
+  ])
 
   const handleUndo = useCallback(() => {
     if (undoStackRef.current.length === 0) return
@@ -1492,6 +1546,7 @@ export default function VideoEditor() {
       zoomRegionsByAspect,
       annotationRegions,
       audioEditRegions,
+      subtitleCues,
     })
     // Restore snapshot
     isRestoringHistoryRef.current = true
@@ -1499,8 +1554,16 @@ export default function VideoEditor() {
     setZoomRegionsByAspect(snapshot.zoomRegionsByAspect)
     setAnnotationRegions(snapshot.annotationRegions)
     setAudioEditRegions(snapshot.audioEditRegions)
+    setSubtitleCues(snapshot.subtitleCues)
     syncHistoryState()
-  }, [segments, zoomRegionsByAspect, annotationRegions, audioEditRegions, syncHistoryState])
+  }, [
+    segments,
+    zoomRegionsByAspect,
+    annotationRegions,
+    audioEditRegions,
+    subtitleCues,
+    syncHistoryState,
+  ])
 
   const handleRedo = useCallback(() => {
     if (redoStackRef.current.length === 0) return
@@ -1511,6 +1574,7 @@ export default function VideoEditor() {
       zoomRegionsByAspect,
       annotationRegions,
       audioEditRegions,
+      subtitleCues,
     })
     // Restore snapshot
     isRestoringHistoryRef.current = true
@@ -1518,8 +1582,16 @@ export default function VideoEditor() {
     setZoomRegionsByAspect(snapshot.zoomRegionsByAspect)
     setAnnotationRegions(snapshot.annotationRegions)
     setAudioEditRegions(snapshot.audioEditRegions)
+    setSubtitleCues(snapshot.subtitleCues)
     syncHistoryState()
-  }, [segments, zoomRegionsByAspect, annotationRegions, audioEditRegions, syncHistoryState])
+  }, [
+    segments,
+    zoomRegionsByAspect,
+    annotationRegions,
+    audioEditRegions,
+    subtitleCues,
+    syncHistoryState,
+  ])
 
   // Reset projectRestoredRef after initial effects have processed.
   // This is a one-shot flag: true during first render cycle (so wallpaper init
@@ -2930,6 +3002,71 @@ export default function VideoEditor() {
     saveCaptionEngineSetting(value)
   }, [])
 
+  const handleCaptionModelIdChange = useCallback((value: string) => {
+    setCaptionModelId(value)
+    saveCaptionModelId(value)
+  }, [])
+
+  const handleCaptionLanguageChange = useCallback((value: string) => {
+    setCaptionLanguage(value)
+    saveCaptionLanguage(value)
+  }, [])
+
+  /** Kept verbatim while typing; normalized on the way to storage and to the engine. */
+  const handleCaptionVocabularyChange = useCallback((value: string) => {
+    setCaptionVocabulary(value)
+    saveCaptionVocabulary(value)
+  }, [])
+
+  /** Caption look; normalized here so a bad value can never reach the renderers. */
+  const handleSubtitleStyleChange = useCallback((patch: Partial<SubtitleStyle>) => {
+    setSubtitleStyle((previous) => normalizeSubtitleStyle({ ...previous, ...patch }))
+  }, [])
+
+  // ── Per-cue editing (P2-F2) ──
+  // Every handler runs one pure operation from `captionOps`, which returns the
+  // same array when it rejects the edit; the history effect then sees no change
+  // and no undo entry is spent.
+  const handleSelectSubtitleCue = useCallback((id: string | null) => {
+    setSelectedSubtitleCueId(id)
+  }, [])
+
+  const handleSubtitleCueTextChange = useCallback((id: string, text: string) => {
+    setSubtitleCues((previous) => updateCueText(previous, id, text))
+  }, [])
+
+  const handleSubtitleCueDelete = useCallback((id: string) => {
+    setSubtitleCues((previous) => deleteCue(previous, id))
+    setSelectedSubtitleCueId((current) => (current === id ? null : current))
+  }, [])
+
+  /** Splits at the playhead, snapped to the nearest word boundary inside the cue. */
+  const handleSubtitleCueSplit = useCallback((id: string) => {
+    const sourceMs = Math.round(currentTimeRef.current * 1000)
+    setSubtitleCues((previous) => splitCueAtTime(previous, id, sourceMs))
+  }, [])
+
+  const handleSubtitleCueMergeNext = useCallback((id: string) => {
+    setSubtitleCues((previous) => mergeCueWithNext(previous, id))
+  }, [])
+
+  const handleSubtitleCueMergePrevious = useCallback((id: string) => {
+    setSubtitleCues((previous) => mergeCueWithPrevious(previous, id))
+  }, [])
+
+  /** The timeline hands back effective time; cues are stored in source time. */
+  const handleSubtitleCueSpanChange = useCallback((id: string, span: Span) => {
+    const segs = segmentsRef.current
+    const trims = normalizedTrimsRef.current
+    const toSource = (effectiveMs: number) =>
+      segs.length > 0
+        ? effectiveToSourceMsWithSegments(effectiveMs, segs)
+        : trims.length > 0
+          ? effectiveToSourceMs(effectiveMs, trims)
+          : effectiveMs
+    setSubtitleCues((previous) => retimeCue(previous, id, toSource(span.start), toSource(span.end)))
+  }, [])
+
   useEffect(() => {
     return () => {
       cancelCaptionGeneration()
@@ -3080,6 +3217,7 @@ export default function VideoEditor() {
       model: t('editor.captionPhaseModel'),
       transcribe: t('editor.captionPhaseTranscribe'),
     }
+    let currentPhase: TranscriptionPhase = 'native'
     const cancelAction = { label: t('common.cancel'), onClick: () => controller.abort() }
     toast.loading(t('editor.analysisRunning'), { id: progressToastId, action: cancelAction })
 
@@ -3095,13 +3233,29 @@ export default function VideoEditor() {
           durationMs: Math.max(0, Math.round(duration * 1000)),
           videoWidth: sourceWidth,
           subtitleWidthRatio: 0.82,
+          modelId: captionModelId,
+          language: captionLanguage,
+          vocabulary: captionVocabulary,
           signal: controller.signal,
           onStatus: (phase) => {
+            currentPhase = phase
             toast.loading(phaseMessage[phase], { id: progressToastId, action: cancelAction })
+          },
+          onProgress: (percent) => {
+            // Only the native engine reports a percentage today; keep the phase
+            // wording so the toast still says what is happening.
+            toast.loading(
+              t('editor.captionPhaseProgress', {
+                phase: phaseMessage[currentPhase],
+                percent: String(percent),
+              }),
+              { id: progressToastId, action: cancelAction },
+            )
           },
         },
         ensureModel: () =>
           ensureCaptionModel({
+            modelId: captionModelId,
             signal: controller.signal,
             confirmDownload: (status) => confirmCaptionModelDownload(status, controller.signal),
             onProgress: (progress) => {
@@ -3178,6 +3332,9 @@ export default function VideoEditor() {
     applyAnalysis,
     cancelCaptionGeneration,
     captionEngine,
+    captionLanguage,
+    captionModelId,
+    captionVocabulary,
     confirmCaptionModelDownload,
     duration,
     locale,
@@ -3311,6 +3468,40 @@ export default function VideoEditor() {
     [t, handleSaveUnsavedExport],
   )
 
+  /**
+   * P2-F3: writes `<name>.srt` / `<name>.vtt` next to a video that was just
+   * exported. Cue times are mapped through the same segments the exporter used,
+   * so the sidecar matches the file and not the raw recording.
+   */
+  const writeCaptionSidecars = useCallback(
+    async (exportFilePath: string) => {
+      if (captionSidecarFormats.length === 0 || subtitleCues.length === 0) return
+      for (const format of captionSidecarFormats) {
+        const content = buildSubtitleSidecar(subtitleCues, format, {
+          segments,
+          trimRegions,
+          totalDurationMs: probedSourceDurationMs,
+        })
+        if (!content) continue
+        try {
+          const result = await window.electronAPI.saveCaptionSidecar(
+            exportFilePath,
+            format,
+            content,
+            locale,
+          )
+          if (!result.success) {
+            toast.warning(t('editor.captionSidecarFailed', { format: format.toUpperCase() }))
+          }
+        } catch (error) {
+          console.error('Failed to write caption sidecar:', error)
+          toast.warning(t('editor.captionSidecarFailed', { format: format.toUpperCase() }))
+        }
+      }
+    },
+    [captionSidecarFormats, subtitleCues, segments, trimRegions, probedSourceDurationMs, locale, t],
+  )
+
   const handleExport = useCallback(
     async (settings: ExportSettings, preSelectedSavePath?: string) => {
       if (!videoPath) {
@@ -3377,6 +3568,7 @@ export default function VideoEditor() {
             cropRegion: activeCropRegion,
             annotationRegions,
             subtitleCues,
+            subtitleStyle,
             previewWidth,
             previewHeight,
             cursorTrack,
@@ -3412,6 +3604,7 @@ export default function VideoEditor() {
             if (saveResult.cancelled) {
               toast.info(t('editor.exportCancelled'))
             } else if (saveResult.success && saveResult.path) {
+              await writeCaptionSidecars(saveResult.path)
               showExportSuccessToast(saveResult.path)
               setExportedFilePath(saveResult.path)
               rememberExportFolder(saveResult.path)
@@ -3538,6 +3731,7 @@ export default function VideoEditor() {
               cropRegion: cropRegionForRatio,
               annotationRegions,
               subtitleCues,
+              subtitleStyle,
               previewWidth,
               previewHeight,
               cursorTrack,
@@ -3634,6 +3828,7 @@ export default function VideoEditor() {
               break
             } else if (saveResult.success && saveResult.path) {
               completedCount += 1
+              await writeCaptionSidecars(saveResult.path)
               setExportedFilePath(saveResult.path)
               rememberExportFolder(saveResult.path)
               if (ratiosToExport.length === 1) {
@@ -3700,6 +3895,8 @@ export default function VideoEditor() {
       sourceAspectRatio,
       annotationRegions,
       subtitleCues,
+      subtitleStyle,
+      writeCaptionSidecars,
       isPlaying,
       normalizedExportAspectRatios,
       exportQuality,
@@ -3939,6 +4136,9 @@ export default function VideoEditor() {
         playheadPosition: currentTimeRef.current,
         cursorStyle,
         subtitleCues: subtitleCues as ProjectState['subtitleCues'],
+        // Omitted while untouched so an older project re-saves without gaining a key.
+        ...(isDefaultSubtitleStyle(subtitleStyle) ? {} : { subtitleStyle }),
+        ...(captionSidecarFormats.length > 0 ? { captionSidecarFormats } : {}),
         gifFrameRate,
         gifLoop,
         gifSizePreset,
@@ -3979,6 +4179,8 @@ export default function VideoEditor() {
     previewPlaybackRate,
     cursorStyle,
     subtitleCues,
+    subtitleStyle,
+    captionSidecarFormats,
     gifFrameRate,
     gifLoop,
     gifSizePreset,
@@ -4306,6 +4508,7 @@ export default function VideoEditor() {
                       onAnnotationPositionChange={handleAnnotationPositionChange}
                       onAnnotationSizeChange={handleAnnotationSizeChange}
                       subtitleCues={subtitleCues}
+                      subtitleStyle={subtitleStyle}
                       cursorTrack={cursorTrack}
                       cursorStyle={cursorStyle}
                       hasAudioTrack={sourceHasAudio}
@@ -4417,6 +4620,10 @@ export default function VideoEditor() {
                   selectedAnnotationId={selectedAnnotationId}
                   onSelectAnnotation={handleSelectAnnotation}
                   subtitleCues={effectiveSubtitleCues}
+                  onSubtitleCueSpanChange={handleSubtitleCueSpanChange}
+                  onSubtitleCueDelete={handleSubtitleCueDelete}
+                  selectedSubtitleCueId={selectedSubtitleCueId}
+                  onSelectSubtitleCue={handleSelectSubtitleCue}
                   aspectRatio={aspectRatio}
                   onAspectRatioChange={setAspectRatio}
                   hasAudioTrack={sourceHasAudio}
@@ -4562,7 +4769,25 @@ export default function VideoEditor() {
               analysisRunning={analysisInProgress}
               captionEngine={captionEngine}
               onCaptionEngineChange={handleCaptionEngineChange}
+              captionModelId={captionModelId}
+              onCaptionModelIdChange={handleCaptionModelIdChange}
+              captionLanguage={captionLanguage}
+              onCaptionLanguageChange={handleCaptionLanguageChange}
+              captionVocabulary={captionVocabulary}
+              onCaptionVocabularyChange={handleCaptionVocabularyChange}
               subtitleCueCount={subtitleCues.length}
+              subtitleStyle={subtitleStyle}
+              onSubtitleStyleChange={handleSubtitleStyleChange}
+              subtitleCues={subtitleCues}
+              selectedSubtitleCueId={selectedSubtitleCueId}
+              onSelectSubtitleCue={handleSelectSubtitleCue}
+              onSubtitleCueTextChange={handleSubtitleCueTextChange}
+              onSubtitleCueSplit={handleSubtitleCueSplit}
+              onSubtitleCueMergeNext={handleSubtitleCueMergeNext}
+              onSubtitleCueMergePrevious={handleSubtitleCueMergePrevious}
+              onSubtitleCueDelete={handleSubtitleCueDelete}
+              captionSidecarFormats={captionSidecarFormats}
+              onCaptionSidecarFormatsChange={setCaptionSidecarFormats}
               roughCutSuggestionCount={roughCutSuggestions.length}
               seekStepSeconds={seekStepSeconds}
               onSeekStepSecondsChange={setSeekStepSeconds}

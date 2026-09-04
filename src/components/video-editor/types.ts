@@ -1,3 +1,5 @@
+import type { SubtitleStyle } from '@/lib/rendering/subtitleStyle'
+
 export type ZoomDepth = 1 | 2 | 3 | 4 | 5 | 6
 
 export interface ZoomFocus {
@@ -512,6 +514,17 @@ export interface ProjectState {
     source: string
     confidence?: number
   }>
+  /**
+   * Caption look (P2-F1). Absent in every project saved before it existed and
+   * omitted again whenever the style is still the default, so an untouched
+   * project loads and re-saves byte-identical.
+   */
+  subtitleStyle?: SubtitleStyle
+  /**
+   * Caption sidecars written next to an export (P2-F3): `['srt']`, `['vtt']`,
+   * both, or absent when the user wants none.
+   */
+  captionSidecarFormats?: string[]
   gifFrameRate?: number
   gifLoop?: boolean
   gifSizePreset?: string

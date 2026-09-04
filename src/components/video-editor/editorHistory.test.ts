@@ -7,6 +7,7 @@ import {
   type EditorSnapshot,
 } from './editorHistory'
 import type { AnnotationRegion, AudioEditRegion, VideoSegment, ZoomRegion } from './types'
+import type { SubtitleCue } from '@/lib/analysis/types'
 
 const segment: VideoSegment = { id: 'seg-1', startMs: 0, endMs: 1000, deleted: false, speed: 1 }
 const zoom: ZoomRegion = {
@@ -24,6 +25,13 @@ const audioEdit: AudioEditRegion = {
   mode: 'mute',
   gain: 0,
 }
+const subtitleCue: SubtitleCue = {
+  id: 'subtitle-1',
+  startMs: 0,
+  endMs: 500,
+  text: 'hello',
+  source: 'asr',
+}
 
 function snapshot(overrides: Partial<EditorSnapshot> = {}): EditorSnapshot {
   return {
@@ -31,6 +39,7 @@ function snapshot(overrides: Partial<EditorSnapshot> = {}): EditorSnapshot {
     zoomRegionsByAspect: { '16:9': [zoom] },
     annotationRegions: [annotation],
     audioEditRegions: [audioEdit],
+    subtitleCues: [subtitleCue],
     ...overrides,
   }
 }
@@ -74,13 +83,17 @@ describe('editorSnapshotsEqual', () => {
     expect(editorSnapshotsEqual(snapshot(), snapshot())).toBe(true)
   })
 
-  it('sees an edit in any one of the four tracks', () => {
+  it('sees an edit in any one of the five tracks', () => {
     expect(editorSnapshotsEqual(snapshot(), snapshot({ segments: [{ ...segment }] }))).toBe(false)
     expect(
       editorSnapshotsEqual(snapshot(), snapshot({ zoomRegionsByAspect: { '16:9': [] } })),
     ).toBe(false)
     expect(editorSnapshotsEqual(snapshot(), snapshot({ annotationRegions: [] }))).toBe(false)
     expect(editorSnapshotsEqual(snapshot(), snapshot({ audioEditRegions: [] }))).toBe(false)
+    expect(editorSnapshotsEqual(snapshot(), snapshot({ subtitleCues: [] }))).toBe(false)
+    expect(editorSnapshotsEqual(snapshot(), snapshot({ subtitleCues: [{ ...subtitleCue }] }))).toBe(
+      false,
+    )
   })
 
   it('handles the first-ever snapshot, when there is nothing to compare against', () => {

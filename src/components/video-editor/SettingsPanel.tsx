@@ -104,6 +104,14 @@ import {
   CAPTION_ENGINE_SETTINGS,
   type CaptionEngineSetting,
 } from '@/lib/captioning/captionEngineSetting'
+import { DEFAULT_CAPTION_MODEL_ID } from '@/lib/captioning/captionConstants'
+import { CAPTION_LANGUAGE_AUTO } from '@/lib/captioning/captionTranscriptionSettings'
+import type { SubtitleStyle } from '@/lib/rendering/subtitleStyle'
+import { SubtitleStylePanel } from './SubtitleStylePanel'
+import { TranscriptionQualityPanel } from './TranscriptionQualityPanel'
+import { SubtitleCueEditor } from './SubtitleCueEditor'
+import type { SubtitleCue } from '@/lib/analysis/types'
+import { SUBTITLE_SIDECAR_FORMATS, type SubtitleSidecarFormat } from '@/lib/captions/subtitleExport'
 
 const GRADIENTS = BACKGROUND_GRADIENT_PRESETS
 const ZOOM_FOCUS_MODES: readonly ZoomFocusMode[] = ['manual', 'auto']
@@ -246,6 +254,28 @@ interface SettingsPanelProps {
   /** C-1: which engine "Generate Subtitles" uses (native macOS speech / on-device Whisper). */
   captionEngine?: CaptionEngineSetting
   onCaptionEngineChange?: (engine: CaptionEngineSetting) => void
+  /** P2-F4: transcription quality - Whisper weights, forced language, vocabulary hint. */
+  captionModelId?: string
+  onCaptionModelIdChange?: (modelId: string) => void
+  captionLanguage?: string
+  onCaptionLanguageChange?: (language: string) => void
+  captionVocabulary?: string
+  onCaptionVocabularyChange?: (vocabulary: string) => void
+  /** P2-F1: caption look, shared by the preview overlay and the export renderer. */
+  subtitleStyle?: SubtitleStyle
+  onSubtitleStyleChange?: (patch: Partial<SubtitleStyle>) => void
+  /** P2-F2: the caption track and the cue selected on the timeline. */
+  subtitleCues?: SubtitleCue[]
+  selectedSubtitleCueId?: string | null
+  onSelectSubtitleCue?: (id: string | null) => void
+  onSubtitleCueTextChange?: (id: string, text: string) => void
+  onSubtitleCueSplit?: (id: string) => void
+  onSubtitleCueMergeNext?: (id: string) => void
+  onSubtitleCueMergePrevious?: (id: string) => void
+  onSubtitleCueDelete?: (id: string) => void
+  /** P2-F3: which caption sidecars are written next to the export. */
+  captionSidecarFormats?: SubtitleSidecarFormat[]
+  onCaptionSidecarFormatsChange?: (formats: SubtitleSidecarFormat[]) => void
   seekStepSeconds?: number
   onSeekStepSecondsChange?: (step: number) => void
   // Timeline section (W2-b)
@@ -434,6 +464,24 @@ export function SettingsPanel({
   roughCutSuggestionCount = 0,
   captionEngine = 'auto',
   onCaptionEngineChange,
+  captionModelId = DEFAULT_CAPTION_MODEL_ID,
+  onCaptionModelIdChange,
+  captionLanguage = CAPTION_LANGUAGE_AUTO,
+  onCaptionLanguageChange,
+  captionVocabulary = '',
+  onCaptionVocabularyChange,
+  subtitleStyle,
+  onSubtitleStyleChange,
+  subtitleCues = [],
+  selectedSubtitleCueId = null,
+  onSelectSubtitleCue,
+  onSubtitleCueTextChange,
+  onSubtitleCueSplit,
+  onSubtitleCueMergeNext,
+  onSubtitleCueMergePrevious,
+  onSubtitleCueDelete,
+  captionSidecarFormats = [],
+  onCaptionSidecarFormatsChange,
   seekStepSeconds = 5,
   onSeekStepSecondsChange,
   showTimelineWaveform = false,
@@ -1104,6 +1152,42 @@ export function SettingsPanel({
               </div>
             </div>
           )}
+          {onCaptionModelIdChange && onCaptionLanguageChange && onCaptionVocabularyChange && (
+            <TranscriptionQualityPanel
+              modelId={captionModelId}
+              onModelIdChange={onCaptionModelIdChange}
+              language={captionLanguage}
+              onLanguageChange={onCaptionLanguageChange}
+              vocabulary={captionVocabulary}
+              onVocabularyChange={onCaptionVocabularyChange}
+              disabled={analysisRunning}
+            />
+          )}
+          {subtitleStyle && onSubtitleStyleChange && (
+            <SubtitleStylePanel
+              style={subtitleStyle}
+              onChange={onSubtitleStyleChange}
+              disabled={analysisRunning}
+            />
+          )}
+          {onSelectSubtitleCue &&
+            onSubtitleCueTextChange &&
+            onSubtitleCueSplit &&
+            onSubtitleCueMergeNext &&
+            onSubtitleCueMergePrevious &&
+            onSubtitleCueDelete && (
+              <SubtitleCueEditor
+                cues={subtitleCues}
+                selectedCueId={selectedSubtitleCueId}
+                onSelectCue={onSelectSubtitleCue}
+                onTextChange={onSubtitleCueTextChange}
+                onSplit={onSubtitleCueSplit}
+                onMergeNext={onSubtitleCueMergeNext}
+                onMergePrevious={onSubtitleCueMergePrevious}
+                onDelete={onSubtitleCueDelete}
+                disabled={analysisRunning}
+              />
+            )}
         </div>
 
         {segmentSelected && selectedSegment && (
@@ -2298,6 +2382,44 @@ export function SettingsPanel({
                 />
               </div>
             </div>
+          </div>
+        )}
+
+        {onCaptionSidecarFormatsChange && subtitleCues.length > 0 && (
+          <div className="mb-3 rounded-lg border border-white/10 bg-white/5 p-2">
+            <div className="text-[10px] uppercase tracking-wide text-slate-400">
+              {t('settings.captionSidecars')}
+            </div>
+            <div className="mt-1.5 flex items-center gap-3">
+              {SUBTITLE_SIDECAR_FORMATS.map((format) => {
+                const checked = captionSidecarFormats.includes(format)
+                return (
+                  <label
+                    key={format}
+                    className="flex cursor-pointer items-center gap-1.5 text-[10px] text-slate-300"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() =>
+                        onCaptionSidecarFormatsChange(
+                          checked
+                            ? captionSidecarFormats.filter((entry) => entry !== format)
+                            : [...captionSidecarFormats, format],
+                        )
+                      }
+                      className="h-3 w-3 accent-[#34B27B]"
+                    />
+                    {format === 'srt'
+                      ? t('settings.captionSidecarSrt')
+                      : t('settings.captionSidecarVtt')}
+                  </label>
+                )
+              })}
+            </div>
+            <p className="mt-1.5 text-[10px] leading-snug text-slate-500">
+              {t('settings.captionSidecarsHint')}
+            </p>
           </div>
         )}
 

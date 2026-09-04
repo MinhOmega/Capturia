@@ -66,6 +66,12 @@ import { BLUR_REGIONS_ENABLED } from './featureFlags'
 import { getPreviewBackgroundFilter } from '@/lib/rendering/backgroundBlur'
 import type { SubtitleCue } from '@/lib/analysis/types'
 import { findSubtitleCueAtTime, normalizeSubtitleCues } from '@/lib/analysis/subtitleTrack'
+import {
+  DEFAULT_SUBTITLE_STYLE,
+  normalizeSubtitleStyle,
+  type SubtitleStyle,
+} from '@/lib/rendering/subtitleStyle'
+import { SubtitleOverlay } from './SubtitleOverlay'
 import { resolvePreviewAudioState } from '@/lib/audio/audioEditRegions'
 import {
   DEFAULT_CURSOR_STYLE,
@@ -127,6 +133,7 @@ interface VideoPlaybackProps {
   onAnnotationPositionChange?: (id: string, position: { x: number; y: number }) => void
   onAnnotationSizeChange?: (id: string, size: { width: number; height: number }) => void
   subtitleCues?: SubtitleCue[]
+  subtitleStyle?: SubtitleStyle
   preferredFps?: number
   cursorTrack?: CursorTrack | null
   cursorStyle?: Partial<CursorStyleConfig>
@@ -196,6 +203,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
       onAnnotationPositionChange,
       onAnnotationSizeChange,
       subtitleCues = [],
+      subtitleStyle,
       preferredFps = 60,
       cursorTrack = null,
       cursorStyle,
@@ -526,6 +534,10 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
     const activeSubtitleCue = useMemo(
       () => findSubtitleCueAtTime(normalizedSubtitleCues, Math.round(currentTime * 1000)),
       [normalizedSubtitleCues, currentTime],
+    )
+    const resolvedSubtitleStyle = useMemo(
+      () => (subtitleStyle ? normalizeSubtitleStyle(subtitleStyle) : DEFAULT_SUBTITLE_STYLE),
+      [subtitleStyle],
     )
 
     useImperativeHandle(ref, () => ({
@@ -1663,12 +1675,14 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
               ))
             })()}
             {activeSubtitleCue ? (
-              <div className="absolute left-1/2 bottom-[6%] -translate-x-1/2 z-40 pointer-events-none max-w-[82%]">
-                <div className="px-3 py-1.5 rounded-xl bg-black/70 backdrop-blur-[2px] border border-white/10 shadow-lg">
-                  <p className="text-white text-base leading-tight font-semibold text-center whitespace-pre-wrap break-words">
-                    {activeSubtitleCue.text}
-                  </p>
-                </div>
+              <div className="absolute inset-0 z-40 pointer-events-none">
+                <SubtitleOverlay
+                  cue={activeSubtitleCue}
+                  timeMs={Math.round(currentTime * 1000)}
+                  style={resolvedSubtitleStyle}
+                  frameWidth={overlaySize.width}
+                  frameHeight={overlaySize.height}
+                />
               </div>
             ) : null}
           </div>

@@ -108,6 +108,11 @@ interface TimelineEditorProps {
   selectedAnnotationId?: string | null
   onSelectAnnotation?: (id: string | null) => void
   subtitleCues?: SubtitleCue[]
+  /** P2-F2: cue items are draggable; the span arrives in effective time like the others. */
+  onSubtitleCueSpanChange?: (id: string, span: Span) => void
+  onSubtitleCueDelete?: (id: string) => void
+  selectedSubtitleCueId?: string | null
+  onSelectSubtitleCue?: (id: string | null) => void
   aspectRatio: AspectRatio
   onAspectRatioChange: (aspectRatio: AspectRatio) => void
   hasAudioTrack?: boolean
@@ -593,9 +598,11 @@ function Timeline({
   onSelectZoom,
   onSelectSegment,
   onSelectAnnotation,
+  onSelectSubtitleCue,
   selectedZoomId,
   selectedSegmentId,
   selectedAnnotationId,
+  selectedSubtitleCueId,
   hasAudioTrack,
   audioEnabled,
   audioGain,
@@ -620,9 +627,11 @@ function Timeline({
   onSelectZoom?: (id: string | null) => void
   onSelectSegment?: (id: string | null) => void
   onSelectAnnotation?: (id: string | null) => void
+  onSelectSubtitleCue?: (id: string | null) => void
   selectedZoomId: string | null
   selectedSegmentId?: string | null
   selectedAnnotationId?: string | null
+  selectedSubtitleCueId?: string | null
   hasAudioTrack: boolean
   audioEnabled: boolean
   audioGain: number
@@ -1033,9 +1042,10 @@ function Timeline({
             key={item.id}
             rowId={item.rowId}
             span={item.span}
-            isSelected={false}
+            isSelected={item.id === selectedSubtitleCueId}
+            onSelect={() => onSelectSubtitleCue?.(item.id)}
             variant="subtitle"
-            editable={false}
+            editable={Boolean(onSelectSubtitleCue)}
           >
             {item.label}
           </Item>
@@ -1125,6 +1135,10 @@ export default function TimelineEditor({
   selectedAnnotationId,
   onSelectAnnotation,
   subtitleCues = [],
+  onSubtitleCueSpanChange,
+  onSubtitleCueDelete,
+  selectedSubtitleCueId,
+  onSelectSubtitleCue,
   aspectRatio,
   onAspectRatioChange,
   hasAudioTrack = true,
@@ -1340,6 +1354,12 @@ export default function TimelineEditor({
     onAnnotationDelete(selectedAnnotationId)
     onSelectAnnotation(null)
   }, [selectedAnnotationId, onAnnotationDelete, onSelectAnnotation])
+
+  const deleteSelectedSubtitleCue = useCallback(() => {
+    if (!selectedSubtitleCueId || !onSubtitleCueDelete) return
+    onSubtitleCueDelete(selectedSubtitleCueId)
+    onSelectSubtitleCue?.(null)
+  }, [selectedSubtitleCueId, onSubtitleCueDelete, onSelectSubtitleCue])
 
   // Scale the visible range proportionally when totalMs changes (e.g. segment speed edit),
   // instead of resetting to the full timeline. Only reset on initial load (prevTotalMs === 0).
@@ -1615,6 +1635,8 @@ export default function TimelineEditor({
           deleteSelectedSegment()
         } else if (selectedAnnotationId) {
           deleteSelectedAnnotation()
+        } else if (selectedSubtitleCueId) {
+          deleteSelectedSubtitleCue()
         }
       }
     }
@@ -1630,11 +1652,13 @@ export default function TimelineEditor({
     deleteSelectedZoom,
     deleteSelectedSegment,
     deleteSelectedAnnotation,
+    deleteSelectedSubtitleCue,
     onZoomDepthChange,
     selectedKeyframeId,
     selectedZoomId,
     selectedSegmentId,
     selectedAnnotationId,
+    selectedSubtitleCueId,
     annotationRegions,
     currentTime,
     onSelectAnnotation,
@@ -1860,9 +1884,18 @@ export default function TimelineEditor({
         onZoomSpanChange(id, span)
       } else if (annotationRegions.some((r) => r.id === id)) {
         onAnnotationSpanChange?.(id, span)
+      } else if (subtitleCues.some((cue) => cue.id === id)) {
+        onSubtitleCueSpanChange?.(id, span)
       }
     },
-    [zoomRegions, annotationRegions, onZoomSpanChange, onAnnotationSpanChange],
+    [
+      zoomRegions,
+      annotationRegions,
+      subtitleCues,
+      onZoomSpanChange,
+      onAnnotationSpanChange,
+      onSubtitleCueSpanChange,
+    ],
   )
 
   if (!videoDuration || videoDuration === 0) {
@@ -2045,9 +2078,11 @@ export default function TimelineEditor({
             onSelectZoom={onSelectZoom}
             onSelectSegment={onSelectSegment}
             onSelectAnnotation={onSelectAnnotation}
+            onSelectSubtitleCue={onSelectSubtitleCue}
             selectedZoomId={selectedZoomId}
             selectedSegmentId={selectedSegmentId}
             selectedAnnotationId={selectedAnnotationId}
+            selectedSubtitleCueId={selectedSubtitleCueId}
             hasAudioTrack={hasAudioTrack}
             audioEnabled={audioEnabled}
             audioGain={audioGain}

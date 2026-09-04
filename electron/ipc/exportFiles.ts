@@ -10,6 +10,7 @@ import {
   isAllowedExportPath,
   isAllowedRevealPath,
   normalizeExternalUrl,
+  resolveCaptionSidecarPath,
   resolveOutputPathInDir,
 } from './paths'
 
@@ -194,6 +195,31 @@ export function registerExportFilesHandlers(ctx: IpcContext): void {
           message: tt(normalizeLocale(), 'exportSaveFailed'),
           error: String(error),
         }
+      }
+    },
+  )
+
+  // P2-F3: `<name>.srt` / `<name>.vtt` next to a video the user just exported.
+  // The renderer names the video, never the sidecar: the path is derived here
+  // from an export path the save dialog already approved.
+  ipcMain.handle(
+    'save-caption-sidecar',
+    async (_, exportFilePath: string, format: string, content: string, localeInput?: string) => {
+      const locale = normalizeLocale(localeInput)
+      try {
+        const targetPath = resolveCaptionSidecarPath(exportFilePath, format)
+        if (!targetPath) {
+          console.warn('Refused caption sidecar for unapproved export path:', exportFilePath)
+          return { success: false, message: tt(locale, 'exportPathRejected') }
+        }
+        if (typeof content !== 'string' || content.trim().length === 0) {
+          return { success: false, message: tt(locale, 'exportSaveFailed') }
+        }
+        await fs.writeFile(targetPath, content, 'utf-8')
+        return { success: true, path: targetPath }
+      } catch (error) {
+        console.error('Failed to save caption sidecar:', error)
+        return { success: false, message: tt(locale, 'exportSaveFailed'), error: String(error) }
       }
     },
   )
