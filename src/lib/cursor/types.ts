@@ -38,6 +38,13 @@ export interface CursorTrackEvent {
 export interface CursorTrack {
   samples: CursorSample[]
   events?: CursorTrackEvent[]
+  /**
+   * D2: recording-relative times, in ms, of the moments the user flagged while
+   * recording. Stored in the sidecar's `events` array as `{type:'marker',timeMs}`
+   * and split out on load: a marker is an instant with no place on screen, so it
+   * is not a `CursorTrackEvent`. Absent for every sidecar written before D2.
+   */
+  markers?: number[]
   source?: 'recorded' | 'synthetic'
   space?: {
     mode?: 'source-display' | 'virtual-desktop'

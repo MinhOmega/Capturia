@@ -1220,6 +1220,17 @@ export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseSc
 
     transitionInFlight.current = true
     setRecordingPhase('starting')
+
+    // D1: re-assert content protection on the HUD family before either capture
+    // path opens. The HUD is hidden and restored around every take and some
+    // window managers drop the flag on re-show, so applying it once at window
+    // creation is not enough to keep Capturia out of its own recording.
+    try {
+      await window.electronAPI?.reassertHudRecordingPrivacy?.()
+    } catch (error) {
+      console.warn('[capture] could not re-assert HUD recording privacy', error)
+    }
+
     let nativeStartFailure:
       | {
           code?: string

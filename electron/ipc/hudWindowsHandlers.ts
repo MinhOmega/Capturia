@@ -1,5 +1,6 @@
 import type { BrowserWindow, IpcMain, IpcMainInvokeEvent } from 'electron'
 import { screen } from 'electron'
+import { getHideHudFromRecording, setHideHudFromRecording } from '../recordingPrivacy'
 import {
   anchorPreservingResize,
   clampToWorkArea,
@@ -27,6 +28,31 @@ export type HudWindowsContext = {
    * no-op (`reason: 'no-window'`) when the composition root does not wire it.
    */
   getHudOverlayWindow?: () => BrowserWindow | null
+  /**
+   * D1: the source selector is part of the HUD family for the
+   * `hideHudFromRecording` setting, but has no other business here.
+   */
+  getSourceSelectorWindow?: () => BrowserWindow | null
+  /**
+   * `applyHudContentProtection` from `electron/windows.ts`, injected so this
+   * module stays free of the window layer (and testable). Absent means the
+   * composition root did not wire it and the setting reports no windows.
+   */
+  applyHudContentProtection?: (win: BrowserWindow, label: string) => boolean
+}
+
+/** Result of turning `hideHudFromRecording` on or off, or of re-asserting it. */
+export type HudRecordingPrivacyResult = {
+  /** The preference now in effect in the main process. */
+  enabled: boolean
+  /** Labels of the windows the OS is now keeping out of captures. */
+  protected: string[]
+  /**
+   * Windows the setting covers whose protection could not be applied - Linux
+   * has no equivalent API, and macOS 26 never paints a protected window - so
+   * the HUD can warn instead of silently promising privacy it cannot deliver.
+   */
+  unprotected: string[]
 }
 
 /** How often the main process checks whether the cursor re-entered the HUD while it ignores mouse input. */
@@ -66,6 +92,33 @@ export function registerHudWindowsHandlers(ctx: HudWindowsContext): void {
 
   const liveWindow = (win: BrowserWindow | null): BrowserWindow | null =>
     win && !win.isDestroyed() ? win : null
+
+  /**
+   * D1: apply (or clear) content protection across every window the
+   * `hideHudFromRecording` setting covers. Called when the HUD pushes the
+   * stored preference on mount, when the user toggles it, and once more right
+   * before capture starts - a window that was hidden and restored around the
+   * previous take can come back without the flag on some window managers.
+   */
+  const applyRecordingPrivacy = (): HudRecordingPrivacyResult => {
+    const enabled = getHideHudFromRecording()
+    const applied: string[] = []
+    const failed: string[] = []
+    const apply = ctx.applyHudContentProtection
+    if (!apply) return { enabled, protected: applied, unprotected: failed }
+
+    const targets: Array<[string, BrowserWindow | null]> = [
+      ['HUD', liveWindow(ctx.getHudOverlayWindow?.() ?? null)],
+      ['Countdown', liveWindow(ctx.getCountdownOverlayWindow())],
+      ['Source selector', liveWindow(ctx.getSourceSelectorWindow?.() ?? null)],
+    ]
+    for (const [label, win] of targets) {
+      if (!win) continue
+      if (apply(win, label)) applied.push(label)
+      else if (enabled) failed.push(label)
+    }
+    return { enabled, protected: applied, unprotected: failed }
+  }
 
   /**
    * The geometry channels act on the HUD window only, and only for the HUD's
@@ -251,4 +304,18 @@ export function registerHudWindowsHandlers(ctx: HudWindowsContext): void {
     ctx.createNotesWindow()
     return { success: true, focused: false }
   })
+
+  // D1: `hideHudFromRecording`. The HUD owns the stored preference and pushes
+  // it here; main owns applying it to the windows.
+  ipcMain.handle('hud-hide-from-recording-get', (): HudRecordingPrivacyResult => {
+    return { enabled: getHideHudFromRecording(), protected: [], unprotected: [] }
+  })
+
+  ipcMain.handle('hud-hide-from-recording-set', (_, enabled: unknown) => {
+    setHideHudFromRecording(enabled)
+    return applyRecordingPrivacy()
+  })
+
+  // Re-assert right before `getDisplayMedia` / the native helper starts.
+  ipcMain.handle('hud-hide-from-recording-reassert', () => applyRecordingPrivacy())
 }

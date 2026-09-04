@@ -43,6 +43,14 @@ export type NativeRecorderStartOptions = {
   bitrateScale?: number
   width?: number
   height?: number
+  /**
+   * D1: process id of the Capturia app, passed as `--exclude-pid` so the helper
+   * builds an `SCContentFilter` that leaves every window of that application
+   * out of the capture. Only set when `hideHudFromRecording` is on; a helper
+   * built before the flag existed skips the unknown flag and its value and
+   * records exactly as it used to.
+   */
+  excludePid?: number
 }
 
 export type NativeRecorderStopResult = {
@@ -512,6 +520,86 @@ export function forceTerminateNativeMacRecorder(): void {
   }, 300)
 }
 
+/**
+ * Command line for the ScreenCaptureKit helper. Extracted from
+ * `startNativeMacRecorder` so the flag policy is testable without spawning
+ * anything: every optional flag is only emitted when its option is set, because
+ * a helper built before that flag existed must be given a command line it can
+ * still parse (it skips an unknown flag and its value).
+ */
+export function buildNativeRecorderArgs(options: NativeRecorderStartOptions): string[] {
+  const args: string[] = [
+    '--output',
+    options.outputPath,
+    '--hide-cursor',
+    options.cursorMode === 'never' ? '1' : '0',
+    '--microphone-enabled',
+    options.microphoneEnabled === false ? '0' : '1',
+    '--microphone-gain',
+    String(
+      Math.max(
+        0.5,
+        Math.min(2, Number.isFinite(options.microphoneGain) ? Number(options.microphoneGain) : 1),
+      ),
+    ),
+    '--fps',
+    String(Math.max(1, Math.min(120, Math.round(options.frameRate || 60)))),
+    '--bitrate-scale',
+    String(
+      Math.max(
+        0.5,
+        Math.min(2, Number.isFinite(options.bitrateScale) ? Number(options.bitrateScale) : 1),
+      ),
+    ),
+  ]
+
+  if (options.sourceId) {
+    args.push('--source-id', options.sourceId)
+  }
+  if (options.displayId) {
+    args.push('--display-id', options.displayId)
+  }
+  if (options.width && options.width > 1) {
+    args.push('--width', String(Math.round(options.width)))
+  }
+  if (options.height && options.height > 1) {
+    args.push('--height', String(Math.round(options.height)))
+  }
+  if (options.cameraEnabled) {
+    args.push('--camera-enabled', '1')
+    args.push('--camera-shape', options.cameraShape ?? 'rounded')
+    const sizePercent = Math.max(14, Math.min(40, Math.round(options.cameraSizePercent ?? 22)))
+    args.push('--camera-size-percent', String(sizePercent))
+    if (options.cameraDeviceId) {
+      args.push('--camera-device-id', options.cameraDeviceId)
+    }
+    if (options.cameraDeviceName) {
+      args.push('--camera-device-name', options.cameraDeviceName)
+    }
+  }
+  if (options.systemAudio === true) {
+    // Only ever passed as `1`: an old helper skips the unknown flag and its value.
+    args.push('--system-audio', '1')
+  }
+  if (options.microphoneEnabled !== false) {
+    // An old helper skips unknown flags (and their value) and keeps its default mic.
+    if (options.microphoneDeviceId) {
+      args.push('--mic-device-id', options.microphoneDeviceId)
+    }
+    if (options.microphoneDeviceName) {
+      args.push('--mic-device-name', options.microphoneDeviceName)
+    }
+  }
+
+  // D1: leave Capturia's own windows out of the capture. Last so an old helper
+  // that ignores it never mis-parses anything before it.
+  if (Number.isFinite(options.excludePid) && Number(options.excludePid) > 0) {
+    args.push('--exclude-pid', String(Math.floor(Number(options.excludePid))))
+  }
+
+  return args
+}
+
 export async function startNativeMacRecorder(options: NativeRecorderStartOptions): Promise<{
   success: boolean
   code?: string
@@ -545,68 +633,7 @@ export async function startNativeMacRecorder(options: NativeRecorderStartOptions
 
   try {
     const helperPath = await ensureHelperBinary()
-    const args = [
-      '--output',
-      options.outputPath,
-      '--hide-cursor',
-      options.cursorMode === 'never' ? '1' : '0',
-      '--microphone-enabled',
-      options.microphoneEnabled === false ? '0' : '1',
-      '--microphone-gain',
-      String(
-        Math.max(
-          0.5,
-          Math.min(2, Number.isFinite(options.microphoneGain) ? Number(options.microphoneGain) : 1),
-        ),
-      ),
-      '--fps',
-      String(Math.max(1, Math.min(120, Math.round(options.frameRate || 60)))),
-      '--bitrate-scale',
-      String(
-        Math.max(
-          0.5,
-          Math.min(2, Number.isFinite(options.bitrateScale) ? Number(options.bitrateScale) : 1),
-        ),
-      ),
-    ]
-
-    if (options.sourceId) {
-      args.push('--source-id', options.sourceId)
-    }
-    if (options.displayId) {
-      args.push('--display-id', options.displayId)
-    }
-    if (options.width && options.width > 1) {
-      args.push('--width', String(Math.round(options.width)))
-    }
-    if (options.height && options.height > 1) {
-      args.push('--height', String(Math.round(options.height)))
-    }
-    if (options.cameraEnabled) {
-      args.push('--camera-enabled', '1')
-      args.push('--camera-shape', options.cameraShape ?? 'rounded')
-      const sizePercent = Math.max(14, Math.min(40, Math.round(options.cameraSizePercent ?? 22)))
-      args.push('--camera-size-percent', String(sizePercent))
-      if (options.cameraDeviceId) {
-        args.push('--camera-device-id', options.cameraDeviceId)
-      }
-      if (options.cameraDeviceName) {
-        args.push('--camera-device-name', options.cameraDeviceName)
-      }
-    }
-    if (options.systemAudio === true) {
-      // Only ever passed as `1`: an old helper skips the unknown flag and its value.
-      args.push('--system-audio', '1')
-    }
-    if (options.microphoneEnabled !== false) {
-      // An old helper skips unknown flags (and their value) and keeps its default mic.
-      if (options.microphoneDeviceId) {
-        args.push('--mic-device-id', options.microphoneDeviceId)
-      }
-      if (options.microphoneDeviceName) {
-        args.push('--mic-device-name', options.microphoneDeviceName)
-      }
-    }
+    const args = buildNativeRecorderArgs(options)
 
     // stdin is a pipe so `pause` / `resume` / `stop` lines can be written to the
     // helper. An old helper that never reads stdin is unaffected: it ignores the

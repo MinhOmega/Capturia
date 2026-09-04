@@ -196,6 +196,11 @@ export default function PlaybackControls({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
+            // The editor's own preview rate, readable without a media element:
+            // `video.playbackRate` is only written by the playback animation
+            // loop, so it goes stale the moment the preview pauses. The J/K/L
+            // end-to-end spec asserts this badge alongside the element.
+            data-testid="preview-speed"
             className={cn(
               'text-[9px] font-medium px-1.5 py-0.5 rounded tabular-nums shrink-0 cursor-pointer outline-none transition-colors',
               previewPlaybackRate === 1

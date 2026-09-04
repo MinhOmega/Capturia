@@ -49,6 +49,10 @@ struct RecorderArguments {
     let microphoneDeviceName: String?
     /// Capture what the system plays (ScreenCaptureKit audio output).
     let systemAudioEnabled: Bool
+    /// D1: process id of an application whose windows must stay out of the
+    /// capture (Capturia's own HUD, countdown overlay and source selector).
+    /// `nil` when `--exclude-pid` is absent, which is the pre-D1 behaviour.
+    let excludePid: pid_t?
 
     static func parse(from argv: [String]) throws -> RecorderArguments {
         var outputPath: String?
@@ -69,6 +73,7 @@ struct RecorderArguments {
         var microphoneDeviceId: String?
         var microphoneDeviceName: String?
         var systemAudioEnabled = false
+        var excludePid: pid_t?
 
         var idx = 1
         while idx < argv.count {
@@ -157,6 +162,13 @@ struct RecorderArguments {
                 guard let value = next else { throw RecorderError.invalidArguments("Missing --system-audio value") }
                 systemAudioEnabled = value == "1" || value.lowercased() == "true"
                 idx += 2
+            case "--exclude-pid":
+                // Tolerant like the other optional flags: a value that is not a
+                // positive pid leaves the filter exactly as it was without the flag.
+                if let value = next, let parsed = Int32(value), parsed > 0 {
+                    excludePid = pid_t(parsed)
+                }
+                idx += 2
             default:
                 idx += 1
             }
@@ -188,7 +200,8 @@ struct RecorderArguments {
             cameraDeviceName: cameraDeviceName,
             microphoneDeviceId: microphoneDeviceId,
             microphoneDeviceName: microphoneDeviceName,
-            systemAudioEnabled: systemAudioEnabled
+            systemAudioEnabled: systemAudioEnabled,
+            excludePid: excludePid
         )
     }
 }
@@ -2059,10 +2072,41 @@ final class SCKRecorder {
         let height = max(2, forceEven(args.targetHeight ?? display.height))
 
         return (
-            filter: SCContentFilter(display: display, excludingWindows: []),
+            filter: displayContentFilter(display: display, content: content),
             width: width,
             height: height,
             sourceKind: "display"
+        )
+    }
+
+    /// D1: a display filter that leaves the excluded application's windows out
+    /// of the capture, so Capturia's own HUD, countdown overlay and source
+    /// selector never appear in the recording.
+    ///
+    /// Without `--exclude-pid` (and whenever the pid cannot be resolved to a
+    /// running application that ScreenCaptureKit is currently sharing) this is
+    /// exactly the filter the helper has always built, so the default
+    /// behaviour is unchanged.
+    private func displayContentFilter(display: SCDisplay, content: SCShareableContent) -> SCContentFilter {
+        let unfiltered = SCContentFilter(display: display, excludingWindows: [])
+        guard let excludePid = args.excludePid else { return unfiltered }
+        guard let runningApp = NSRunningApplication(processIdentifier: excludePid) else {
+            print("SCK_RECORDER_WARN hud_exclude_unavailable pid=\(excludePid) reason=not_running")
+            return unfiltered
+        }
+        // `content.applications` is what ScreenCaptureKit is willing to filter
+        // on; an app missing from it cannot be excluded, and matching by bundle
+        // identifier would exclude *every* instance rather than this one.
+        let matching = content.applications.filter { $0.processID == runningApp.processIdentifier }
+        guard !matching.isEmpty else {
+            print("SCK_RECORDER_WARN hud_exclude_unavailable pid=\(excludePid) reason=not_shareable")
+            return unfiltered
+        }
+        print("[sck-recorder] excluding \(matching.count) application entry/entries for pid \(excludePid) from the capture")
+        return SCContentFilter(
+            display: display,
+            excludingApplications: matching,
+            exceptingWindows: []
         )
     }
 
