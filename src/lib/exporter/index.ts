@@ -34,6 +34,17 @@ export {
   type DecodeTimelinePlan,
 } from './segmentAdapter'
 export { FrameRenderer } from './frameRenderer'
+export {
+  EXPORT_LEGACY_COMPOSITOR_STORAGE_KEY,
+  buildMaskGeometryKey,
+  buildShadowFilter,
+  buildShadowGeometryKey,
+  canReuseTextureSource,
+  getFrameSourceSize,
+  readLegacyCompositorOverride,
+  type MaskGeometryInput,
+  type ShadowGeometryInput,
+} from './compositorKeys'
 export { VideoMuxer } from './muxer'
 export { GifExporter, calculateOutputDimensions } from './gifExporter'
 export {
@@ -57,6 +68,7 @@ export { resolveSourceDurationMs } from './sourceDuration'
 export {
   buildExportDiagnosticMessage,
   buildSaveDiagnosticMessage,
+  describeExportEncoder,
   getFileNameForDiagnostics,
   type ExportDiagnostics,
   type ExportDiagnosticLabels,
@@ -69,11 +81,33 @@ export {
   type ExportAudioCodec,
 } from './audioCodecSelection'
 export {
+  EXPORT_FRAME_RATE_CHOICES,
   calculateEffectiveSourceDimensions,
   calculateMp4ExportPlan,
+  getAvailableExportFrameRates,
+  isSupportedExportFrameRate,
   resolveExportFrameRate,
   normalizeExportSourceFrameRate,
+  type Mp4ExportPlan,
+  type Mp4ExportPlanInput,
 } from './mp4ExportPlan'
+export {
+  DEFAULT_EXPORT_VIDEO_CODEC,
+  EXPORT_VIDEO_CODEC_STRINGS,
+  getExportVideoCodecFromString,
+  getSupportedExportVideoCodecs,
+  isExportVideoCodec,
+  probeExportVideoCodec,
+  resolveExportVideoCodec,
+  type ExportVideoCodec,
+  type CodecProbeTarget,
+  type VideoEncoderProbe,
+} from './videoCodecSupport'
+export {
+  buildExportTimingSummary,
+  formatExportClock,
+  type ExportTimingSummary,
+} from './exportTiming'
 export type {
   ExportConfig,
   ExportDecodePath,
@@ -87,6 +121,7 @@ export type {
   GifSizePreset,
   GifExportConfig,
   ExportSettings,
+  ExportEncoderReport,
 } from './types'
 export {
   DEFAULT_EXPORT_DECODE_PATH,

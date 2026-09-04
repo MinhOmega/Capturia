@@ -50,7 +50,8 @@
 			"bitrate": "Bitrate",
 			"videoEncoder": "VideoEncoder",
 			"available": "khả dụng",
-			"unavailable": "không khả dụng"
+			"unavailable": "không khả dụng",
+			"encoder": "Bộ mã hoá đã dùng"
 		}
 	},
 	"exportError": {

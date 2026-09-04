@@ -6,6 +6,12 @@ export interface Mp4ExportPlanInput {
   sourceWidth: number
   sourceHeight: number
   sourceFrameRate?: number
+  /**
+   * Frame rate the user picked in the export panel. Ignored when it is not one
+   * of `getAvailableExportFrameRates(sourceFrameRate)`, so a saved preference
+   * from a 60 fps recording cannot ask a 30 fps one to invent frames.
+   */
+  requestedFrameRate?: number
 }
 
 export interface Mp4ExportPlan {
@@ -14,6 +20,10 @@ export interface Mp4ExportPlan {
   bitrate: number
   frameRate: number
   limitedBySource: boolean
+  /** `true` when `requestedFrameRate` was dropped for being above the source. */
+  frameRateLimitedBySource: boolean
+  /** `true` when the export runs at a different rate than the source. */
+  frameRateDiffersFromSource: boolean
 }
 
 type Dimensions = {
@@ -126,11 +136,43 @@ export function normalizeExportSourceFrameRate(sourceFrameRate?: number): number
   return normalized
 }
 
+/**
+ * Frame rates the export panel offers, before the source filter. Anything above
+ * the source would be duplicated frames: more bytes, no more motion.
+ */
+export const EXPORT_FRAME_RATE_CHOICES: readonly number[] = [24, 30, 60]
+
+/**
+ * The subset of `EXPORT_FRAME_RATE_CHOICES` at or below the source rate, plus
+ * the source rate itself when it is not already one of them (a 50 fps or
+ * 120 fps recording must still be exportable at its own rate). Always at least
+ * one entry, because `normalizeExportSourceFrameRate` floors the source at 24.
+ */
+export function getAvailableExportFrameRates(sourceFrameRate?: number): number[] {
+  const sourceRate = normalizeExportSourceFrameRate(sourceFrameRate)
+  const rates = EXPORT_FRAME_RATE_CHOICES.filter((rate) => rate <= sourceRate)
+  if (!rates.includes(sourceRate)) rates.push(sourceRate)
+  return rates.sort((a, b) => a - b)
+}
+
+/** `true` when `frameRate` is one of the rates this source may be exported at. */
+export function isSupportedExportFrameRate(
+  frameRate: number | undefined,
+  sourceFrameRate?: number,
+): boolean {
+  if (!Number.isFinite(frameRate)) return false
+  return getAvailableExportFrameRates(sourceFrameRate).includes(Math.round(frameRate as number))
+}
+
 export function resolveExportFrameRate(
   sourceFrameRate: number | undefined,
   quality: ExportQuality,
+  requestedFrameRate?: number,
 ): number {
   const sourceRate = normalizeExportSourceFrameRate(sourceFrameRate)
+  if (isSupportedExportFrameRate(requestedFrameRate, sourceFrameRate)) {
+    return Math.round(requestedFrameRate as number)
+  }
   if (quality === 'source') {
     return sourceRate
   }
@@ -154,7 +196,16 @@ export function calculateMp4ExportPlan(input: Mp4ExportPlanInput): Mp4ExportPlan
   const aspectRatio = normalizeAspectRatio(input.aspectRatio)
   const sourceWidth = normalizeDimension(input.sourceWidth, 1920)
   const sourceHeight = normalizeDimension(input.sourceHeight, 1080)
-  const frameRate = resolveExportFrameRate(input.sourceFrameRate, input.quality)
+  const sourceRate = normalizeExportSourceFrameRate(input.sourceFrameRate)
+  const frameRate = resolveExportFrameRate(
+    input.sourceFrameRate,
+    input.quality,
+    input.requestedFrameRate,
+  )
+  const frameRateLimitedBySource =
+    Number.isFinite(input.requestedFrameRate) &&
+    !isSupportedExportFrameRate(input.requestedFrameRate, input.sourceFrameRate)
+  const frameRateDiffersFromSource = frameRate !== sourceRate
 
   const sourceBound = fitAspectRatioWithinBounds(aspectRatio, sourceWidth, sourceHeight)
 
@@ -165,6 +216,8 @@ export function calculateMp4ExportPlan(input: Mp4ExportPlanInput): Mp4ExportPlan
       frameRate,
       bitrate: calculateBitrate(sourceBound.width, sourceBound.height, frameRate, input.quality),
       limitedBySource: false,
+      frameRateLimitedBySource,
+      frameRateDiffersFromSource,
     }
   }
 
@@ -186,5 +239,7 @@ export function calculateMp4ExportPlan(input: Mp4ExportPlanInput): Mp4ExportPlan
     frameRate,
     bitrate: calculateBitrate(bounded.width, bounded.height, frameRate, input.quality),
     limitedBySource,
+    frameRateLimitedBySource,
+    frameRateDiffersFromSource,
   }
 }

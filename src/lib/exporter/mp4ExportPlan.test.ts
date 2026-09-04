@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   calculateEffectiveSourceDimensions,
   calculateMp4ExportPlan,
+  getAvailableExportFrameRates,
+  isSupportedExportFrameRate,
   resolveExportFrameRate,
 } from './mp4ExportPlan'
 
@@ -119,5 +121,87 @@ describe('calculateEffectiveSourceDimensions', () => {
     })
     expect(good.width).toBeLessThanOrEqual(960)
     expect(good.height).toBeLessThanOrEqual(1080)
+  })
+})
+
+describe('export frame-rate choices', () => {
+  it('offers only the preset rates at or below the source', () => {
+    expect(getAvailableExportFrameRates(60)).toEqual([24, 30, 60])
+    expect(getAvailableExportFrameRates(30)).toEqual([24, 30])
+    // Clamped up to 24 first, so there is always something to pick.
+    expect(getAvailableExportFrameRates(15)).toEqual([24])
+    expect(getAvailableExportFrameRates(undefined)).toEqual([24, 30, 60])
+  })
+
+  it('adds the source rate itself when it is not one of the presets', () => {
+    expect(getAvailableExportFrameRates(50)).toEqual([24, 30, 50])
+    expect(getAvailableExportFrameRates(120)).toEqual([24, 30, 60, 120])
+  })
+
+  it('rejects a rate the source cannot deliver', () => {
+    expect(isSupportedExportFrameRate(60, 30)).toBe(false)
+    expect(isSupportedExportFrameRate(30, 30)).toBe(true)
+    expect(isSupportedExportFrameRate(24, 30)).toBe(true)
+    expect(isSupportedExportFrameRate(undefined, 30)).toBe(false)
+    expect(isSupportedExportFrameRate(Number.NaN, 30)).toBe(false)
+  })
+
+  it('honours a requested rate that the source can deliver, whatever the quality', () => {
+    expect(resolveExportFrameRate(60, 'good', 24)).toBe(24)
+    expect(resolveExportFrameRate(60, 'source', 30)).toBe(30)
+  })
+
+  it('ignores a request above the source and keeps the preset behaviour', () => {
+    // A 60 fps preference carried over from another recording must not make a
+    // 30 fps source duplicate frames.
+    expect(resolveExportFrameRate(30, 'good', 60)).toBe(30)
+    expect(resolveExportFrameRate(120, 'good')).toBe(60)
+    expect(resolveExportFrameRate(120, 'source')).toBe(120)
+  })
+
+  it('reports on the plan when a request was dropped, and when the rate differs from source', () => {
+    const dropped = calculateMp4ExportPlan({
+      quality: 'good',
+      aspectRatio: 16 / 9,
+      sourceWidth: 1920,
+      sourceHeight: 1080,
+      sourceFrameRate: 30,
+      requestedFrameRate: 60,
+    })
+    expect(dropped.frameRate).toBe(30)
+    expect(dropped.frameRateLimitedBySource).toBe(true)
+    expect(dropped.frameRateDiffersFromSource).toBe(false)
+
+    const honoured = calculateMp4ExportPlan({
+      quality: 'good',
+      aspectRatio: 16 / 9,
+      sourceWidth: 1920,
+      sourceHeight: 1080,
+      sourceFrameRate: 60,
+      requestedFrameRate: 24,
+    })
+    expect(honoured.frameRate).toBe(24)
+    expect(honoured.frameRateLimitedBySource).toBe(false)
+    expect(honoured.frameRateDiffersFromSource).toBe(true)
+  })
+
+  it('prices the bitrate off the rate actually exported', () => {
+    const at24 = calculateMp4ExportPlan({
+      quality: 'good',
+      aspectRatio: 16 / 9,
+      sourceWidth: 1920,
+      sourceHeight: 1080,
+      sourceFrameRate: 60,
+      requestedFrameRate: 24,
+    })
+    const at60 = calculateMp4ExportPlan({
+      quality: 'good',
+      aspectRatio: 16 / 9,
+      sourceWidth: 1920,
+      sourceHeight: 1080,
+      sourceFrameRate: 60,
+      requestedFrameRate: 60,
+    })
+    expect(at24.bitrate).toBeLessThan(at60.bitrate)
   })
 })

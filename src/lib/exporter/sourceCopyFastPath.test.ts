@@ -258,3 +258,34 @@ describe('probeSourceCopyCandidate', () => {
     expect(qt.isMp4).toBe(false)
   })
 })
+
+describe('source-copy blockers for frame rate and codec', () => {
+  it('allows a copy when the output rate equals the source rate', () => {
+    expect(isSourceCopyFastPathEligible({ ...CLEAN, frameRate: 30, sourceFrameRate: 30 })).toBe(
+      true,
+    )
+    // Probed rates are rarely exactly integral; the comparison rounds.
+    expect(isSourceCopyFastPathEligible({ ...CLEAN, frameRate: 30, sourceFrameRate: 29.97 })).toBe(
+      true,
+    )
+  })
+
+  it('blocks a copy when the output rate differs, because frames must be resampled', () => {
+    expect(
+      getSourceCopyFastPathBlockers({ ...CLEAN, frameRate: 24, sourceFrameRate: 30 }),
+    ).toContain('output frame rate 24 differs from source 30')
+  })
+
+  it('does not treat an unknown source rate as a mismatch', () => {
+    expect(isSourceCopyFastPathEligible({ ...CLEAN, frameRate: 30 })).toBe(true)
+    expect(isSourceCopyFastPathEligible({ ...CLEAN, sourceFrameRate: 30 })).toBe(true)
+  })
+
+  it('blocks a copy when a codec other than the H.264 default was asked for', () => {
+    // Handing over the source file cannot honour "encode this as HEVC".
+    expect(getSourceCopyFastPathBlockers({ ...CLEAN, codec: 'hvc1.1.6.L123.B0' })).toContain(
+      'codec hvc1.1.6.L123.B0 was requested explicitly',
+    )
+    expect(isSourceCopyFastPathEligible({ ...CLEAN, codec: 'avc1.640033' })).toBe(true)
+  })
+})
