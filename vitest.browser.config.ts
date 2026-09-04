@@ -1,3 +1,5 @@
+import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { playwright } from '@vitest/browser-playwright'
 import { defineConfig } from 'vitest/config'
@@ -43,6 +45,23 @@ export default defineConfig({
       headless: true,
       instances: [{ browser: 'chromium' }],
       screenshotFailures: false,
+      commands: {
+        /**
+         * Hands a string from the page to the node side and writes it next to
+         * the OS temp dir. Browser-mode `console.log` is not forwarded to the
+         * terminal by the default reporter, so a long-running measurement
+         * (`src/lib/redaction/ocrSpike.browser.test.ts`) would otherwise have
+         * nowhere to put its results. `CAPTURIA_SPIKE_OUT` overrides the path.
+         */
+        writeSpikeArtifact: async (_ctx: unknown, name: string, content: string) => {
+          const file =
+            process.env['CAPTURIA_SPIKE_OUT'] ??
+            path.join(os.tmpdir(), `capturia-${path.basename(name)}`)
+          fs.mkdirSync(path.dirname(file), { recursive: true })
+          fs.appendFileSync(file, content)
+          return file
+        },
+      },
     },
     testTimeout: 120_000,
     hookTimeout: 30_000,
@@ -52,6 +71,10 @@ export default defineConfig({
       '@': path.resolve(__dirname, 'src'),
     },
   },
+  // `CAPTURIA_*` reaches the page as `import.meta.env.*`, which is how the
+  // redaction OCR spike stays skipped unless it is asked for explicitly
+  // (`CAPTURIA_REDACTION_SPIKE=1`). Vite only forwards prefixed variables.
+  envPrefix: ['VITE_', 'CAPTURIA_'],
   // gif.js spawns its encoder workers from a URL built with `import.meta.url`.
   worker: {
     format: 'es',
