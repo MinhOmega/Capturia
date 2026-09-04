@@ -18,7 +18,9 @@ const {
 vi.mock('pixi.js', () => {
   class MockApplication {}
   class MockContainer {
-    addChild(): void {}
+    addChild(): void {
+      // The scene graph is irrelevant here; only the texture calls are asserted.
+    }
   }
   class MockSprite {
     texture: unknown
@@ -37,7 +39,9 @@ vi.mock('pixi.js', () => {
     update(): void {
       mockImageSourceUpdate()
     }
-    destroy(): void {}
+    destroy(): void {
+      // Nothing to release in the mock; the test asserts the call sites, not the GPU.
+    }
   }
   class MockBlurFilter {}
 

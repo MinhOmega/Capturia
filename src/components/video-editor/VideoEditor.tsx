@@ -1354,7 +1354,10 @@ export default function VideoEditor() {
       const hash = JSON.stringify(state)
       if (hash === lastSavedHashRef.current) return
       lastSavedHashRef.current = hash
-      window.electronAPI.saveProjectState(videoFilePath, state).catch(() => {})
+      window.electronAPI.saveProjectState(videoFilePath, state).catch(() => {
+        // Autosave is best-effort: a failed write must not interrupt editing,
+        // and the next change retries within two seconds.
+      })
     }, 2000)
     return () => clearTimeout(timer)
   }, [
@@ -3946,7 +3949,10 @@ export default function VideoEditor() {
         autoFocusAll,
       }
       lastSavedHashRef.current = JSON.stringify(state)
-      await window.electronAPI.saveProjectState(videoFilePath, state).catch(() => {})
+      await window.electronAPI.saveProjectState(videoFilePath, state).catch(() => {
+        // Same best-effort contract as the autosave above; the caller has no
+        // recovery for a failed project-state write.
+      })
     }
   }, [
     videoFilePath,
