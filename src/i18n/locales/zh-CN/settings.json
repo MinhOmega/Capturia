@@ -266,5 +266,10 @@
 	"zoomTransitionAnimated": "动画",
 	"zoomTransitionInstant": "瞬间",
 	"zoomTransitionInstantDescription": "直接切入和切出该缩放，没有缓动，也不平移",
-	"zoomApplyLevelToAll": "将此级别应用到所有缩放"
+	"zoomApplyLevelToAll": "将此级别应用到所有缩放",
+	"exportFrameRate": "帧率",
+	"exportFrameRateHint": "上限为录制的 {{fps}} fps。",
+	"exportCodec": "编解码器",
+	"exportCodecHevcHint": "H.265 文件更小，但可播放的播放器更少。",
+	"exportCodecHevcUnavailable": "本机不支持 H.265。"
 }

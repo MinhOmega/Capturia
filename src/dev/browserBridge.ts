@@ -38,6 +38,22 @@ export const FIXTURE_URL_PATH = '/dev-fixtures/sample.webm'
 const FIXTURE_WIDTH = 320
 const FIXTURE_HEIGHT = 240
 const FIXTURE_FRAME_RATE = 15
+
+/**
+ * The fixture is 15 fps, which is below every export frame-rate choice, so the
+ * export panel's rate row is correctly hidden for it. `?fixtureFps=60` reports
+ * a higher rate instead, which is the only way to reach that row by hand in the
+ * harness. Metadata only — the file itself is unchanged.
+ */
+function resolveFixtureFrameRate(): number {
+  try {
+    const requested = Number(new URLSearchParams(window.location.search).get('fixtureFps'))
+    if (Number.isFinite(requested) && requested > 0) return Math.round(requested)
+  } catch {
+    // No window / malformed search string: keep the real fixture rate.
+  }
+  return FIXTURE_FRAME_RATE
+}
 const FIXTURE_DURATION_MS = 2008
 
 const STORAGE_PREFIX = 'capturia.browserHarness.'
@@ -244,7 +260,7 @@ function buildFixtureCursorTrack(): CursorTrackMetadata {
 
 function fixtureMetadata(): RecordingMetadata {
   return {
-    frameRate: FIXTURE_FRAME_RATE,
+    frameRate: resolveFixtureFrameRate(),
     width: FIXTURE_WIDTH,
     height: FIXTURE_HEIGHT,
     mimeType: 'video/webm',

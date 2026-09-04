@@ -8,8 +8,12 @@ import {
   getSeekToleranceSeconds,
   normalizeTrimRanges,
   ExportEncoderError,
+  ENCODER_QUEUE_DEPTH_STORAGE_KEY,
   SOFTWARE_FIRST_ENCODER_PLATFORMS,
+  buildEncoderAttempts,
   getEncoderPreferences,
+  readEncoderQueueDepthOverride,
+  resolveMaxEncodeQueue,
   readExportDecodePathOverride,
   shouldSeekToTime,
   waitForEncoderQueueSpace,
@@ -909,5 +913,98 @@ describe('export() source-copy fast path', () => {
       error: 'Export cancelled',
     })
     expect(exporter.runExportAttempt).not.toHaveBeenCalled()
+  })
+})
+
+describe('buildEncoderAttempts', () => {
+  const H264 = 'avc1.640033'
+  const HEVC = 'hvc1.1.6.L123.B0'
+
+  it('tries each hardware preference for a plain H.264 export, and nothing more', () => {
+    expect(buildEncoderAttempts(H264, 'linux')).toEqual([
+      { codec: H264, hardwareAcceleration: 'prefer-hardware', codecFellBack: false },
+      { codec: H264, hardwareAcceleration: 'prefer-software', codecFellBack: false },
+    ])
+  })
+
+  it('follows the platform preference order', () => {
+    // Windows hardware encoders were the source of the stall reports.
+    expect(buildEncoderAttempts(H264, 'win32').map((a) => a.hardwareAcceleration)).toEqual([
+      'prefer-software',
+      'prefer-hardware',
+    ])
+  })
+
+  it('walks a non-default codec down to H.264 after both preferences fail', () => {
+    // The probe can pass and configure() still fail on the driver, so the
+    // fallback has to be part of the run rather than of the menu.
+    expect(buildEncoderAttempts(HEVC, 'linux')).toEqual([
+      { codec: HEVC, hardwareAcceleration: 'prefer-hardware', codecFellBack: false },
+      { codec: HEVC, hardwareAcceleration: 'prefer-software', codecFellBack: false },
+      { codec: H264, hardwareAcceleration: 'prefer-hardware', codecFellBack: true },
+      { codec: H264, hardwareAcceleration: 'prefer-software', codecFellBack: true },
+    ])
+  })
+
+  it('defaults to H.264 when no codec was configured', () => {
+    expect(buildEncoderAttempts(undefined, 'linux').every((a) => a.codec === H264)).toBe(true)
+    expect(buildEncoderAttempts(undefined, 'linux')).toHaveLength(2)
+  })
+})
+
+describe('resolveMaxEncodeQueue', () => {
+  it('feeds a hardware encoder deeply so the render loop never waits on it', () => {
+    expect(resolveMaxEncodeQueue({ hardwareAcceleration: 'prefer-hardware' })).toBe(120)
+  })
+
+  it('keeps a software encoder shallow, because each queued frame is held memory', () => {
+    expect(resolveMaxEncodeQueue({ hardwareAcceleration: 'prefer-software' })).toBe(32)
+  })
+
+  it('honours an explicit override, which is how one depth is measured against another', () => {
+    expect(resolveMaxEncodeQueue({ hardwareAcceleration: 'prefer-hardware', override: 32 })).toBe(
+      32,
+    )
+    expect(resolveMaxEncodeQueue({ hardwareAcceleration: 'prefer-software', override: 120 })).toBe(
+      120,
+    )
+  })
+
+  it.each([[0], [-4], [Number.NaN], [undefined]])(
+    'ignores the nonsense override %j and keeps the default',
+    (override) => {
+      expect(resolveMaxEncodeQueue({ hardwareAcceleration: 'prefer-hardware', override })).toBe(120)
+    },
+  )
+})
+
+describe('readEncoderQueueDepthOverride', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function stubStorage(value: string | null) {
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => (key === ENCODER_QUEUE_DEPTH_STORAGE_KEY ? value : null),
+    })
+  }
+
+  it('reads a positive integer', () => {
+    stubStorage('32')
+    expect(readEncoderQueueDepthOverride()).toBe(32)
+  })
+
+  it.each([[null], [''], ['0'], ['-1'], ['deep']])('ignores %j', (value) => {
+    stubStorage(value)
+    expect(readEncoderQueueDepthOverride()).toBeUndefined()
+  })
+
+  it('survives a storage that throws', () => {
+    vi.stubGlobal('localStorage', {
+      getItem: () => {
+        throw new Error('denied')
+      },
+    })
+    expect(readEncoderQueueDepthOverride()).toBeUndefined()
   })
 })

@@ -266,5 +266,10 @@
 	"zoomTransitionAnimated": "Chuyển động",
 	"zoomTransitionInstant": "Tức thì",
 	"zoomTransitionInstantDescription": "Cắt thẳng vào và ra khỏi vùng thu phóng này, không làm mượt và không lia máy",
-	"zoomApplyLevelToAll": "Áp dụng mức này cho mọi vùng thu phóng"
+	"zoomApplyLevelToAll": "Áp dụng mức này cho mọi vùng thu phóng",
+	"exportFrameRate": "Tần số khung hình",
+	"exportFrameRateHint": "Giới hạn ở {{fps}} fps của bản ghi.",
+	"exportCodec": "Codec",
+	"exportCodecHevcHint": "H.265 cho tệp nhỏ hơn, nhưng ít trình phát mở được hơn.",
+	"exportCodecHevcUnavailable": "Máy này không hỗ trợ H.265."
 }

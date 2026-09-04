@@ -266,5 +266,10 @@
 	"zoomTransitionAnimated": "Animated",
 	"zoomTransitionInstant": "Instant",
 	"zoomTransitionInstantDescription": "Cut straight in and out of this zoom, with no ease and no pan",
-	"zoomApplyLevelToAll": "Apply this level to all zooms"
+	"zoomApplyLevelToAll": "Apply this level to all zooms",
+	"exportFrameRate": "Frame rate",
+	"exportFrameRateHint": "Limited to the recording’s {{fps}} fps.",
+	"exportCodec": "Codec",
+	"exportCodecHevcHint": "H.265 makes smaller files, but fewer players can open them.",
+	"exportCodecHevcUnavailable": "H.265 is not available on this machine."
 }

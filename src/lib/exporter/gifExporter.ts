@@ -73,6 +73,11 @@ interface GifExporterConfig {
    * default (`DEFAULT_EXPORT_DECODE_PATH`, currently `'seek'`).
    */
   decodePath?: ExportDecodePath
+  /**
+   * Forces the pre-cache export compositor (see `compositorKeys.ts`). Absent
+   * means "follow the `capturia.exportLegacyCompositor` override, else off".
+   */
+  legacyCompositor?: boolean
 }
 
 /**
@@ -332,6 +337,7 @@ export class GifExporter {
       cursorTrack: this.config.cursorTrack,
       cursorStyle: this.config.cursorStyle,
       platform,
+      legacyCompositor: this.config.legacyCompositor,
     })
     await this.renderer.initialize()
 

@@ -40,3 +40,6 @@ electron/native/bin/*
 playwright-report/
 test-results/
 .claude/notes/
+
+# Export benchmark fixture (scripts/make-export-perf-fixture.mjs); ~10 MB, generated on demand
+src/__fixtures__/perf-1080p.mp4

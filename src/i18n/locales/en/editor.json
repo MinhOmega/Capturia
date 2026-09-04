@@ -76,5 +76,8 @@
 	"loadingEditor": "Loading editor...",
 	"importVideoFailed": "Failed to import video",
 	"diagnosticSaved": "Diagnostics saved to {{path}}",
-	"diagnosticSaveFailed": "Failed to save diagnostics"
+	"diagnosticSaveFailed": "Failed to save diagnostics",
+	"exportFrameRateLimited": "Exported at {{fps}} fps: the recording has no more frames than that.",
+	"exportSoftwareEncoderUsed": "A slower software encoder was used for this export.",
+	"exportTiming": "{{video}} of video exported in {{elapsed}}"
 }

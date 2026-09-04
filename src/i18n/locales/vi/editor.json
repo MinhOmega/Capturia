@@ -76,5 +76,8 @@
 	"loadingEditor": "Đang tải trình chỉnh sửa...",
 	"importVideoFailed": "Không thể nhập video",
 	"diagnosticSaved": "Đã lưu chẩn đoán vào {{path}}",
-	"diagnosticSaveFailed": "Không thể lưu chẩn đoán"
+	"diagnosticSaveFailed": "Không thể lưu chẩn đoán",
+	"exportFrameRateLimited": "Xuất ở {{fps}} fps: bản ghi không có nhiều khung hình hơn.",
+	"exportSoftwareEncoderUsed": "Lần xuất này dùng bộ mã hoá phần mềm chậm hơn.",
+	"exportTiming": "{{video}} video được xuất trong {{elapsed}}"
 }
