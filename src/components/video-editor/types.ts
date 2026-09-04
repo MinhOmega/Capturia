@@ -276,6 +276,55 @@ export interface BlurData {
   blockSize: number
 }
 
+/**
+ * One tracked or pinned position of a blur region, in source-normalised
+ * coordinates (0..1 of the full source frame, before any crop or camera).
+ */
+export interface BlurTrackKeyframe {
+  /** Source time of this sample. */
+  timeMs: number
+  /** Top-left, 0..1 of the source frame. */
+  x: number
+  y: number
+  /** Size, 0..1 of the source frame. */
+  w: number
+  h: number
+  /** Content not visible from here until the next non-lost keyframe. Rect = last known. */
+  lost?: true
+  /**
+   * The interval from here to the next keyframe was never observed at the
+   * source frame rate, so what the content did inside it is unknown and the
+   * renderer covers both ends instead of interpolating. Set when the decode
+   * path could not densify a fast movement; absent everywhere else, including
+   * across the long gaps simplification leaves behind, where the lerp is known
+   * to be accurate.
+   */
+  gap?: true
+  /** `'user'` = placed or dragged by the user; a pin the tracker never moves. Missing = tracked. */
+  origin?: 'user'
+}
+
+/**
+ * Where a blur region is over time, in source space. Present only on regions
+ * whose content has been tracked; a region without one keeps its legacy
+ * stage-percent `position`/`size` geometry and renders exactly as before.
+ */
+export interface BlurTrack {
+  version: 1
+  /** Always `'source'`. Present so a future stage-space track cannot be confused with this one. */
+  space: 'source'
+  /** Sorted by `timeMs`, unique `timeMs`, at least one keyframe. */
+  keyframes: BlurTrackKeyframe[]
+  /** Source dimensions the track was computed against; px-based render rules use them. */
+  sourceSize: { width: number; height: number }
+  /** Grid interval used, ms. */
+  sampleIntervalMs: number
+  /** Anchor time the user drew the box at. */
+  anchorMs: number
+  /** For the settings panel only; never read by a renderer. */
+  quality?: { meanScore: number; lostMs: number; trackedMs: number }
+}
+
 export interface AnnotationPosition {
   x: number
   y: number
@@ -323,6 +372,11 @@ export interface AnnotationRegion {
   figureData?: FigureData
   /** Present on `blur` regions only. Optional so projects saved before blur regions existed load unchanged. */
   blurData?: BlurData
+  /**
+   * Present on tracked blur regions only. Missing = untracked: the region is a
+   * static box at `position`/`size` in stage percent, exactly as before.
+   */
+  blurTrack?: BlurTrack
 }
 
 export const DEFAULT_ANNOTATION_POSITION: AnnotationPosition = {

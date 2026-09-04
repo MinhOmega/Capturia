@@ -11,6 +11,7 @@ import {
   MIN_BLUR_BLOCK_SIZE,
   MIN_BLUR_INTENSITY,
 } from '@/components/video-editor/types'
+import { normalizeBlurTrack } from './blurTracking/keyframes'
 
 /**
  * Pure helpers behind blur (mosaic) regions. The preview overlay and the
@@ -77,10 +78,19 @@ export function normalizeBlurData(value: unknown): BlurData {
 export function normalizeAnnotationBlurData(regions: AnnotationRegion[]): AnnotationRegion[] {
   return regions.map((region) => {
     if (region.type === 'blur') {
-      return { ...region, blurData: normalizeBlurData(region.blurData) }
+      const normalized: AnnotationRegion = {
+        ...region,
+        blurData: normalizeBlurData(region.blurData),
+      }
+      // An unusable track degrades the region to the static box it was before
+      // tracking existed, which is always a valid thing for it to be.
+      const blurTrack = normalizeBlurTrack(region.blurTrack)
+      if (blurTrack) normalized.blurTrack = blurTrack
+      else delete normalized.blurTrack
+      return normalized
     }
-    if (region.blurData !== undefined) {
-      const { blurData: _dropped, ...rest } = region
+    if (region.blurData !== undefined || region.blurTrack !== undefined) {
+      const { blurData: _dropped, blurTrack: _droppedTrack, ...rest } = region
       return rest
     }
     return region
@@ -193,6 +203,11 @@ export function applyMosaicToImageData<T extends ImageDataLike>(
  * 3. for `oval`, pixels outside the inscribed ellipse are restored to the
  *    source so the caller can write the buffer back without a clip path.
  *
+ * `opacity` (default 1) blends the result back over the untouched pixels
+ * (`out = orig*(1-a) + mosaic*a`), which is how a tracked region fades out
+ * when its content goes off screen. At 1 the blend is skipped entirely, so
+ * every existing caller and the preview/export parity are byte-identical.
+ *
  * Both the preview overlay and the exporter call this on a copy of the frame
  * region, so the result is identical up to the source frame's resolution.
  */
@@ -200,12 +215,16 @@ export function renderMosaicRegion<T extends ImageDataLike>(
   imageData: T,
   blurData: BlurData | null | undefined,
   blockSizePx: number,
+  opacity = 1,
 ): T {
   const { width, height, data } = imageData
   if (width <= 0 || height <= 0) return imageData
 
+  const alpha = Number.isFinite(opacity) ? Math.min(1, Math.max(0, opacity)) : 1
+  if (alpha <= 0) return imageData
+
   const shape = normalizeBlurShape(blurData?.shape)
-  const original = shape === 'oval' ? new Uint8ClampedArray(data) : null
+  const original = shape === 'oval' || alpha < 1 ? new Uint8ClampedArray(data) : null
 
   applyMosaicToImageData(imageData, blockSizePx)
 
@@ -218,18 +237,30 @@ export function renderMosaicRegion<T extends ImageDataLike>(
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const offset = (y * width + x) * 4
-      if (original && !isInsideOval(x, y, width, height)) {
+      if (original && shape === 'oval' && !isInsideOval(x, y, width, height)) {
         data[offset] = original[offset]
         data[offset + 1] = original[offset + 1]
         data[offset + 2] = original[offset + 2]
         data[offset + 3] = original[offset + 3]
         continue
       }
-      data[offset] = Math.round(data[offset] * keep + shadeR)
-      data[offset + 1] = Math.round(data[offset + 1] * keep + shadeG)
-      data[offset + 2] = Math.round(data[offset + 2] * keep + shadeB)
+      const r = data[offset] * keep + shadeR
+      const g = data[offset + 1] * keep + shadeG
+      const b = data[offset + 2] * keep + shadeB
       // Alpha: the shade is drawn over whatever is there, so coverage only grows.
-      data[offset + 3] = Math.round(data[offset + 3] + (255 - data[offset + 3]) * shade.a)
+      const a = data[offset + 3] + (255 - data[offset + 3]) * shade.a
+      if (original && alpha < 1) {
+        const inverse = 1 - alpha
+        data[offset] = Math.round(original[offset] * inverse + r * alpha)
+        data[offset + 1] = Math.round(original[offset + 1] * inverse + g * alpha)
+        data[offset + 2] = Math.round(original[offset + 2] * inverse + b * alpha)
+        data[offset + 3] = Math.round(original[offset + 3] * inverse + a * alpha)
+        continue
+      }
+      data[offset] = Math.round(r)
+      data[offset + 1] = Math.round(g)
+      data[offset + 2] = Math.round(b)
+      data[offset + 3] = Math.round(a)
     }
   }
 

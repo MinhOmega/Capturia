@@ -134,6 +134,45 @@ describe('renderMosaicRegion', () => {
     const { a } = getBlurShade({ ...DEFAULT_BLUR_DATA, color: 'white' })
     expect(pixel(image, 0, 0)[3]).toBe(Math.round(255 * a))
   })
+
+  it('is byte-identical at the default opacity and at an explicit 1', () => {
+    const implicit = createTestImage(12, 8)
+    const explicit = createTestImage(12, 8)
+    renderMosaicRegion(implicit, { ...DEFAULT_BLUR_DATA, color: 'black' }, 4)
+    renderMosaicRegion(explicit, { ...DEFAULT_BLUR_DATA, color: 'black' }, 4, 1)
+    expect(Array.from(explicit.data)).toEqual(Array.from(implicit.data))
+  })
+
+  it('blends the mosaic back over the original pixels at a partial opacity', () => {
+    const original = createTestImage(8, 8)
+    const full = createTestImage(8, 8)
+    renderMosaicRegion(full, DEFAULT_BLUR_DATA, 4)
+    const half = createTestImage(8, 8)
+    renderMosaicRegion(half, DEFAULT_BLUR_DATA, 4, 0.5)
+
+    // The blend runs on the unrounded mosaic, so it can differ by one level
+    // from blending the already-rounded full-strength result.
+    for (let i = 0; i < half.data.length; i++) {
+      const reference = Math.round(original.data[i] * 0.5 + full.data[i] * 0.5)
+      expect(Math.abs(half.data[i] - reference)).toBeLessThanOrEqual(1)
+    }
+    expect(Array.from(half.data)).not.toEqual(Array.from(full.data))
+  })
+
+  it('leaves the pixels untouched at opacity 0', () => {
+    const image = createTestImage(8, 8)
+    const original = createTestImage(8, 8)
+    renderMosaicRegion(image, DEFAULT_BLUR_DATA, 4, 0)
+    expect(Array.from(image.data)).toEqual(Array.from(original.data))
+  })
+
+  it('keeps the oval mask while fading', () => {
+    const image = createTestImage(12, 8)
+    const original = createTestImage(12, 8)
+    renderMosaicRegion(image, { ...DEFAULT_BLUR_DATA, shape: 'oval', color: 'black' }, 4, 0.5)
+    expect(pixel(image, 0, 0)).toEqual(pixel(original, 0, 0))
+    expect(pixel(image, 6, 4)).not.toEqual(pixel(original, 6, 4))
+  })
 })
 
 describe('shade helpers', () => {
@@ -216,5 +255,43 @@ describe('normalisers', () => {
     expect(result[3]).not.toHaveProperty('blurData')
     expect(result[3].type).toBe('text')
     expect(result[4].blurData).toEqual(DEFAULT_BLUR_DATA)
+  })
+
+  it('keeps a usable blurTrack, drops a corrupt one and never keeps one on a non-blur region', () => {
+    const blur = createBlurAnnotationRegion({ id: 'blur-1', startMs: 0, endMs: 1000, zIndex: 2 })
+    const goodTrack = {
+      version: 1 as const,
+      space: 'source' as const,
+      keyframes: [{ timeMs: 0, x: 0.1, y: 0.2, w: 0.3, h: 0.1 }],
+      sourceSize: { width: 1920, height: 1080 },
+      sampleIntervalMs: 100,
+      anchorMs: 0,
+    }
+    const tracked = { ...blur, id: 'blur-tracked', blurTrack: goodTrack }
+    const corrupt = { ...blur, id: 'blur-corrupt', blurTrack: { space: 'stage', keyframes: [] } }
+    const text = createTextAnnotationRegion({
+      id: 'annotation-1',
+      startMs: 0,
+      endMs: 1000,
+      zIndex: 1,
+    })
+    const strayTrack = { ...text, id: 'annotation-stray', blurTrack: goodTrack }
+
+    const result = normalizeAnnotationBlurData([
+      tracked,
+      corrupt as unknown as AnnotationRegion,
+      strayTrack as unknown as AnnotationRegion,
+    ])
+
+    expect(result[0].blurTrack).toEqual(goodTrack)
+    expect(result[1]).not.toHaveProperty('blurTrack')
+    expect(result[2]).not.toHaveProperty('blurTrack')
+  })
+
+  it('leaves a project saved before tracking existed without the field', () => {
+    const blur = createBlurAnnotationRegion({ id: 'blur-1', startMs: 0, endMs: 1000, zIndex: 2 })
+    const [normalized] = normalizeAnnotationBlurData([blur])
+    expect(normalized).not.toHaveProperty('blurTrack')
+    expect(JSON.parse(JSON.stringify(normalized))).toEqual(JSON.parse(JSON.stringify(blur)))
   })
 })

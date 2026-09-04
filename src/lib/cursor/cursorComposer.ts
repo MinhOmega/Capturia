@@ -21,6 +21,7 @@ import {
   type CursorTrack,
   type ProjectedCursorPoint,
 } from './types'
+import { projectSourcePointToStage } from '@/lib/blurTracking/projection'
 
 const CLICK_PULSE_MS = 420
 /**
@@ -651,32 +652,13 @@ export function projectCursorToViewport(args: {
   cameraPosition: { x: number; y: number }
   stageSize: { width: number; height: number }
 }): ProjectedCursorPoint {
-  const {
-    normalizedX,
-    normalizedY,
-    cropRegion,
-    baseOffset,
-    maskRect,
-    cameraScale,
-    cameraPosition,
-    stageSize,
-  } = args
+  const { stageSize, ...point } = args
 
-  // Samples are normalised against the full frame; re-normalise against the
-  // crop before projecting onto the mask (which shows only the cropped area).
-  // A degenerate crop or a position outside it means the cursor is over
-  // content that is not visible, so it must be hidden rather than drawn
-  // beside the video.
-  const cropValid = cropRegion.width > 0 && cropRegion.height > 0
-  const inCropX = (normalizedX - cropRegion.x) / Math.max(0.0001, cropRegion.width)
-  const inCropY = (normalizedY - cropRegion.y) / Math.max(0.0001, cropRegion.height)
-  const inCrop = cropValid && inCropX >= 0 && inCropX <= 1 && inCropY >= 0 && inCropY <= 1
-
-  const localX = baseOffset.x + inCropX * maskRect.width
-  const localY = baseOffset.y + inCropY * maskRect.height
-
-  const x = localX * cameraScale.x + cameraPosition.x
-  const y = localY * cameraScale.y + cameraPosition.y
+  // The crop re-normalisation, the mask placement and the camera are shared
+  // with the tracked-blur projection so the two cannot drift; a position
+  // outside the crop is over content that is not visible, so the cursor must
+  // be hidden rather than drawn beside the video.
+  const { x, y, inCrop } = projectSourcePointToStage(point)
 
   const inStage = x >= -32 && y >= -32 && x <= stageSize.width + 32 && y <= stageSize.height + 32
   const inViewport = inCrop && inStage

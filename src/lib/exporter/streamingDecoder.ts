@@ -399,39 +399,7 @@ export class StreamingVideoDecoder {
       throw new Error('Must call loadMetadata() before decodeAll()')
     }
 
-    const decoderConfig = await this.demuxer.getDecoderConfig('video')
-
-    console.log('[StreamingVideoDecoder] decoderConfig.codec:', decoderConfig.codec)
-    console.log('[StreamingVideoDecoder] decoderConfig.description:', decoderConfig.description)
-
-    // web-demuxer can return bare fourcc strings ("av01", "vp08", "vp09", "avc1")
-    // that WebCodecs rejects; normalize to forms VideoDecoder accepts.
-    if (/^av01$/i.test(decoderConfig.codec)) {
-      decoderConfig.codec = buildAV1CodecString(
-        decoderConfig.description as BufferSource | undefined,
-      )
-    }
-
-    if (/^vp08$/i.test(decoderConfig.codec)) {
-      decoderConfig.codec = 'vp8'
-    }
-    if (/^vp09$/i.test(decoderConfig.codec)) {
-      decoderConfig.codec = 'vp9'
-    }
-
-    if (/^avc1$/i.test(decoderConfig.codec)) {
-      decoderConfig.codec = 'avc1.640033'
-    }
-    if (/^h264$/i.test(decoderConfig.codec)) {
-      decoderConfig.codec = 'avc1.640033'
-    }
-
-    const codec = decoderConfig.codec.toLowerCase()
-    const shouldPreferSoftwareDecode =
-      codec.includes('av01') ||
-      codec.includes('av1') ||
-      codec.includes('vp09') ||
-      codec.includes('vp9')
+    const { decoderConfig, codec, shouldPreferSoftwareDecode } = await this.resolveDecoderConfig()
     const segments = splitBySpeed(
       computeKeepSegments(this.metadata.duration, trimRegions),
       speedRegions,
@@ -481,30 +449,13 @@ export class StreamingVideoDecoder {
         }
       : decoderConfig
 
-    try {
-      const support = await VideoDecoder.isConfigSupported(preferredDecoderConfig)
-      console.log(
-        `[StreamingVideoDecoder] isConfigSupported for "${preferredDecoderConfig.codec}":`,
-        support.supported,
-      )
-      if (!support.supported) {
-        throw new Error(`Unsupported codec: ${preferredDecoderConfig.codec}`)
-      }
-      this.decoder.configure(preferredDecoderConfig)
-    } catch (error) {
-      if (shouldPreferSoftwareDecode) {
-        this.decoder.configure(decoderConfig)
-      } else if (/^avc1/i.test(codec)) {
-        const fallback = { ...decoderConfig, codec: 'avc1.640033' }
-        console.warn(
-          `[StreamingVideoDecoder] codec "${codec}" unsupported, ` +
-            `falling back to "${fallback.codec}"`,
-        )
-        this.decoder.configure(fallback)
-      } else {
-        throw error
-      }
-    }
+    await StreamingVideoDecoder.configureDecoder(
+      this.decoder,
+      preferredDecoderConfig,
+      decoderConfig,
+      codec,
+      shouldPreferSoftwareDecode,
+    )
 
     const getNextFrame = (): Promise<VideoFrame | null> => {
       if (decodeError) throw decodeError
@@ -717,6 +668,217 @@ export class StreamingVideoDecoder {
       console.warn(`[StreamingVideoDecoder] ${message}`)
       onWarning?.(message)
     }
+  }
+
+  /**
+   * The decoder config web-demuxer reports, normalised into something
+   * `VideoDecoder` accepts: it can return bare fourcc strings ("av01",
+   * "vp08", "vp09", "avc1") that WebCodecs rejects outright.
+   *
+   * Shared by `decodeAll` and `decodeRange` so the two cannot end up
+   * configuring different decoders for the same file.
+   */
+  private async resolveDecoderConfig(): Promise<{
+    decoderConfig: VideoDecoderConfig
+    codec: string
+    shouldPreferSoftwareDecode: boolean
+  }> {
+    if (!this.demuxer) throw new Error('Must call loadMetadata() first')
+    const decoderConfig = await this.demuxer.getDecoderConfig('video')
+
+    console.log('[StreamingVideoDecoder] decoderConfig.codec:', decoderConfig.codec)
+    console.log('[StreamingVideoDecoder] decoderConfig.description:', decoderConfig.description)
+
+    if (/^av01$/i.test(decoderConfig.codec)) {
+      decoderConfig.codec = buildAV1CodecString(
+        decoderConfig.description as BufferSource | undefined,
+      )
+    }
+    if (/^vp08$/i.test(decoderConfig.codec)) decoderConfig.codec = 'vp8'
+    if (/^vp09$/i.test(decoderConfig.codec)) decoderConfig.codec = 'vp9'
+    if (/^avc1$/i.test(decoderConfig.codec)) decoderConfig.codec = 'avc1.640033'
+    if (/^h264$/i.test(decoderConfig.codec)) decoderConfig.codec = 'avc1.640033'
+
+    const codec = decoderConfig.codec.toLowerCase()
+    return {
+      decoderConfig,
+      codec,
+      shouldPreferSoftwareDecode:
+        codec.includes('av01') ||
+        codec.includes('av1') ||
+        codec.includes('vp09') ||
+        codec.includes('vp9'),
+    }
+  }
+
+  /** Configures a decoder, falling back the way the export path always has. */
+  private static async configureDecoder(
+    decoder: VideoDecoder,
+    preferred: VideoDecoderConfig,
+    original: VideoDecoderConfig,
+    codec: string,
+    shouldPreferSoftwareDecode: boolean,
+  ): Promise<void> {
+    try {
+      const support = await VideoDecoder.isConfigSupported(preferred)
+      console.log(
+        `[StreamingVideoDecoder] isConfigSupported for "${preferred.codec}":`,
+        support.supported,
+      )
+      if (!support.supported) throw new Error(`Unsupported codec: ${preferred.codec}`)
+      decoder.configure(preferred)
+    } catch (error) {
+      if (shouldPreferSoftwareDecode) {
+        decoder.configure(original)
+      } else if (/^avc1/i.test(codec)) {
+        const fallback = { ...original, codec: 'avc1.640033' }
+        console.warn(
+          `[StreamingVideoDecoder] codec "${codec}" unsupported, falling back to "${fallback.codec}"`,
+        )
+        decoder.configure(fallback)
+      } else {
+        throw error
+      }
+    }
+  }
+
+  /**
+   * Every decoded frame in `[startSec, endSec]`, in decode order, with its
+   * source timestamp in milliseconds.
+   *
+   * Unlike `decodeAll` this resamples nothing and drops nothing inside the
+   * range: the blur tracker analyses a fixed time grid but needs every frame
+   * available so it can densify an interval where the content moved far
+   * (`docs/specs/tracked-blur-regions.md` §1.8).
+   *
+   * `web-demuxer` starts a range read at the keyframe at or before `startSec`,
+   * so frames before the range arrive first and are closed unread here.
+   *
+   * **The callback owns the frame it is given and must close it**, including
+   * when it throws. Returning a promise applies backpressure: the next chunk
+   * is only fed to the decoder once the callback has settled.
+   */
+  async decodeRange(
+    range: { startSec: number; endSec: number },
+    onFrame: (frame: VideoFrame, sourceTimestampMs: number) => void | Promise<void>,
+    options: { signal?: AbortSignal } = {},
+  ): Promise<void> {
+    if (!this.demuxer || !this.metadata) {
+      throw new Error('Must call loadMetadata() before decodeRange()')
+    }
+    const { decoderConfig, codec, shouldPreferSoftwareDecode } = await this.resolveDecoderConfig()
+
+    const startSec = Math.max(0, range.startSec)
+    const endSec = Math.max(startSec, range.endSec)
+    // Set once the consumer has stopped taking frames, for any reason. Without
+    // it a callback that throws leaves the feed loop spinning on backpressure
+    // that nobody will ever drain, and the whole call hangs instead of
+    // reporting the error.
+    let stopped = false
+    const aborted = (): boolean => stopped || this.cancelled || options.signal?.aborted === true
+
+    const pendingFrames: VideoFrame[] = []
+    let frameResolve: ((frame: VideoFrame | null) => void) | null = null
+    let decodeError: Error | null = null
+    let decodeDone = false
+
+    /** Hands a frame (or the end of the stream) to a waiting `getNextFrame`. */
+    const settle = (frame: VideoFrame | null): boolean => {
+      const resolve = frameResolve
+      if (!resolve) return false
+      frameResolve = null
+      resolve(frame)
+      return true
+    }
+
+    const decoder = new VideoDecoder({
+      output: (frame: VideoFrame) => {
+        if (!settle(frame)) pendingFrames.push(frame)
+      },
+      error: (e: DOMException) => {
+        decodeError = new Error(`VideoDecoder error: ${e.message}`)
+        settle(null)
+      },
+    })
+    this.decoder = decoder
+
+    const preferred = shouldPreferSoftwareDecode
+      ? { ...decoderConfig, hardwareAcceleration: 'prefer-software' as const }
+      : decoderConfig
+    await StreamingVideoDecoder.configureDecoder(
+      decoder,
+      preferred,
+      decoderConfig,
+      codec,
+      shouldPreferSoftwareDecode,
+    )
+
+    const getNextFrame = (): Promise<VideoFrame | null> => {
+      if (decodeError) throw decodeError
+      if (pendingFrames.length > 0) return Promise.resolve(pendingFrames.shift()!)
+      if (decodeDone) return Promise.resolve(null)
+      return new Promise((resolve) => {
+        frameResolve = resolve
+      })
+    }
+
+    // A small tail so the frame covering `endSec` is decoded rather than cut off.
+    const reader = this.demuxer.read('video', startSec, endSec + 0.5).getReader()
+    const feedPromise = (async () => {
+      try {
+        while (!aborted()) {
+          const { done, value: chunk } = await reader.read()
+          if (done || !chunk) break
+          while ((decoder.decodeQueueSize > 8 || pendingFrames.length > 4) && !aborted()) {
+            await new Promise((resolve) => setTimeout(resolve, 1))
+          }
+          if (aborted()) break
+          decoder.decode(chunk)
+        }
+        if (!aborted() && decoder.state === 'configured') await decoder.flush()
+      } catch (e) {
+        decodeError = e instanceof Error ? e : new Error(String(e))
+      } finally {
+        decodeDone = true
+        settle(null)
+      }
+    })()
+
+    try {
+      while (!aborted()) {
+        const frame = await getNextFrame()
+        if (!frame) break
+        const timestampMs = frame.timestamp / 1000
+        // Frames before the range are the keyframe run-up: decoded for the
+        // reference state, never delivered.
+        if (timestampMs < startSec * 1000 - 0.5 || timestampMs > endSec * 1000 + 0.5) {
+          frame.close()
+          continue
+        }
+        // Ownership passes to the callback here, including on a throw.
+        await onFrame(frame, timestampMs)
+      }
+    } finally {
+      stopped = true
+      try {
+        await reader.cancel()
+      } catch {
+        /* already closed */
+      }
+      await feedPromise.catch(() => undefined)
+      for (const frame of pendingFrames) frame.close()
+      pendingFrames.length = 0
+      if (decoder.state !== 'closed') {
+        try {
+          decoder.close()
+        } catch {
+          /* already closed */
+        }
+      }
+      if (this.decoder === decoder) this.decoder = null
+    }
+
+    if (decodeError) throw decodeError
   }
 
   /**
