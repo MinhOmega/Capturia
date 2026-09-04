@@ -59,6 +59,21 @@ import {
 } from '@/lib/crop/aspectCrop'
 import type { ExportQuality, ExportFormat, GifFrameRate, GifSizePreset } from '@/lib/exporter'
 import { GIF_FRAME_RATES, GIF_SIZE_PRESETS } from '@/lib/exporter'
+import { normalizeExportSourceFrameRate } from '@/lib/exporter'
+import type { ExportVideoCodec } from '@/lib/exporter/videoCodecSupport'
+
+/** Quality presets in menu order, with the i18n key of each tile's label. */
+const QUALITY_TILES: ReadonlyArray<{ value: ExportQuality; labelKey: string }> = [
+  { value: 'medium', labelKey: 'settings.quality.low' },
+  { value: 'good', labelKey: 'settings.quality.medium' },
+  { value: 'source', labelKey: 'settings.quality.high' },
+]
+
+/** Codec choices. The names are trademarks and are never translated. */
+const EXPORT_CODEC_TILES: ReadonlyArray<{ value: ExportVideoCodec; label: string }> = [
+  { value: 'h264', label: 'H.264' },
+  { value: 'hevc', label: 'H.265' },
+]
 import {
   Accordion,
   AccordionContent,
@@ -163,6 +178,23 @@ interface SettingsPanelProps {
   videoElement?: HTMLVideoElement | null
   exportQuality?: ExportQuality
   onExportQualityChange?: (quality: ExportQuality) => void
+  /**
+   * Resolved output size per quality tile for the current export aspect, from
+   * `calculateMp4ExportPlan`. Shown under each tile so "Original (Best)" is not
+   * a guess: on a 720p recording it is 720p, and the tile says so.
+   */
+  exportQualityDimensions?: Partial<Record<ExportQuality, { width: number; height: number }>>
+  /** Frame rate the export will run at. */
+  exportFrameRate?: number
+  /** Rates offered, already filtered to the source (`getAvailableExportFrameRates`). */
+  availableExportFrameRates?: number[]
+  onExportFrameRateChange?: (frameRate: number) => void
+  /** Probed source frame rate, for the "limited to N fps" hint. */
+  sourceFrameRate?: number
+  exportCodec?: ExportVideoCodec
+  /** Codecs whose `VideoEncoder.isConfigSupported` probe passed. */
+  availableExportCodecs?: ExportVideoCodec[]
+  onExportCodecChange?: (codec: ExportVideoCodec) => void
   // Export format settings
   exportFormat?: ExportFormat
   onExportFormatChange?: (format: ExportFormat) => void
@@ -346,6 +378,14 @@ export function SettingsPanel({
   videoElement,
   exportQuality = 'good',
   onExportQualityChange,
+  exportQualityDimensions,
+  exportFrameRate,
+  availableExportFrameRates = [],
+  onExportFrameRateChange,
+  sourceFrameRate,
+  exportCodec = 'h264',
+  availableExportCodecs = ['h264'],
+  onExportCodecChange,
   exportFormat = 'mp4',
   onExportFormatChange,
   exportAspectRatios = [],
@@ -2059,40 +2099,114 @@ export function SettingsPanel({
 
         {exportFormat === 'mp4' && (
           <div className="mb-3 space-y-2">
-            <div className="bg-white/5 border border-white/5 p-0.5 w-full grid grid-cols-3 h-7 rounded-lg">
-              <button
-                onClick={() => onExportQualityChange?.('medium')}
-                className={cn(
-                  'rounded-md transition-all text-[10px] font-medium',
-                  exportQuality === 'medium'
-                    ? 'bg-white text-black'
-                    : 'text-slate-400 hover:text-slate-200',
-                )}
-              >
-                {t('settings.quality.low')}
-              </button>
-              <button
-                onClick={() => onExportQualityChange?.('good')}
-                className={cn(
-                  'rounded-md transition-all text-[10px] font-medium',
-                  exportQuality === 'good'
-                    ? 'bg-white text-black'
-                    : 'text-slate-400 hover:text-slate-200',
-                )}
-              >
-                {t('settings.quality.medium')}
-              </button>
-              <button
-                onClick={() => onExportQualityChange?.('source')}
-                className={cn(
-                  'rounded-md transition-all text-[10px] font-medium',
-                  exportQuality === 'source'
-                    ? 'bg-white text-black'
-                    : 'text-slate-400 hover:text-slate-200',
-                )}
-              >
-                {t('settings.quality.high')}
-              </button>
+            <div className="grid grid-cols-3 gap-1">
+              {QUALITY_TILES.map(({ value, labelKey }) => {
+                const dimensions = exportQualityDimensions?.[value]
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    data-testid={`export-quality-${value}`}
+                    onClick={() => onExportQualityChange?.(value)}
+                    className={cn(
+                      'rounded-lg border px-1 py-1 transition-all',
+                      exportQuality === value
+                        ? 'border-[#34B27B]/70 bg-[#34B27B]/20 text-white'
+                        : 'border-white/10 bg-white/5 text-slate-400 hover:border-[#34B27B]/50 hover:text-slate-200',
+                    )}
+                  >
+                    <span className="block text-[10px] font-medium leading-tight">
+                      {t(labelKey)}
+                    </span>
+                    <span
+                      data-testid={`export-quality-${value}-dimensions`}
+                      className="block text-[9px] leading-tight text-slate-500 tabular-nums"
+                    >
+                      {dimensions ? `${dimensions.width} × ${dimensions.height}` : '—'}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+
+            {availableExportFrameRates.length > 1 && (
+              <div className="rounded-lg border border-white/10 bg-white/5 p-2">
+                <div className="mb-1.5 flex items-center justify-between text-[10px]">
+                  <span className="uppercase tracking-wide text-slate-400">
+                    {t('settings.exportFrameRate')}
+                  </span>
+                  <span className="text-slate-500">
+                    {t('settings.exportFrameRateHint', {
+                      fps: normalizeExportSourceFrameRate(sourceFrameRate),
+                    })}
+                  </span>
+                </div>
+                <div
+                  className="grid gap-1"
+                  style={{
+                    gridTemplateColumns: `repeat(${availableExportFrameRates.length}, minmax(0, 1fr))`,
+                  }}
+                >
+                  {availableExportFrameRates.map((rate) => (
+                    <button
+                      key={rate}
+                      type="button"
+                      data-testid={`export-frame-rate-${rate}`}
+                      onClick={() => onExportFrameRateChange?.(rate)}
+                      className={cn(
+                        'h-6 rounded-md border text-[10px] font-medium tabular-nums transition-all',
+                        exportFrameRate === rate
+                          ? 'border-[#34B27B]/70 bg-[#34B27B]/20 text-white'
+                          : 'border-white/10 text-slate-400 hover:border-[#34B27B]/50 hover:text-slate-200',
+                      )}
+                    >
+                      {rate}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="rounded-lg border border-white/10 bg-white/5 p-2">
+              <div className="mb-1.5 text-[10px] uppercase tracking-wide text-slate-400">
+                {t('settings.exportCodec')}
+              </div>
+              <div className="grid grid-cols-2 gap-1">
+                {EXPORT_CODEC_TILES.map(({ value, label }) => {
+                  const supported = availableExportCodecs.includes(value)
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      disabled={!supported}
+                      data-testid={`export-codec-${value}`}
+                      title={
+                        supported
+                          ? value === 'hevc'
+                            ? t('settings.exportCodecHevcHint')
+                            : undefined
+                          : t('settings.exportCodecHevcUnavailable')
+                      }
+                      onClick={() => onExportCodecChange?.(value)}
+                      className={cn(
+                        'h-6 rounded-md border text-[10px] font-medium transition-all',
+                        !supported
+                          ? 'cursor-not-allowed border-white/5 text-slate-600'
+                          : exportCodec === value
+                            ? 'border-[#34B27B]/70 bg-[#34B27B]/20 text-white'
+                            : 'border-white/10 text-slate-400 hover:border-[#34B27B]/50 hover:text-slate-200',
+                      )}
+                    >
+                      {label}
+                    </button>
+                  )
+                })}
+              </div>
+              {exportCodec === 'hevc' && (
+                <p className="mt-1.5 text-[10px] leading-snug text-slate-500">
+                  {t('settings.exportCodecHevcHint')}
+                </p>
+              )}
             </div>
 
             <div className="rounded-lg border border-white/10 bg-white/5 p-2">

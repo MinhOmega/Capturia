@@ -71,6 +71,28 @@ export interface ExportResult {
   warnings?: string[]
   /** `true` when the source file was copied verbatim (no decode / render / encode). */
   sourceCopy?: boolean
+  /** Which encoder actually produced the file; absent on the source-copy path. */
+  encoder?: ExportEncoderReport
+}
+
+/**
+ * What the export ended up encoding with. The first attempt is not always the
+ * one that succeeds — an unsupported HEVC configuration or a wedged hardware
+ * encoder falls back — and the user is told when that happened, because a
+ * software encoder is the usual explanation for an export that took far longer
+ * than the last one.
+ */
+export interface ExportEncoderReport {
+  /** WebCodecs codec string, e.g. `avc1.640033`. */
+  codec: string
+  /** `'prefer-hardware'` or `'prefer-software'`, as configured. */
+  hardwareAcceleration: HardwareAcceleration
+  /** `true` when an earlier encoder attempt failed and this one is the retry. */
+  retried: boolean
+  /** `true` when the retry landed on the software encoder. */
+  usedSoftwareFallback: boolean
+  /** `true` when the requested codec was dropped for the H.264 fallback. */
+  codecFellBack: boolean
 }
 
 export interface VideoFrameData {

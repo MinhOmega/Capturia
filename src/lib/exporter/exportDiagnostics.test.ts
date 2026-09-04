@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   buildExportDiagnosticMessage,
   buildSaveDiagnosticMessage,
+  describeExportEncoder,
   getFileNameForDiagnostics,
 } from './exportDiagnostics'
 
@@ -124,5 +125,54 @@ describe('buildSaveDiagnosticMessage', () => {
         reason: 'Why',
       }),
     ).toBe('Could not save Video\nWhy: disk full')
+  })
+})
+
+describe('describeExportEncoder', () => {
+  it('names the encoder that actually ran', () => {
+    expect(
+      describeExportEncoder({ codec: 'avc1.640033', hardwareAcceleration: 'prefer-hardware' }),
+    ).toBe('avc1.640033 (hardware)')
+    expect(
+      describeExportEncoder({ codec: 'avc1.640033', hardwareAcceleration: 'prefer-software' }),
+    ).toBe('avc1.640033 (software)')
+  })
+
+  it('says when it got there after a failure, which is the "why was this slow" answer', () => {
+    expect(
+      describeExportEncoder({
+        codec: 'avc1.640033',
+        hardwareAcceleration: 'prefer-software',
+        retried: true,
+      }),
+    ).toBe('avc1.640033 (software, after a failed attempt)')
+  })
+
+  it('says when the requested codec was dropped', () => {
+    expect(
+      describeExportEncoder({
+        codec: 'avc1.640033',
+        hardwareAcceleration: 'prefer-hardware',
+        retried: true,
+        codecFellBack: true,
+      }),
+    ).toBe('avc1.640033 (hardware, codec fallback, after a failed attempt)')
+  })
+})
+
+describe('buildExportDiagnosticMessage with an encoder', () => {
+  it('includes the encoder line only when there is one', () => {
+    const withEncoder = buildExportDiagnosticMessage({
+      formatLabel: 'Video',
+      encoder: 'avc1.640033 (software, after a failed attempt)',
+      videoEncoderAvailable: true,
+    })
+    expect(withEncoder).toContain('Encoder used: avc1.640033 (software, after a failed attempt)')
+
+    const without = buildExportDiagnosticMessage({
+      formatLabel: 'Video',
+      videoEncoderAvailable: true,
+    })
+    expect(without).not.toContain('Encoder used')
   })
 })

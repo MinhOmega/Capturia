@@ -113,10 +113,11 @@
     "artifactName": "${productName}-Linux-${version}.${ext}",
     "category": "AudioVideo",
     "maintainer": "MinhOmega",
-    "executableArgs": [
-      "--disable-gpu",
-      "--disable-gpu-compositing"
-    ],
+    // No `executableArgs`: the software-rendering workaround for the Electron
+    // Wayland startup crash is decided at runtime in `electron/linuxGpu.ts`.
+    // Passing --disable-gpu from the launcher applied it to X11 installs too,
+    // where the GPU path works and the preview and export are much faster with
+    // it. One build serves both session types.
     // electron-builder 26 moved the flat key map under `desktop.entry` (24.x took the keys directly).
     "desktop": {
       "entry": {

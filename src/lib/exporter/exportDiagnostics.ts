@@ -16,6 +16,12 @@ export interface ExportDiagnostics {
   frameRate?: number
   codec?: string
   bitrate?: number
+  /**
+   * The encoder the export actually ran on, e.g. `avc1.640033 (software)`.
+   * Differs from `codec` after a fallback, which is the single most useful
+   * fact in a "why was this export so slow" report.
+   */
+  encoder?: string
   /** Override for tests; defaults to `typeof VideoEncoder !== 'undefined'`. */
   videoEncoderAvailable?: boolean
 }
@@ -33,6 +39,7 @@ export interface ExportDiagnosticLabels {
   videoEncoder: string
   available: string
   unavailable: string
+  encoder: string
 }
 
 export const DEFAULT_EXPORT_DIAGNOSTIC_LABELS: ExportDiagnosticLabels = {
@@ -46,6 +53,7 @@ export const DEFAULT_EXPORT_DIAGNOSTIC_LABELS: ExportDiagnosticLabels = {
   videoEncoder: 'VideoEncoder',
   available: 'available',
   unavailable: 'unavailable',
+  encoder: 'Encoder used',
 }
 
 function fillFormat(template: string, formatLabel: string): string {
@@ -90,10 +98,29 @@ export function buildExportDiagnosticMessage(
     diagnostics.bitrate
       ? `${l.bitrate}: ${Math.round(diagnostics.bitrate / 1_000_000)} Mbps`
       : null,
+    diagnostics.encoder ? `${l.encoder}: ${diagnostics.encoder}` : null,
     `${l.videoEncoder}: ${encoderAvailable ? l.available : l.unavailable}`,
   ].filter(Boolean)
 
   return `${fillFormat(l.exportFailed, diagnostics.formatLabel)}\n${details.join('\n')}`
+}
+
+/**
+ * One-line description of an `ExportEncoderReport` for the diagnostics block
+ * and the console, e.g. `avc1.640033 (software, after a failed attempt)`.
+ */
+export function describeExportEncoder(report: {
+  codec: string
+  hardwareAcceleration: string
+  retried?: boolean
+  codecFellBack?: boolean
+}): string {
+  const notes: string[] = [
+    report.hardwareAcceleration === 'prefer-software' ? 'software' : 'hardware',
+  ]
+  if (report.codecFellBack) notes.push('codec fallback')
+  if (report.retried) notes.push('after a failed attempt')
+  return `${report.codec} (${notes.join(', ')})`
 }
 
 export function buildSaveDiagnosticMessage(
