@@ -7,6 +7,7 @@ import {
   saveUserPreferences,
   USER_PREFERENCES_STORAGE_KEY,
 } from './userPreferences'
+import { DEFAULT_HIDE_HUD_FROM_RECORDING } from '../../electron/recordingPrivacy'
 
 describe('parentDirectoryOf', () => {
   it('returns the directory for a POSIX path', () => {
@@ -179,5 +180,24 @@ describe('user preferences persistence', () => {
     })
     expect(loadUserPreferences()).toEqual(DEFAULT_PREFS)
     expect(() => saveUserPreferences({ padding: 10 })).not.toThrow()
+  })
+
+  describe('hideHudFromRecording (D1)', () => {
+    it('defaults to on and matches the main-process mirror', () => {
+      expect(DEFAULT_PREFS.hideHudFromRecording).toBe(true)
+      // Nothing under src/ may import from electron/, so the default is written
+      // twice. This is the assertion that keeps the two copies honest.
+      expect(DEFAULT_PREFS.hideHudFromRecording).toBe(DEFAULT_HIDE_HUD_FROM_RECORDING)
+    })
+
+    it('round-trips and ignores a non-boolean stored value', () => {
+      saveUserPreferences({ hideHudFromRecording: false })
+      expect(loadUserPreferences().hideHudFromRecording).toBe(false)
+      localStorage.setItem(
+        USER_PREFERENCES_STORAGE_KEY,
+        JSON.stringify({ hideHudFromRecording: 'nope' }),
+      )
+      expect(loadUserPreferences().hideHudFromRecording).toBe(true)
+    })
   })
 })

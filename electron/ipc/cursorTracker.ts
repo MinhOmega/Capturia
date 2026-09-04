@@ -26,6 +26,9 @@ import {
   type CursorTrackPayload,
   compactCursorTrackPauseRanges,
   compactCursorTrackSamples,
+  isCursorTrackMarkerEvent,
+  isCursorTrackPointerEvent,
+  MAX_CURSOR_TRACK_MARKERS,
   sanitizeCursorTrack,
 } from './cursorTrack'
 import { getWindowBoundsById, parseWindowIdFromSourceId } from './windowBounds'
@@ -106,13 +109,18 @@ const RUNTIME_SAMPLE_TARGET = 180_000
 
 function compactTrackerSampleBuffer(tracker: CursorTrackerRuntime): void {
   const before = tracker.samples.length
-  tracker.samples = compactCursorTrackSamples(tracker.samples, tracker.events, {
-    // Already the live buffer: the count is the binding limit here, and the
-    // serialized-size guard runs once on the way out through `sanitizeCursorTrack`.
-    compactAboveSamples: 0,
-    maxSamples: RUNTIME_SAMPLE_TARGET,
-    maxSampleBytes: Number.POSITIVE_INFINITY,
-  })
+  // Markers are instants with no span, so they never guard samples.
+  tracker.samples = compactCursorTrackSamples(
+    tracker.samples,
+    tracker.events.filter(isCursorTrackPointerEvent),
+    {
+      // Already the live buffer: the count is the binding limit here, and the
+      // serialized-size guard runs once on the way out through `sanitizeCursorTrack`.
+      compactAboveSamples: 0,
+      maxSamples: RUNTIME_SAMPLE_TARGET,
+      maxSampleBytes: Number.POSITIVE_INFINITY,
+    },
+  )
   console.info(
     `[cursor-tracker] live buffer compacted: ${before} -> ${tracker.samples.length} samples`,
   )
@@ -352,9 +360,20 @@ function resolveWindowCaptureFallbackBounds(args: {
   }
 }
 
+/** Outcome of flagging a moment: the recording-relative time, or why nothing happened. */
+export type RecordingMarkerResult =
+  | { added: true; timeMs: number; count: number }
+  | { added: false; reason: 'not-recording' | 'paused' | 'limit' }
+
 export type CursorTrackerRegistration = {
   /** Stops the tracker (if any) and returns the sanitized track; used at shutdown. */
   stopCursorTracker: () => CursorTrackPayload | undefined
+  /**
+   * D2: flag the current moment. Called from the global shortcut and from the
+   * `cursor-tracker-marker` channel the HUD button uses, so both write the same
+   * event on the same clock the samples use.
+   */
+  addRecordingMarker: () => RecordingMarkerResult
 }
 
 export function registerCursorTrackerHandlers(ctx: IpcContext): CursorTrackerRegistration {
@@ -690,6 +709,28 @@ export function registerCursorTrackerHandlers(ctx: IpcContext): CursorTrackerReg
     return { success: true, changed }
   })
 
+  /**
+   * D2: a moment the user flagged. `startedAt` is the same wall clock the
+   * samples use, so the marker lands on the video timeline once the pause
+   * ranges are compacted out on stop. Flagging while paused is refused rather
+   * than silently recorded on a frame the video will not contain.
+   */
+  const addRecordingMarker = (): RecordingMarkerResult => {
+    if (!cursorTracker) return { added: false, reason: 'not-recording' }
+    if (cursorTracker.pauseStartedAt !== null) return { added: false, reason: 'paused' }
+    const markerCount = cursorTracker.events.filter(isCursorTrackMarkerEvent).length
+    if (markerCount >= MAX_CURSOR_TRACK_MARKERS) return { added: false, reason: 'limit' }
+
+    const timeMs = Math.max(0, Math.round(Date.now() - cursorTracker.startedAt))
+    // Straight onto the buffer, not through `appendCursorEvent`: that helper
+    // drops the oldest 500 entries when the gesture buffer overflows, and a
+    // flagged moment must never be one of them.
+    cursorTracker.events.push({ type: 'marker', timeMs })
+    return { added: true, timeMs, count: markerCount + 1 }
+  }
+
+  ipcMain.handle('cursor-tracker-marker', () => addRecordingMarker())
+
   ipcMain.handle('cursor-tracker-stop', () => {
     const track = stopCursorTracker()
     console.log('[cursor-tracker] stopped:', {
@@ -702,5 +743,5 @@ export function registerCursorTrackerHandlers(ctx: IpcContext): CursorTrackerReg
     return { success: true, track }
   })
 
-  return { stopCursorTracker }
+  return { stopCursorTracker, addRecordingMarker }
 }

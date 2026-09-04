@@ -41,5 +41,6 @@
 	"moreActions": "More timeline actions",
 	"resetAllEdits": "Reset all trims and cuts",
 	"resetAllEditsConfirm": "Every split, deleted section and segment speed is thrown away and the recording goes back to one full-length clip at normal speed. Zooms, annotations and blurs are kept. This can be undone.",
-	"resetAllEditsConfirmAction": "Reset"
+	"resetAllEditsConfirmAction": "Reset",
+	"recordingMarkerAt": "Moment flagged while recording at {{time}} — click to seek here"
 }

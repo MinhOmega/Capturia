@@ -3,7 +3,7 @@ import { getRecordingsDir } from '../paths'
 import { registerAnalysisHandlers } from './analysis'
 import { registerCaptionHandlers } from './captionHandlers'
 import { createIpcSession, type IpcContext, type SelectedSource } from './context'
-import { registerCursorTrackerHandlers } from './cursorTracker'
+import { registerCursorTrackerHandlers, type RecordingMarkerResult } from './cursorTracker'
 import { registerExportFilesHandlers } from './exportFiles'
 import { registerFileReadHandlers } from './fileReadHandlers'
 import { type HudWindowsContext, registerHudWindowsHandlers } from './hudWindowsHandlers'
@@ -17,6 +17,11 @@ export type { IpcContext, IpcSession, SelectedSource } from './context'
 export type IpcRuntime = {
   /** Stops the cursor tracker and any native recorder; called from `before-quit`. */
   shutdown: () => Promise<void>
+  /**
+   * D2: flag the current moment in the cursor sidecar. Exposed so the global
+   * shortcut registered in `main.ts` writes the same event as the HUD button.
+   */
+  addRecordingMarker: () => RecordingMarkerResult
 }
 
 /**
@@ -80,5 +85,5 @@ export function registerIpcHandlers(
     await recordingFiles.shutdownNativeRecorder()
   }
 
-  return { shutdown }
+  return { shutdown, addRecordingMarker: () => cursorTracker.addRecordingMarker() }
 }

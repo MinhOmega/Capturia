@@ -118,6 +118,34 @@ const displayOneSource: ProcessedDesktopSource = {
   appIcon: null,
 }
 
+// D3: the fake camera. Every track records its own stop() so a test can ask the
+// only question that matters - is the camera light off?
+type FakeCameraTrack = { stop: () => void; stopped: boolean }
+let cameraTracks: FakeCameraTrack[] = []
+const cameraGetUserMedia = vi.fn(async (_constraints: MediaStreamConstraints) => {
+  const track: FakeCameraTrack = {
+    stopped: false,
+    stop: () => {
+      track.stopped = true
+    },
+  }
+  cameraTracks.push(track)
+  return { getTracks: () => [track] } as unknown as MediaStream
+})
+
+Object.defineProperty(global.navigator, 'mediaDevices', {
+  value: {
+    getUserMedia: cameraGetUserMedia,
+    enumerateDevices: vi.fn(async () => [
+      { kind: 'videoinput', deviceId: 'cam1', label: 'Camera 1', groupId: 'g1' },
+    ]),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  },
+  configurable: true,
+})
+
+let recordingMarkerListeners: Array<(result: RecordingMarkerOutcome) => void> = []
 let selectedSourceChangedListeners: SelectedSourceChangedListener[] = []
 let sourceSelectorClosedListeners: Array<() => void> = []
 // Mirrors main's `selectedSource`: the 500 ms poll must agree with the event.
@@ -144,6 +172,31 @@ function stubElectronAPI() {
     setHudOverlayIgnoreMouseEvents: vi.fn(async () => ({ applied: true })),
     moveHudOverlayBy: vi.fn(async () => ({ applied: true })),
     setHudOverlaySize: vi.fn(async () => ({ applied: true })),
+    getHideHudFromRecording: vi.fn(async () => ({
+      enabled: true,
+      protected: [],
+      unprotected: [],
+    })),
+    setHideHudFromRecording: vi.fn(async (enabled: boolean) => ({
+      enabled,
+      protected: enabled ? ['HUD'] : [],
+      unprotected: [],
+    })),
+    reassertHudRecordingPrivacy: vi.fn(async () => ({
+      enabled: true,
+      protected: ['HUD'],
+      unprotected: [],
+    })),
+    addRecordingMarker: vi.fn(async () => ({ added: true, timeMs: 65_000, count: 3 })),
+    onRecordingMarkerAdded: vi.fn((callback: (result: RecordingMarkerOutcome) => void) => {
+      recordingMarkerListeners.push(callback)
+      return () => {
+        recordingMarkerListeners = recordingMarkerListeners.filter(
+          (listener) => listener !== callback,
+        )
+      }
+    }),
+    getGlobalShortcuts: vi.fn(async () => ({ markMoment: 'CommandOrControl+Alt+F' })),
     onSelectedSourceChanged: vi.fn((callback: SelectedSourceChangedListener) => {
       selectedSourceChangedListeners.push(callback)
       return () => {
@@ -656,6 +709,204 @@ describe('LaunchWindow stop shortcut on mount', () => {
     })
     await waitFor(() => {
       expect(screen.getByTestId('launch-stop-shortcut-button')).toHaveTextContent('⌘⇧5')
+    })
+  })
+})
+
+describe('LaunchWindow hide-HUD-from-recording toggle (D1)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', StubResizeObserver)
+    resizeObservers.length = 0
+    window.localStorage.clear()
+    selectedSourceChangedListeners = []
+    sourceSelectorClosedListeners = []
+    mainSelectedSource = null
+    stubElectronAPI()
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+  })
+
+  it('starts on and pushes the stored preference to main on mount', async () => {
+    render(<LaunchWindow />)
+    const toggle = await screen.findByTestId('launch-hide-hud-from-recording')
+    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    await waitFor(() => {
+      expect(window.electronAPI.setHideHudFromRecording).toHaveBeenCalledWith(true)
+    })
+  })
+
+  it('spells out that the setting also hides the HUD from screen sharing', async () => {
+    render(<LaunchWindow />)
+    const toggle = await screen.findByTestId('launch-hide-hud-from-recording')
+    expect(toggle.getAttribute('title')).toContain(
+      'The same setting also hides them from remote-desktop and screen-sharing tools.',
+    )
+  })
+
+  it('persists the choice and pushes it to main when toggled off', async () => {
+    render(<LaunchWindow />)
+    const toggle = await screen.findByTestId('launch-hide-hud-from-recording')
+    fireEvent.click(toggle)
+
+    await waitFor(() => {
+      expect(window.electronAPI.setHideHudFromRecording).toHaveBeenCalledWith(false)
+    })
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    expect(
+      JSON.parse(window.localStorage.getItem('capturia.userPreferences') ?? '{}')
+        .hideHudFromRecording,
+    ).toBe(false)
+  })
+
+  it('restores a stored "off" instead of re-enabling protection', async () => {
+    window.localStorage.setItem(
+      'capturia.userPreferences',
+      JSON.stringify({ hideHudFromRecording: false }),
+    )
+    render(<LaunchWindow />)
+    const toggle = await screen.findByTestId('launch-hide-hud-from-recording')
+    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+    await waitFor(() => {
+      expect(window.electronAPI.setHideHudFromRecording).toHaveBeenCalledWith(false)
+    })
+  })
+})
+
+describe('LaunchWindow flag-this-moment button (D2)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', StubResizeObserver)
+    resizeObservers.length = 0
+    window.localStorage.clear()
+    selectedSourceChangedListeners = []
+    sourceSelectorClosedListeners = []
+    recordingMarkerListeners = []
+    mainSelectedSource = null
+    stubElectronAPI()
+    recorderState.value = { ...recorderState.value, recording: true, recordingState: 'recording' }
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+    recorderState.value = { ...recorderState.value, recording: false, recordingState: 'idle' }
+  })
+
+  it('shows the flag button while recording, labelled with the registered shortcut', async () => {
+    render(<LaunchWindow />)
+    const button = await screen.findByTestId('launch-mark-moment-button')
+    await waitFor(() => {
+      // macOS glyphs once the platform probe has answered (the stub reports darwin).
+      expect(button.getAttribute('title')).toContain('⌘⌥F')
+    })
+    expect(button).toBeEnabled()
+  })
+
+  it('flags the moment through the same call the global shortcut makes', async () => {
+    render(<LaunchWindow />)
+    fireEvent.click(await screen.findByTestId('launch-mark-moment-button'))
+    await waitFor(() => {
+      expect(window.electronAPI.addRecordingMarker).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  it('is disabled while the recording is paused', async () => {
+    recorderState.value = { ...recorderState.value, recordingState: 'paused' }
+    render(<LaunchWindow />)
+    expect(await screen.findByTestId('launch-mark-moment-button')).toBeDisabled()
+  })
+
+  it('subscribes so a moment flagged by the global shortcut is confirmed too', async () => {
+    render(<LaunchWindow />)
+    await screen.findByTestId('launch-mark-moment-button')
+    await waitFor(() => {
+      expect(recordingMarkerListeners.length).toBeGreaterThan(0)
+    })
+    // The shortcut path pushes its outcome from main; the HUD must not crash on it.
+    act(() => {
+      for (const listener of recordingMarkerListeners) {
+        listener({ added: true, timeMs: 1_000, count: 1 })
+      }
+    })
+  })
+})
+
+describe('LaunchWindow camera preview (D3)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', StubResizeObserver)
+    resizeObservers.length = 0
+    window.localStorage.clear()
+    window.localStorage.setItem('capturia.includeCamera', '1')
+    selectedSourceChangedListeners = []
+    sourceSelectorClosedListeners = []
+    recordingMarkerListeners = []
+    mainSelectedSource = null
+    stubElectronAPI()
+    cameraTracks = []
+    cameraGetUserMedia.mockClear()
+  })
+
+  afterEach(() => {
+    cleanup()
+    vi.unstubAllGlobals()
+  })
+
+  /** Opens the camera popover and clicks "Preview camera". */
+  async function startPreview() {
+    fireEvent.click(await screen.findByTestId('launch-camera-shape-button'))
+    fireEvent.click(await screen.findByTestId('launch-camera-preview-start'))
+    await waitFor(() => {
+      expect(cameraGetUserMedia).toHaveBeenCalledTimes(1)
+    })
+  }
+
+  it('keeps the camera off until the user asks for a preview', async () => {
+    render(<LaunchWindow />)
+    fireEvent.click(await screen.findByTestId('launch-camera-shape-button'))
+    await screen.findByTestId('launch-camera-preview-start')
+    expect(cameraGetUserMedia).not.toHaveBeenCalled()
+  })
+
+  it('names the camera light in the preview button hint', async () => {
+    render(<LaunchWindow />)
+    fireEvent.click(await screen.findByTestId('launch-camera-shape-button'))
+    expect(await screen.findByTestId('launch-camera-preview-start')).toHaveAttribute(
+      'title',
+      'The camera light turns on while the preview is open.',
+    )
+  })
+
+  it('opens a small video-only stream once Preview is clicked', async () => {
+    render(<LaunchWindow />)
+    await startPreview()
+    expect(cameraGetUserMedia.mock.calls[0][0]).toMatchObject({
+      audio: false,
+      video: { width: 320, height: 320, frameRate: 24 },
+    })
+    await screen.findByTestId('launch-camera-preview-video')
+  })
+
+  it('stops the preview before the recording starts', async () => {
+    render(<LaunchWindow />)
+    await waitForSourceSelectionSubscription()
+    emitSelectedSourceChanged(displayOneSource)
+    await startPreview()
+    expect(cameraTracks.every((track) => track.stopped)).toBe(false)
+
+    fireEvent.click(screen.getByTestId('launch-record-button'))
+
+    // Synchronous: the camera is free before the recorder is asked for it.
+    expect(cameraTracks.every((track) => track.stopped)).toBe(true)
+  })
+
+  it('stops the preview when the popover closes', async () => {
+    render(<LaunchWindow />)
+    await startPreview()
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    await waitFor(() => {
+      expect(cameraTracks.every((track) => track.stopped)).toBe(true)
     })
   })
 })

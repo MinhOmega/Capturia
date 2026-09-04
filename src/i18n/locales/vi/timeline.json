@@ -41,5 +41,6 @@
 	"moreActions": "Thêm thao tác dòng thời gian",
 	"resetAllEdits": "Đặt lại mọi cắt xén và chia đoạn",
 	"resetAllEditsConfirm": "Mọi lần chia, đoạn đã xóa và tốc độ từng đoạn sẽ bị bỏ, bản ghi trở lại thành một đoạn nguyên vẹn ở tốc độ thường. Thu phóng, chú thích và làm mờ vẫn được giữ. Thao tác này có thể hoàn tác.",
-	"resetAllEditsConfirmAction": "Đặt lại"
+	"resetAllEditsConfirmAction": "Đặt lại",
+	"recordingMarkerAt": "Khoảnh khắc được đánh dấu khi ghi tại {{time}} — nhấp để nhảy tới đây"
 }
