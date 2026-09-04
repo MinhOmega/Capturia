@@ -165,7 +165,7 @@ function draw(timeMs) {
   // The timecode: which instant of the programme this frame shows, so a test
   // never has to assume the recorder stamped it where it was drawn.
   const tc = FIXTURE.timecode
-  const code = Math.min(255, Math.max(0, Math.round(timeMs / tc.stepMs)))
+  const code = Math.min((1 << tc.bits) - 1, Math.max(0, Math.round(timeMs / tc.stepMs)))
   for (let bit = 0; bit < tc.bits; bit++) {
     ctx.fillStyle = code & (1 << bit) ? '#ffffff' : '#000000'
     ctx.fillRect(tc.x + bit * tc.cellWidth, tc.y, tc.cellWidth, tc.cellHeight)

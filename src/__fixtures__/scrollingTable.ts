@@ -54,18 +54,24 @@ export const SCROLLING_TABLE_FIXTURE = {
  * the toolbar, clear of the columns the tracker profiles.
  */
 export const FIXTURE_TIMECODE = {
-  x: 384,
+  x: 380,
   y: 4,
-  cellWidth: 10,
+  cellWidth: 8,
   cellHeight: 8,
-  bits: 8,
-  /** One code step, ms. 8 bits x 25 ms covers the six-second clip. */
-  stepMs: 25,
+  bits: 12,
+  /**
+   * One code step, ms. Fine enough that the quantisation is small against the
+   * fastest movement in the clip: at 550 px/s a 25 ms step was 14 px, most of a
+   * row, and the "did the blur stay on the content" measurement was reading its
+   * own resolution rather than the tracker.
+   */
+  stepMs: 5,
 } as const
 
 /** The code drawn into the frame showing programme time `timeMs`. */
 export function encodeTimecode(timeMs: number): number {
-  return Math.min(255, Math.max(0, Math.round(timeMs / FIXTURE_TIMECODE.stepMs)))
+  const max = (1 << FIXTURE_TIMECODE.bits) - 1
+  return Math.min(max, Math.max(0, Math.round(timeMs / FIXTURE_TIMECODE.stepMs)))
 }
 
 /** The programme time a decoded code stands for, ms. */

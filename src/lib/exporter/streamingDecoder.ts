@@ -770,7 +770,12 @@ export class StreamingVideoDecoder {
 
     const startSec = Math.max(0, range.startSec)
     const endSec = Math.max(startSec, range.endSec)
-    const aborted = (): boolean => this.cancelled || options.signal?.aborted === true
+    // Set once the consumer has stopped taking frames, for any reason. Without
+    // it a callback that throws leaves the feed loop spinning on backpressure
+    // that nobody will ever drain, and the whole call hangs instead of
+    // reporting the error.
+    let stopped = false
+    const aborted = (): boolean => stopped || this.cancelled || options.signal?.aborted === true
 
     const pendingFrames: VideoFrame[] = []
     let frameResolve: ((frame: VideoFrame | null) => void) | null = null
@@ -854,6 +859,7 @@ export class StreamingVideoDecoder {
         await onFrame(frame, timestampMs)
       }
     } finally {
+      stopped = true
       try {
         await reader.cancel()
       } catch {

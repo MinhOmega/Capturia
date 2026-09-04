@@ -87,6 +87,12 @@ export interface TrackBlurRegionResult {
   /** Wall time spent analysing, ms, and how many frames that was. */
   analyseMs: number
   analysedSamples: number
+  /**
+   * Wall time of each frame handed to the analyser, ms. Diagnostic only - the
+   * benchmark reports the median and the 90th percentile from it, which a mean
+   * over a run that includes the JIT warming up would hide.
+   */
+  analyseDurationsMs: number[]
   /** False when the run had to copy frames through `ImageBitmap` to reach the worker. */
   transferredVideoFrames: boolean
 }
@@ -471,6 +477,7 @@ export async function trackBlurRegion(
   let decodeMs = 0
   let analyseMs = 0
   let analysed = 0
+  const analyseDurationsMs: number[] = []
   const reportDecoded = (timeMs: number): void => {
     const reached = Math.min(totalMs, Math.abs(timeMs - anchorMs))
     if (reached <= decodedMs) return
@@ -541,7 +548,9 @@ export async function trackBlurRegion(
           }
           const analyseStart = performance.now()
           const produced = await analyser.push(frame, timeMs)
-          analyseMs += performance.now() - analyseStart
+          const elapsed = performance.now() - analyseStart
+          analyseMs += elapsed
+          if (produced.length > 0) analyseDurationsMs.push(elapsed / produced.length)
           analysed += produced.length
           for (const sample of produced) samples.push(sample)
         })
@@ -558,7 +567,9 @@ export async function trackBlurRegion(
           throwIfAborted(signal)
           const analyseStart = performance.now()
           const produced = await analyser.push(held.image, held.timeMs)
-          analyseMs += performance.now() - analyseStart
+          const elapsed = performance.now() - analyseStart
+          analyseMs += elapsed
+          if (produced.length > 0) analyseDurationsMs.push(elapsed / produced.length)
           analysed += produced.length
           for (const sample of produced) samples.push(sample)
         }
@@ -599,7 +610,9 @@ export async function trackBlurRegion(
           throwIfAborted(signal)
           const analyseStart = performance.now()
           const produced = await analyser.push(held.image, -held.timeMs)
-          analyseMs += performance.now() - analyseStart
+          const elapsed = performance.now() - analyseStart
+          analyseMs += elapsed
+          if (produced.length > 0) analyseDurationsMs.push(elapsed / produced.length)
           analysed += produced.length
           for (const sample of produced) samples.push({ ...sample, timeMs: -sample.timeMs })
         }
@@ -627,6 +640,7 @@ export async function trackBlurRegion(
     decodeMs,
     analyseMs,
     analysedSamples: analysed,
+    analyseDurationsMs,
     transferredVideoFrames,
   }
 }
