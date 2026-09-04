@@ -31,3 +31,11 @@ export type {
   TranscribeMono16kResult,
 } from './transcribe'
 export { transcribeMono16kToSegments } from './transcribe'
+export {
+  computeRmsEnvelope,
+  MIN_SNAP_SHIFT_MS,
+  RMS_FRAME_MS,
+  SNAP_WINDOW_MS,
+  snapBoundaryMs,
+  snapCaptionSegmentBoundaries,
+} from './wordBoundarySnap'

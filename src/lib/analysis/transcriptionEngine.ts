@@ -17,6 +17,8 @@ import {
   type TranscribeMono16kResult,
   transcribeMono16kToSegments,
 } from '@/lib/captioning/transcribe'
+import { snapCaptionSegmentBoundaries } from '@/lib/captioning/wordBoundarySnap'
+import { TRANSCRIBE_SAMPLE_RATE } from '@/lib/captioning/transcribeCore'
 import type { TranscriptionEngineId, VideoAnalysisResult, VideoTranscriptionResult } from './types'
 import { buildVideoAnalysisResult } from './videoAnalysisPipeline'
 import { captionSegmentsToTranscriptWords } from './whisperWords'
@@ -112,6 +114,16 @@ export type NativeAnalysisApi = Pick<
 >
 
 export const NATIVE_POLL_INTERVAL_MS = 900
+
+/**
+ * Boundary snapping (P2-F4) is deliberately *not* applied to this engine.
+ * `SFSpeechRecognizer` already returns per-word timings taken from its own
+ * acoustic alignment, and the renderer never holds this path's audio buffer —
+ * enabling it would mean decoding the whole recording a second time in the
+ * renderer purely to second-guess the OS. It stays off until someone can
+ * measure the two alignments against each other on a Mac; this branch was
+ * developed on Linux, where the native engine cannot run at all.
+ */
 
 export function createNativeSpeechEngine(
   api: NativeAnalysisApi = window.electronAPI,
@@ -265,7 +277,15 @@ export function createWhisperWebEngine(
         signal: request.signal,
         onStatus: (phase) => request.onStatus?.(phase),
       })
-      const shifted = shiftSegmentsBySeconds(raw, trimmed.trimSec)
+      // Whisper's boundaries sit on its own coarse grid and regularly clip a
+      // word; the audio it was given says where the word really ends (P2-F4).
+      const snapped: TranscribeMono16kResult = {
+        granularity: raw.granularity,
+        segments: snapCaptionSegmentBoundaries(raw.segments, trimmed.samples, {
+          sampleRate: TRANSCRIBE_SAMPLE_RATE,
+        }),
+      }
+      const shifted = shiftSegmentsBySeconds(snapped, trimmed.trimSec)
       const words = captionSegmentsToTranscriptWords(shifted.segments, shifted.granularity)
       if (words.length === 0) {
         return {

@@ -321,8 +321,11 @@ describe('createWhisperWebEngine', () => {
     expect(result.success).toBe(true)
     expect(result.truncated).toBe(true)
     expect(result.words?.map((w) => w.text)).toEqual(['xin', 'chào'])
-    // Leading silence trim = 2.0 s - 0.12 s pre-roll; segment start 0.2 s -> ~2.08 s.
-    expect(result.words?.[0]?.startMs).toBe(2_080)
+    // Leading silence trim = 2.0 s - 0.12 s pre-roll, so the worker sees speech
+    // from 0.12 s and reported a start of 0.2 s — 80 ms into the first word.
+    // Boundary snapping (P2-F4) pulls it back to the last quiet 10 ms frame
+    // before the speech starts, 0.11 s, which lands at 1.99 s on the timeline.
+    expect(result.words?.[0]?.startMs).toBe(1_990)
     expect(result.words?.every((w) => w.synthetic)).toBe(true)
     expect(phases).toEqual(['audio'])
   })
