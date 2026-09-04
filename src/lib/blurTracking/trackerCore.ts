@@ -140,6 +140,19 @@ export interface TrackerSample {
   reacquired: boolean
 }
 
+/** Opaque state of a tracker at one instant. See {@link BlurTracker.snapshot}. */
+export interface TrackerSnapshot {
+  x: number
+  y: number
+  velocityX: number
+  velocityY: number
+  state: TrackerState
+  tentativeStreak: number
+  lostSampleCount: number
+  lastTimeMs: number
+  previousCoarse: GrayImage | null
+}
+
 export type TrackerCreateResult =
   | { ok: true; tracker: BlurTracker }
   | { ok: false; reason: 'low-detail'; stdDev: number }
@@ -733,6 +746,42 @@ export class BlurTracker {
       ok: true,
       tracker: new BlurTracker({ template, coarseTemplate, rect, frame, patchScale, anchorMs }),
     }
+  }
+
+  /**
+   * The whole mutable state of a track, so an interval can be replayed.
+   *
+   * Densification only knows an interval needs filling in *after* both of its
+   * ends have been analysed (§1.8), and the tracker is sequential: the frames
+   * in between have to be run with the state as it was at the start of the
+   * interval, not after it. Rewinding is what makes the densified result
+   * identical to having analysed every frame from the beginning.
+   */
+  snapshot(): TrackerSnapshot {
+    return {
+      x: this.x,
+      y: this.y,
+      velocityX: this.velocityX,
+      velocityY: this.velocityY,
+      state: this.state,
+      tentativeStreak: this.tentativeStreak,
+      lostSampleCount: this.lostSampleCount,
+      lastTimeMs: this.lastTimeMs,
+      previousCoarse: this.previousCoarse,
+    }
+  }
+
+  restore(snapshot: TrackerSnapshot): void {
+    this.x = snapshot.x
+    this.y = snapshot.y
+    this.velocityX = snapshot.velocityX
+    this.velocityY = snapshot.velocityY
+    this.state = snapshot.state
+    this.tentativeStreak = snapshot.tentativeStreak
+    this.lostSampleCount = snapshot.lostSampleCount
+    this.lastTimeMs = snapshot.lastTimeMs
+    this.previousCoarse = snapshot.previousCoarse
+    this.coarseCache = null
   }
 
   /** Scale the fine template is held at, for the benchmark and the tests. */
