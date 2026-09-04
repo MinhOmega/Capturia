@@ -89,6 +89,8 @@ import {
   CAPTION_ENGINE_SETTINGS,
   type CaptionEngineSetting,
 } from '@/lib/captioning/captionEngineSetting'
+import type { SubtitleStyle } from '@/lib/rendering/subtitleStyle'
+import { SubtitleStylePanel } from './SubtitleStylePanel'
 
 const GRADIENTS = BACKGROUND_GRADIENT_PRESETS
 const ZOOM_FOCUS_MODES: readonly ZoomFocusMode[] = ['manual', 'auto']
@@ -214,6 +216,9 @@ interface SettingsPanelProps {
   /** C-1: which engine "Generate Subtitles" uses (native macOS speech / on-device Whisper). */
   captionEngine?: CaptionEngineSetting
   onCaptionEngineChange?: (engine: CaptionEngineSetting) => void
+  /** P2-F1: caption look, shared by the preview overlay and the export renderer. */
+  subtitleStyle?: SubtitleStyle
+  onSubtitleStyleChange?: (patch: Partial<SubtitleStyle>) => void
   seekStepSeconds?: number
   onSeekStepSecondsChange?: (step: number) => void
   // Timeline section (W2-b)
@@ -394,6 +399,8 @@ export function SettingsPanel({
   roughCutSuggestionCount = 0,
   captionEngine = 'auto',
   onCaptionEngineChange,
+  subtitleStyle,
+  onSubtitleStyleChange,
   seekStepSeconds = 5,
   onSeekStepSecondsChange,
   showTimelineWaveform = false,
@@ -1063,6 +1070,13 @@ export function SettingsPanel({
                 ))}
               </div>
             </div>
+          )}
+          {subtitleStyle && onSubtitleStyleChange && (
+            <SubtitleStylePanel
+              style={subtitleStyle}
+              onChange={onSubtitleStyleChange}
+              disabled={analysisRunning}
+            />
           )}
         </div>
 

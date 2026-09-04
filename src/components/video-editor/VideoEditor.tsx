@@ -137,6 +137,12 @@ import { isModalDialogOpen } from '@/lib/modalDialog'
 import { generateAutoZoomDrafts } from '@/lib/autoEdit/screenStudioAutoZoom'
 import type { RoughCutSuggestion, SubtitleCue } from '@/lib/analysis/types'
 import { normalizeSubtitleCues } from '@/lib/analysis/subtitleTrack'
+import {
+  DEFAULT_SUBTITLE_STYLE,
+  isDefaultSubtitleStyle,
+  normalizeSubtitleStyle,
+  type SubtitleStyle,
+} from '@/lib/rendering/subtitleStyle'
 import { normalizeRoughCutSuggestions } from '@/lib/analysis/roughCutEngine'
 import { applyRoughCutSuggestionsToAudioEdits } from '@/lib/analysis/roughCutApply'
 import {
@@ -584,6 +590,7 @@ export default function VideoEditor() {
   const [cursorTrack, setCursorTrack] = useState<CursorTrack | null>(null)
   const [cursorStyle, setCursorStyle] = useState<CursorStyleConfig>(DEFAULT_CURSOR_STYLE)
   const [subtitleCues, setSubtitleCues] = useState<SubtitleCue[]>([])
+  const [subtitleStyle, setSubtitleStyle] = useState<SubtitleStyle>(DEFAULT_SUBTITLE_STYLE)
   const [roughCutSuggestions, setRoughCutSuggestions] = useState<RoughCutSuggestion[]>([])
   const [analysisInProgress, setAnalysisInProgress] = useState(false)
   // C-1: one in-flight "Generate subtitles" run (native or Whisper); aborted on unmount / video change.
@@ -1107,6 +1114,10 @@ export default function VideoEditor() {
               if (Array.isArray(s.subtitleCues) && s.subtitleCues.length > 0) {
                 setSubtitleCues(s.subtitleCues as SubtitleCue[])
               }
+              // Caption look (P2-F1); absent in older projects, which keep the default.
+              if (s.subtitleStyle && typeof s.subtitleStyle === 'object') {
+                setSubtitleStyle(normalizeSubtitleStyle(s.subtitleStyle))
+              }
               // Restore GIF export settings (v1.1)
               if (typeof s.gifFrameRate === 'number')
                 setGifFrameRate(s.gifFrameRate as GifFrameRate)
@@ -1227,6 +1238,8 @@ export default function VideoEditor() {
         playheadPosition: currentTimeRef.current,
         cursorStyle,
         subtitleCues: subtitleCues as ProjectState['subtitleCues'],
+        // Omitted while untouched so an older project re-saves without gaining a key.
+        ...(isDefaultSubtitleStyle(subtitleStyle) ? {} : { subtitleStyle }),
         gifFrameRate,
         gifLoop,
         gifSizePreset,
@@ -1267,6 +1280,7 @@ export default function VideoEditor() {
     previewPlaybackRate,
     cursorStyle,
     subtitleCues,
+    subtitleStyle,
     gifFrameRate,
     gifLoop,
     gifSizePreset,
@@ -2789,6 +2803,11 @@ export default function VideoEditor() {
     saveCaptionEngineSetting(value)
   }, [])
 
+  /** Caption look; normalized here so a bad value can never reach the renderers. */
+  const handleSubtitleStyleChange = useCallback((patch: Partial<SubtitleStyle>) => {
+    setSubtitleStyle((previous) => normalizeSubtitleStyle({ ...previous, ...patch }))
+  }, [])
+
   useEffect(() => {
     return () => {
       cancelCaptionGeneration()
@@ -3232,6 +3251,7 @@ export default function VideoEditor() {
             cropRegion: activeCropRegion,
             annotationRegions,
             subtitleCues,
+            subtitleStyle,
             previewWidth,
             previewHeight,
             cursorTrack,
@@ -3386,6 +3406,7 @@ export default function VideoEditor() {
               cropRegion: cropRegionForRatio,
               annotationRegions,
               subtitleCues,
+              subtitleStyle,
               previewWidth,
               previewHeight,
               cursorTrack,
@@ -3531,6 +3552,7 @@ export default function VideoEditor() {
       sourceAspectRatio,
       annotationRegions,
       subtitleCues,
+      subtitleStyle,
       isPlaying,
       normalizedExportAspectRatios,
       exportQuality,
@@ -3770,6 +3792,8 @@ export default function VideoEditor() {
         playheadPosition: currentTimeRef.current,
         cursorStyle,
         subtitleCues: subtitleCues as ProjectState['subtitleCues'],
+        // Omitted while untouched so an older project re-saves without gaining a key.
+        ...(isDefaultSubtitleStyle(subtitleStyle) ? {} : { subtitleStyle }),
         gifFrameRate,
         gifLoop,
         gifSizePreset,
@@ -3807,6 +3831,7 @@ export default function VideoEditor() {
     previewPlaybackRate,
     cursorStyle,
     subtitleCues,
+    subtitleStyle,
     gifFrameRate,
     gifLoop,
     gifSizePreset,
@@ -4134,6 +4159,7 @@ export default function VideoEditor() {
                       onAnnotationPositionChange={handleAnnotationPositionChange}
                       onAnnotationSizeChange={handleAnnotationSizeChange}
                       subtitleCues={subtitleCues}
+                      subtitleStyle={subtitleStyle}
                       cursorTrack={cursorTrack}
                       cursorStyle={cursorStyle}
                       hasAudioTrack={sourceHasAudio}
@@ -4382,6 +4408,8 @@ export default function VideoEditor() {
               captionEngine={captionEngine}
               onCaptionEngineChange={handleCaptionEngineChange}
               subtitleCueCount={subtitleCues.length}
+              subtitleStyle={subtitleStyle}
+              onSubtitleStyleChange={handleSubtitleStyleChange}
               roughCutSuggestionCount={roughCutSuggestions.length}
               seekStepSeconds={seekStepSeconds}
               onSeekStepSecondsChange={setSeekStepSeconds}

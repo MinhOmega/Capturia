@@ -51,6 +51,7 @@ import {
   getEffectiveDurationMsWithSegments,
 } from '@/lib/trim/timeMapping'
 import type { SubtitleCue } from '@/lib/analysis/types'
+import type { SubtitleStyle } from '@/lib/rendering/subtitleStyle'
 import { frameDurationUs, frameIndexToTimestampUs, normalizeFrameRate } from './frameClock'
 import type { CursorStyleConfig, CursorTrack } from '@/lib/cursor'
 import {
@@ -100,6 +101,7 @@ export interface VideoExporterConfig extends ExportConfig {
   cropRegion: CropRegion
   annotationRegions?: AnnotationRegion[]
   subtitleCues?: SubtitleCue[]
+  subtitleStyle?: SubtitleStyle
   audioEditRegions?: AudioEditRegion[]
   previewWidth?: number
   previewHeight?: number
@@ -1589,6 +1591,7 @@ export class VideoExporter {
         videoHeight: videoInfo.height,
         annotationRegions: this.config.annotationRegions,
         subtitleCues: this.config.subtitleCues,
+        subtitleStyle: this.config.subtitleStyle,
         previewWidth: this.config.previewWidth,
         previewHeight: this.config.previewHeight,
         cursorTrack: this.config.cursorTrack,

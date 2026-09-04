@@ -43,7 +43,12 @@ import {
 } from './gradientParser'
 import type { SubtitleCue } from '@/lib/analysis/types'
 import { findSubtitleCueAtTime, normalizeSubtitleCues } from '@/lib/analysis/subtitleTrack'
-import { buildSubtitleLines } from '@/lib/rendering/subtitleLayout'
+import {
+  DEFAULT_SUBTITLE_STYLE,
+  normalizeSubtitleStyle,
+  type SubtitleStyle,
+} from '@/lib/rendering/subtitleStyle'
+import { renderSubtitleCue } from './subtitleRenderer'
 import {
   createCursorMotionBlurState,
   drawCompositedCursor,
@@ -74,6 +79,8 @@ interface FrameRenderConfig {
   videoHeight: number
   annotationRegions?: AnnotationRegion[]
   subtitleCues?: SubtitleCue[]
+  /** Caption look; missing (older projects) means the built-in default. */
+  subtitleStyle?: SubtitleStyle
   previewWidth?: number
   previewHeight?: number
   cursorTrack?: CursorTrack | null
@@ -166,6 +173,7 @@ export class FrameRenderer {
   private currentVideoTime = 0
   private currentVideoSource: HTMLVideoElement | VideoFrame | null = null
   private subtitleCues: SubtitleCue[]
+  private subtitleStyle: SubtitleStyle
   // Cached CSS filter string — constant across frames, computed once.
   private cachedShadowFilter: string | null = null
 
@@ -173,6 +181,9 @@ export class FrameRenderer {
     this.config = config
     this.isLinux = config.platform === 'linux'
     this.subtitleCues = normalizeSubtitleCues(config.subtitleCues ?? [])
+    this.subtitleStyle = config.subtitleStyle
+      ? normalizeSubtitleStyle(config.subtitleStyle)
+      : DEFAULT_SUBTITLE_STYLE
     this.cursorTelemetry = buildCursorTelemetry(config.cursorTrack)
     this.animationState = {
       scale: 1,
@@ -624,73 +635,18 @@ export class FrameRenderer {
     }
 
     const cue = findSubtitleCueAtTime(this.subtitleCues, timeMs)
-    if (!cue || !cue.text.trim()) {
+    if (!cue) {
       return
     }
 
-    const ctx = this.compositeCtx
-    const width = this.config.width
-    const height = this.config.height
-    const fontSize = Math.max(16, Math.min(52, Math.round(height * 0.032)))
-    const maxCharsPerLine = Math.max(8, Math.round((width * 0.82) / 38))
-    const lines = buildSubtitleLines(cue.text, maxCharsPerLine, 2)
-    if (lines.length === 0) {
-      return
-    }
-
-    const fontFamily = `-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC","Microsoft YaHei",sans-serif`
-    const lineHeight = Math.round(fontSize * 1.28)
-    const horizontalPadding = Math.round(fontSize * 0.72)
-    const verticalPadding = Math.round(fontSize * 0.42)
-    const bottomMargin = Math.round(height * 0.06)
-    const radius = Math.max(8, Math.round(fontSize * 0.45))
-
-    ctx.save()
-    ctx.font = `700 ${fontSize}px ${fontFamily}`
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-
-    const textWidth = lines.reduce((max, line) => Math.max(max, ctx.measureText(line).width), 0)
-    const boxWidth = Math.min(width * 0.9, textWidth + horizontalPadding * 2)
-    const boxHeight = lines.length * lineHeight + verticalPadding * 2
-    const boxX = (width - boxWidth) / 2
-    const boxY = height - bottomMargin - boxHeight
-
-    this.drawRoundedRect(ctx, boxX, boxY, boxWidth, boxHeight, radius)
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.72)'
-    ctx.fill()
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)'
-    ctx.lineWidth = 1
-    ctx.stroke()
-
-    ctx.fillStyle = '#FFFFFF'
-    lines.forEach((line, index) => {
-      const y = boxY + verticalPadding + lineHeight * (index + 0.5)
-      ctx.fillText(line, width / 2, y)
-    })
-    ctx.restore()
-  }
-
-  private drawRoundedRect(
-    ctx: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    width: number,
-    height: number,
-    radius: number,
-  ): void {
-    const safeRadius = Math.max(0, Math.min(radius, Math.min(width, height) / 2))
-    ctx.beginPath()
-    ctx.moveTo(x + safeRadius, y)
-    ctx.lineTo(x + width - safeRadius, y)
-    ctx.arcTo(x + width, y, x + width, y + safeRadius, safeRadius)
-    ctx.lineTo(x + width, y + height - safeRadius)
-    ctx.arcTo(x + width, y + height, x + width - safeRadius, y + height, safeRadius)
-    ctx.lineTo(x + safeRadius, y + height)
-    ctx.arcTo(x, y + height, x, y + height - safeRadius, safeRadius)
-    ctx.lineTo(x, y + safeRadius)
-    ctx.arcTo(x, y, x + safeRadius, y, safeRadius)
-    ctx.closePath()
+    renderSubtitleCue(
+      this.compositeCtx,
+      cue,
+      timeMs,
+      this.subtitleStyle,
+      this.config.width,
+      this.config.height,
+    )
   }
 
   /** Draws the composited cursor onto `ctx` (composite or, when tilting, the foreground canvas). */
