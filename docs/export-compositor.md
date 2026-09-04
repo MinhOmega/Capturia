@@ -92,6 +92,39 @@ cached path composites in three 8-bit steps instead of two and the recovered
 shadow alpha is quantised. The test fails above a per-channel delta of 2 or
 above 2 % of pixels differing.
 
+## Encoder queue depth
+
+`resolveMaxEncodeQueue` allows 120 frames in the `VideoEncoder` queue for a
+hardware encoder and 32 for a software one. A deep queue is only useful while
+the encoder is the slower half of the pipeline — it lets the render loop run
+ahead — and every queued frame keeps a `VideoFrame` alive, so the depth is paid
+for in memory.
+
+Measured on a real 1080p export of the generated fixture
+(`src/lib/exporter/encoderQueueDepth.browser.test.ts`, 120 frames, shadow on,
+Linux readback path), with renderer resident memory sampled from outside the
+page by `scripts/sample-renderer-rss.mjs` (`performance.memory` only sees the JS
+heap, and a queued frame lives in native memory):
+
+| Depth | wall | ms/frame | peak queue occupancy | peak renderer RSS | mean renderer RSS |
+|---|---|---|---|---|---|
+| 120 | 218.8 s | 1823.3 | **2** | 823.1 MB | 774.8 MB |
+| 32 | 309.0 s | 2574.7 | **2** | 794.8 MB | 725.8 MB |
+
+The peak occupancy is the answer: **the queue never held more than two frames at
+either setting**, so neither limit was ever reached and neither can have
+affected anything. The renderer is far slower than the encoder on this path, and
+the wall-time gap between the two runs is machine load, not queue depth — a
+limit that is never hit cannot make an export 90 seconds slower. Memory differs
+by 28 MB (3.4 %), which is the same noise.
+
+**Nothing was changed.** Lowering the Linux value would have saved memory that
+is not being used and risked capping a machine where the encoder *is* the
+bottleneck. `capturia.exportEncoderQueueDepth` in localStorage (or
+`VideoExporterConfig.maxEncodeQueue`) overrides it, and
+`VideoExporter.peakEncodeQueue` reports the occupancy, so the question can be
+re-measured on hardware where the balance is different.
+
 ## Escape hatch
 
 `legacyCompositor` puts the renderer back on the allocate-per-frame path, so a

@@ -8,9 +8,12 @@ import {
   getSeekToleranceSeconds,
   normalizeTrimRanges,
   ExportEncoderError,
+  ENCODER_QUEUE_DEPTH_STORAGE_KEY,
   SOFTWARE_FIRST_ENCODER_PLATFORMS,
   buildEncoderAttempts,
   getEncoderPreferences,
+  readEncoderQueueDepthOverride,
+  resolveMaxEncodeQueue,
   readExportDecodePathOverride,
   shouldSeekToTime,
   waitForEncoderQueueSpace,
@@ -946,5 +949,62 @@ describe('buildEncoderAttempts', () => {
   it('defaults to H.264 when no codec was configured', () => {
     expect(buildEncoderAttempts(undefined, 'linux').every((a) => a.codec === H264)).toBe(true)
     expect(buildEncoderAttempts(undefined, 'linux')).toHaveLength(2)
+  })
+})
+
+describe('resolveMaxEncodeQueue', () => {
+  it('feeds a hardware encoder deeply so the render loop never waits on it', () => {
+    expect(resolveMaxEncodeQueue({ hardwareAcceleration: 'prefer-hardware' })).toBe(120)
+  })
+
+  it('keeps a software encoder shallow, because each queued frame is held memory', () => {
+    expect(resolveMaxEncodeQueue({ hardwareAcceleration: 'prefer-software' })).toBe(32)
+  })
+
+  it('honours an explicit override, which is how one depth is measured against another', () => {
+    expect(resolveMaxEncodeQueue({ hardwareAcceleration: 'prefer-hardware', override: 32 })).toBe(
+      32,
+    )
+    expect(resolveMaxEncodeQueue({ hardwareAcceleration: 'prefer-software', override: 120 })).toBe(
+      120,
+    )
+  })
+
+  it.each([[0], [-4], [Number.NaN], [undefined]])(
+    'ignores the nonsense override %j and keeps the default',
+    (override) => {
+      expect(resolveMaxEncodeQueue({ hardwareAcceleration: 'prefer-hardware', override })).toBe(120)
+    },
+  )
+})
+
+describe('readEncoderQueueDepthOverride', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function stubStorage(value: string | null) {
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => (key === ENCODER_QUEUE_DEPTH_STORAGE_KEY ? value : null),
+    })
+  }
+
+  it('reads a positive integer', () => {
+    stubStorage('32')
+    expect(readEncoderQueueDepthOverride()).toBe(32)
+  })
+
+  it.each([[null], [''], ['0'], ['-1'], ['deep']])('ignores %j', (value) => {
+    stubStorage(value)
+    expect(readEncoderQueueDepthOverride()).toBeUndefined()
+  })
+
+  it('survives a storage that throws', () => {
+    vi.stubGlobal('localStorage', {
+      getItem: () => {
+        throw new Error('denied')
+      },
+    })
+    expect(readEncoderQueueDepthOverride()).toBeUndefined()
   })
 })

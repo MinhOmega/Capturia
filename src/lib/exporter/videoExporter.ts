@@ -133,6 +133,12 @@ export interface VideoExporterConfig extends ExportConfig {
    */
   sourceFrameRate?: number
   /**
+   * Encoder queue depth override, for benchmarking one depth against another.
+   * Absent means the `capturia.exportEncoderQueueDepth` override, else the
+   * platform default (`resolveMaxEncodeQueue`).
+   */
+  maxEncodeQueue?: number
+  /**
    * Forces the pre-cache export compositor (see `compositorKeys.ts`). Absent
    * means "follow the `capturia.exportLegacyCompositor` override, else off".
    */
@@ -233,6 +239,46 @@ const ENCODER_STALL_TIMEOUT_MS = 15_000
 const ENCODER_FLUSH_TIMEOUT_MS = 20_000
 /** Software encoders get a shorter queue so Windows does not balloon memory. */
 const SOFTWARE_ENCODER_MAX_QUEUE = 32
+/** Hardware encoders are fed deeply so the render loop never waits on them. */
+const HARDWARE_ENCODER_MAX_QUEUE = 120
+/**
+ * `localStorage` key that overrides the encoder queue depth, for measuring one
+ * depth against another on a real export without a rebuild.
+ */
+export const ENCODER_QUEUE_DEPTH_STORAGE_KEY = 'capturia.exportEncoderQueueDepth'
+
+/**
+ * How many frames may sit in the encoder's queue before the render loop waits.
+ *
+ * Deeper is only useful while the encoder is the slower half: it lets the
+ * renderer run ahead. Each queued frame holds a full `VideoFrame` alive, so
+ * depth is paid for in memory — at 1080p RGBA that is about 8 MB a frame.
+ * Software encoders get a shallower queue everywhere, and the caller may pass
+ * an explicit `override` for a measurement.
+ */
+export function resolveMaxEncodeQueue(params: {
+  hardwareAcceleration: HardwareAcceleration
+  override?: number
+}): number {
+  if (Number.isFinite(params.override) && (params.override as number) > 0) {
+    return Math.max(1, Math.round(params.override as number))
+  }
+  return params.hardwareAcceleration === 'prefer-software'
+    ? Math.min(HARDWARE_ENCODER_MAX_QUEUE, SOFTWARE_ENCODER_MAX_QUEUE)
+    : HARDWARE_ENCODER_MAX_QUEUE
+}
+
+/** Reads the queue-depth override; `undefined` when it is unset or unparseable. */
+export function readEncoderQueueDepthOverride(): number | undefined {
+  try {
+    const raw = globalThis.localStorage?.getItem(ENCODER_QUEUE_DEPTH_STORAGE_KEY)
+    if (!raw) return undefined
+    const parsed = Number(raw)
+    return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : undefined
+  } catch {
+    return undefined
+  }
+}
 /** H.264 High 5.1: the codec every platform can encode and every player can read. */
 const DEFAULT_EXPORT_CODEC = EXPORT_VIDEO_CODEC_STRINGS.h264
 /**
@@ -577,8 +623,13 @@ export class VideoExporter {
   private muxer: VideoMuxer | null = null
   private cancelled = false
   private encodeQueue = 0
-  private readonly MAX_ENCODE_QUEUE = 120
-  private maxEncodeQueue = this.MAX_ENCODE_QUEUE
+  /**
+   * Deepest the encoder queue ever got during the run. The number that decides
+   * whether the configured depth matters at all: a queue that never fills is a
+   * queue whose limit is not doing anything.
+   */
+  peakEncodeQueue = 0
+  private maxEncodeQueue = HARDWARE_ENCODER_MAX_QUEUE
   private encoderPreference: HardwareAcceleration = 'prefer-hardware'
   /** Codec of the attempt in flight; `export()` walks it down to H.264 on failure. */
   private activeCodec: string | null = null
@@ -2068,6 +2119,7 @@ export class VideoExporter {
 
     if (this.encoder && this.encoder.state === 'configured') {
       this.encodeQueue++
+      if (this.encodeQueue > this.peakEncodeQueue) this.peakEncodeQueue = this.encodeQueue
       this.encoder.encode(exportFrame, {
         keyFrame: frameIndex % this.getKeyFrameIntervalFrames() === 0,
       })
@@ -2249,10 +2301,10 @@ export class VideoExporter {
     this.chunkCount = 0
     this.fatalEncoderError = null
     this.encoderPreference = hardwareAcceleration
-    this.maxEncodeQueue =
-      hardwareAcceleration === 'prefer-software'
-        ? Math.min(this.MAX_ENCODE_QUEUE, SOFTWARE_ENCODER_MAX_QUEUE)
-        : this.MAX_ENCODE_QUEUE
+    this.maxEncodeQueue = resolveMaxEncodeQueue({
+      hardwareAcceleration,
+      override: this.config.maxEncodeQueue ?? readEncoderQueueDepthOverride(),
+    })
     let videoDescription: Uint8Array | undefined
 
     this.encoder = new VideoEncoder({
@@ -2425,7 +2477,7 @@ export class VideoExporter {
 
     this.muxer = null
     this.encodeQueue = 0
-    this.maxEncodeQueue = this.MAX_ENCODE_QUEUE
+    this.maxEncodeQueue = HARDWARE_ENCODER_MAX_QUEUE
     this.fatalEncoderError = null
     this.muxingChain = Promise.resolve()
     this.muxingError = null
