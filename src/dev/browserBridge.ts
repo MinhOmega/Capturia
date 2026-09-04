@@ -99,6 +99,14 @@ export interface HarnessExport {
   path: string
 }
 
+/** One `saveCaptionSidecar` call, kept in memory instead of written to disk. */
+export interface HarnessCaptionSidecar {
+  path: string
+  format: 'srt' | 'vtt'
+  content: string
+  savedAtMs: number
+}
+
 export interface BrowserHarness {
   /**
    * Deliver a main-process push to whoever subscribed through the matching
@@ -109,6 +117,8 @@ export interface BrowserHarness {
   emit: (channel: string, ...args: unknown[]) => number
   /** Everything `saveExportedVideo` was handed, newest last. */
   exports: HarnessExport[]
+  /** Everything `saveCaptionSidecar` was handed, newest last. */
+  captionSidecars: HarnessCaptionSidecar[]
   /** Offer each captured export as a browser download. Defaults to `true`. */
   autoDownload: boolean
   /** Download a captured export by index (default: the newest). */
@@ -265,6 +275,7 @@ export function createBrowserBridge(): BrowserHarness {
   const fixtureUrl = new URL(FIXTURE_URL_PATH, window.location.origin).toString()
   const listeners = new Map<string, Set<(...args: unknown[]) => void>>()
   const exports: HarnessExport[] = []
+  const captionSidecars: HarnessCaptionSidecar[] = []
   const sidecars = new Map<string, unknown>()
   let selectedSource: unknown = null
 
@@ -517,6 +528,12 @@ export function createBrowserBridge(): BrowserHarness {
       if (harness.autoDownload) downloadExport()
       return { success: true, path }
     },
+    saveCaptionSidecar: async (exportFilePath, format, content) => {
+      const path = `${exportFilePath.replace(/\.[^./]+$/, '')}.${format}`
+      captionSidecars.push({ path, format, content, savedAtMs: Date.now() })
+      note(`saveCaptionSidecar(${path}) captured ${content.length} chars in memory`)
+      return { success: true, path }
+    },
     revealInFolder: async (filePath) => {
       note(`revealInFolder(${filePath}) - no file manager in a browser tab`)
       return { success: true }
@@ -734,6 +751,7 @@ export function createBrowserBridge(): BrowserHarness {
   const harness: BrowserHarness = {
     emit,
     exports,
+    captionSidecars,
     autoDownload: true,
     downloadExport,
     fixtureUrl,

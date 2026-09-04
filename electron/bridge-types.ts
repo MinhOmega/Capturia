@@ -210,6 +210,12 @@ export interface ElectronAPI {
     locale?: string,
     options?: { directoryPath?: string | null; targetFilePath?: string | null },
   ) => Promise<{ success: boolean; path?: string; message?: string; cancelled?: boolean }>
+  saveCaptionSidecar: (
+    exportFilePath: string,
+    format: 'srt' | 'vtt',
+    content: string,
+    locale?: string,
+  ) => Promise<{ success: boolean; path?: string; message?: string; error?: string }>
   openVideoFilePicker: (
     locale?: string,
   ) => Promise<{ success: boolean; path?: string; cancelled?: boolean }>

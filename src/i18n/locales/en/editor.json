@@ -54,6 +54,7 @@
 	"captionFallbackUsed": "The system speech recognizer is not available here, so on-device Whisper was used instead.",
 	"captionAudioTruncated": "The recording is very long; only the first part was captioned.",
 	"captionSidecarSaveFailed": "Subtitles were applied but could not be saved next to the video: {{message}}",
+	"captionSidecarFailed": "Could not write the {{format}} caption file next to the export.",
 	"closeEditor": "Close Editor",
 	"hideSettings": "Hide settings",
 	"showSettings": "Show settings",

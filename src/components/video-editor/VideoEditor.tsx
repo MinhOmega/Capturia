@@ -151,6 +151,11 @@ import {
   splitCueAtTime,
   updateCueText,
 } from '@/lib/captions/captionOps'
+import {
+  buildSubtitleSidecar,
+  isSubtitleSidecarFormat,
+  type SubtitleSidecarFormat,
+} from '@/lib/captions/subtitleExport'
 import { normalizeRoughCutSuggestions } from '@/lib/analysis/roughCutEngine'
 import { applyRoughCutSuggestionsToAudioEdits } from '@/lib/analysis/roughCutApply'
 import {
@@ -600,6 +605,8 @@ export default function VideoEditor() {
   const [cursorStyle, setCursorStyle] = useState<CursorStyleConfig>(DEFAULT_CURSOR_STYLE)
   const [subtitleCues, setSubtitleCues] = useState<SubtitleCue[]>([])
   const [subtitleStyle, setSubtitleStyle] = useState<SubtitleStyle>(DEFAULT_SUBTITLE_STYLE)
+  // P2-F3: caption sidecars written next to the export; empty means none.
+  const [captionSidecarFormats, setCaptionSidecarFormats] = useState<SubtitleSidecarFormat[]>([])
   const [roughCutSuggestions, setRoughCutSuggestions] = useState<RoughCutSuggestion[]>([])
   const [analysisInProgress, setAnalysisInProgress] = useState(false)
   // C-1: one in-flight "Generate subtitles" run (native or Whisper); aborted on unmount / video change.
@@ -1127,6 +1134,10 @@ export default function VideoEditor() {
               if (s.subtitleStyle && typeof s.subtitleStyle === 'object') {
                 setSubtitleStyle(normalizeSubtitleStyle(s.subtitleStyle))
               }
+              // Caption sidecars (P2-F3); unknown formats are dropped rather than kept.
+              if (Array.isArray(s.captionSidecarFormats)) {
+                setCaptionSidecarFormats(s.captionSidecarFormats.filter(isSubtitleSidecarFormat))
+              }
               // Restore GIF export settings (v1.1)
               if (typeof s.gifFrameRate === 'number')
                 setGifFrameRate(s.gifFrameRate as GifFrameRate)
@@ -1249,6 +1260,7 @@ export default function VideoEditor() {
         subtitleCues: subtitleCues as ProjectState['subtitleCues'],
         // Omitted while untouched so an older project re-saves without gaining a key.
         ...(isDefaultSubtitleStyle(subtitleStyle) ? {} : { subtitleStyle }),
+        ...(captionSidecarFormats.length > 0 ? { captionSidecarFormats } : {}),
         gifFrameRate,
         gifLoop,
         gifSizePreset,
@@ -1290,6 +1302,7 @@ export default function VideoEditor() {
     cursorStyle,
     subtitleCues,
     subtitleStyle,
+    captionSidecarFormats,
     gifFrameRate,
     gifLoop,
     gifSizePreset,
@@ -3264,6 +3277,40 @@ export default function VideoEditor() {
     [t, handleSaveUnsavedExport],
   )
 
+  /**
+   * P2-F3: writes `<name>.srt` / `<name>.vtt` next to a video that was just
+   * exported. Cue times are mapped through the same segments the exporter used,
+   * so the sidecar matches the file and not the raw recording.
+   */
+  const writeCaptionSidecars = useCallback(
+    async (exportFilePath: string) => {
+      if (captionSidecarFormats.length === 0 || subtitleCues.length === 0) return
+      for (const format of captionSidecarFormats) {
+        const content = buildSubtitleSidecar(subtitleCues, format, {
+          segments,
+          trimRegions,
+          totalDurationMs: probedSourceDurationMs,
+        })
+        if (!content) continue
+        try {
+          const result = await window.electronAPI.saveCaptionSidecar(
+            exportFilePath,
+            format,
+            content,
+            locale,
+          )
+          if (!result.success) {
+            toast.warning(t('editor.captionSidecarFailed', { format: format.toUpperCase() }))
+          }
+        } catch (error) {
+          console.error('Failed to write caption sidecar:', error)
+          toast.warning(t('editor.captionSidecarFailed', { format: format.toUpperCase() }))
+        }
+      }
+    },
+    [captionSidecarFormats, subtitleCues, segments, trimRegions, probedSourceDurationMs, locale, t],
+  )
+
   const handleExport = useCallback(
     async (settings: ExportSettings, preSelectedSavePath?: string) => {
       if (!videoPath) {
@@ -3366,6 +3413,7 @@ export default function VideoEditor() {
             if (saveResult.cancelled) {
               toast.info(t('editor.exportCancelled'))
             } else if (saveResult.success && saveResult.path) {
+              await writeCaptionSidecars(saveResult.path)
               showExportSuccessToast(saveResult.path)
               setExportedFilePath(saveResult.path)
               rememberExportFolder(saveResult.path)
@@ -3571,6 +3619,7 @@ export default function VideoEditor() {
               break
             } else if (saveResult.success && saveResult.path) {
               completedCount += 1
+              await writeCaptionSidecars(saveResult.path)
               setExportedFilePath(saveResult.path)
               rememberExportFolder(saveResult.path)
               if (ratiosToExport.length === 1) {
@@ -3632,6 +3681,7 @@ export default function VideoEditor() {
       annotationRegions,
       subtitleCues,
       subtitleStyle,
+      writeCaptionSidecars,
       isPlaying,
       normalizedExportAspectRatios,
       exportQuality,
@@ -3873,6 +3923,7 @@ export default function VideoEditor() {
         subtitleCues: subtitleCues as ProjectState['subtitleCues'],
         // Omitted while untouched so an older project re-saves without gaining a key.
         ...(isDefaultSubtitleStyle(subtitleStyle) ? {} : { subtitleStyle }),
+        ...(captionSidecarFormats.length > 0 ? { captionSidecarFormats } : {}),
         gifFrameRate,
         gifLoop,
         gifSizePreset,
@@ -3911,6 +3962,7 @@ export default function VideoEditor() {
     cursorStyle,
     subtitleCues,
     subtitleStyle,
+    captionSidecarFormats,
     gifFrameRate,
     gifLoop,
     gifSizePreset,
@@ -4501,6 +4553,8 @@ export default function VideoEditor() {
               onSubtitleCueMergeNext={handleSubtitleCueMergeNext}
               onSubtitleCueMergePrevious={handleSubtitleCueMergePrevious}
               onSubtitleCueDelete={handleSubtitleCueDelete}
+              captionSidecarFormats={captionSidecarFormats}
+              onCaptionSidecarFormatsChange={setCaptionSidecarFormats}
               roughCutSuggestionCount={roughCutSuggestions.length}
               seekStepSeconds={seekStepSeconds}
               onSeekStepSecondsChange={setSeekStepSeconds}

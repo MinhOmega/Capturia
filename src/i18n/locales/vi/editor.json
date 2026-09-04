@@ -54,6 +54,7 @@
 	"captionFallbackUsed": "Bộ nhận dạng giọng nói của hệ thống không khả dụng ở đây nên đã dùng Whisper trên máy thay thế.",
 	"captionAudioTruncated": "Bản ghi quá dài; chỉ phần đầu được tạo phụ đề.",
 	"captionSidecarSaveFailed": "Đã áp dụng phụ đề nhưng không thể lưu cạnh video: {{message}}",
+	"captionSidecarFailed": "Không ghi được tệp phụ đề {{format}} cạnh bản xuất.",
 	"closeEditor": "Đóng trình chỉnh sửa",
 	"hideSettings": "Ẩn cài đặt",
 	"showSettings": "Hiện cài đặt",

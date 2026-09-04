@@ -80,6 +80,8 @@ const CHANNELS_ADDED_AFTER_DECOMPOSITION = [
   'resume-native-recording',
   'cursor-tracker-pause',
   'cursor-tracker-resume',
+  // P2-F3 caption sidecars beside an export (exportFiles.ts)
+  'save-caption-sidecar',
 ]
 
 const EXPECTED_CHANNELS = [...CHANNELS_BEFORE_DECOMPOSITION, ...CHANNELS_ADDED_AFTER_DECOMPOSITION]

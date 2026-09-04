@@ -520,6 +520,11 @@ export interface ProjectState {
    * project loads and re-saves byte-identical.
    */
   subtitleStyle?: SubtitleStyle
+  /**
+   * Caption sidecars written next to an export (P2-F3): `['srt']`, `['vtt']`,
+   * both, or absent when the user wants none.
+   */
+  captionSidecarFormats?: string[]
   gifFrameRate?: number
   gifLoop?: boolean
   gifSizePreset?: string

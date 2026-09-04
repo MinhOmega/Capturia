@@ -93,6 +93,7 @@ import type { SubtitleStyle } from '@/lib/rendering/subtitleStyle'
 import { SubtitleStylePanel } from './SubtitleStylePanel'
 import { SubtitleCueEditor } from './SubtitleCueEditor'
 import type { SubtitleCue } from '@/lib/analysis/types'
+import { SUBTITLE_SIDECAR_FORMATS, type SubtitleSidecarFormat } from '@/lib/captions/subtitleExport'
 
 const GRADIENTS = BACKGROUND_GRADIENT_PRESETS
 const ZOOM_FOCUS_MODES: readonly ZoomFocusMode[] = ['manual', 'auto']
@@ -230,6 +231,9 @@ interface SettingsPanelProps {
   onSubtitleCueMergeNext?: (id: string) => void
   onSubtitleCueMergePrevious?: (id: string) => void
   onSubtitleCueDelete?: (id: string) => void
+  /** P2-F3: which caption sidecars are written next to the export. */
+  captionSidecarFormats?: SubtitleSidecarFormat[]
+  onCaptionSidecarFormatsChange?: (formats: SubtitleSidecarFormat[]) => void
   seekStepSeconds?: number
   onSeekStepSecondsChange?: (step: number) => void
   // Timeline section (W2-b)
@@ -420,6 +424,8 @@ export function SettingsPanel({
   onSubtitleCueMergeNext,
   onSubtitleCueMergePrevious,
   onSubtitleCueDelete,
+  captionSidecarFormats = [],
+  onCaptionSidecarFormatsChange,
   seekStepSeconds = 5,
   onSeekStepSecondsChange,
   showTimelineWaveform = false,
@@ -2235,6 +2241,44 @@ export function SettingsPanel({
                 />
               </div>
             </div>
+          </div>
+        )}
+
+        {onCaptionSidecarFormatsChange && subtitleCues.length > 0 && (
+          <div className="mb-3 rounded-lg border border-white/10 bg-white/5 p-2">
+            <div className="text-[10px] uppercase tracking-wide text-slate-400">
+              {t('settings.captionSidecars')}
+            </div>
+            <div className="mt-1.5 flex items-center gap-3">
+              {SUBTITLE_SIDECAR_FORMATS.map((format) => {
+                const checked = captionSidecarFormats.includes(format)
+                return (
+                  <label
+                    key={format}
+                    className="flex cursor-pointer items-center gap-1.5 text-[10px] text-slate-300"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() =>
+                        onCaptionSidecarFormatsChange(
+                          checked
+                            ? captionSidecarFormats.filter((entry) => entry !== format)
+                            : [...captionSidecarFormats, format],
+                        )
+                      }
+                      className="h-3 w-3 accent-[#34B27B]"
+                    />
+                    {format === 'srt'
+                      ? t('settings.captionSidecarSrt')
+                      : t('settings.captionSidecarVtt')}
+                  </label>
+                )
+              })}
+            </div>
+            <p className="mt-1.5 text-[10px] leading-snug text-slate-500">
+              {t('settings.captionSidecarsHint')}
+            </p>
           </div>
         )}
 
