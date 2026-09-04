@@ -8,6 +8,8 @@ import {
   isWhisperWebAvailable,
 } from '@/lib/captioning/captionModel'
 import { whisperLanguageForLocale } from '@/lib/captioning/captionConstants'
+import { CAPTION_LANGUAGE_AUTO } from '@/lib/captioning/captionTranscriptionSettings'
+import { applyVocabularyHint, parseVocabularyHint } from '@/lib/captioning/vocabularyHint'
 import { extractMono16kFromVideo } from '@/lib/captioning/extractMono16k'
 import {
   shiftTrimRegionsMsForCaptionBuffer,
@@ -50,8 +52,32 @@ export interface TranscriptionRequest {
   videoWidth: number
   subtitleWidthRatio: number
   trimRegions?: TrimRegion[]
+  /** Whisper weights to run (P2-F4); the default model when omitted. */
+  modelId?: string
+  /**
+   * Language the user forced, `auto` to let Whisper detect, omitted to derive
+   * it from `locale` as before.
+   */
+  language?: string
+  /** Free-text list of product names to correct in the transcript (P2-F4). */
+  vocabulary?: string
   signal?: AbortSignal
   onStatus?: (phase: TranscriptionPhase) => void
+}
+
+/**
+ * The Whisper language code for a request: an explicit choice wins, `auto`
+ * means auto-detect, and no choice at all falls back to the UI locale.
+ */
+export function resolveRequestLanguage(request: {
+  language?: string
+  locale: string
+}): string | undefined {
+  if (request.language === CAPTION_LANGUAGE_AUTO) return undefined
+  if (typeof request.language === 'string' && request.language.trim()) {
+    return request.language.trim()
+  }
+  return whisperLanguageForLocale(request.locale)
 }
 
 /** Engine result; the native engine also returns the analysis main already built. */
@@ -271,7 +297,8 @@ export function createWhisperWebEngine(
 
       const raw = await resolved.transcribe(trimmed.samples, {
         trimRegions,
-        language: whisperLanguageForLocale(request.locale),
+        language: resolveRequestLanguage(request),
+        modelId: request.modelId,
         modelDirUrl,
         ortWasmBaseUrl: resolved.ortWasmBaseUrl(),
         signal: request.signal,
@@ -286,7 +313,13 @@ export function createWhisperWebEngine(
         }),
       }
       const shifted = shiftSegmentsBySeconds(snapped, trimmed.trimSec)
-      const words = captionSegmentsToTranscriptWords(shifted.segments, shifted.granularity)
+      // Product names the model has never heard: corrected after decoding,
+      // because this runtime has no initial-prompt hook (see vocabularyHint.ts).
+      const hinted = applyVocabularyHint(
+        shifted.segments,
+        parseVocabularyHint(request.vocabulary ?? ''),
+      )
+      const words = captionSegmentsToTranscriptWords(hinted, shifted.granularity)
       if (words.length === 0) {
         return {
           success: false,

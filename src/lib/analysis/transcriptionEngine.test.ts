@@ -4,6 +4,7 @@ import {
   type CaptionGenerationOptions,
   createNativeSpeechEngine,
   createWhisperWebEngine,
+  resolveRequestLanguage,
   runCaptionGeneration,
   selectInitialEngine,
   shouldFallbackToWhisper,
@@ -293,7 +294,53 @@ describe('createNativeSpeechEngine', () => {
   })
 })
 
+describe('resolveRequestLanguage', () => {
+  it('honours an explicit choice over the UI locale', () => {
+    expect(resolveRequestLanguage({ language: 'ja', locale: 'en-US' })).toBe('ja')
+  })
+
+  it('returns undefined so Whisper detects the language itself', () => {
+    expect(resolveRequestLanguage({ language: 'auto', locale: 'vi' })).toBeUndefined()
+  })
+
+  it('falls back to the UI locale when nothing was chosen', () => {
+    expect(resolveRequestLanguage({ locale: 'zh-CN' })).toBe('zh')
+    expect(resolveRequestLanguage({ language: '   ', locale: 'vi-VN' })).toBe('vi')
+  })
+})
+
 describe('createWhisperWebEngine', () => {
+  it('runs the chosen model and corrects the vocabulary hint in the transcript', async () => {
+    const samples = new Float32Array(16_000)
+    for (let i = 0; i < samples.length; i++) samples[i] = 0.5
+    const transcribe = vi.fn(
+      async (_s: Float32Array, opts: { language?: string; modelId?: string }) => {
+        expect(opts.modelId).toBe('Xenova/whisper-small')
+        expect(opts.language).toBeUndefined() // 'auto' means detect
+        const segments: CaptionSegment[] = [{ startSec: 0, endSec: 1, text: 'welcome to captura' }]
+        return { segments, granularity: 'phrase' as const }
+      },
+    )
+
+    const whisper = createWhisperWebEngine({
+      extractAudio: async () => ({ samples, truncated: false, durationSec: 1 }),
+      transcribe,
+      modelDirUrl: () => 'file:///models/',
+      ortWasmBaseUrl: () => 'http://localhost/ort/',
+    })
+
+    const result = await whisper.transcribe(
+      request({
+        modelId: 'Xenova/whisper-small',
+        language: 'auto',
+        vocabulary: 'Capturia',
+      }),
+    )
+
+    expect(result.success).toBe(true)
+    expect(result.words?.map((w) => w.text)).toEqual(['welcome', 'to', 'Capturia'])
+  })
+
   it('extracts audio, trims leading silence, pins the language and shifts segments back', async () => {
     const samples = new Float32Array(16_000 * 3)
     for (let i = 16_000 * 2; i < samples.length; i++) samples[i] = 0.5 // speech from 2.0 s

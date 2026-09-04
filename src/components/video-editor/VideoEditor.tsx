@@ -170,7 +170,13 @@ import {
   ensureCaptionModel,
   formatMegabytes,
   loadCaptionEngineSetting,
+  loadCaptionLanguage,
+  loadCaptionModelId,
+  loadCaptionVocabulary,
   saveCaptionEngineSetting,
+  saveCaptionLanguage,
+  saveCaptionModelId,
+  saveCaptionVocabulary,
 } from '@/lib/captioning'
 import {
   applyZoomLevelToAllAspects,
@@ -614,6 +620,10 @@ export default function VideoEditor() {
   const [captionEngine, setCaptionEngine] = useState<CaptionEngineSetting>(() =>
     loadCaptionEngineSetting(),
   )
+  // P2-F4: transcription quality, stored per machine rather than per project.
+  const [captionModelId, setCaptionModelId] = useState<string>(() => loadCaptionModelId())
+  const [captionLanguage, setCaptionLanguage] = useState<string>(() => loadCaptionLanguage())
+  const [captionVocabulary, setCaptionVocabulary] = useState<string>(() => loadCaptionVocabulary())
   const [cursorAnalysisProgress, setCursorAnalysisProgress] = useState<number | null>(null)
   const cursorAnalyzerRef = useRef<VideoMouseAnalyzer | null>(null)
 
@@ -2851,6 +2861,22 @@ export default function VideoEditor() {
     saveCaptionEngineSetting(value)
   }, [])
 
+  const handleCaptionModelIdChange = useCallback((value: string) => {
+    setCaptionModelId(value)
+    saveCaptionModelId(value)
+  }, [])
+
+  const handleCaptionLanguageChange = useCallback((value: string) => {
+    setCaptionLanguage(value)
+    saveCaptionLanguage(value)
+  }, [])
+
+  /** Kept verbatim while typing; normalized on the way to storage and to the engine. */
+  const handleCaptionVocabularyChange = useCallback((value: string) => {
+    setCaptionVocabulary(value)
+    saveCaptionVocabulary(value)
+  }, [])
+
   /** Caption look; normalized here so a bad value can never reach the renderers. */
   const handleSubtitleStyleChange = useCallback((patch: Partial<SubtitleStyle>) => {
     setSubtitleStyle((previous) => normalizeSubtitleStyle({ ...previous, ...patch }))
@@ -3065,6 +3091,9 @@ export default function VideoEditor() {
           durationMs: Math.max(0, Math.round(duration * 1000)),
           videoWidth: sourceWidth,
           subtitleWidthRatio: 0.82,
+          modelId: captionModelId,
+          language: captionLanguage,
+          vocabulary: captionVocabulary,
           signal: controller.signal,
           onStatus: (phase) => {
             toast.loading(phaseMessage[phase], { id: progressToastId, action: cancelAction })
@@ -3072,6 +3101,7 @@ export default function VideoEditor() {
         },
         ensureModel: () =>
           ensureCaptionModel({
+            modelId: captionModelId,
             signal: controller.signal,
             confirmDownload: (status) => confirmCaptionModelDownload(status, controller.signal),
             onProgress: (progress) => {
@@ -3148,6 +3178,9 @@ export default function VideoEditor() {
     applyAnalysis,
     cancelCaptionGeneration,
     captionEngine,
+    captionLanguage,
+    captionModelId,
+    captionVocabulary,
     confirmCaptionModelDownload,
     duration,
     locale,
@@ -4542,6 +4575,12 @@ export default function VideoEditor() {
               analysisRunning={analysisInProgress}
               captionEngine={captionEngine}
               onCaptionEngineChange={handleCaptionEngineChange}
+              captionModelId={captionModelId}
+              onCaptionModelIdChange={handleCaptionModelIdChange}
+              captionLanguage={captionLanguage}
+              onCaptionLanguageChange={handleCaptionLanguageChange}
+              captionVocabulary={captionVocabulary}
+              onCaptionVocabularyChange={handleCaptionVocabularyChange}
               subtitleCueCount={subtitleCues.length}
               subtitleStyle={subtitleStyle}
               onSubtitleStyleChange={handleSubtitleStyleChange}

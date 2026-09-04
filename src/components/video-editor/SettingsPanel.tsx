@@ -89,8 +89,11 @@ import {
   CAPTION_ENGINE_SETTINGS,
   type CaptionEngineSetting,
 } from '@/lib/captioning/captionEngineSetting'
+import { DEFAULT_CAPTION_MODEL_ID } from '@/lib/captioning/captionConstants'
+import { CAPTION_LANGUAGE_AUTO } from '@/lib/captioning/captionTranscriptionSettings'
 import type { SubtitleStyle } from '@/lib/rendering/subtitleStyle'
 import { SubtitleStylePanel } from './SubtitleStylePanel'
+import { TranscriptionQualityPanel } from './TranscriptionQualityPanel'
 import { SubtitleCueEditor } from './SubtitleCueEditor'
 import type { SubtitleCue } from '@/lib/analysis/types'
 import { SUBTITLE_SIDECAR_FORMATS, type SubtitleSidecarFormat } from '@/lib/captions/subtitleExport'
@@ -219,6 +222,13 @@ interface SettingsPanelProps {
   /** C-1: which engine "Generate Subtitles" uses (native macOS speech / on-device Whisper). */
   captionEngine?: CaptionEngineSetting
   onCaptionEngineChange?: (engine: CaptionEngineSetting) => void
+  /** P2-F4: transcription quality - Whisper weights, forced language, vocabulary hint. */
+  captionModelId?: string
+  onCaptionModelIdChange?: (modelId: string) => void
+  captionLanguage?: string
+  onCaptionLanguageChange?: (language: string) => void
+  captionVocabulary?: string
+  onCaptionVocabularyChange?: (vocabulary: string) => void
   /** P2-F1: caption look, shared by the preview overlay and the export renderer. */
   subtitleStyle?: SubtitleStyle
   onSubtitleStyleChange?: (patch: Partial<SubtitleStyle>) => void
@@ -414,6 +424,12 @@ export function SettingsPanel({
   roughCutSuggestionCount = 0,
   captionEngine = 'auto',
   onCaptionEngineChange,
+  captionModelId = DEFAULT_CAPTION_MODEL_ID,
+  onCaptionModelIdChange,
+  captionLanguage = CAPTION_LANGUAGE_AUTO,
+  onCaptionLanguageChange,
+  captionVocabulary = '',
+  onCaptionVocabularyChange,
   subtitleStyle,
   onSubtitleStyleChange,
   subtitleCues = [],
@@ -1095,6 +1111,17 @@ export function SettingsPanel({
                 ))}
               </div>
             </div>
+          )}
+          {onCaptionModelIdChange && onCaptionLanguageChange && onCaptionVocabularyChange && (
+            <TranscriptionQualityPanel
+              modelId={captionModelId}
+              onModelIdChange={onCaptionModelIdChange}
+              language={captionLanguage}
+              onLanguageChange={onCaptionLanguageChange}
+              vocabulary={captionVocabulary}
+              onVocabularyChange={onCaptionVocabularyChange}
+              disabled={analysisRunning}
+            />
           )}
           {subtitleStyle && onSubtitleStyleChange && (
             <SubtitleStylePanel

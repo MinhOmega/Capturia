@@ -1,6 +1,6 @@
 import {
-  CAPTION_MODEL_APPROX_BYTES,
-  CAPTION_MODEL_ID,
+  captionModelChoice,
+  DEFAULT_CAPTION_MODEL_ID,
   ORT_WASM_PUBLIC_DIR,
 } from './captionConstants'
 
@@ -75,17 +75,20 @@ export function getOrtWasmBaseUrl(pageHref: string = window.location.href): stri
 }
 
 export async function getCaptionModelStatus(
+  modelId: string = DEFAULT_CAPTION_MODEL_ID,
   api?: CaptionModelApi,
 ): Promise<CaptionModelStatus | null> {
   const resolved = resolveApi(api)
   if (!resolved) return null
-  const result = await resolved.getCaptionModelStatus(CAPTION_MODEL_ID)
+  const result = await resolved.getCaptionModelStatus(modelId)
   if (!result.success || !result.status) return null
   return result.status
 }
 
 export interface EnsureCaptionModelOptions {
   api?: CaptionModelApi
+  /** Which weights to make sure of; defaults to the smallest. */
+  modelId?: string
   /**
    * Asked once when the model is missing. Resolve `true` to download, `false` to
    * skip (the caller then reports "model not available").
@@ -114,15 +117,16 @@ export async function ensureCaptionModel(
     return { state: 'failed', message: 'Caption model manager is not available in this window.' }
   }
 
-  const status = await getCaptionModelStatus(api)
+  const choice = captionModelChoice(options.modelId)
+  const status = await getCaptionModelStatus(choice.id, api)
   if (status?.present) return { state: 'ready' }
 
   const promptStatus: CaptionModelStatus = status ?? {
-    modelId: CAPTION_MODEL_ID,
+    modelId: choice.id,
     present: false,
     dir: '',
     downloadedBytes: 0,
-    totalBytes: CAPTION_MODEL_APPROX_BYTES,
+    totalBytes: choice.approximateBytes,
     missingFiles: [],
   }
   const accepted = await options.confirmDownload(promptStatus)
@@ -137,7 +141,7 @@ export async function ensureCaptionModel(
   }
   options.signal?.addEventListener('abort', onAbort, { once: true })
   try {
-    const result = await api.downloadCaptionModel(CAPTION_MODEL_ID)
+    const result = await api.downloadCaptionModel(choice.id)
     if (result.success) return { state: 'ready' }
     if (result.aborted || options.signal?.aborted) return { state: 'aborted' }
     return { state: 'failed', message: result.message || 'Caption model download failed.' }
