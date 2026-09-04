@@ -292,6 +292,7 @@ describe('mergeWithDefaults', () => {
       paste: { key: 'v', ctrl: true, alt: true },
       openApp: { key: 'o', ctrl: true, alt: true },
       stopRecording: { key: 'r', ctrl: true, alt: true },
+      markMoment: { key: 'm', ctrl: true, alt: true },
     }
     expect(mergeWithDefaults(full)).toEqual(full)
   })

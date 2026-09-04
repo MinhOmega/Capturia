@@ -221,16 +221,22 @@ function buildFixtureCursorTrack(): CursorTrackMetadata {
   return {
     source: 'synthetic',
     samples,
-    events: clicked
-      ? [
-          {
-            type: 'click',
-            startMs: clicked.timeMs,
-            endMs: clicked.timeMs + 120,
-            point: { x: clicked.x, y: clicked.y },
-          },
-        ]
-      : [],
+    events: [
+      ...(clicked
+        ? [
+            {
+              type: 'click' as const,
+              startMs: clicked.timeMs,
+              endMs: clicked.timeMs + 120,
+              point: { x: clicked.x, y: clicked.y },
+            },
+          ]
+        : []),
+      // D2: two flagged moments, so the timeline ruler has something to draw
+      // in the harness (a browser tab has no recorder to flag one with).
+      { type: 'marker' as const, timeMs: Math.round(FIXTURE_DURATION_MS * 0.25) },
+      { type: 'marker' as const, timeMs: Math.round(FIXTURE_DURATION_MS * 0.7) },
+    ],
     space: {
       mode: 'source-display',
       displayId: 'harness-display',
@@ -283,6 +289,8 @@ export function createBrowserBridge(): BrowserHarness {
   const exports: HarnessExport[] = []
   const sidecars = new Map<string, unknown>()
   let selectedSource: unknown = null
+  // D1: the harness keeps the preference in memory; there is no OS content protection in a tab.
+  let hideHudFromRecording = true
 
   function subscribe(channel: string, callback: (...args: unknown[]) => void): () => void {
     const set = listeners.get(channel) ?? new Set()
@@ -376,6 +384,22 @@ export function createBrowserBridge(): BrowserHarness {
         console.warn(`${LOG_PREFIX} the source selector popup was blocked by the browser`)
       }
     },
+    // D1: the harness has no OS content protection; report the preference back
+    // unchanged so the HUD toggle still round-trips.
+    getHideHudFromRecording: async () => ({
+      enabled: hideHudFromRecording,
+      protected: [],
+      unprotected: [],
+    }),
+    setHideHudFromRecording: async (enabled: boolean) => {
+      hideHudFromRecording = enabled
+      return { enabled, protected: [], unprotected: enabled ? ['HUD'] : [] }
+    },
+    reassertHudRecordingPrivacy: async () => ({
+      enabled: hideHudFromRecording,
+      protected: [],
+      unprotected: hideHudFromRecording ? ['HUD'] : [],
+    }),
     openNotes: async () => {
       const opened = window.open('?showNotes=true', '_blank')
       if (!opened) return { success: false, message: 'popup blocked' }
@@ -686,6 +710,10 @@ export function createBrowserBridge(): BrowserHarness {
       warnUnimplemented('startCursorTracking', 'the fixture ships a synthetic cursor track instead')
       return { success: false }
     },
+    // D2: the harness has no tracker, so a flagged moment is reported as such.
+    addRecordingMarker: async () => ({ added: false as const, reason: 'not-recording' as const }),
+    onRecordingMarkerAdded: (callback: (result: RecordingMarkerOutcome) => void) =>
+      subscribe('recording-marker-added', callback as (...args: unknown[]) => void),
     stopCursorTracking: async () => {
       warnUnimplemented('stopCursorTracking', 'the fixture ships a synthetic cursor track instead')
       return { success: false }

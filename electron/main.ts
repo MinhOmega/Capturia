@@ -29,10 +29,11 @@ import {
   createCountdownOverlayWindow,
   createNotesWindow,
   getHudOverlayWindow,
+  applyHudContentProtection,
   HEADLESS,
 } from './windows'
 import { atomicWriteFile } from './ipc/atomicSave'
-import { registerIpcHandlers } from './ipc/handlers'
+import { type IpcRuntime, registerIpcHandlers } from './ipc/handlers'
 import { getRecordingsDir, getUserDataDir } from './paths'
 import {
   approveFilePath,
@@ -164,7 +165,7 @@ let selectedDesktopSourceId: string | null = null
 let recordingActive = false
 let shutdownInProgress = false
 let shutdownFinished = false
-let ipcRuntime: { shutdown: () => Promise<void> } | null = null
+let ipcRuntime: IpcRuntime | null = null
 let runtimeErrorDialogOpen = false
 
 // Register custom protocol for serving local media files to the renderer.
@@ -473,7 +474,18 @@ const SHORTCUTS_FILE = path.join(app.getPath('userData'), SHORTCUTS_FILE_NAME)
 const globalShortcuts = new GlobalShortcutManager(globalShortcut, {
   openApp: () => showMainWindow(),
   stopRecording: () => emitStopRecordingRequest(),
+  markMoment: () => flagRecordingMoment(),
 })
+
+/**
+ * D2: write a marker into the cursor sidecar and tell the HUD, so the shortcut
+ * and the HUD button share one code path and one confirmation.
+ */
+function flagRecordingMoment(): void {
+  const result = ipcRuntime?.addRecordingMarker() ?? { added: false, reason: 'not-recording' }
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  mainWindow.webContents.send('recording-marker-added', result)
+}
 
 async function loadAndRegisterGlobalShortcuts(): Promise<void> {
   const stored = await readStoredGlobalBindings(SHORTCUTS_FILE)
@@ -1716,6 +1728,8 @@ appReady?.then(async () => {
       createNotesWindow: createNotesWindowWrapper,
       getNotesWindow: () => notesWindow,
       getHudOverlayWindow,
+      getSourceSelectorWindow: () => sourceSelectorWindow,
+      applyHudContentProtection,
     },
   )
   if (e2eStartupVideoPath()) {

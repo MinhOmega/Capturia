@@ -39,6 +39,7 @@ describe('cursor tracker IPC handlers', () => {
       'cursor-tracker-start',
       'cursor-tracker-pause',
       'cursor-tracker-resume',
+      'cursor-tracker-marker',
       'cursor-tracker-stop',
     ])
   })
@@ -192,6 +193,82 @@ describe('cursor tracker IPC handlers', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('recording markers (D2)', () => {
+  afterEach(() => {
+    setPlatform(REAL_PLATFORM)
+    if (REAL_SESSION_TYPE === undefined) delete process.env['XDG_SESSION_TYPE']
+    else process.env['XDG_SESSION_TYPE'] = REAL_SESSION_TYPE
+    vi.restoreAllMocks()
+    vi.useRealTimers()
+  })
+
+  async function startTracker() {
+    setPlatform('linux')
+    process.env['XDG_SESSION_TYPE'] = 'x11'
+    vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    vi.useFakeTimers()
+    const ipc = fakeIpcMain()
+    const ctx = buildContext(ipc)
+    ctx.session.selectedSource = { id: 'screen:1:0', display_id: '1' }
+    const registration = registerCursorTrackerHandlers(ctx)
+    await ipc.invoke('cursor-tracker-start', { captureSize: { width: 1920, height: 1080 } })
+    return { ipc, registration }
+  }
+
+  it('refuses a marker when nothing is recording', async () => {
+    const ipc = fakeIpcMain()
+    const registration = registerCursorTrackerHandlers(buildContext(ipc))
+    expect(registration.addRecordingMarker()).toEqual({ added: false, reason: 'not-recording' })
+    await expect(ipc.invoke('cursor-tracker-marker')).resolves.toEqual({
+      added: false,
+      reason: 'not-recording',
+    })
+  })
+
+  it('writes a marker at the recording-relative time and counts it', async () => {
+    const { ipc } = await startTracker()
+    vi.advanceTimersByTime(1_500)
+    await expect(ipc.invoke('cursor-tracker-marker')).resolves.toEqual({
+      added: true,
+      timeMs: 1_500,
+      count: 1,
+    })
+    vi.advanceTimersByTime(500)
+    await expect(ipc.invoke('cursor-tracker-marker')).resolves.toMatchObject({ count: 2 })
+
+    const stopped = await ipc.invoke<{ track?: { events?: Array<{ type: string }> } }>(
+      'cursor-tracker-stop',
+    )
+    expect(stopped.track?.events?.filter((event) => event.type === 'marker')).toEqual([
+      { type: 'marker', timeMs: 1_500 },
+      { type: 'marker', timeMs: 2_000 },
+    ])
+  })
+
+  it('refuses a marker while the recording is paused', async () => {
+    const { ipc } = await startTracker()
+    vi.advanceTimersByTime(300)
+    await ipc.invoke('cursor-tracker-pause')
+    await expect(ipc.invoke('cursor-tracker-marker')).resolves.toEqual({
+      added: false,
+      reason: 'paused',
+    })
+    await ipc.invoke('cursor-tracker-resume')
+    await expect(ipc.invoke('cursor-tracker-marker')).resolves.toMatchObject({ added: true })
+  })
+
+  it('the shortcut path and the channel write the same event', async () => {
+    const { ipc, registration } = await startTracker()
+    vi.advanceTimersByTime(700)
+    expect(registration.addRecordingMarker()).toEqual({ added: true, timeMs: 700, count: 1 })
+
+    const stopped = await ipc.invoke<{ track?: { events?: Array<{ type: string }> } }>(
+      'cursor-tracker-stop',
+    )
+    expect(stopped.track?.events).toEqual([{ type: 'marker', timeMs: 700 }])
   })
 })
 

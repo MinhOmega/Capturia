@@ -10,6 +10,7 @@ import {
   readCursorTrackSidecar,
   resolveCursorSidecarPath,
   sanitizeCursorTrack,
+  MAX_CURSOR_TRACK_MARKERS,
   sanitizeVideoMetadata,
   writeCursorTrackSidecar,
 } from './cursorTrack'
@@ -421,5 +422,101 @@ describe('cursor-track sidecar compatibility', () => {
     const track = await readCursorTrackSidecar(videoPath)
     expect(track?.samples.length).toBeGreaterThan(6_000)
     expect(track?.samples[track.samples.length - 1].timeMs).toBe(600_000)
+  })
+})
+
+describe('recording markers (D2)', () => {
+  const markerAt = (timeMs: number) => ({ type: 'marker' as const, timeMs })
+  const trackWith = (events: unknown[]) => ({
+    samples: [sampleAt(0), sampleAt(1_000)],
+    events: events as never,
+  })
+
+  it('keeps markers through sanitize, rounded and sorted after the pointer events', () => {
+    const track = sanitizeCursorTrack(
+      trackWith([markerAt(900.4), clickAt(100), markerAt(400.6), markerAt(-5)]),
+    )
+    expect(track?.events).toEqual([
+      clickAt(100),
+      { type: 'marker', timeMs: 0 },
+      { type: 'marker', timeMs: 401 },
+      { type: 'marker', timeMs: 900 },
+    ])
+  })
+
+  it('drops a marker with an unusable time and leaves a track without markers alone', () => {
+    expect(
+      sanitizeCursorTrack(trackWith([markerAt(Number.NaN), { type: 'marker' }]))?.events,
+    ).toBeUndefined()
+    expect(sanitizeCursorTrack(trackWith([clickAt(50)]))?.events).toEqual([clickAt(50)])
+  })
+
+  it('does not count a marker as a click', () => {
+    const track = sanitizeCursorTrack({
+      samples: [sampleAt(0), sampleAt(10)],
+      events: [markerAt(5), clickAt(6)] as never,
+      stats: { sampleCount: 2, clickCount: Number.NaN },
+    })
+    expect(track?.stats?.clickCount).toBe(1)
+  })
+
+  it('caps markers separately from the pointer events', () => {
+    const markers = Array.from({ length: MAX_CURSOR_TRACK_MARKERS + 25 }, (_, index) =>
+      markerAt(index),
+    )
+    const track = sanitizeCursorTrack(trackWith([...markers, clickAt(1)]))
+    const kept = (track?.events ?? []).filter((event) => event.type === 'marker')
+    expect(kept).toHaveLength(MAX_CURSOR_TRACK_MARKERS)
+    // The earliest survive: the cap keeps the recording's own order.
+    expect(kept[0]).toEqual({ type: 'marker', timeMs: 0 })
+  })
+
+  it('collapses paused time out of markers and drops the ones inside a pause', () => {
+    const compacted = compactCursorTrackPauseRanges(
+      {
+        samples: [sampleAt(0), sampleAt(3_000)],
+        events: [markerAt(500), markerAt(1_500), markerAt(2_500), clickAt(2_600)] as never,
+      },
+      [{ startMs: 1_000, endMs: 2_000 }],
+    )
+    expect(compacted.events).toEqual([
+      { type: 'click', startMs: 1_600, endMs: 1_600, point: { x: 0.5, y: 0.5 } },
+      { type: 'marker', timeMs: 500 },
+      { type: 'marker', timeMs: 1_500 },
+    ])
+  })
+
+  it('round-trips markers through the sidecar file', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'capturia-markers-'))
+    try {
+      const videoPath = path.join(dir, 'take.mp4')
+      await writeCursorTrackSidecar(videoPath, trackWith([clickAt(10), markerAt(2_500)]))
+      const reloaded = await readCursorTrackSidecar(videoPath)
+      expect(reloaded?.events).toEqual([clickAt(10), { type: 'marker', timeMs: 2_500 }])
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('loads a sidecar written before markers existed unchanged', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'capturia-markers-'))
+    try {
+      const videoPath = path.join(dir, 'take.mp4')
+      const legacy = {
+        version: 1,
+        cursorTrack: {
+          source: 'recorded',
+          samples: [
+            { timeMs: 0, x: 0.5, y: 0.5, click: false, visible: true, cursorKind: 'arrow' },
+          ],
+          events: [clickAt(20)],
+        },
+      }
+      await writeFile(resolveCursorSidecarPath(videoPath), JSON.stringify(legacy, null, 2), 'utf-8')
+      const reloaded = await readCursorTrackSidecar(videoPath)
+      expect(reloaded?.events).toEqual([clickAt(20)])
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 })

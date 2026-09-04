@@ -103,11 +103,12 @@ function fakeRegistry(failing: ReadonlySet<string> = new Set()) {
 }
 
 describe('GlobalShortcutManager', () => {
-  const handlers = { openApp: vi.fn(), stopRecording: vi.fn() }
+  const handlers = { openApp: vi.fn(), stopRecording: vi.fn(), markMoment: vi.fn() }
 
   beforeEach(() => {
     handlers.openApp.mockClear()
     handlers.stopRecording.mockClear()
+    handlers.markMoment.mockClear()
   })
 
   it('registers a binding and dispatches to the action handler', () => {
@@ -218,6 +219,50 @@ describe('GlobalShortcutManager', () => {
     )
     expect(manager.getAccelerator('stopRecording')).toBe(
       bindingToAccelerator(DEFAULT_GLOBAL_BINDINGS.stopRecording),
+    )
+  })
+
+  it('registers markMoment on Ctrl/Cmd+Alt+F by default and dispatches to it (D2)', () => {
+    const { registry, registered } = fakeRegistry()
+    const manager = new GlobalShortcutManager(registry, handlers)
+
+    manager.registerAll({})
+
+    expect(manager.getAccelerator('markMoment')).toBe('CommandOrControl+Alt+F')
+    registered.get('CommandOrControl+Alt+F')?.()
+    expect(handlers.markMoment).toHaveBeenCalledOnce()
+    expect(handlers.openApp).not.toHaveBeenCalled()
+    expect(handlers.stopRecording).not.toHaveBeenCalled()
+  })
+
+  it('rebinds markMoment and refuses an accelerator another global action owns (D2)', () => {
+    const { registry, registered } = fakeRegistry()
+    const manager = new GlobalShortcutManager(registry, handlers)
+    manager.registerAll({})
+
+    expect(manager.register('markMoment', { key: 'm', ctrl: true, alt: true })).toEqual({
+      ok: true,
+      accelerator: 'CommandOrControl+Alt+M',
+    })
+    expect(registered.has('CommandOrControl+Alt+F')).toBe(false)
+    registered.get('CommandOrControl+Alt+M')?.()
+    expect(handlers.markMoment).toHaveBeenCalledOnce()
+
+    expect(manager.register('markMoment', DEFAULT_GLOBAL_BINDINGS.stopRecording)).toEqual({
+      ok: false,
+      accelerator: 'CommandOrControl+Alt+M',
+      error: 'conflict',
+    })
+  })
+
+  it('keeps the previous markMoment binding when a stored one cannot be registered (D2)', () => {
+    const { registry } = fakeRegistry(new Set(['CommandOrControl+Alt+G']))
+    const manager = new GlobalShortcutManager(registry, handlers)
+
+    manager.registerAll({ markMoment: { key: 'g', ctrl: true, alt: true } })
+
+    expect(manager.getAccelerator('markMoment')).toBe(
+      bindingToAccelerator(DEFAULT_GLOBAL_BINDINGS.markMoment),
     )
   })
 

@@ -185,6 +185,7 @@ import {
   segmentsToTrimRegions,
   findSegmentAtSourceTime,
 } from '@/lib/trim/timeMapping'
+import { adjacentMarkerMs, markersToEffectiveMs } from '@/lib/recordingMarkers'
 import { applySpeedToAllSegments, resetAllSegmentEdits } from '@/lib/trim/segmentEdits'
 import { VideoMouseAnalyzer } from '@/lib/analysis/videoMouseAnalyzer'
 
@@ -425,9 +426,28 @@ function normalizeCursorTrack(input: unknown): CursorTrack | null {
         .sort((a, b) => a.startMs - b.startMs)
     : undefined
 
+  // D2: markers ride in the same `events` array in the sidecar but are a
+  // different thing entirely - an instant with no place on screen - so they are
+  // parsed out into their own list. `CursorTrackEvent` stays the pointer-gesture
+  // type the cursor overlay and auto-zoom read.
+  const parsedMarkers = Array.isArray(raw.events)
+    ? raw.events
+        .filter(
+          (event): event is { type: 'marker'; timeMs: unknown } =>
+            Boolean(event) &&
+            typeof event === 'object' &&
+            (event as { type?: unknown }).type === 'marker',
+        )
+        .map((event) => Number(event.timeMs))
+        .filter((timeMs) => Number.isFinite(timeMs))
+        .map((timeMs) => Math.max(0, Math.round(timeMs)))
+        .sort((a, b) => a - b)
+    : undefined
+
   return {
     samples,
     events: parsedEvents,
+    markers: parsedMarkers && parsedMarkers.length > 0 ? parsedMarkers : undefined,
     source: raw.source === 'synthetic' ? 'synthetic' : 'recorded',
     space: parsedSpace,
     stats: parsedStats,
@@ -897,6 +917,14 @@ export default function VideoEditor() {
       endMs: sourceToEffectiveMs(c.endMs, normalizedTrims),
     }))
   }, [subtitleCues, segments, normalizedTrims])
+
+  // D2: flagged moments follow the same source -> effective conversion as every
+  // other region, so they stay on the frame the user flagged after a trim or a
+  // speed change.
+  const effectiveRecordingMarkersMs = useMemo(
+    () => markersToEffectiveMs(cursorTrack?.markers, segments, normalizedTrims),
+    [cursorTrack?.markers, segments, normalizedTrims],
+  )
 
   const effectiveAudioEditRegions = useMemo(() => {
     if (segments.length > 0) {
@@ -1536,6 +1564,10 @@ export default function VideoEditor() {
   // Refs for the keydown handler (stale-closure avoidance — useEffect has [] deps)
   const effectiveCurrentTimeRef = useRef(effectiveCurrentTime)
   effectiveCurrentTimeRef.current = effectiveCurrentTime
+  // D2: the keydown handler is installed once; the markers change with the
+  // recording and with every trim, so it reads them through a ref.
+  const recordingMarkersRef = useRef(effectiveRecordingMarkersMs)
+  recordingMarkersRef.current = effectiveRecordingMarkersMs
   const effectiveDurationRef = useRef(effectiveDuration)
   effectiveDurationRef.current = effectiveDuration
   const seekStepSecondsRef = useRef(seekStepSeconds)
@@ -2678,6 +2710,25 @@ export default function VideoEditor() {
             playback.pause()
           }
         }
+      }
+
+      // D2: Alt + arrow jumps between the moments flagged during the recording.
+      // Checked before the plain arrow seek, which requires no Alt.
+      if (e.altKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+        if (isArrowKeyOwningTarget(e.target)) {
+          return
+        }
+        e.preventDefault()
+        const target = adjacentMarkerMs(
+          recordingMarkersRef.current,
+          effectiveCurrentTimeRef.current * 1000,
+          e.key === 'ArrowRight' ? 'next' : 'previous',
+        )
+        if (target !== null) {
+          commitHoverPreview()
+          handleSeekRef.current(target / 1000)
+        }
+        return
       }
 
       // Arrow key navigation: seek forward/backward in effective time
@@ -4377,6 +4428,7 @@ export default function VideoEditor() {
                   videoFilePath={videoFilePath}
                   videoUrl={videoPath}
                   showWaveform={showTimelineWaveform}
+                  recordingMarkersMs={effectiveRecordingMarkersMs}
                 />
               </div>
             </Panel>

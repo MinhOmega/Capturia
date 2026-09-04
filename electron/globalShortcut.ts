@@ -1,6 +1,7 @@
-// OS-level (global) shortcuts: "open Capturia" and "stop recording".
+// OS-level (global) shortcuts: "open Capturia", "stop recording" and
+// "flag this moment" (D2).
 //
-// Both global actions share one registry, one persistence file
+// The global actions share one registry, one persistence file
 // (`shortcuts.json`, the same file the editor's ShortcutsConfigDialog writes)
 // and one accelerator conversion. The Electron `globalShortcut` API is injected
 // (`GlobalShortcutRegistry`) so the registration logic runs under vitest.
@@ -9,15 +10,19 @@
 // - register the NEW accelerator before unregistering the old one, so a failure
 //   leaves the previous binding working;
 // - a failure is reported to the caller (`{ ok: false, error }`), never thrown;
-// - the two actions may not share an accelerator.
+// - two actions may not share an accelerator.
 
 import fs from 'node:fs/promises'
 import { DEFAULT_SHORTCUTS, type ShortcutBinding } from '../src/lib/shortcuts'
 import { atomicWriteJson } from './ipc/atomicSave'
 
-export type GlobalShortcutAction = 'openApp' | 'stopRecording'
+export type GlobalShortcutAction = 'openApp' | 'stopRecording' | 'markMoment'
 
-export const GLOBAL_SHORTCUT_ACTIONS: readonly GlobalShortcutAction[] = ['openApp', 'stopRecording']
+export const GLOBAL_SHORTCUT_ACTIONS: readonly GlobalShortcutAction[] = [
+  'openApp',
+  'stopRecording',
+  'markMoment',
+]
 
 /** Same file `get-shortcuts` / `save-shortcuts` in ipc/handlers.ts read and write. */
 export const SHORTCUTS_FILE_NAME = 'shortcuts.json'
@@ -133,6 +138,7 @@ export function isGlobalBindingAllowed(binding: ShortcutBinding): boolean {
 export const DEFAULT_GLOBAL_BINDINGS: Record<GlobalShortcutAction, ShortcutBinding> = {
   openApp: DEFAULT_SHORTCUTS.openApp,
   stopRecording: DEFAULT_SHORTCUTS.stopRecording,
+  markMoment: DEFAULT_SHORTCUTS.markMoment,
 }
 
 type Handlers = Record<GlobalShortcutAction, () => void>

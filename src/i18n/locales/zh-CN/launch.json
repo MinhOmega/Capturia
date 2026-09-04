@@ -45,6 +45,15 @@
 	"autoHideHudOnRecord": "自动隐藏",
 	"autoHideHudOnRecordOn": "录制开始后自动隐藏启动栏",
 	"autoHideHudOnRecordOff": "录制开始后保持启动栏可见",
+	"hideHudFromRecording": "隐藏控制条",
+	"hideHudFromRecordingOn": "Capturia 自己的窗口不会出现在录制内容中。",
+	"hideHudFromRecordingOff": "Capturia 自己的窗口会出现在录制内容中。",
+	"hideHudFromRecordingCaveat": "该设置同时会让这些窗口在远程桌面和屏幕共享工具中不可见。",
+	"hideHudFromRecordingUnsupported": "当前系统无法将窗口排除在屏幕录制之外，因此靠自动隐藏来避免控制条出现在录制内容中。",
+	"markMomentHint": "标记此刻（{{shortcut}}）——将显示在编辑器时间轴上",
+	"markMomentAdded": "已在 {{time}} 标记（本次录制共 {{count}} 个）",
+	"markMomentPaused": "请先继续录制，然后再标记。",
+	"markMomentLimit": "本次录制的标记数量已达上限。",
 	"stopShortcutLabel": "结束录制快捷键：{{shortcut}}",
 	"stopShortcutConfigTitle": "结束录制快捷键",
 	"stopShortcutCurrent": "当前：{{shortcut}}",
@@ -136,7 +145,10 @@
 	"cameraDevice": "摄像头",
 	"webcam": {
 		"defaultCamera": "默认摄像头",
-		"noneFound": "未找到摄像头"
+		"noneFound": "未找到摄像头",
+		"preview": "预览摄像头",
+		"previewStop": "停止预览",
+		"previewLightHint": "预览期间摄像头指示灯会亮起。"
 	},
 	"microphone": "麦克风",
 	"microphoneFallback": "麦克风不可用，将录制无声视频。",

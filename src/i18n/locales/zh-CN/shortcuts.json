@@ -38,6 +38,7 @@
 	"instructions": "点击快捷键然后按下新的按键组合。按 Esc 取消。",
 	"openApp": "打开 Capturia",
 	"stopRecording": "停止录制",
+	"markMoment": "标记此刻",
 	"global": "全局（系统级）",
 	"globalHint": "在任何应用中生效。全局快捷键需要 Ctrl/⌘ 或 Alt。",
 	"globalNeedsModifier": "全局快捷键需要 Ctrl/⌘ 或 Alt",
@@ -47,5 +48,6 @@
 	"transportSlower": "放慢播放",
 	"transportPause": "暂停播放",
 	"transportFaster": "加快播放",
-	"duplicateRegion": "复制片段"
+	"duplicateRegion": "复制片段",
+	"markerJump": "在标记之间跳转"
 }
