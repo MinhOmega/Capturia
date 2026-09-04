@@ -1,4 +1,4 @@
-import { server } from '@vitest/browser/context'
+import { server } from 'vitest/browser'
 import { beforeAll, describe, expect, it } from 'vitest'
 import fixtureUrl from '@/__fixtures__/scrolling-table.webm?url'
 import {
