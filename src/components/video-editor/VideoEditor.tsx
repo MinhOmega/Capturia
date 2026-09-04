@@ -95,8 +95,18 @@ import {
   buildExportDiagnosticMessage,
   buildSaveDiagnosticMessage,
   readExportDecodePathOverride,
+  getAvailableExportFrameRates,
   type ExportDiagnosticLabels,
 } from '@/lib/exporter'
+import { describeExportEncoder } from '@/lib/exporter/exportDiagnostics'
+import { buildExportTimingSummary } from '@/lib/exporter/exportTiming'
+import {
+  DEFAULT_EXPORT_VIDEO_CODEC,
+  EXPORT_VIDEO_CODEC_STRINGS,
+  getSupportedExportVideoCodecs,
+  resolveExportVideoCodec,
+  type ExportVideoCodec,
+} from '@/lib/exporter/videoCodecSupport'
 import {
   getExportFolder,
   loadUserPreferences,
@@ -569,6 +579,13 @@ export default function VideoEditor() {
   const [gifLoop, setGifLoop] = useState(DEFAULT_GIF_SETTINGS.loop)
   const [gifSizePreset, setGifSizePreset] = useState<GifSizePreset>(DEFAULT_GIF_SETTINGS.sizePreset)
   const [sourceFrameRate, setSourceFrameRate] = useState<number | undefined>(undefined)
+  /** `undefined` = follow the quality preset (`resolveExportFrameRate`). */
+  const [exportFrameRate, setExportFrameRate] = useState<number | undefined>(undefined)
+  const [exportCodec, setExportCodec] = useState<ExportVideoCodec>(DEFAULT_EXPORT_VIDEO_CODEC)
+  /** Codecs whose `VideoEncoder.isConfigSupported` probe passed for this output. */
+  const [availableExportCodecs, setAvailableExportCodecs] = useState<ExportVideoCodec[]>([
+    DEFAULT_EXPORT_VIDEO_CODEC,
+  ])
   const [sourceHasAudio, setSourceHasAudio] = useState(true)
   const [audioEnabled, setAudioEnabled] = useState(DEFAULT_AUDIO_SETTINGS.enabled)
   const [audioGain, setAudioGain] = useState(DEFAULT_AUDIO_SETTINGS.gain)
@@ -665,6 +682,76 @@ export default function VideoEditor() {
       activeAspectRatioValue,
     )
   }, [sourceVideoDimensions, activeCropRegion, gifSizePreset, activeAspectRatioValue])
+  const availableExportFrameRates = useMemo(
+    () => getAvailableExportFrameRates(sourceFrameRate),
+    [sourceFrameRate],
+  )
+  /**
+   * `calculateMp4ExportPlan` already resolves the output size for a quality
+   * preset; running it once per tile is what puts the real numbers under the
+   * labels instead of the nominal "720p / 1080p / Original".
+   */
+  const exportQualityDimensions = useMemo(() => {
+    const width = sourceVideoDimensions?.width || 1920
+    const height = sourceVideoDimensions?.height || 1080
+    const isNative = aspectRatio === 'native'
+    const planSource = isNative
+      ? calculateEffectiveSourceDimensions(width, height, activeCropRegion)
+      : { width, height }
+    const entries: Partial<Record<ExportQuality, { width: number; height: number }>> = {}
+    for (const quality of ['medium', 'good', 'source'] as const) {
+      const plan = calculateMp4ExportPlan({
+        quality,
+        aspectRatio: activeAspectRatioValue,
+        sourceWidth: planSource.width,
+        sourceHeight: planSource.height,
+        sourceFrameRate,
+        requestedFrameRate: exportFrameRate,
+      })
+      entries[quality] = { width: plan.width, height: plan.height }
+    }
+    return entries
+  }, [
+    sourceVideoDimensions,
+    activeCropRegion,
+    activeAspectRatioValue,
+    aspectRatio,
+    sourceFrameRate,
+    exportFrameRate,
+  ])
+  // A 60 fps pick carried over from a previous recording must not survive into
+  // a 30 fps one, so the choice is re-clamped whenever the source changes.
+  useEffect(() => {
+    setExportFrameRate((current) => {
+      if (current !== undefined && availableExportFrameRates.includes(current)) return current
+      return availableExportFrameRates[availableExportFrameRates.length - 1]
+    })
+  }, [availableExportFrameRates])
+
+  /**
+   * Probe the codecs for the size the current settings would export at. HEVC
+   * support depends on the platform, the GPU driver and the Chromium build, so
+   * it is asked rather than assumed, and the tile stays disabled when the
+   * answer is no.
+   */
+  useEffect(() => {
+    let cancelled = false
+    const target = exportQualityDimensions[exportQuality] ?? { width: 1920, height: 1080 }
+    void getSupportedExportVideoCodecs({
+      width: target.width,
+      height: target.height,
+      bitrate: 12_000_000,
+      frameRate: exportFrameRate ?? 30,
+    }).then((codecs) => {
+      if (cancelled) return
+      setAvailableExportCodecs(codecs)
+      setExportCodec((current) => resolveExportVideoCodec(current, codecs))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [exportQualityDimensions, exportQuality, exportFrameRate])
+
   const zoomRegions = useMemo(
     () => getZoomRegionsForAspect(zoomRegionsByAspect, aspectRatio),
     [zoomRegionsByAspect, aspectRatio],
@@ -3069,8 +3156,11 @@ export default function VideoEditor() {
   }, [audioEditRegions, duration, roughCutSuggestions, setSelectedZoomIdForActiveAspect, t])
 
   const showExportSuccessToast = useCallback(
-    (filePath: string) => {
+    (filePath: string, timing?: { video: string; elapsed: string }) => {
       toast.success(t('dialogs.export.exportedTo', { path: filePath }), {
+        // "12s of video exported in 3s": the ratio is what tells someone
+        // whether this export used the hardware encoder or crawled.
+        description: timing ? t('editor.exportTiming', timing) : undefined,
         action: {
           label: t('dialogs.export.showInFolder'),
           onClick: async () => {
@@ -3101,6 +3191,7 @@ export default function VideoEditor() {
       videoEncoder: t('dialogs.export.diag.videoEncoder'),
       available: t('dialogs.export.diag.available'),
       unavailable: t('dialogs.export.diag.unavailable'),
+      encoder: t('dialogs.export.diag.encoder'),
     }),
     [t],
   )
@@ -3351,13 +3442,15 @@ export default function VideoEditor() {
               sourceWidth: planSource.width,
               sourceHeight: planSource.height,
               sourceFrameRate,
+              requestedFrameRate: exportFrameRate,
             })
             const {
               width: exportWidth,
               height: exportHeight,
               bitrate,
-              frameRate: exportFrameRate,
+              frameRate: plannedFrameRate,
               limitedBySource,
+              frameRateLimitedBySource,
             } = exportPlan
 
             if (limitedBySource && quality !== 'source') {
@@ -3365,15 +3458,20 @@ export default function VideoEditor() {
                 t('editor.exportResolutionLimited', { width: exportWidth, height: exportHeight }),
               )
             }
+            if (frameRateLimitedBySource && index === 0) {
+              toast.info(t('editor.exportFrameRateLimited', { fps: plannedFrameRate }))
+            }
 
             const zoomRegionsForRatio = getZoomRegionsForAspect(zoomRegionsByAspect, currentRatio)
+            const attemptStartedAtMs = Date.now()
+            let exportedFrameCount = 0
             const exporter = new VideoExporter({
               videoUrl: videoPath,
               width: exportWidth,
               height: exportHeight,
-              frameRate: exportFrameRate,
+              frameRate: plannedFrameRate,
               bitrate,
-              codec: 'avc1.640033',
+              codec: EXPORT_VIDEO_CODEC_STRINGS[exportCodec],
               wallpaper,
               zoomRegions: zoomRegionsForRatio,
               trimRegions,
@@ -3404,7 +3502,11 @@ export default function VideoEditor() {
               // Source-copy fast path inputs (sourceCopyFastPath.ts).
               aspectRatio: currentRatio,
               quality,
+              sourceFrameRate,
               onProgress: (progress: ExportProgress) => {
+                if (progress.totalFrames > exportedFrameCount) {
+                  exportedFrameCount = progress.totalFrames
+                }
                 setExportProgress(progress)
               },
             })
@@ -3434,9 +3536,10 @@ export default function VideoEditor() {
                     sourcePath: videoPath,
                     width: exportWidth,
                     height: exportHeight,
-                    frameRate: exportFrameRate,
-                    codec: 'avc1.640033',
+                    frameRate: plannedFrameRate,
+                    codec: EXPORT_VIDEO_CODEC_STRINGS[exportCodec],
                     bitrate,
+                    encoder: result.encoder ? describeExportEncoder(result.encoder) : undefined,
                   },
                   diagnosticLabels,
                 ),
@@ -3447,6 +3550,12 @@ export default function VideoEditor() {
             }
 
             notifyExportWarnings(result.warnings)
+            // The encoder that finished is not always the one that started:
+            // say so, because a software fallback is the usual reason an
+            // export suddenly took several times as long as the last one.
+            if (result.encoder?.usedSoftwareFallback) {
+              toast.info(t('editor.exportSoftwareEncoderUsed'))
+            }
 
             const arrayBuffer = await result.blob.arrayBuffer()
             const ratioSuffix =
@@ -3474,7 +3583,13 @@ export default function VideoEditor() {
               setExportedFilePath(saveResult.path)
               rememberExportFolder(saveResult.path)
               if (ratiosToExport.length === 1) {
-                showExportSuccessToast(saveResult.path)
+                showExportSuccessToast(
+                  saveResult.path,
+                  buildExportTimingSummary(
+                    (exportedFrameCount / plannedFrameRate) * 1000,
+                    Date.now() - attemptStartedAtMs,
+                  ),
+                )
               }
             } else if (!saveResult.success) {
               stashUnsavedExport({ arrayBuffer, fileName, format: 'mp4' })
@@ -4333,6 +4448,14 @@ export default function VideoEditor() {
               videoElement={videoPlaybackRef.current?.video || null}
               exportQuality={exportQuality}
               onExportQualityChange={setExportQuality}
+              exportQualityDimensions={exportQualityDimensions}
+              exportFrameRate={exportFrameRate}
+              availableExportFrameRates={availableExportFrameRates}
+              onExportFrameRateChange={setExportFrameRate}
+              sourceFrameRate={sourceFrameRate}
+              exportCodec={exportCodec}
+              availableExportCodecs={availableExportCodecs}
+              onExportCodecChange={setExportCodec}
               exportFormat={exportFormat}
               onExportFormatChange={setExportFormat}
               exportAspectRatios={exportAspectRatios}

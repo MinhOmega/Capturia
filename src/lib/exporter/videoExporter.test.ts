@@ -9,6 +9,7 @@ import {
   normalizeTrimRanges,
   ExportEncoderError,
   SOFTWARE_FIRST_ENCODER_PLATFORMS,
+  buildEncoderAttempts,
   getEncoderPreferences,
   readExportDecodePathOverride,
   shouldSeekToTime,
@@ -909,5 +910,41 @@ describe('export() source-copy fast path', () => {
       error: 'Export cancelled',
     })
     expect(exporter.runExportAttempt).not.toHaveBeenCalled()
+  })
+})
+
+describe('buildEncoderAttempts', () => {
+  const H264 = 'avc1.640033'
+  const HEVC = 'hvc1.1.6.L123.B0'
+
+  it('tries each hardware preference for a plain H.264 export, and nothing more', () => {
+    expect(buildEncoderAttempts(H264, 'linux')).toEqual([
+      { codec: H264, hardwareAcceleration: 'prefer-hardware', codecFellBack: false },
+      { codec: H264, hardwareAcceleration: 'prefer-software', codecFellBack: false },
+    ])
+  })
+
+  it('follows the platform preference order', () => {
+    // Windows hardware encoders were the source of the stall reports.
+    expect(buildEncoderAttempts(H264, 'win32').map((a) => a.hardwareAcceleration)).toEqual([
+      'prefer-software',
+      'prefer-hardware',
+    ])
+  })
+
+  it('walks a non-default codec down to H.264 after both preferences fail', () => {
+    // The probe can pass and configure() still fail on the driver, so the
+    // fallback has to be part of the run rather than of the menu.
+    expect(buildEncoderAttempts(HEVC, 'linux')).toEqual([
+      { codec: HEVC, hardwareAcceleration: 'prefer-hardware', codecFellBack: false },
+      { codec: HEVC, hardwareAcceleration: 'prefer-software', codecFellBack: false },
+      { codec: H264, hardwareAcceleration: 'prefer-hardware', codecFellBack: true },
+      { codec: H264, hardwareAcceleration: 'prefer-software', codecFellBack: true },
+    ])
+  })
+
+  it('defaults to H.264 when no codec was configured', () => {
+    expect(buildEncoderAttempts(undefined, 'linux').every((a) => a.codec === H264)).toBe(true)
+    expect(buildEncoderAttempts(undefined, 'linux')).toHaveLength(2)
   })
 })

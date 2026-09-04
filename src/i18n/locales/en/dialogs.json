@@ -50,7 +50,8 @@
 			"bitrate": "Bitrate",
 			"videoEncoder": "VideoEncoder",
 			"available": "available",
-			"unavailable": "unavailable"
+			"unavailable": "unavailable",
+			"encoder": "Encoder used"
 		}
 	},
 	"exportError": {

@@ -31,12 +31,27 @@ import type { ExportAudioProcessingConfig, ExportQuality } from './types'
 
 const EPSILON = 1e-6
 
+/**
+ * The codec the editor asks for by default. A copy hands over whatever the
+ * recording already contains, so only this value is compatible with "copy".
+ */
+const SOURCE_COPY_DEFAULT_CODEC = 'avc1.640033'
+
 /** The subset of `VideoExporterConfig` the eligibility decision reads. */
 export interface SourceCopyFastPathInput {
   /** Editor aspect ratio; only `'native'` exports at the cropped source size with no padding. */
   aspectRatio?: AspectRatio
   /** Export quality preset; only `'source'` keeps the source resolution and frame rate. */
   quality?: ExportQuality
+  /** Planned output frame rate. */
+  frameRate?: number
+  /** Probed frame rate of the recording; a mismatch means frames must be resampled. */
+  sourceFrameRate?: number
+  /**
+   * Requested WebCodecs video codec. Anything but the H.264 default means the
+   * user asked for a specific encode, which copying the source cannot deliver.
+   */
+  codec?: string
   padding?: number
   videoPadding?: number
   borderRadius?: number
@@ -90,6 +105,24 @@ export function getSourceCopyFastPathBlockers(config: SourceCopyFastPathInput): 
     blockers.push(
       `quality preset ${config.quality} re-encodes at a different resolution or bitrate`,
     )
+  }
+
+  // A different output rate has to drop or duplicate frames, which is a
+  // re-encode by definition. Only compared when both rates are known: an
+  // unknown source rate is not evidence of a mismatch.
+  if (
+    Number.isFinite(config.frameRate) &&
+    Number.isFinite(config.sourceFrameRate) &&
+    Math.round(config.frameRate as number) !== Math.round(config.sourceFrameRate as number)
+  ) {
+    blockers.push(
+      `output frame rate ${Math.round(config.frameRate as number)} differs from source ${Math.round(
+        config.sourceFrameRate as number,
+      )}`,
+    )
+  }
+  if (config.codec !== undefined && config.codec !== SOURCE_COPY_DEFAULT_CODEC) {
+    blockers.push(`codec ${config.codec} was requested explicitly`)
   }
 
   if (!isFullCrop(config.cropRegion)) blockers.push('crop is not the full source')

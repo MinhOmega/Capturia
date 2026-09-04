@@ -37,6 +37,7 @@ import {
   ExportEncoderError,
 } from './exportErrors'
 import { FrameRenderer } from './frameRenderer'
+import { EXPORT_VIDEO_CODEC_STRINGS } from './videoCodecSupport'
 import { VideoMuxer } from './muxer'
 import type {
   ZoomRegion,
@@ -126,6 +127,11 @@ export interface VideoExporterConfig extends ExportConfig {
    */
   aspectRatio?: AspectRatio
   quality?: ExportQuality
+  /**
+   * Probed frame rate of the recording. Only read by the source-copy fast path,
+   * which cannot serve an export whose rate differs from the source's.
+   */
+  sourceFrameRate?: number
   /**
    * Forces the pre-cache export compositor (see `compositorKeys.ts`). Absent
    * means "follow the `capturia.exportLegacyCompositor` override, else off".
@@ -227,6 +233,8 @@ const ENCODER_STALL_TIMEOUT_MS = 15_000
 const ENCODER_FLUSH_TIMEOUT_MS = 20_000
 /** Software encoders get a shorter queue so Windows does not balloon memory. */
 const SOFTWARE_ENCODER_MAX_QUEUE = 32
+/** H.264 High 5.1: the codec every platform can encode and every player can read. */
+const DEFAULT_EXPORT_CODEC = EXPORT_VIDEO_CODEC_STRINGS.h264
 /**
  * Platforms that try the software encoder first. Windows hardware encoders
  * were the source of the encoder-stall reports, so software goes first there;
@@ -241,6 +249,37 @@ export function getEncoderPreferences(platform: string | undefined): HardwareAcc
     return ['prefer-software', 'prefer-hardware']
   }
   return ['prefer-hardware', 'prefer-software']
+}
+
+/** One (codec, hardware preference) pair for `export()` to try, in order. */
+export interface EncoderAttempt {
+  codec: string
+  hardwareAcceleration: HardwareAcceleration
+  /** `true` when this attempt is not the requested codec but the H.264 fallback. */
+  codecFellBack: boolean
+}
+
+/**
+ * Every encoder configuration the export may try, most-wanted first: the
+ * requested codec on each hardware preference, then — when the request was not
+ * H.264 — H.264 on each. A probe can say HEVC is supported and `configure()`
+ * still fail on the driver, so the fallback is part of the run, not of the UI.
+ */
+export function buildEncoderAttempts(
+  requestedCodec: string | undefined,
+  platform: string | undefined,
+): EncoderAttempt[] {
+  const preferences = getEncoderPreferences(platform)
+  const requested = requestedCodec || DEFAULT_EXPORT_CODEC
+  const codecs: Array<{ codec: string; codecFellBack: boolean }> = [
+    { codec: requested, codecFellBack: false },
+  ]
+  if (requested !== DEFAULT_EXPORT_CODEC) {
+    codecs.push({ codec: DEFAULT_EXPORT_CODEC, codecFellBack: true })
+  }
+  return codecs.flatMap(({ codec, codecFellBack }) =>
+    preferences.map((hardwareAcceleration) => ({ codec, hardwareAcceleration, codecFellBack })),
+  )
 }
 
 /**
@@ -541,6 +580,8 @@ export class VideoExporter {
   private readonly MAX_ENCODE_QUEUE = 120
   private maxEncodeQueue = this.MAX_ENCODE_QUEUE
   private encoderPreference: HardwareAcceleration = 'prefer-hardware'
+  /** Codec of the attempt in flight; `export()` walks it down to H.264 on failure. */
+  private activeCodec: string | null = null
   /** Set by the VideoEncoder `error` callback; surfaces at the next frame / flush. */
   private fatalEncoderError: ExportEncoderError | null = null
   private videoDescription: Uint8Array | undefined
@@ -1304,9 +1345,11 @@ export class VideoExporter {
   }
 
   /**
-   * Runs the export, retrying with the next encoder preference when the
-   * encoder itself fails (`ExportEncoderError`), and re-running on the seek
-   * decode path when the WebCodecs decoder fails before its first frame.
+   * Runs the export, retrying with the next encoder configuration when the
+   * encoder itself fails (`ExportEncoderError`) — the next hardware preference
+   * first, then H.264 when the requested codec was something else — and
+   * re-running on the seek decode path when the WebCodecs decoder fails before
+   * its first frame.
    */
   async export(): Promise<ExportResult> {
     this.decoderFallbackActive = false
@@ -1316,24 +1359,39 @@ export class VideoExporter {
     const sourceCopy = await this.trySourceCopyFastPath()
     if (sourceCopy) return sourceCopy
 
-    const encoderPreferences = getEncoderPreferences(this.platform)
+    const attempts = buildEncoderAttempts(this.config.codec, this.platform)
     let lastError: unknown = null
 
-    for (let index = 0; index < encoderPreferences.length; index += 1) {
-      const encoderPreference = encoderPreferences[index]
+    for (let index = 0; index < attempts.length; index += 1) {
+      const attempt = attempts[index]
+      this.activeCodec = attempt.codec
       try {
-        return await this.runExportAttemptWithDecoderFallback(encoderPreference)
+        const result = await this.runExportAttemptWithDecoderFallback(attempt.hardwareAcceleration)
+        // Only a finished file has an encoder worth reporting; a cancellation
+        // returns from the same call and must stay the bare result it is.
+        if (!result.success) return result
+        return {
+          ...result,
+          encoder: {
+            codec: attempt.codec,
+            hardwareAcceleration: attempt.hardwareAcceleration,
+            retried: index > 0,
+            usedSoftwareFallback: index > 0 && attempt.hardwareAcceleration === 'prefer-software',
+            codecFellBack: attempt.codecFellBack,
+          },
+        }
       } catch (error) {
         lastError = error
         if (this.cancelled) {
           return { success: false, error: 'Export cancelled' }
         }
-        const nextPreference = encoderPreferences[index + 1]
-        if (!(error instanceof ExportEncoderError) || !nextPreference) {
+        const nextAttempt = attempts[index + 1]
+        if (!(error instanceof ExportEncoderError) || !nextAttempt) {
           return this.toFailureResult(error)
         }
         console.warn(
-          `[VideoExporter] ${encoderPreference} export attempt failed; retrying with ${nextPreference}.`,
+          `[VideoExporter] ${attempt.codec} / ${attempt.hardwareAcceleration} export attempt failed; ` +
+            `retrying with ${nextAttempt.codec} / ${nextAttempt.hardwareAcceleration}.`,
           error,
         )
       }
@@ -2223,7 +2281,7 @@ export class VideoExporter {
 
             const metadata: EncodedVideoChunkMetadata = {
               decoderConfig: {
-                codec: this.config.codec || 'avc1.640033',
+                codec: this.activeCodec || this.config.codec || DEFAULT_EXPORT_CODEC,
                 codedWidth: this.config.width,
                 codedHeight: this.config.height,
                 description: this.videoDescription,
@@ -2257,7 +2315,7 @@ export class VideoExporter {
       },
     })
 
-    const codec = this.config.codec || 'avc1.640033'
+    const codec = this.activeCodec || this.config.codec || DEFAULT_EXPORT_CODEC
 
     const encoderConfig: VideoEncoderConfig = {
       codec,
@@ -2285,7 +2343,8 @@ export class VideoExporter {
     }
 
     console.log(
-      `[VideoExporter] Using ${hardwareAcceleration === 'prefer-hardware' ? 'hardware' : 'software'} encoding (queue ${this.maxEncodeQueue})`,
+      `[VideoExporter] Using ${hardwareAcceleration === 'prefer-hardware' ? 'hardware' : 'software'} ` +
+        `${codec} encoding (queue ${this.maxEncodeQueue})`,
     )
     this.encoder.configure(encoderConfig)
   }

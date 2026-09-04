@@ -50,7 +50,8 @@
 			"bitrate": "码率",
 			"videoEncoder": "VideoEncoder",
 			"available": "可用",
-			"unavailable": "不可用"
+			"unavailable": "不可用",
+			"encoder": "使用的编码器"
 		}
 	},
 	"exportError": {
