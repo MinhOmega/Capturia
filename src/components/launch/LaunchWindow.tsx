@@ -8,6 +8,7 @@ import {
 } from '../../hooks/useScreenRecorder'
 import type { CameraOverlayShape } from '../../hooks/cameraOverlay'
 import { useCameraDevices } from '../../hooks/useCameraDevices'
+import { useCameraPreviewStream } from '../../hooks/useCameraPreviewStream'
 import { useMicrophoneDevices } from '../../hooks/useMicrophoneDevices'
 import { useAudioLevelMeter } from '../../hooks/useAudioLevelMeter'
 import { AudioLevelMeter } from '../ui/audio-level-meter'
@@ -21,9 +22,12 @@ import { FiCamera, FiMinus, FiMousePointer, FiX } from 'react-icons/fi'
 import {
   Columns3,
   EyeOff,
+  Flag,
   Keyboard,
   Mic,
   MicOff,
+  Monitor,
+  MonitorOff,
   NotebookPen,
   Pause,
   Play,
@@ -88,6 +92,11 @@ const MICROPHONE_ENABLED_STORAGE_KEY = 'capturia.microphoneEnabled'
 const MICROPHONE_DEVICE_STORAGE_KEY = 'capturia.microphoneDeviceId'
 const SYSTEM_AUDIO_ENABLED_STORAGE_KEY = 'capturia.systemAudioEnabled'
 const DEFAULT_STOP_RECORDING_SHORTCUT = 'CommandOrControl+Shift+2'
+/**
+ * D2: shown on the flag button until main answers with the accelerator actually
+ * registered. Mirrors DEFAULT_SHORTCUTS.markMoment; main owns the real binding.
+ */
+const DEFAULT_MARK_MOMENT_SHORTCUT = 'CommandOrControl+Alt+F'
 const AUTO_HIDE_HUD_ON_RECORD_STORAGE_KEY = 'capturia.autoHideHudOnRecord'
 const CAPTURE_MODE_STORAGE_KEY = 'capturia.captureMode'
 const CAPTURE_FRAME_RATE_STORAGE_KEY = 'capturia.captureFrameRate'
@@ -229,6 +238,10 @@ export function LaunchWindow() {
     selectedDeviceId: cameraDeviceId,
     setSelectedDeviceId: setCameraDeviceId,
   } = useCameraDevices(includeCamera, readStoredString(CAMERA_DEVICE_STORAGE_KEY))
+  // D3: opt-in preview. The camera stays off until the popover is open AND the
+  // user has asked for a preview, and never while a take is starting or running
+  // - the recorder opens the camera itself.
+  const [cameraPreviewRequested, setCameraPreviewRequested] = useState(false)
   const cameraDeviceName = cameraDevices.find((device) => device.deviceId === cameraDeviceId)?.label
   // Microphone (A13): off records without an audio track; "" = system default device.
   const [microphoneEnabled, setMicrophoneEnabled] = useState(
@@ -327,6 +340,9 @@ export function LaunchWindow() {
       return DEFAULT_STOP_RECORDING_SHORTCUT
     }
   })
+  // D2: the accelerator main actually registered for "flag this moment", shown
+  // on the flag button. The default stands in until main answers.
+  const [markMomentShortcut, setMarkMomentShortcut] = useState(DEFAULT_MARK_MOMENT_SHORTCUT)
   const [captureStopShortcut, setCaptureStopShortcut] = useState(false)
   const [stopShortcutPopoverOpen, setStopShortcutPopoverOpen] = useState(false)
   const [capturePopoverOpen, setCapturePopoverOpen] = useState(false)
@@ -398,6 +414,30 @@ export function LaunchWindow() {
     enabled: microphoneEnabled && microphonePopoverOpen && !controlsLocked,
     deviceId: microphoneDeviceId || undefined,
   })
+  // D3: same rule for the camera - open only while its popover is visible, the
+  // user has clicked Preview, and no take owns the device.
+  const {
+    stream: cameraPreviewStream,
+    isStarting: cameraPreviewStarting,
+    error: cameraPreviewError,
+    stop: stopCameraPreview,
+  } = useCameraPreviewStream(
+    includeCamera && cameraPopoverOpen && cameraPreviewRequested && !controlsLocked,
+    cameraDeviceId,
+  )
+  const cameraPreviewVideoRef = useRef<HTMLVideoElement | null>(null)
+  useEffect(() => {
+    const video = cameraPreviewVideoRef.current
+    if (!video) return
+    video.srcObject = cameraPreviewStream
+    // `play()` predates its promise return, and jsdom still answers undefined.
+    if (cameraPreviewStream) void Promise.resolve(video.play()).catch(() => undefined)
+  }, [cameraPreviewStream])
+  // Closing the popover ends the preview *and* forgets the request, so
+  // re-opening it never turns the camera light on unasked.
+  useEffect(() => {
+    if (!cameraPopoverOpen || !includeCamera) setCameraPreviewRequested(false)
+  }, [cameraPopoverOpen, includeCamera])
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null)
   // Token of the countdown run currently shown in the overlay window. Every run
   // gets a fresh id so the overlay ignores ticks/hides from a cancelled run.
@@ -418,6 +458,31 @@ export function LaunchWindow() {
     saveUserPreferences({ hudOrientation: next })
     setHudOrientation(next)
   }, [hudOrientation])
+
+  // D1: keep Capturia's own windows out of the recording. The preference is
+  // stored here; main owns applying OS content protection, so the stored value
+  // is pushed up on mount and on every change.
+  const [hideHudFromRecording, setHideHudFromRecording] = useState<boolean>(
+    () => loadUserPreferences().hideHudFromRecording,
+  )
+  // Windows the OS refused to keep out of the capture. Non-empty on Linux,
+  // which has no content-protection API at all, and on macOS 26, which never
+  // paints a protected window; the tooltip says so rather than letting the
+  // toggle imply a privacy the platform cannot give.
+  const [hudPrivacyUnprotected, setHudPrivacyUnprotected] = useState<string[]>([])
+  useEffect(() => {
+    void (async () => {
+      const result = await window.electronAPI?.setHideHudFromRecording?.(hideHudFromRecording)
+      setHudPrivacyUnprotected(result?.unprotected ?? [])
+    })()
+  }, [hideHudFromRecording])
+  const toggleHideHudFromRecording = useCallback(() => {
+    setHideHudFromRecording((current) => {
+      const next = !current
+      saveUserPreferences({ hideHudFromRecording: next })
+      return next
+    })
+  }, [])
 
   // Boxes the user can interact with (bar + open popovers), viewport-relative.
   // Both the content-fit size and the main-process cursor poll derive from them.
@@ -723,6 +788,61 @@ export function LaunchWindow() {
     const s = (seconds % 60).toString().padStart(2, '0')
     return `${m}:${s}`
   }
+  /**
+   * D2: turn the outcome of a flagged moment into user-visible feedback. Shared
+   * by the HUD button and by the `markMoment` global shortcut, which main pushes
+   * back over `recording-marker-added` so both surfaces confirm identically.
+   */
+  const announceMarkerResult = useCallback(
+    (result: RecordingMarkerOutcome | undefined) => {
+      if (!result) return
+      if (result.added) {
+        toast.success(
+          t('launch.markMomentAdded', {
+            time: formatTime(Math.floor(result.timeMs / 1000)),
+            count: result.count,
+          }),
+        )
+        return
+      }
+      if (result.reason === 'paused') {
+        toast.error(t('launch.markMomentPaused'))
+        return
+      }
+      if (result.reason === 'limit') {
+        toast.error(t('launch.markMomentLimit'))
+      }
+      // 'not-recording': the shortcut is global, so it fires when nothing is
+      // being recorded too. Silence is the right answer there.
+    },
+    [t],
+  )
+
+  const flagRecordingMoment = useCallback(() => {
+    void (async () => {
+      try {
+        announceMarkerResult(await window.electronAPI?.addRecordingMarker?.())
+      } catch (error) {
+        console.warn('[hud] could not flag the moment', error)
+      }
+    })()
+  }, [announceMarkerResult])
+
+  useEffect(() => {
+    return window.electronAPI?.onRecordingMarkerAdded?.(announceMarkerResult)
+  }, [announceMarkerResult])
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const accelerators = await window.electronAPI?.getGlobalShortcuts?.()
+        if (accelerators?.markMoment) setMarkMomentShortcut(accelerators.markMoment)
+      } catch {
+        // Keep the default label; the binding is main's to own either way.
+      }
+    })()
+  }, [])
+
   const [selectedSource, setSelectedSource] = useState(t('launch.sourceFallback'))
   const [hasSelectedSource, setHasSelectedSource] = useState(false)
   // Set when the record button opened the picker: the next `selected-source-changed`
@@ -1219,6 +1339,12 @@ export function LaunchWindow() {
   }, [chainedStartRequest, hasSelectedSource, requestRecordStart])
 
   const handleRecordButtonClick = useCallback(() => {
+    // D3: free the camera before anything else. The recorder opens it itself,
+    // and this runs in the same tick as the click, so the device is never
+    // claimed twice.
+    stopCameraPreview()
+    setCameraPreviewRequested(false)
+
     if (recording || recordingState === 'recording') {
       clearRecordCountdown()
       toggleRecording()
@@ -1252,6 +1378,7 @@ export function LaunchWindow() {
     recordingState,
     requestRecordStart,
     clearRecordCountdown,
+    stopCameraPreview,
     toggleRecording,
   ])
 
@@ -1320,6 +1447,7 @@ export function LaunchWindow() {
   }, [recording, autoHideHudOnRecord])
 
   const displayedStopShortcut = formatAccelerator(stopRecordingShortcut, isMacPlatform)
+  const displayedMarkMomentShortcut = formatAccelerator(markMomentShortcut, isMacPlatform)
 
   const resetStopRecordingShortcut = () => {
     void (async () => {
@@ -1389,6 +1517,15 @@ export function LaunchWindow() {
           {/* Right: Pause/Resume + Discard. Pause is hidden while the native macOS
               recorder owns the session: it cannot pause yet, so the button would lie. */}
           <div className={`flex items-center gap-1 shrink-0 ${styles.electronNoDrag}`}>
+            <button
+              onClick={flagRecordingMoment}
+              disabled={recordingState === 'paused'}
+              className="p-1 rounded hover:bg-white/10 transition-colors disabled:opacity-40"
+              title={t('launch.markMomentHint', { shortcut: displayedMarkMomentShortcut })}
+              data-testid="launch-mark-moment-button"
+            >
+              <Flag size={13} className="text-white/60 hover:text-cyan-300" />
+            </button>
             {canPause && (
               <button
                 onClick={recordingState === 'paused' ? resumeRecording : pauseRecording}
@@ -1879,6 +2016,36 @@ export function LaunchWindow() {
           </span>
         </Button>
 
+        <Button
+          variant="link"
+          size="sm"
+          className={`gap-1 shrink-0 min-w-[104px] text-white bg-transparent hover:bg-transparent px-1 text-center text-xs ${styles.electronNoDrag}`}
+          onClick={toggleHideHudFromRecording}
+          disabled={controlsLocked}
+          aria-pressed={hideHudFromRecording}
+          data-testid="launch-hide-hud-from-recording"
+          title={[
+            hideHudFromRecording
+              ? t('launch.hideHudFromRecordingOn')
+              : t('launch.hideHudFromRecordingOff'),
+            hideHudFromRecording && hudPrivacyUnprotected.length > 0
+              ? t('launch.hideHudFromRecordingUnsupported')
+              : null,
+            t('launch.hideHudFromRecordingCaveat'),
+          ]
+            .filter(Boolean)
+            .join(' ')}
+        >
+          {hideHudFromRecording ? (
+            <MonitorOff size={13} className="text-cyan-300" />
+          ) : (
+            <Monitor size={13} className="text-white/60" />
+          )}
+          <span className={hideHudFromRecording ? 'text-cyan-300' : 'text-white/80'}>
+            {t('launch.hideHudFromRecording')}
+          </span>
+        </Button>
+
         <Popover
           open={stopShortcutPopoverOpen}
           onOpenChange={(open) => {
@@ -2008,6 +2175,55 @@ export function LaunchWindow() {
                   )}
                 </select>
               </label>
+              {/* D3: opt-in preview. Off until asked for, and the hint says why. */}
+              <div className="mb-2">
+                {cameraPreviewRequested ? (
+                  <div className="flex flex-col gap-1">
+                    {/* A live camera feed has nothing to caption. */}
+                    <video
+                      ref={cameraPreviewVideoRef}
+                      muted
+                      playsInline
+                      autoPlay
+                      className="w-full h-[104px] rounded-md bg-black/60 object-cover"
+                      data-testid="launch-camera-preview-video"
+                    />
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[10px] text-cyan-100/70">
+                        {cameraPreviewError
+                          ? cameraPreviewError
+                          : cameraPreviewStarting
+                            ? t('common.loading')
+                            : t('launch.webcam.previewLightHint')}
+                      </span>
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className={`h-6 px-2 text-[10px] text-cyan-200 bg-transparent hover:bg-cyan-200/10 ${styles.electronNoDrag}`}
+                        onClick={() => {
+                          setCameraPreviewRequested(false)
+                          stopCameraPreview()
+                        }}
+                        data-testid="launch-camera-preview-stop"
+                      >
+                        {t('launch.webcam.previewStop')}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className={`h-7 w-full justify-center text-[11px] text-cyan-200 border border-cyan-300/20 rounded-md bg-cyan-400/5 hover:bg-cyan-400/15 ${styles.electronNoDrag}`}
+                    onClick={() => setCameraPreviewRequested(true)}
+                    disabled={controlsLocked || cameraDevices.length === 0}
+                    title={t('launch.webcam.previewLightHint')}
+                    data-testid="launch-camera-preview-start"
+                  >
+                    {t('launch.webcam.preview')}
+                  </Button>
+                )}
+              </div>
               <div className="flex items-center gap-2">
                 <Button
                   variant="link"

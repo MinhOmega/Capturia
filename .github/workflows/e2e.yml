@@ -48,17 +48,22 @@ jobs:
       - name: Build renderer + main process
         run: npm run build:vite
 
+      # CAPTURIA_E2E_SKIP_BUILD: the step above already built, so `e2e/globalSetup.ts`
+      # must not spend a second build inside the test timeout. It still checks the
+      # artifacts against `src/` + `electron/` and fails the job if they are behind.
       - name: Run e2e (Linux, xvfb)
         if: runner.os == 'Linux'
         run: xvfb-run --auto-servernum npm run test:e2e
         env:
           CI: "1"
+          CAPTURIA_E2E_SKIP_BUILD: "1"
 
       - name: Run e2e (macOS)
         if: runner.os == 'macOS'
         run: npm run test:e2e
         env:
           CI: "1"
+          CAPTURIA_E2E_SKIP_BUILD: "1"
 
       - name: Upload Playwright report
         uses: actions/upload-artifact@v4

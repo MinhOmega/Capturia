@@ -15,7 +15,8 @@ import { _electron as electron, expect, test, type ElectronApplication } from '@
  * but a real window also carries the application menu and the main process's
  * accelerators, which is where a plain-key shortcut is most likely to be eaten.
  *
- * Prerequisite: `npm run build:vite` (writes `dist/` + `dist-electron/`).
+ * The build is automatic: `e2e/globalSetup.ts` runs `npm run build:vite` when
+ * `dist/` + `dist-electron/` are behind `src/` or `electron/`.
  * Linux: `xvfb-run --auto-servernum npm run test:e2e`.
  */
 
@@ -29,7 +30,7 @@ function skipReason(): string | null {
     return 'no display server (DISPLAY/WAYLAND_DISPLAY unset); run under xvfb-run'
   }
   if (!fs.existsSync(MAIN_JS)) {
-    return `${path.relative(ROOT, MAIN_JS)} missing; run "npm run build:vite" first`
+    return `${path.relative(ROOT, MAIN_JS)} missing; e2e/globalSetup.ts builds it unless CAPTURIA_E2E_SKIP_BUILD=1`
   }
   if (!fs.existsSync(FIXTURE)) {
     return `${path.relative(ROOT, FIXTURE)} missing`
@@ -191,24 +192,61 @@ test('J, K and L drive the preview rate', async () => {
     const rate = () => editor.evaluate(() => document.querySelector('video')?.playbackRate ?? 0)
     const paused = () => editor.evaluate(() => document.querySelector('video')?.paused ?? true)
 
-    // L starts the preview at 1x.
-    await editor.keyboard.press('l')
-    await expect.poll(paused, { timeout: 15_000 }).toBe(false)
+    // The fixture is two seconds long and the transport reads the element's own
+    // play state, so a clip that runs out mid-ladder turns the next L into
+    // "start again at 1x" and the next J into a no-op — the ladder is then
+    // measuring the fixture's length, not the shortcut. Looping the element
+    // makes the clip effectively endless; nothing in the app touches `loop`, so
+    // this only removes the fixture from the picture. Traced on this box: the
+    // editor's warm-up blocks the renderer for up to a second, during which the
+    // preview plays, and the burst was landing at t≈1.7s of 2.008s.
+    await editor.evaluate(() => {
+      const video = document.querySelector('video')
+      if (video) video.loop = true
+    })
 
-    // Then climb to 4x and step back to 2x. The three presses go out as one
-    // burst on purpose: the fixture is two seconds long, so pausing to assert
-    // each rung would let the clip run out mid-ladder and the next press would
-    // restart it at 1x instead of stepping. Landing on 2x is only reachable
-    // through 1x -> 2x -> 4x -> 2x; a ladder that ignored the presses would
-    // read 1x, and one that stopped climbing early would read 1x as well.
+    // L starts the preview at 1x. "Playing" here means the playhead is actually
+    // advancing: `paused === false` also holds while the element is stalled on a
+    // decode or inside the spurious-pause retry the preview does on Linux, and a
+    // press that lands in that window steps from the wrong rung.
+    await editor.keyboard.press('l')
+    const advancing = () =>
+      editor.evaluate(async () => {
+        const video = document.querySelector('video')
+        if (!video) return false
+        const before = video.currentTime
+        await new Promise((resolve) => setTimeout(resolve, 120))
+        return !video.paused && video.currentTime !== before
+      })
+    await expect.poll(advancing, { timeout: 20_000 }).toBe(true)
+
+    // Then climb to 4x and step back to 2x, as one burst — the shape the
+    // transport is actually used in. Landing on 2x is only reachable through
+    // 1x -> 2x -> 4x -> 2x; a ladder that ignored a press would read 1x, and
+    // one that stopped climbing early would read 1x as well.
+    //
+    // What this does *not* prove: the eager `previewPlaybackRateRef` write in
+    // `VideoEditor.tsx` that keeps two presses inside one frame from reading the
+    // same rung. Reverting it and re-running this spec still passes, because
+    // Playwright round-trips each press and React flushes the discrete update in
+    // between. That invariant is a call-site one; `videoPlayback/transport.ts`
+    // and its unit test own the ladder itself.
     await editor.keyboard.press('l')
     await editor.keyboard.press('l')
     await editor.keyboard.press('j')
     await expect.poll(rate, { timeout: 15_000 }).toBe(2)
+    // Still playing: a ladder that fell off the bottom would have paused.
+    expect(await paused()).toBe(false)
+    // ...and the editor's own transport state agrees with the element.
+    const speedBadge = editor.getByTestId('preview-speed')
+    await expect(speedBadge).toHaveText('2x')
 
-    // K pauses and keeps the rate.
+    // K pauses and keeps the rate. The element's `playbackRate` is frozen once
+    // the playback loop stops, so the badge is the assertion that means
+    // something here; the element is checked only for not having been reset.
     await editor.keyboard.press('k')
     await expect.poll(paused, { timeout: 15_000 }).toBe(true)
+    await expect(speedBadge).toHaveText('2x')
     expect(await rate()).toBe(2)
   } finally {
     killApp(app)

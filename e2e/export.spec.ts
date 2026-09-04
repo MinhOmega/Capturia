@@ -19,7 +19,8 @@ import { _electron as electron, expect, test, type ElectronApplication } from '@
  *   no test-only branch is needed in the editor;
  * - the export is started on the same channel the application menu uses.
  *
- * Prerequisite: `npm run build:vite` (writes `dist/` + `dist-electron/`).
+ * The build is automatic: `e2e/globalSetup.ts` runs `npm run build:vite` when
+ * `dist/` + `dist-electron/` are behind `src/` or `electron/`.
  * Linux: `xvfb-run --auto-servernum npm run test:e2e`.
  */
 
@@ -36,7 +37,7 @@ function skipReason(): string | null {
     return 'no display server (DISPLAY/WAYLAND_DISPLAY unset); run under xvfb-run'
   }
   if (!fs.existsSync(MAIN_JS)) {
-    return `${path.relative(ROOT, MAIN_JS)} missing; run "npm run build:vite" first`
+    return `${path.relative(ROOT, MAIN_JS)} missing; e2e/globalSetup.ts builds it unless CAPTURIA_E2E_SKIP_BUILD=1`
   }
   if (!fs.existsSync(FIXTURE)) {
     return `${path.relative(ROOT, FIXTURE)} missing`

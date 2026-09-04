@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   AckWaiters,
+  buildNativeRecorderArgs,
   NO_NATIVE_RECORDER_CAPABILITIES,
   getNativeMacRecorderCapabilities,
   parseCapsLine,
@@ -137,5 +138,66 @@ describe('sck-recorder warnings and capabilities added with mic device selection
     expect(parseWarnLine('SCK_RECORDER_WARN')).toBeNull()
     expect(parseWarnLine('SCK_RECORDER_ERROR code=x message=y')).toBeNull()
     expect(parseWarnLine('[log] SCK_RECORDER_WARN mic_device_not_found')).toBeNull()
+  })
+})
+
+describe('buildNativeRecorderArgs', () => {
+  const base = {
+    outputPath: '/tmp/take.mp4',
+    cursorMode: 'always' as const,
+    frameRate: 60,
+  }
+
+  /** `['--fps', '60']` -> `{ '--fps': '60' }`, so a test can assert one flag. */
+  function flagValue(args: string[], flag: string): string | undefined {
+    const index = args.indexOf(flag)
+    return index >= 0 ? args[index + 1] : undefined
+  }
+
+  it('omits --exclude-pid when the HUD is allowed in the recording', () => {
+    expect(buildNativeRecorderArgs(base)).not.toContain('--exclude-pid')
+    expect(buildNativeRecorderArgs({ ...base, excludePid: undefined })).not.toContain(
+      '--exclude-pid',
+    )
+  })
+
+  it('passes --exclude-pid when a pid is given', () => {
+    const args = buildNativeRecorderArgs({ ...base, excludePid: 4242 })
+    expect(flagValue(args, '--exclude-pid')).toBe('4242')
+  })
+
+  it('ignores a pid that is not a positive integer', () => {
+    for (const excludePid of [0, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(buildNativeRecorderArgs({ ...base, excludePid })).not.toContain('--exclude-pid')
+    }
+    expect(flagValue(buildNativeRecorderArgs({ ...base, excludePid: 12.9 }), '--exclude-pid')).toBe(
+      '12',
+    )
+  })
+
+  it('keeps the flags that were already there unchanged', () => {
+    const args = buildNativeRecorderArgs({
+      ...base,
+      cursorMode: 'never',
+      microphoneEnabled: false,
+      systemAudio: true,
+      cameraEnabled: true,
+      cameraShape: 'circle',
+      cameraSizePercent: 30,
+      sourceId: 'window:7',
+      width: 1920,
+      height: 1081,
+      excludePid: 9,
+    })
+    expect(flagValue(args, '--output')).toBe('/tmp/take.mp4')
+    expect(flagValue(args, '--hide-cursor')).toBe('1')
+    expect(flagValue(args, '--microphone-enabled')).toBe('0')
+    expect(flagValue(args, '--system-audio')).toBe('1')
+    expect(flagValue(args, '--camera-shape')).toBe('circle')
+    expect(flagValue(args, '--camera-size-percent')).toBe('30')
+    expect(flagValue(args, '--source-id')).toBe('window:7')
+    expect(flagValue(args, '--height')).toBe('1081')
+    // Appended last so an old helper skips it after every flag it does know.
+    expect(args.slice(-2)).toEqual(['--exclude-pid', '9'])
   })
 })

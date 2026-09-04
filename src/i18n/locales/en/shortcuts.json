@@ -38,6 +38,7 @@
 	"instructions": "Click a shortcut then press a new key combo. Press Esc to cancel.",
 	"openApp": "Open Capturia",
 	"stopRecording": "Stop Recording",
+	"markMoment": "Flag This Moment",
 	"global": "Global (system-wide)",
 	"globalHint": "Work in any app. A global shortcut needs Ctrl/⌘ or Alt.",
 	"globalNeedsModifier": "Global shortcuts need Ctrl/⌘ or Alt",
@@ -47,5 +48,6 @@
 	"transportSlower": "Playback Slower",
 	"transportPause": "Pause Playback",
 	"transportFaster": "Playback Faster",
-	"duplicateRegion": "Duplicate Region"
+	"duplicateRegion": "Duplicate Region",
+	"markerJump": "Jump Between Flagged Moments"
 }

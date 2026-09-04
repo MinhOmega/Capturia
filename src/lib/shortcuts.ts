@@ -16,6 +16,7 @@ export const SHORTCUT_ACTIONS = [
   // (electron/globalShortcut.ts). Stored in the same shortcuts.json.
   'openApp',
   'stopRecording',
+  'markMoment',
 ] as const
 
 export type ShortcutAction = (typeof SHORTCUT_ACTIONS)[number]
@@ -24,6 +25,7 @@ export type ShortcutAction = (typeof SHORTCUT_ACTIONS)[number]
 export const GLOBAL_SHORTCUT_ACTIONS = [
   'openApp',
   'stopRecording',
+  'markMoment',
 ] as const satisfies readonly ShortcutAction[]
 
 export type GlobalShortcutAction = (typeof GLOBAL_SHORTCUT_ACTIONS)[number]
@@ -82,6 +84,7 @@ export const SHORTCUT_LABEL_KEYS: Record<ShortcutAction, string> = {
   paste: 'shortcuts.paste',
   openApp: 'shortcuts.openApp',
   stopRecording: 'shortcuts.stopRecording',
+  markMoment: 'shortcuts.markMoment',
 }
 
 // ---------------------------------------------------------------------------
@@ -105,6 +108,9 @@ export const DEFAULT_SHORTCUTS: ShortcutsConfig = {
   paste: { key: 'v', ctrl: true },
   openApp: { key: 'o', ctrl: true, shift: true },
   stopRecording: { key: '2', ctrl: true, shift: true },
+  // D2: flag the current moment while recording. Alt rather than Shift so it
+  // stays clear of the two shortcuts above and of the OS's own Ctrl+Alt combos.
+  markMoment: { key: 'f', ctrl: true, alt: true },
 }
 
 // ---------------------------------------------------------------------------
@@ -158,6 +164,17 @@ export const FIXED_SHORTCUTS: FixedShortcut[] = [
     labelKey: 'shortcuts.duplicateRegion',
     display: 'Ctrl+D',
     bindings: [{ key: 'd', ctrl: true }],
+  },
+  // D2: jump between the moments flagged during the recording. Fixed rather
+  // than configurable: the pair only makes sense together, and Alt+arrow is
+  // free (the plain and Shift arrow seeks both require Alt to be up).
+  {
+    labelKey: 'shortcuts.markerJump',
+    display: 'Alt + ←/→',
+    bindings: [
+      { key: 'arrowleft', alt: true },
+      { key: 'arrowright', alt: true },
+    ],
   },
 ]
 

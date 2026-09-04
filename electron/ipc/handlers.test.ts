@@ -84,6 +84,8 @@ const CHANNELS_ADDED_AFTER_DECOMPOSITION = [
   'save-caption-sidecar',
   // P2-F4 cancel a running native transcription (analysis.ts)
   'analysis-cancel',
+  // P2-D2: recording flags (markers in the cursor sidecar)
+  'cursor-tracker-marker',
 ]
 
 const EXPECTED_CHANNELS = [...CHANNELS_BEFORE_DECOMPOSITION, ...CHANNELS_ADDED_AFTER_DECOMPOSITION]
@@ -98,6 +100,10 @@ const HUD_CHANNELS = [
   'countdown-overlay-set-value',
   'countdown-overlay-hide',
   'open-notes',
+  // P2-D1: keep the HUD family out of the recording (hideHudFromRecording)
+  'hud-hide-from-recording-get',
+  'hud-hide-from-recording-set',
+  'hud-hide-from-recording-reassert',
 ]
 
 const HUD_WINDOWS = {

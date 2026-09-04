@@ -45,6 +45,15 @@
 	"autoHideHudOnRecord": "Auto Hide",
 	"autoHideHudOnRecordOn": "Hide launch bar automatically after recording starts",
 	"autoHideHudOnRecordOff": "Keep launch bar visible after recording starts",
+	"hideHudFromRecording": "Hide HUD",
+	"hideHudFromRecordingOn": "Capturia's own windows stay out of the recording.",
+	"hideHudFromRecordingOff": "Capturia's own windows appear in the recording.",
+	"hideHudFromRecordingCaveat": "The same setting also hides them from remote-desktop and screen-sharing tools.",
+	"hideHudFromRecordingUnsupported": "This system cannot hide a window from screen capture, so auto-hide is what keeps the HUD out of the recording here.",
+	"markMomentHint": "Flag this moment ({{shortcut}}) — it shows on the editor timeline",
+	"markMomentAdded": "Moment flagged at {{time}} ({{count}} in this recording)",
+	"markMomentPaused": "Resume the recording before flagging a moment.",
+	"markMomentLimit": "This recording already holds the maximum number of flagged moments.",
 	"stopShortcutLabel": "Stop recording shortcut: {{shortcut}}",
 	"stopShortcutConfigTitle": "Stop Recording Shortcut",
 	"stopShortcutCurrent": "Current: {{shortcut}}",
@@ -136,7 +145,10 @@
 	"cameraDevice": "Camera",
 	"webcam": {
 		"defaultCamera": "Default Camera",
-		"noneFound": "No camera found"
+		"noneFound": "No camera found",
+		"preview": "Preview camera",
+		"previewStop": "Stop preview",
+		"previewLightHint": "The camera light turns on while the preview is open."
 	},
 	"microphone": "Mic",
 	"microphoneFallback": "Microphone unavailable. Recording without audio.",

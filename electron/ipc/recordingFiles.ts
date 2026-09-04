@@ -11,6 +11,7 @@ import {
   stopNativeMacRecorder,
 } from '../native/sckRecorder'
 import { patchWebmDurationOnDisk } from '../recording/webm-duration'
+import { getHideHudFromRecording } from '../recordingPrivacy'
 import { scheduleRecordingsCleanup } from '../recordingsCleanup'
 import type { CaptureSourceRef } from '../../src/lib/cursor/captureSpace'
 import type { IpcContext, SelectedSource } from './context'
@@ -358,6 +359,10 @@ export function registerRecordingFilesHandlers(ctx: IpcContext): RecordingFilesR
           bitrateScale,
           width,
           height,
+          // D1: content protection is a no-op for the ScreenCaptureKit path, so
+          // the HUD family is kept out of the capture by excluding Capturia's
+          // application from the content filter instead.
+          excludePid: getHideHudFromRecording() ? process.pid : undefined,
         })
 
         if (!result.success || !result.ready) {

@@ -38,6 +38,7 @@
 	"instructions": "Nhấp vào một phím tắt rồi nhấn tổ hợp phím mới. Nhấn Esc để hủy.",
 	"openApp": "Mở Capturia",
 	"stopRecording": "Dừng ghi hình",
+	"markMoment": "Đánh dấu khoảnh khắc này",
 	"global": "Toàn hệ thống",
 	"globalHint": "Hoạt động trong mọi ứng dụng. Phím tắt toàn hệ thống cần Ctrl/⌘ hoặc Alt.",
 	"globalNeedsModifier": "Phím tắt toàn hệ thống cần Ctrl/⌘ hoặc Alt",
@@ -47,5 +48,6 @@
 	"transportSlower": "Phát chậm lại",
 	"transportPause": "Tạm dừng phát",
 	"transportFaster": "Phát nhanh hơn",
-	"duplicateRegion": "Nhân đôi vùng"
+	"duplicateRegion": "Nhân đôi vùng",
+	"markerJump": "Chuyển giữa các dấu đã đánh"
 }

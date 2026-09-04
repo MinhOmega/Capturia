@@ -41,5 +41,6 @@
 	"moreActions": "更多时间轴操作",
 	"resetAllEdits": "重置所有裁剪和剪切",
 	"resetAllEditsConfirm": "将丢弃所有分割、删除的片段和片段速度，录像恢复为一段完整的正常速度片段。缩放、批注和模糊会保留。此操作可以撤销。",
-	"resetAllEditsConfirmAction": "重置"
+	"resetAllEditsConfirmAction": "重置",
+	"recordingMarkerAt": "录制时在 {{time}} 标记的时刻——点击可跳转到此处"
 }

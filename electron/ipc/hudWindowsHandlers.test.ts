@@ -3,7 +3,12 @@ import { screen } from 'electron'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { HudOverlayResult } from '../../src/hooks/useHudLayout'
 import { type FakeIpcMain, fakeIpcMain, fakeWindow } from './__tests__/ipcTestKit'
-import { HUD_CURSOR_POLL_MS, registerHudWindowsHandlers } from './hudWindowsHandlers'
+import { getHideHudFromRecording, resetHideHudFromRecording } from '../recordingPrivacy'
+import {
+  HUD_CURSOR_POLL_MS,
+  type HudRecordingPrivacyResult,
+  registerHudWindowsHandlers,
+} from './hudWindowsHandlers'
 
 vi.mock('electron', async () => (await import('./__tests__/ipcTestKit')).createElectronMock())
 
@@ -45,7 +50,12 @@ function fakeCountdownWindow(): BrowserWindow {
   } as unknown as BrowserWindow
 }
 
-function register(ipc: FakeIpcMain, hud: BrowserWindow | null, countdown?: BrowserWindow) {
+function register(
+  ipc: FakeIpcMain,
+  hud: BrowserWindow | null,
+  countdown?: BrowserWindow,
+  extra: Partial<Parameters<typeof registerHudWindowsHandlers>[0]> = {},
+) {
   registerHudWindowsHandlers({
     ipcMain: ipc.ipcMain as never,
     createCountdownOverlayWindow: () => countdown ?? fakeCountdownWindow(),
@@ -53,6 +63,7 @@ function register(ipc: FakeIpcMain, hud: BrowserWindow | null, countdown?: Brows
     createNotesWindow: () => fakeWindow(),
     getNotesWindow: () => null,
     ...(hud !== undefined && { getHudOverlayWindow: () => hud }),
+    ...extra,
   })
 }
 
@@ -73,7 +84,7 @@ describe('HUD window IPC handlers', () => {
     vi.useRealTimers()
   })
 
-  it('registers the geometry, countdown and Notes channels', () => {
+  it('registers the geometry, countdown, Notes and recording-privacy channels', () => {
     const ipc = fakeIpcMain()
     register(ipc, null)
     expect(ipc.registered).toEqual([
@@ -82,6 +93,9 @@ describe('HUD window IPC handlers', () => {
       'countdown-overlay-set-value',
       'countdown-overlay-hide',
       'open-notes',
+      'hud-hide-from-recording-get',
+      'hud-hide-from-recording-set',
+      'hud-hide-from-recording-reassert',
     ])
   })
 
@@ -284,6 +298,91 @@ describe('HUD window IPC handlers', () => {
         reason: 'wayland',
       })
       expect(hud.mock.setBounds).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('hideHudFromRecording (D1)', () => {
+    afterEach(() => {
+      resetHideHudFromRecording()
+    })
+
+    it('reports the default (on) without touching any window', async () => {
+      const ipc = fakeIpcMain()
+      const apply = vi.fn(() => true)
+      register(ipc, fakeHudWindow(ipc).win, undefined, { applyHudContentProtection: apply })
+      expect(await ipc.invoke<HudRecordingPrivacyResult>('hud-hide-from-recording-get')).toEqual({
+        enabled: true,
+        protected: [],
+        unprotected: [],
+      })
+      expect(apply).not.toHaveBeenCalled()
+    })
+
+    it('applies the setting to the whole HUD family and remembers it', async () => {
+      const ipc = fakeIpcMain()
+      const hud = fakeHudWindow(ipc)
+      const countdown = fakeCountdownWindow()
+      const sourceSelector = fakeWindow()
+      // Faithful stand-in for `applyHudContentProtection`: it clears protection
+      // (and answers false) whenever the preference is off.
+      const apply = vi.fn((_win: BrowserWindow, _label: string) => getHideHudFromRecording())
+      register(ipc, hud.win, countdown, {
+        getSourceSelectorWindow: () => sourceSelector,
+        applyHudContentProtection: apply,
+      })
+
+      expect(
+        await ipc.invoke<HudRecordingPrivacyResult>('hud-hide-from-recording-set', true),
+      ).toEqual({
+        enabled: true,
+        protected: ['HUD', 'Countdown', 'Source selector'],
+        unprotected: [],
+      })
+      expect(apply.mock.calls.map((call) => call[1])).toEqual([
+        'HUD',
+        'Countdown',
+        'Source selector',
+      ])
+      expect(getHideHudFromRecording()).toBe(true)
+
+      apply.mockClear()
+      expect(
+        await ipc.invoke<HudRecordingPrivacyResult>('hud-hide-from-recording-set', false),
+      ).toEqual({ enabled: false, protected: [], unprotected: [] })
+      expect(getHideHudFromRecording()).toBe(false)
+      // Still visited: turning the setting off has to clear protection.
+      expect(apply).toHaveBeenCalledTimes(3)
+    })
+
+    it('re-asserts protection on the windows that are alive at capture time', async () => {
+      const ipc = fakeIpcMain()
+      const hud = fakeHudWindow(ipc)
+      const apply = vi.fn(() => true)
+      register(ipc, hud.win, undefined, {
+        getSourceSelectorWindow: () => null,
+        applyHudContentProtection: apply,
+      })
+
+      expect(
+        await ipc.invoke<HudRecordingPrivacyResult>('hud-hide-from-recording-reassert'),
+      ).toEqual({ enabled: true, protected: ['HUD'], unprotected: [] })
+      expect(apply).toHaveBeenCalledTimes(1)
+    })
+
+    it('reports the windows the OS refused to protect', async () => {
+      const ipc = fakeIpcMain()
+      const hud = fakeHudWindow(ipc)
+      register(ipc, hud.win, undefined, { applyHudContentProtection: () => false })
+      expect(
+        await ipc.invoke<HudRecordingPrivacyResult>('hud-hide-from-recording-reassert'),
+      ).toEqual({ enabled: true, protected: [], unprotected: ['HUD'] })
+    })
+
+    it('ignores a non-boolean value rather than turning the setting off', async () => {
+      const ipc = fakeIpcMain()
+      register(ipc, null, undefined, { applyHudContentProtection: () => true })
+      await ipc.invoke('hud-hide-from-recording-set', 'yes')
+      expect(getHideHudFromRecording()).toBe(true)
     })
   })
 })

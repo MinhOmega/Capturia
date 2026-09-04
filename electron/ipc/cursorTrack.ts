@@ -10,6 +10,61 @@ import { type CursorKind, normalizeCursorKind } from '../../src/lib/cursor/curso
  * Electron; the live tracker is in `./cursorTracker.ts`.
  */
 
+/**
+ * A pointer gesture the cursor tracker folded out of the raw samples. Spans a
+ * range of time and has a place on screen, which is what the editor's auto-zoom
+ * anchors on.
+ */
+export type CursorTrackPointerEvent = {
+  type: 'click' | 'selection'
+  startMs: number
+  endMs: number
+  point: { x: number; y: number }
+  startPoint?: { x: number; y: number }
+  endPoint?: { x: number; y: number }
+  bounds?: {
+    minX: number
+    minY: number
+    maxX: number
+    maxY: number
+    width: number
+    height: number
+  }
+}
+
+/**
+ * D2: a moment the user flagged while recording, from the global shortcut or
+ * the HUD button. An instant rather than a span, and it has no place on screen -
+ * it only marks *when*. Markers ride in the same `events` array so a sidecar
+ * written before this batch still loads (it simply has none), and they are
+ * never dropped by the size policy: losing one loses something the user
+ * deliberately recorded.
+ */
+export type CursorTrackMarkerEvent = {
+  type: 'marker'
+  timeMs: number
+}
+
+export type CursorTrackEventPayload = CursorTrackPointerEvent | CursorTrackMarkerEvent
+
+export function isCursorTrackMarkerEvent(
+  event: CursorTrackEventPayload,
+): event is CursorTrackMarkerEvent {
+  return event.type === 'marker'
+}
+
+export function isCursorTrackPointerEvent(
+  event: CursorTrackEventPayload,
+): event is CursorTrackPointerEvent {
+  return event.type === 'click' || event.type === 'selection'
+}
+
+/**
+ * Ceiling on flagged moments in one recording. Separate from the pointer-event
+ * cap so a session full of clicks can never squeeze the markers out.
+ */
+export const MAX_CURSOR_TRACK_MARKERS = 5_000
+
 export type CurrentVideoMetadata = {
   frameRate?: number
   width?: number
@@ -37,22 +92,7 @@ export type CurrentVideoMetadata = {
        */
       cursorKind?: CursorKind | string
     }>
-    events?: Array<{
-      type: 'click' | 'selection'
-      startMs: number
-      endMs: number
-      point: { x: number; y: number }
-      startPoint?: { x: number; y: number }
-      endPoint?: { x: number; y: number }
-      bounds?: {
-        minX: number
-        minY: number
-        maxX: number
-        maxY: number
-        width: number
-        height: number
-      }
-    }>
+    events?: CursorTrackEventPayload[]
     space?: {
       mode?: CaptureBoundsMode
       displayId?: string
@@ -71,7 +111,6 @@ export type CurrentVideoMetadata = {
 }
 
 export type CursorTrackPayload = NonNullable<CurrentVideoMetadata['cursorTrack']>
-export type CursorTrackEventPayload = NonNullable<CursorTrackPayload['events']>[number]
 
 export function resolveCursorSidecarPath(videoPath: string): string {
   const parsed = path.parse(videoPath)
@@ -347,106 +386,129 @@ export function sanitizeCursorTrack(
     .sort((a, b) => a.timeMs - b.timeMs)
 
   if (normalizedSamples.length === 0) return undefined
-  const events = Array.isArray(input.events)
-    ? input.events
-        // Raised from 1 200 with the sample ceiling: a two-hour session can hold
-        // well over a thousand clicks, and a dropped click loses an auto-zoom.
-        .slice(0, 20_000)
-        .map((event) => {
-          if (!event || typeof event !== 'object') return null
-          const type: 'click' | 'selection' | null =
-            event.type === 'selection' ? 'selection' : event.type === 'click' ? 'click' : null
-          if (!type) return null
+  const rawEvents: CursorTrackEventPayload[] = Array.isArray(input.events) ? input.events : []
 
-          const startMs = Number(event.startMs)
-          const endMs = Number(event.endMs)
-          const pointX = Number(event.point?.x)
-          const pointY = Number(event.point?.y)
-          if (
-            !Number.isFinite(startMs) ||
-            !Number.isFinite(endMs) ||
-            !Number.isFinite(pointX) ||
-            !Number.isFinite(pointY)
-          ) {
-            return null
-          }
+  // D2: markers are split off before the pointer events are capped, so a
+  // session full of clicks can never cost the user a moment they flagged
+  // deliberately. They also carry no coordinates, so none of the point / bounds
+  // normalization below applies to them.
+  const markers: CursorTrackMarkerEvent[] = rawEvents
+    .filter(
+      (event): event is CursorTrackMarkerEvent =>
+        Boolean(event) && typeof event === 'object' && event.type === 'marker',
+    )
+    .map((event) => Number(event.timeMs))
+    .filter((timeMs) => Number.isFinite(timeMs))
+    .map((timeMs) => ({ type: 'marker' as const, timeMs: Math.max(0, Math.round(timeMs)) }))
+    .sort((a, b) => a.timeMs - b.timeMs)
+    .slice(0, MAX_CURSOR_TRACK_MARKERS)
 
-          const normalizedStartMs = Math.max(0, Math.round(startMs))
-          const normalizedEndMs = Math.max(normalizedStartMs, Math.round(endMs))
-          const normalizedPoint = {
-            x: Math.min(1, Math.max(0, pointX)),
-            y: Math.min(1, Math.max(0, pointY)),
-          }
+  const pointerEvents = rawEvents
+    .filter(
+      (event): event is CursorTrackPointerEvent =>
+        Boolean(event) &&
+        typeof event === 'object' &&
+        (event.type === 'click' || event.type === 'selection'),
+    )
+    // Raised from 1 200 with the sample ceiling: a two-hour session can hold
+    // well over a thousand clicks, and a dropped click loses an auto-zoom.
+    .slice(0, 20_000)
+    .map((event): CursorTrackPointerEvent | null => {
+      const type: 'click' | 'selection' = event.type === 'selection' ? 'selection' : 'click'
 
-          const startPointX = Number(event.startPoint?.x)
-          const startPointY = Number(event.startPoint?.y)
-          const normalizedStartPoint =
-            Number.isFinite(startPointX) && Number.isFinite(startPointY)
-              ? {
-                  x: Math.min(1, Math.max(0, startPointX)),
-                  y: Math.min(1, Math.max(0, startPointY)),
-                }
-              : undefined
+      const startMs = Number(event.startMs)
+      const endMs = Number(event.endMs)
+      const pointX = Number(event.point?.x)
+      const pointY = Number(event.point?.y)
+      if (
+        !Number.isFinite(startMs) ||
+        !Number.isFinite(endMs) ||
+        !Number.isFinite(pointX) ||
+        !Number.isFinite(pointY)
+      ) {
+        return null
+      }
 
-          const endPointX = Number(event.endPoint?.x)
-          const endPointY = Number(event.endPoint?.y)
-          const normalizedEndPoint =
-            Number.isFinite(endPointX) && Number.isFinite(endPointY)
-              ? {
-                  x: Math.min(1, Math.max(0, endPointX)),
-                  y: Math.min(1, Math.max(0, endPointY)),
-                }
-              : undefined
+      const normalizedStartMs = Math.max(0, Math.round(startMs))
+      const normalizedEndMs = Math.max(normalizedStartMs, Math.round(endMs))
+      const normalizedPoint = {
+        x: Math.min(1, Math.max(0, pointX)),
+        y: Math.min(1, Math.max(0, pointY)),
+      }
 
-          const boundsMinX = Number(event.bounds?.minX)
-          const boundsMinY = Number(event.bounds?.minY)
-          const boundsMaxX = Number(event.bounds?.maxX)
-          const boundsMaxY = Number(event.bounds?.maxY)
-          const normalizedBounds = [boundsMinX, boundsMinY, boundsMaxX, boundsMaxY].every(
-            Number.isFinite,
-          )
-            ? (() => {
-                const minX = Math.min(1, Math.max(0, boundsMinX))
-                const minY = Math.min(1, Math.max(0, boundsMinY))
-                const maxX = Math.max(minX, Math.min(1, Math.max(0, boundsMaxX)))
-                const maxY = Math.max(minY, Math.min(1, Math.max(0, boundsMaxY)))
-                return {
-                  minX,
-                  minY,
-                  maxX,
-                  maxY,
-                  width: maxX - minX,
-                  height: maxY - minY,
-                }
-              })()
-            : undefined
+      const startPointX = Number(event.startPoint?.x)
+      const startPointY = Number(event.startPoint?.y)
+      const normalizedStartPoint =
+        Number.isFinite(startPointX) && Number.isFinite(startPointY)
+          ? {
+              x: Math.min(1, Math.max(0, startPointX)),
+              y: Math.min(1, Math.max(0, startPointY)),
+            }
+          : undefined
 
-          const normalizedEvent: CursorTrackEventPayload = {
-            type,
-            startMs: normalizedStartMs,
-            endMs: normalizedEndMs,
-            point: normalizedPoint,
-          }
-          if (normalizedStartPoint) {
-            normalizedEvent.startPoint = normalizedStartPoint
-          }
-          if (normalizedEndPoint) {
-            normalizedEvent.endPoint = normalizedEndPoint
-          }
-          if (normalizedBounds) {
-            normalizedEvent.bounds = normalizedBounds
-          }
-          return normalizedEvent
-        })
-        .filter((event): event is NonNullable<typeof event> => Boolean(event))
-        .sort((a, b) => a.startMs - b.startMs)
-    : []
+      const endPointX = Number(event.endPoint?.x)
+      const endPointY = Number(event.endPoint?.y)
+      const normalizedEndPoint =
+        Number.isFinite(endPointX) && Number.isFinite(endPointY)
+          ? {
+              x: Math.min(1, Math.max(0, endPointX)),
+              y: Math.min(1, Math.max(0, endPointY)),
+            }
+          : undefined
+
+      const boundsMinX = Number(event.bounds?.minX)
+      const boundsMinY = Number(event.bounds?.minY)
+      const boundsMaxX = Number(event.bounds?.maxX)
+      const boundsMaxY = Number(event.bounds?.maxY)
+      const normalizedBounds = [boundsMinX, boundsMinY, boundsMaxX, boundsMaxY].every(
+        Number.isFinite,
+      )
+        ? (() => {
+            const minX = Math.min(1, Math.max(0, boundsMinX))
+            const minY = Math.min(1, Math.max(0, boundsMinY))
+            const maxX = Math.max(minX, Math.min(1, Math.max(0, boundsMaxX)))
+            const maxY = Math.max(minY, Math.min(1, Math.max(0, boundsMaxY)))
+            return {
+              minX,
+              minY,
+              maxX,
+              maxY,
+              width: maxX - minX,
+              height: maxY - minY,
+            }
+          })()
+        : undefined
+
+      const normalizedEvent: CursorTrackPointerEvent = {
+        type,
+        startMs: normalizedStartMs,
+        endMs: normalizedEndMs,
+        point: normalizedPoint,
+      }
+      if (normalizedStartPoint) {
+        normalizedEvent.startPoint = normalizedStartPoint
+      }
+      if (normalizedEndPoint) {
+        normalizedEvent.endPoint = normalizedEndPoint
+      }
+      if (normalizedBounds) {
+        normalizedEvent.bounds = normalizedBounds
+      }
+      return normalizedEvent
+    })
+    .filter((event): event is CursorTrackPointerEvent => Boolean(event))
+    .sort((a, b) => a.startMs - b.startMs)
+
+  // Pointer events first, markers after, each already sorted: the editor reads
+  // them by type, and keeping the groups apart means the pointer-event cap and
+  // the marker cap can never interfere.
+  const events: CursorTrackEventPayload[] = [...pointerEvents, ...markers]
 
   // Size policy last, so the decimator can protect the samples around the
   // events it has just normalized.
-  const samples = compactCursorTrackSamples(normalizedSamples, events)
+  const samples = compactCursorTrackSamples(normalizedSamples, pointerEvents)
 
-  const clickCountFromEvents = events.reduce(
+  const clickCountFromEvents = pointerEvents.reduce(
     (count, event) => count + (event.type === 'click' ? 1 : 0),
     0,
   )
@@ -633,24 +695,39 @@ export function compactCursorTrackPauseRanges<
     }))
     .sort((a, b) => a.timeMs - b.timeMs)
 
-  const events = Array.isArray(track.events)
-    ? track.events
-        .filter((event) => {
-          const startInside = isInsideRange(Number(event.startMs), normalizedRanges)
-          const endInside = isInsideRange(Number(event.endMs), normalizedRanges)
-          if (!startInside || !endInside) return true
-          // Both ends inside: keep only when the event spans across a resume.
-          return normalizedRanges.every(
-            (range) => !(event.startMs >= range.startMs && event.endMs <= range.endMs),
-          )
-        })
-        .map((event) => ({
-          ...event,
-          startMs: collapsePausedTime(Number(event.startMs), normalizedRanges),
-          endMs: collapsePausedTime(Number(event.endMs), normalizedRanges),
-        }))
-        .sort((a, b) => a.startMs - b.startMs)
-    : track.events
+  const rawEvents = Array.isArray(track.events) ? track.events : []
+
+  const pointerEvents = rawEvents
+    .filter(isCursorTrackPointerEvent)
+    .filter((event) => {
+      const startInside = isInsideRange(Number(event.startMs), normalizedRanges)
+      const endInside = isInsideRange(Number(event.endMs), normalizedRanges)
+      if (!startInside || !endInside) return true
+      // Both ends inside: keep only when the event spans across a resume.
+      return normalizedRanges.every(
+        (range) => !(event.startMs >= range.startMs && event.endMs <= range.endMs),
+      )
+    })
+    .map((event) => ({
+      ...event,
+      startMs: collapsePausedTime(Number(event.startMs), normalizedRanges),
+      endMs: collapsePausedTime(Number(event.endMs), normalizedRanges),
+    }))
+    .sort((a, b) => a.startMs - b.startMs)
+
+  // D2: a marker is an instant, so there is no "spans a resume" case. One
+  // dropped inside a pause is a moment the user flagged on a frame the video
+  // does not contain; the rest shift back like the samples do.
+  const markers = rawEvents
+    .filter(isCursorTrackMarkerEvent)
+    .filter((event) => !isInsideRange(Number(event.timeMs), normalizedRanges))
+    .map((event) => ({
+      ...event,
+      timeMs: collapsePausedTime(Number(event.timeMs), normalizedRanges),
+    }))
+    .sort((a, b) => a.timeMs - b.timeMs)
+
+  const events = Array.isArray(track.events) ? [...pointerEvents, ...markers] : track.events
 
   return { ...track, samples, events }
 }
