@@ -8,12 +8,13 @@
 // not an edge case for this app -- styles/fonts.css already self-hosts the Geist UI pair for
 // precisely this reason, and named this set as the gap it had not closed.
 //
-// Downloads the woff2 for each family below into `public/fonts/<slug>/` and writes
-// `src/styles/annotation-fonts.css` with the matching `@font-face` rules. The whole set is
+// Downloads the woff2 for each family below into `src/assets/fonts/annotation/<slug>/` and
+// writes `src/styles/annotation-fonts.css` with the matching `@font-face` rules. The set is
 // ~143 KB because only the latin, latin-ext and vietnamese subsets are kept -- they cover the
 // en / vi locales, and CJK annotations fall through to the system stacks. All sixteen are
 // published under the SIL Open Font License 1.1, which is what makes redistributing them
-// inside the app legal; see public/fonts/LICENSES.txt and THIRD-PARTY-NOTICES.md.
+// inside the app legal; see the generated LICENSES.txt next to the files, and
+// THIRD-PARTY-NOTICES.md.
 //
 // The output is COMMITTED. This script exists to regenerate it, not to run at build time --
 // a build that reaches for the network to produce identical bytes is a build that can fail
@@ -25,7 +26,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
-const FONTS_DIR = path.join(ROOT, "public", "fonts");
+const FONTS_DIR = path.join(ROOT, "src", "assets", "fonts", "annotation");
 const CSS_OUT = path.join(ROOT, "src", "styles", "annotation-fonts.css");
 const LICENSE_OUT = path.join(FONTS_DIR, "LICENSES.txt");
 
@@ -110,7 +111,14 @@ async function main() {
 		" *",
 		" * Latin, latin-ext and vietnamese subsets only, keyed by unicode-range, which is",
 		" * why the whole set costs ~143 KB. SIL Open Font License 1.1 -- see",
-		" * public/fonts/LICENSES.txt and THIRD-PARTY-NOTICES.md. */",
+		" * src/assets/fonts/annotation/LICENSES.txt and THIRD-PARTY-NOTICES.md.",
+		" *",
+		" * The faces live under src/assets/, NOT public/, and the urls here are relative so",
+		" * that Vite resolves and fingerprints them. A packaged build loads the renderer with",
+		" * `win.loadFile(...)` -- i.e. over file:// -- where an absolute `/fonts/...` url",
+		" * resolves against the filesystem root and 404s, so every face would silently fall",
+		" * back in exactly the offline build this bundling exists to fix. styles/fonts.css",
+		" * loads Geist the same relative way. */",
 		"",
 	];
 	const licenseLines = [
@@ -157,13 +165,13 @@ async function main() {
 				`  font-style: ${style};`,
 				`  font-weight: ${weight};`,
 				"  font-display: swap;",
-				`  src: url("/fonts/${slug}/${fileName}") format("woff2");`,
+				`  src: url("../assets/fonts/annotation/${slug}/${fileName}") format("woff2");`,
 				...(unicodeRange ? [`  unicode-range: ${unicodeRange};`] : []),
 				"}",
 			);
 		}
 		cssParts.push("");
-		licenseLines.push(`- ${family} (public/fonts/${slug}/)`);
+		licenseLines.push(`- ${family} (src/assets/fonts/annotation/${slug}/)`);
 		console.log(`${family}: ${faces.length} files`);
 	}
 

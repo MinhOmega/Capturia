@@ -134,7 +134,7 @@ and are covered by [LICENSE](LICENSE).
 <!-- Additive block, self-contained: everything about redistributed font files
      lives between this heading and the next `##`. -->
 
-- **Components**: the woff2 files under `public/fonts/`, and the Geist pair under
+- **Components**: the woff2 files under `src/assets/fonts/annotation/`, and the Geist pair under
   `src/assets/fonts/`. All are redistributed inside the installers.
 - **License**: **SIL Open Font License, Version 1.1** —
   <https://openfontlicense.org/>. The OFL permits bundling and redistribution as
@@ -142,11 +142,11 @@ and are covered by [LICENSE](LICENSE).
   that a Reserved Font Name not be reused by a modified version. Nothing here is
   modified — the files are the upstream binaries, subset by Google Fonts' own
   service to latin / latin-ext / vietnamese — so no renaming obligation arises.
-- **On-canvas faces** (`public/fonts/`, ~143 KB total): Inter, Plus Jakarta Sans,
+- **On-canvas faces** (`src/assets/fonts/annotation/`, ~143 KB total): Inter, Plus Jakarta Sans,
   Space Grotesk, DM Sans, Sora, Manrope, IBM Plex Sans, Playfair Display,
   Merriweather, Lora, IBM Plex Mono, Fira Code, Bebas Neue, Oswald, Caveat and
   Permanent Marker. Fetched from Google Fonts by `scripts/fetch-fonts.mjs`, which
-  also writes `public/fonts/LICENSES.txt` listing each family and its source.
+  also writes a `LICENSES.txt` beside them listing each family and its source.
   Each family's own copyright notice and OFL text is on its Google Fonts page.
 - **UI faces** (`src/assets/fonts/`): Geist and Geist Mono —
   <https://github.com/vercel/geist-font>. `src/assets/fonts/OFL.txt` ships next to
