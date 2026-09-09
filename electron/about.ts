@@ -8,25 +8,27 @@
 
 import type { InstallChannel } from "./install-channel";
 
-export const WEBSITE_URL = "https://getopenscreen.com";
+export const WEBSITE_URL = "https://github.com/MinhOmega/Capturia";
 /** The brand spelling, for the surfaces we render ourselves. NOT `app.name`: that resolves to
- *  electron-builder's `productName` ("Openscreen") when packaged and to package.json's `name`
- *  ("openscreen") in dev, so the About box would disagree with its own title bar. */
-export const PRODUCT_NAME = "OpenScreen";
-/** The collective form, and deliberately NOT the whole of LICENSE. LICENSE carries two holders:
- *  Siddharth Vaddem, who created the project — MIT obliges us to keep that notice on a codebase
- *  that still contains his code — and the contributors collectively. This is the line every user
- *  sees, so it names the group that maintains the app rather than one person who no longer does.
+ *  electron-builder's `productName` ("Capturia") when packaged and to package.json's `name`
+ *  ("capturia") in dev, so the About box would disagree with its own title bar. */
+export const PRODUCT_NAME = "Capturia";
+/** The collective form, and deliberately NOT the whole of LICENSE. Capturia is a fork of
+ *  OpenScreen, so this binary contains both sides' code and the line names both: MIT obliges us
+ *  to keep the upstream notice on a codebase that still contains upstream's work, and dropping it
+ *  here would put an attribution on the binary that the LICENSE shipping beside it contradicts.
  *
- *  "contributors" and not "OpenScreen": getopenscreen is a GitHub organisation, not a legal
- *  entity, and copyright cannot vest in something that does not exist. Each author keeps their
- *  own; this is shorthand for all of them.
+ *  "contributors" on both sides and not the project names: MinhOmega/Capturia and getopenscreen
+ *  are GitHub accounts, not legal entities, and copyright cannot vest in something that does not
+ *  exist. Each author keeps their own; this is shorthand for all of them.
  *
  *  Must stay byte-identical to `copyright` in electron-builder.json5, which feeds Info.plist's
- *  NSHumanReadableCopyright and the Windows LegalCopyright. That key is declared explicitly
- *  BECAUSE electron-builder otherwise derives those from package.json's `author` — a single
- *  name, which put a second attribution on the same binary this string appears in. */
-export const COPYRIGHT = "© 2025-2026 OpenScreen contributors — MIT License";
+ *  NSHumanReadableCopyright and the Windows LegalCopyright — about.test.ts reads that file and
+ *  pins the two together. That key is declared explicitly BECAUSE electron-builder otherwise
+ *  derives those from package.json's `author` — a single name, which put a second attribution on
+ *  the same binary this string appears in. */
+export const COPYRIGHT =
+	"© 2025-2026 Capturia contributors — MIT License. Includes OpenScreen, © 2025-2026 OpenScreen contributors.";
 
 /** macOS opens its own About panel (the app menu's `role: "about"`), so it is the one platform
  *  that must not be shown the message box we build, and the only one whose panel needs
