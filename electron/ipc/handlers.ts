@@ -3755,7 +3755,9 @@ export function registerIpcHandlers(
 		try {
 			// An extension check is not a destination check — `~/.ssh/config.mp4`
 			// passes one and fails the other. Only a path the user named, through the
-			// save dialog or `openscreen export --out`, is writable here.
+			// save dialog or `openscreen export --out`, is writable here. Approving a
+			// video also approves its `.srt`/`.vtt` sidecars, so the subtitle writer
+			// needs no widening of this gate.
 			if (!approvedExportPaths.isApproved(filePath)) {
 				console.warn("Refused to write an export to an unapproved destination:", filePath);
 				return { success: false, message: "Export destination was not approved" };

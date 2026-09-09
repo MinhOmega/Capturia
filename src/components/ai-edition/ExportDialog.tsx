@@ -13,6 +13,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useScopedT } from "@/contexts/I18nContext";
 import {
+	buildSubtitleSidecar,
+	getCaptionSettings,
+	getCaptionTranslations,
+} from "@/lib/ai-edition/captions";
+import {
 	collectEffectiveClipDims,
 	type Dims,
 	pickExtremeDims,
@@ -41,6 +46,35 @@ import { ModalShell } from "./Modals";
 import styles from "./NewEditorShell.module.css";
 
 type Phase = "idle" | "configuring" | "rendering" | "writing" | "done" | "error";
+
+/**
+ * Write `<export>.srt` beside the video when the project has captions on.
+ *
+ * No dialog control gates this, deliberately. Captions being enabled IS the request —
+ * the sidecar is the same lines the compositor is burning in, in the one form a viewer
+ * can turn off or search — and a checkbox would cost a new string in all thirteen
+ * locales to say what "captions: on" already says. `buildSubtitleSidecar` returns null
+ * when there is nothing to write, so a project without captions gets no stray file.
+ *
+ * Never fails the export. The video is on disk and the user has been told so by the
+ * time this runs; a sidecar that could turn a finished render into an error toast
+ * would be a worse bug than the missing file it was added to fix.
+ */
+async function writeSubtitleSidecar(document: AxcutDocument, videoPath: string): Promise<void> {
+	try {
+		const content = buildSubtitleSidecar(
+			document,
+			getCaptionSettings(document),
+			getCaptionTranslations(document),
+			"srt",
+		);
+		if (!content) return;
+		const path = `${videoPath.replace(/\.[^./\\]+$/, "")}.srt`;
+		await window.electronAPI?.writeExportToPath?.(new TextEncoder().encode(content).buffer, path);
+	} catch (err) {
+		console.error("Failed to write subtitle sidecar:", err);
+	}
+}
 
 /** hh:mm:ss (always shows hours, unlike the shared mm:ss `formatTimePadded`) — exports can run
  *  past an hour on either axis (video duration or render wall-time). */
@@ -342,6 +376,7 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 								fps,
 								codec,
 							});
+				await writeSubtitleSidecar(document, pickedPath);
 				setSavedPath(pickedPath);
 				setPhase("done");
 				toast.success(t("exportDialog.exportedVideo"), {

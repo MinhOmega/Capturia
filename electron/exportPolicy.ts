@@ -30,6 +30,13 @@ export type PlatformPath = typeof nodePath;
 /** Containers `write-export-to-path` may produce. */
 export const ALLOWED_EXPORT_EXTENSIONS: ReadonlySet<string> = new Set([".mp4", ".gif"]);
 
+/**
+ * Sidecars the export writes beside its video. Approved *with* a destination and
+ * never on their own: a subtitle file is not something the renderer may name, it
+ * is something that follows from a video the user already named.
+ */
+export const SIDECAR_EXPORT_EXTENSIONS: ReadonlySet<string> = new Set([".srt", ".vtt"]);
+
 function canonicalize(filePath: string, platformPath: PlatformPath): string {
 	const resolved = platformPath.resolve(filePath);
 	// Windows paths are case-insensitive; comparing them case-sensitively would
@@ -41,7 +48,8 @@ export function hasAllowedExportExtension(
 	filePath: string,
 	platformPath: PlatformPath = nodePath,
 ): boolean {
-	return ALLOWED_EXPORT_EXTENSIONS.has(platformPath.extname(filePath).toLowerCase());
+	const extension = platformPath.extname(filePath).toLowerCase();
+	return ALLOWED_EXPORT_EXTENSIONS.has(extension) || SIDECAR_EXPORT_EXTENSIONS.has(extension);
 }
 
 /** Exact export destinations the user chose, keyed by canonical path. */
@@ -58,8 +66,14 @@ export class ApprovedExportPaths {
 		if (typeof filePath !== "string" || filePath.trim().length === 0) return null;
 		const trimmed = filePath.trim();
 		if (!this.platformPath.isAbsolute(trimmed)) return null;
-		if (!hasAllowedExportExtension(trimmed, this.platformPath)) return null;
+		const extension = this.platformPath.extname(trimmed).toLowerCase();
+		// Only a video is approvable as a destination; the sidecars come with it.
+		if (!ALLOWED_EXPORT_EXTENSIONS.has(extension)) return null;
 		this.files.add(canonicalize(trimmed, this.platformPath));
+		const withoutExtension = trimmed.slice(0, trimmed.length - extension.length);
+		for (const sidecar of SIDECAR_EXPORT_EXTENSIONS) {
+			this.files.add(canonicalize(withoutExtension + sidecar, this.platformPath));
+		}
 		return this.platformPath.resolve(trimmed);
 	}
 

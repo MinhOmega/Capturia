@@ -44,7 +44,9 @@ Open the **Captions** facet in the inspector:
 
 Everything in **Position** is measured against the **exported frame**, not against the video inside it. Captions stay where you put them when you change padding, and they can sit in the padded area — push the vertical offset to either extreme and the text lands flush against the top or bottom edge of the frame. The two offsets only travel as far as the caption can actually go, so wherever you drag them, something moves.
 
-Size is expressed in pixels at a 1080-high frame and scales with the real output, so captions look the same at 720p, 1080p, or source. Preview and export share the same layout code — what you see is what gets burned in. Burned in is the only form they take: OpenScreen writes no sidecar `.srt` or `.vtt`, so captions can't be turned off by whoever watches the file.
+Size is expressed in pixels at a 1080-high frame and scales with the real output, so captions look the same at 720p, 1080p, or source. Preview and export share the same layout code — what you see is what gets burned in.
+
+Burned in is not the only form they take. When captions are on, an export also writes a `.srt` sidecar next to the video, carrying the same lines with the same timings. That file is what lets a viewer turn the subtitles off, restyle them in their own player, or search them — none of which is possible with text painted into the pixels. Its timings are the *exported* file's, not the raw recording's: cuts and speed regions are applied first, so the sidecar stays in sync with a video you trimmed.
 
 ### Translation
 
