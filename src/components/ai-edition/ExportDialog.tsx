@@ -136,6 +136,10 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 	const [gifFrameRate, setGifFrameRate] = useState<GifFrameRate>(15);
 	const [gifSize, setGifSize] = useState<GifSizePreset>("medium");
 	const [gifLoop, setGifLoop] = useState(true);
+	// Off by default, matching `GifExportParams::default()` — Floyd-Steinberg roughly
+	// doubles the per-frame cost and screen content quantizes cleanly without it. It
+	// earns its keep on gradients and camera footage, which is why it is a choice.
+	const [gifDither, setGifDither] = useState(false);
 	const [phase, setPhase] = useState<Phase>("idle");
 	const [progress, setProgress] = useState<ExportProgress | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -330,6 +334,7 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 								fps: gifFrameRate,
 								// 0 = infinite, the historical GIF default; 1 = play once.
 								loopCount: gifLoop ? 0 : 1,
+								dither: gifDither,
 							})
 						: await exportMultiNative(exportClips, pickedPath, sceneJson, {
 								width: outDims?.width,
@@ -602,6 +607,19 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 								aria-pressed={gifLoop}
 								disabled={isBusy}
 								onClick={() => setGifLoop((v) => !v)}
+							/>
+						</div>
+						<div className={styles.paneRow} style={{ margin: 0 }}>
+							<span className={styles.label} title={t("exportDialog.ditherGifHint")}>
+								{t("exportDialog.ditherGif")}
+							</span>
+							<button
+								type="button"
+								className={`${styles.toggle} ${gifDither ? styles.isOn : ""}`}
+								aria-label={t("exportDialog.ditherGif")}
+								aria-pressed={gifDither}
+								disabled={isBusy}
+								onClick={() => setGifDither((v) => !v)}
 							/>
 						</div>
 						<div

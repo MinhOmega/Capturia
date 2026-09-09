@@ -175,6 +175,8 @@
 		"loopGif": "GIFをループ",
 		"loopOn": "ループ オン",
 		"loopOff": "ループ オフ",
+		"ditherGif": "ディザリング",
+		"ditherGifHint": "グラデーションが滑らかになり、書き出しは遅くなります。",
 		"pickFormatAndExport": "形式を選択し、エクスポートを押して開始してください。",
 		"savedTo": "保存先",
 		"exportFailedGeneric": "エクスポートに失敗しました。",

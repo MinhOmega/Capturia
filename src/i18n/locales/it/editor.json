@@ -175,6 +175,8 @@
 		"loopGif": "Loop GIF",
 		"loopOn": "Loop attivo",
 		"loopOff": "Loop disattivo",
+		"ditherGif": "Dithering",
+		"ditherGifHint": "Sfumature più uniformi, esportazione più lenta.",
 		"pickFormatAndExport": "Scegli un formato e premi Esporta per iniziare.",
 		"savedTo": "Salvato in",
 		"exportFailedGeneric": "Esportazione non riuscita.",

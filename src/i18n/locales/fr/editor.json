@@ -175,6 +175,8 @@
 		"loopGif": "Boucle GIF",
 		"loopOn": "Boucle activée",
 		"loopOff": "Boucle désactivée",
+		"ditherGif": "Tramage",
+		"ditherGifHint": "Dégradés plus doux, export plus lent.",
 		"pickFormatAndExport": "Choisissez un format et cliquez sur Exporter pour commencer.",
 		"savedTo": "Enregistré dans",
 		"exportFailedGeneric": "Échec de l'export.",

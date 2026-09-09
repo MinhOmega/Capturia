@@ -175,6 +175,8 @@
 		"loopGif": "تكرار GIF",
 		"loopOn": "التكرار مفعّل",
 		"loopOff": "التكرار معطّل",
+		"ditherGif": "التوزيع اللوني",
+		"ditherGifHint": "تدرجات أنعم، وتصدير أبطأ.",
 		"pickFormatAndExport": "اختر صيغة واضغط على تصدير للبدء.",
 		"savedTo": "تم الحفظ في",
 		"exportFailedGeneric": "فشل التصدير.",
