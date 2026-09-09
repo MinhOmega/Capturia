@@ -679,6 +679,36 @@ let nativeWindowsCaptureContainer: string | null = null;
 /** Cuts a surviving helper's output loose so it cannot pollute the next recording. */
 let nativeWindowsCaptureDrainCleanup: (() => void) | null = null;
 
+/**
+ * Tells every renderer that a capture helper's process is gone.
+ *
+ * Sent on EVERY helper exit, including the normal one after a stop — main
+ * deliberately keeps no "was a stop requested?" state for this. The renderer
+ * already holds that answer (`nativeXRecording.current.finalizing`, set before
+ * it invokes the stop), so putting the guard here would mean maintaining a
+ * second copy of it across three platforms and every discard/cancel/restart
+ * path, and getting one of them wrong means the HUD sits there looking like it
+ * is still recording — the exact failure this exists to prevent.
+ *
+ * Before this, a helper that died mid-take was invisible: Windows and macOS
+ * swallow the process's `error`/`close` into a `console.warn` and a listener
+ * detach, and Linux's `exit` handler only reaches promises that happen to be
+ * pending. Nothing reached the HUD, whose elapsed counter kept climbing.
+ */
+function notifyNativeCaptureHelperExit(platform: NodeJS.Platform, detail: string) {
+	console.warn(`[native-capture] ${platform} helper exited: ${detail}`);
+	for (const win of BrowserWindow.getAllWindows()) {
+		if (win.isDestroyed()) {
+			continue;
+		}
+		try {
+			win.webContents.send("native-capture-helper-exited", { platform, detail });
+		} catch {
+			// webContents already gone; nothing to tell.
+		}
+	}
+}
+
 function detachNativeWindowsCaptureOutputDrain() {
 	nativeWindowsCaptureDrainCleanup?.();
 	nativeWindowsCaptureDrainCleanup = null;
@@ -1397,6 +1427,9 @@ function attachNativeWindowsCaptureOutputDrain(proc: ChildProcessWithoutNullStre
 	proc.on("error", (error) => {
 		console.warn("[native-wgc] helper process error:", error);
 	});
+	proc.once("exit", (code, signal) => {
+		notifyNativeCaptureHelperExit("win32", `code=${code ?? "null"} signal=${signal ?? "null"}`);
+	});
 
 	// Returned so an abandoned helper can be cut loose. A process that survived
 	// both kill attempts keeps writing, and `nativeWindowsCaptureOutput` is
@@ -1504,6 +1537,9 @@ function attachNativeMacCaptureOutputDrain(proc: ChildProcessWithoutNullStreams)
 	proc.stderr.on("data", drain);
 	proc.once("close", cleanup);
 	proc.once("error", cleanup);
+	proc.once("exit", (code, signal) => {
+		notifyNativeCaptureHelperExit("darwin", `code=${code ?? "null"} signal=${signal ?? "null"}`);
+	});
 }
 
 function waitForNativeMacCaptureStart(proc: ChildProcessWithoutNullStreams) {
@@ -2258,6 +2294,7 @@ export function registerIpcHandlers(
 					},
 					maxCursorSamples: MAX_CURSOR_SAMPLES,
 					deferStart: true,
+					onExit: (reason) => notifyNativeCaptureHelperExit("linux", reason),
 				});
 
 				await session.start();
@@ -2341,6 +2378,7 @@ export function registerIpcHandlers(
 							},
 						},
 						maxCursorSamples: MAX_CURSOR_SAMPLES,
+						onExit: (reason) => notifyNativeCaptureHelperExit("linux", reason),
 					});
 
 				console.info("[native-linux] starting capture", {

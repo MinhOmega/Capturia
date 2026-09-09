@@ -267,6 +267,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		ipcRenderer.on("stop-recording-from-tray", listener);
 		return () => ipcRenderer.removeListener("stop-recording-from-tray", listener);
 	},
+	onNativeCaptureHelperExited: (
+		callback: (payload: { platform: string; detail: string }) => void,
+	) => {
+		const listener = (_: unknown, payload: { platform: string; detail: string }) =>
+			callback(payload);
+		ipcRenderer.on("native-capture-helper-exited", listener);
+		return () => ipcRenderer.removeListener("native-capture-helper-exited", listener);
+	},
 	openExternalUrl: (url: string) => {
 		return ipcRenderer.invoke("open-external-url", url);
 	},

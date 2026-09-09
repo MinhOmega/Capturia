@@ -48,6 +48,7 @@
 		"cameraNotFound": "Camera not found.",
 		"diskSpaceBlocked": "Not enough disk space to record — only {{available}} free. Free up some space and try again.",
 		"diskSpaceLow": "Low disk space: {{available}} free. A long recording may not fit.",
+		"helperExited": "Recording stopped: the screen capture helper quit unexpectedly. Saving whatever was captured.",
 		"cameraCaptureUnavailable": "The camera could not be opened. Recording without it.",
 		"microphoneDefaulted": "The chosen microphone could not be identified. Recording the default input.",
 		"permissionDenied": "Recording permission denied. Please allow screen recording.",

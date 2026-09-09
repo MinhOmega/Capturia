@@ -265,6 +265,14 @@ interface Window {
 			error?: string;
 		}>;
 		onStopRecordingFromTray: (callback: () => void) => () => void;
+		/**
+		 * A capture helper's process is gone. Fires on EVERY exit, the clean one
+		 * after a stop included — the subscriber decides, because only it knows
+		 * whether it asked for that stop.
+		 */
+		onNativeCaptureHelperExited: (
+			callback: (payload: { platform: string; detail: string }) => void,
+		) => () => void;
 		openExternalUrl: (url: string) => Promise<{ success: boolean; error?: string }>;
 		pickExportSavePath: (
 			fileName: string,

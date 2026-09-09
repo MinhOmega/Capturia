@@ -1014,7 +1014,30 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			});
 		}
 
+		// A capture helper that died on its own. Main pushes this on every helper
+		// exit and leaves the judgement here, because the `finalizing` flags below
+		// are the only record of whether this app asked for that exit. Nothing
+		// unfinalized means the stop is already under way (or the recording is long
+		// over) and the exit is the expected one.
+		const unsubscribeHelperExit = window.electronAPI?.onNativeCaptureHelperExited?.(
+			({ detail }) => {
+				const died =
+					(nativeWindowsRecording.current && !nativeWindowsRecording.current.finalizing) ||
+					(nativeMacRecording.current && !nativeMacRecording.current.finalizing) ||
+					(nativeLinuxRecording.current && !nativeLinuxRecording.current.finalizing);
+				if (!died) return;
+
+				console.error("Native capture helper exited mid-recording:", detail);
+				toast.error(tRef.current("recording.helperExited"));
+				// Through the normal stop, not a bare state reset: it is what salvages
+				// a fragmented MP4 the dead helper already wrote, and it is the only
+				// path that returns the HUD to idle without stranding main's handles.
+				stopRecording.current();
+			},
+		);
+
 		return () => {
+			unsubscribeHelperExit?.();
 			const activeRunId = countdownRunId.current;
 			if (cleanup) cleanup();
 			countdownRunId.current += 1;
