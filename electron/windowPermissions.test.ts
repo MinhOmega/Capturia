@@ -1,12 +1,54 @@
 import { describe, expect, it } from "vitest";
 import {
+	type CaptureKind,
 	isPermissionAllowed,
 	type OpenScreenWindowType,
 	rememberWindowType,
 	settingsPaneUrl,
 	windowTypeForContents,
 	windowTypeFromUrl,
+	WINDOW_TYPES,
 } from "./windowPermissions";
+
+/**
+ * Which window needs which device, and the call site that proves it.
+ *
+ * Derived by enumerating every `getUserMedia` / `getDisplayMedia` /
+ * `enumerateDevices` in `src/` and mapping each to the window that hosts it.
+ * This table is the reviewable artefact behind the policy: the first version of
+ * it missed the editor's camera preview, and the only symptom was a user's
+ * webcam failing to appear. Change the sets in `windowPermissions.ts` only
+ * alongside this table, and cite the call site.
+ */
+const CAPTURE_CALL_SITES: Record<
+	OpenScreenWindowType,
+	{ readonly kinds: readonly CaptureKind[]; readonly why: string }
+> = {
+	"hud-overlay": {
+		kinds: ["screen", "camera", "microphone"],
+		why: "LaunchWindow -> useScreenRecorder (getDisplayMedia + getUserMedia), HudDeviceSettings -> useCameraPreviewStream/useAudioLevelMeter, useCameraDevices/useMicrophoneDevices",
+	},
+	editor: {
+		kinds: ["camera", "microphone"],
+		why: "NewEditorShell -> RecStage -> useCameraPreviewStream/useAudioLevelMeter/useCameraDevices/useMicrophoneDevices, and AddAudioLayerDialog -> getUserMedia({audio}). Recording itself is handed to the HUD, so no display.",
+	},
+	"cli-record": {
+		kinds: ["screen", "camera", "microphone"],
+		why: "CliRecordRunner -> useScreenRecorder, plus its own getUserMedia({audio}) device probe",
+	},
+	"cli-sources": {
+		kinds: ["microphone"],
+		why: "CliSourcesRunner -> getUserMedia({audio}) probe so enumerateDevices reports labels",
+	},
+	"cli-export": { kinds: [], why: "renders frames from files; no device access" },
+	"cli-captions": { kinds: [], why: "transcribes an existing file; no device access" },
+	"source-selector": { kinds: [], why: "desktopCapturer runs in the main process, not here" },
+	"countdown-overlay": { kinds: [], why: "draws a countdown" },
+	notes: { kinds: [], why: "text only" },
+	bench: { kinds: [], why: "renders App's default placeholder, not the editor shell" },
+};
+
+const ALL_KINDS: readonly CaptureKind[] = ["screen", "camera", "microphone"];
 
 function allowed(
 	permission: string,
@@ -24,6 +66,49 @@ function allowed(
 	});
 }
 
+/** Every permission string Chromium may use for a given kind. */
+const PERMISSIONS_BY_KIND: Record<CaptureKind, readonly string[]> = {
+	screen: ["screen", "display-capture"],
+	camera: ["camera", "videoCapture"],
+	microphone: ["microphone", "audioCapture"],
+};
+
+describe("capture policy matches the call sites", () => {
+	it("covers every window type the main process builds", () => {
+		// A window type added without a line in CAPTURE_CALL_SITES fails here rather
+		// than silently inheriting "no capture" and breaking a device at runtime.
+		expect(Object.keys(CAPTURE_CALL_SITES).sort()).toEqual([...WINDOW_TYPES].sort());
+	});
+
+	for (const [windowType, { kinds, why }] of Object.entries(CAPTURE_CALL_SITES) as [
+		OpenScreenWindowType,
+		{ kinds: readonly CaptureKind[]; why: string },
+	][]) {
+		for (const kind of ALL_KINDS) {
+			const expected = kinds.includes(kind);
+			it(`${expected ? "grants" : "refuses"} ${kind} to ${windowType} (${why})`, () => {
+				for (const permission of PERMISSIONS_BY_KIND[kind]) {
+					expect(
+						isPermissionAllowed({ permission, windowType, isMainFrame: true }),
+						`${permission} in ${windowType}`,
+					).toBe(expected);
+				}
+				// The generic getUserMedia request names its kinds separately.
+				if (kind !== "screen") {
+					expect(
+						isPermissionAllowed({
+							permission: "media",
+							windowType,
+							isMainFrame: true,
+							mediaKinds: [kind],
+						}),
+					).toBe(expected);
+				}
+			});
+		}
+	}
+});
+
 describe("isPermissionAllowed", () => {
 	it("gives the recorder HUD every capture kind", () => {
 		for (const permission of [
@@ -38,13 +123,14 @@ describe("isPermissionAllowed", () => {
 		}
 	});
 
-	it("gives the editor the microphone but never the camera or the screen", () => {
-		// The editor records voiceover audio layers, so denying the mic here would
-		// break AddAudioLayerDialog. Camera and screen are what the guard exists for.
+	it("gives the editor its devices but never a display", () => {
+		// The editor records voiceover audio layers and previews the webcam in the
+		// Rec stage, so denying either breaks a shipped feature. Screen capture is
+		// the one it genuinely never asks for: the HUD does the recording.
 		expect(allowed("microphone", "editor")).toBe(true);
 		expect(allowed("audioCapture", "editor")).toBe(true);
-		expect(allowed("camera", "editor")).toBe(false);
-		expect(allowed("videoCapture", "editor")).toBe(false);
+		expect(allowed("camera", "editor")).toBe(true);
+		expect(allowed("videoCapture", "editor")).toBe(true);
 		expect(allowed("screen", "editor")).toBe(false);
 		expect(allowed("display-capture", "editor")).toBe(false);
 	});
@@ -67,10 +153,11 @@ describe("isPermissionAllowed", () => {
 	});
 
 	it("resolves a generic media request against every kind it names", () => {
-		expect(allowed("media", "editor", { mediaKinds: ["microphone"] })).toBe(true);
-		expect(allowed("media", "editor", { mediaKinds: ["camera"] })).toBe(false);
-		// A camera+mic request in the editor fails on the camera half.
-		expect(allowed("media", "editor", { mediaKinds: ["microphone", "camera"] })).toBe(false);
+		expect(allowed("media", "cli-sources", { mediaKinds: ["microphone"] })).toBe(true);
+		expect(allowed("media", "cli-sources", { mediaKinds: ["camera"] })).toBe(false);
+		// A camera+mic request in the sources runner fails on the camera half.
+		expect(allowed("media", "cli-sources", { mediaKinds: ["microphone", "camera"] })).toBe(false);
+		expect(allowed("media", "editor", { mediaKinds: ["microphone", "camera"] })).toBe(true);
 		expect(allowed("media", "hud-overlay", { mediaKinds: ["microphone", "camera"] })).toBe(true);
 	});
 
