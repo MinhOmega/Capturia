@@ -342,7 +342,10 @@ export function useTimeline() {
 							id: createId("zoom"),
 							startMs: Math.round(s.span.start),
 							endMs: Math.round(s.span.end),
-							depth: 3 as const,
+							// The signal picks the magnification: a click frames a control
+							// tightly, a fast traverse only wants a nudge. `3` stays the
+							// default for a suggester that does not say.
+							depth: s.depth ?? (3 as const),
 							focus: { cx: s.focus.cx, cy: s.focus.cy },
 							focusMode: "auto" as const,
 						},
