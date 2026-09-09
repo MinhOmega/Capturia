@@ -24,6 +24,7 @@
 		"zoom": "줌",
 		"trim": "트림",
 		"speed": "속도",
+		"markerAt": "{{time}} 위치의 마커 — 클릭하면 여기로 이동합니다",
 		"zoomItem": "줌 {{index}}",
 		"trimItem": "트림 {{index}}",
 		"speedItem": "속도 {{index}}",

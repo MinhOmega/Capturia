@@ -24,6 +24,7 @@
 		"zoom": "缩放",
 		"trim": "剪辑",
 		"speed": "速度",
+		"markerAt": "{{time}} 处的标记 — 点击跳转到此处",
 		"zoomItem": "缩放 {{index}}",
 		"trimItem": "剪辑 {{index}}",
 		"speedItem": "速度 {{index}}",
