@@ -49,11 +49,7 @@
  * are built by us from a fixed table, never supplied by a renderer, so they are
  * not subject to this allowlist. See `windowPermissions.ts`.
  */
-export const EXTERNAL_URL_PROTOCOLS: ReadonlySet<string> = new Set([
-	"http:",
-	"https:",
-	"mailto:",
-]);
+export const EXTERNAL_URL_PROTOCOLS: ReadonlySet<string> = new Set(["http:", "https:", "mailto:"]);
 
 /** Parse and allowlist a renderer-supplied external URL. Returns the serialized URL or null. */
 export function normalizeExternalUrl(rawUrl: unknown): string | null {

@@ -51,8 +51,8 @@ import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { useTimelineTranscriptGate } from "@/lib/ai-edition/store/transcriptionStore";
 import { useChatPromptBus } from "@/lib/ai-edition/store/useChatPromptBus";
 import { useEditorSettings } from "@/lib/ai-edition/store/useEditorSettings";
-import type { useTimeline } from "@/lib/ai-edition/store/useTimeline";
 import { useRecordingMarkers } from "@/lib/ai-edition/store/useRecordingMarkers";
+import type { useTimeline } from "@/lib/ai-edition/store/useTimeline";
 import { hasAnyClipWithCamera } from "@/lib/ai-edition/timeline/camera";
 import { formatSec } from "@/lib/ai-edition/timeline/format";
 import {
@@ -1514,8 +1514,8 @@ export function V4Timeline({
 					// and wrong here — it left the suggester guessing from stillness
 					// while the ground truth sat in the same sidecar.
 					const telemetry =
-						(await nativeBridgeClient.cursor.getRecordingData(fromFileUrl(source.src)))
-							?.samples ?? [];
+						(await nativeBridgeClient.cursor.getRecordingData(fromFileUrl(source.src)))?.samples ??
+						[];
 					return buildAutoZoomSuggestionsForClips({
 						cursorTelemetry: telemetry,
 						assetId: source.id,

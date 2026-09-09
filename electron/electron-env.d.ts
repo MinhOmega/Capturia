@@ -128,9 +128,7 @@ interface Window {
 			videoPath: string,
 			markers: number[],
 		) => Promise<{ success: boolean; count?: number; error?: string }>;
-		getRecordingMarkers: (
-			videoPath: string,
-		) => Promise<{ success: boolean; markers: number[] }>;
+		getRecordingMarkers: (videoPath: string) => Promise<{ success: boolean; markers: number[] }>;
 		/** Free space on the recordings volume; see `src/lib/recordingDiskSpace.ts`. */
 		getRecordingsDiskSpace: () => Promise<
 			import("../src/lib/recordingDiskSpace").RecordingDiskSpaceSnapshot

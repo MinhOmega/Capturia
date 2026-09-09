@@ -679,81 +679,84 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		[cursorCaptureMode, persistRecordingMarkers, teardownMedia],
 	);
 
-	const finalizeNativeWindowsRecording = useCallback(async (discard = false) => {
-		const activeNativeRecording = nativeWindowsRecording.current;
-		if (!activeNativeRecording || activeNativeRecording.finalizing) {
-			return false;
-		}
+	const finalizeNativeWindowsRecording = useCallback(
+		async (discard = false) => {
+			const activeNativeRecording = nativeWindowsRecording.current;
+			if (!activeNativeRecording || activeNativeRecording.finalizing) {
+				return false;
+			}
 
-		activeNativeRecording.finalizing = true;
-		if (!discard) {
-			setSaving(true);
-		}
+			activeNativeRecording.finalizing = true;
+			if (!discard) {
+				setSaving(true);
+			}
 
-		const clearNativeRecordingState = () => {
-			nativeWindowsRecording.current = null;
-			setRecording(false);
-			setPaused(false);
-			setElapsedSeconds(0);
-			accumulatedDurationMs.current = 0;
-			segmentStartedAt.current = null;
-		};
+			const clearNativeRecordingState = () => {
+				nativeWindowsRecording.current = null;
+				setRecording(false);
+				setPaused(false);
+				setElapsedSeconds(0);
+				accumulatedDurationMs.current = 0;
+				segmentStartedAt.current = null;
+			};
 
-		try {
-			const result = await window.electronAPI.stopNativeWindowsRecording(discard);
-			if (discard || result.discarded) {
+			try {
+				const result = await window.electronAPI.stopNativeWindowsRecording(discard);
+				if (discard || result.discarded) {
+					clearNativeRecordingState();
+					return true;
+				}
+				if (!result.success) {
+					console.error("Failed to stop native Windows recording:", result.error);
+					toast.error(result.error ?? "Failed to stop native Windows recording");
+					// Clear anyway. The main process releases its helper handle
+					// unconditionally, so holding on here left the two sides
+					// disagreeing about whether anything was recording: the HUD kept
+					// showing a stop button, and pressing it sent a second stop that
+					// came back "Native Windows capture is not running." (issue #252).
+					// Reaching here now means the take really is unreadable -- a failed
+					// stop that left a playable fragmented file comes back `success`
+					// with a session and takes the editor path below, so this branch no
+					// longer decides the fate of a recoverable recording.
+					clearNativeRecordingState();
+					return true;
+				}
+
+				clearNativeRecordingState();
+				// The other way a camera goes missing, and the quieter one: the device
+				// opened, so nothing warned at start, but it never produced a frame and
+				// the file it left behind was empty. Say so before the editor opens
+				// without a camera and leaves the user to work out why. Through `tRef`
+				// because this callback has to stay referentially stable — see the ref's
+				// own comment.
+				if (result.webcamDropped) {
+					toast.error(tRef.current("recording.cameraCaptureUnavailable"));
+				}
+				if (result.session) {
+					await persistRecordingMarkers(result.session.screenVideoPath);
+					await window.electronAPI.setCurrentRecordingSession(result.session);
+				} else if (result.path) {
+					await window.electronAPI.setCurrentVideoPath(result.path);
+				}
+
+				await window.electronAPI.switchToEditor();
+				return true;
+			} catch (error) {
+				console.error("Error saving native Windows recording:", error);
+				toast.error(
+					error instanceof Error ? error.message : "Failed to save native Windows recording",
+				);
 				clearNativeRecordingState();
 				return true;
+			} finally {
+				if (discardRecordingId.current === activeNativeRecording.recordingId) {
+					discardRecordingId.current = null;
+				}
+				setSaving(false);
 			}
-			if (!result.success) {
-				console.error("Failed to stop native Windows recording:", result.error);
-				toast.error(result.error ?? "Failed to stop native Windows recording");
-				// Clear anyway. The main process releases its helper handle
-				// unconditionally, so holding on here left the two sides
-				// disagreeing about whether anything was recording: the HUD kept
-				// showing a stop button, and pressing it sent a second stop that
-				// came back "Native Windows capture is not running." (issue #252).
-				// Reaching here now means the take really is unreadable -- a failed
-				// stop that left a playable fragmented file comes back `success`
-				// with a session and takes the editor path below, so this branch no
-				// longer decides the fate of a recoverable recording.
-				clearNativeRecordingState();
-				return true;
-			}
-
-			clearNativeRecordingState();
-			// The other way a camera goes missing, and the quieter one: the device
-			// opened, so nothing warned at start, but it never produced a frame and
-			// the file it left behind was empty. Say so before the editor opens
-			// without a camera and leaves the user to work out why. Through `tRef`
-			// because this callback has to stay referentially stable — see the ref's
-			// own comment.
-			if (result.webcamDropped) {
-				toast.error(tRef.current("recording.cameraCaptureUnavailable"));
-			}
-			if (result.session) {
-				await persistRecordingMarkers(result.session.screenVideoPath);
-				await window.electronAPI.setCurrentRecordingSession(result.session);
-			} else if (result.path) {
-				await window.electronAPI.setCurrentVideoPath(result.path);
-			}
-
-			await window.electronAPI.switchToEditor();
-			return true;
-		} catch (error) {
-			console.error("Error saving native Windows recording:", error);
-			toast.error(
-				error instanceof Error ? error.message : "Failed to save native Windows recording",
-			);
-			clearNativeRecordingState();
-			return true;
-		} finally {
-			if (discardRecordingId.current === activeNativeRecording.recordingId) {
-				discardRecordingId.current = null;
-			}
-			setSaving(false);
-		}
-	}, [persistRecordingMarkers]);
+		},
+		[persistRecordingMarkers],
+	);
 
 	const finalizeNativeMacRecording = useCallback(
 		async (discard = false) => {

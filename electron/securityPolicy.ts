@@ -78,9 +78,7 @@ export function installPermissionPolicy(targetSession: Session): void {
 			mediaKinds: toCaptureKinds(mediaTypes),
 		});
 		if (!granted) {
-			console.warn(
-				`[permissions] denied ${permission} to ${windowType ?? "an unknown window"}`,
-			);
+			console.warn(`[permissions] denied ${permission} to ${windowType ?? "an unknown window"}`);
 		}
 		callback(granted);
 	});

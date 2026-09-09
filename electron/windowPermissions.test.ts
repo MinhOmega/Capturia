@@ -11,7 +11,10 @@ import {
 function allowed(
 	permission: string,
 	windowType: OpenScreenWindowType | null,
-	extra: { isMainFrame?: boolean; mediaKinds?: readonly ("screen" | "camera" | "microphone")[] } = {},
+	extra: {
+		isMainFrame?: boolean;
+		mediaKinds?: readonly ("screen" | "camera" | "microphone")[];
+	} = {},
 ): boolean {
 	return isPermissionAllowed({
 		permission,
@@ -47,12 +50,7 @@ describe("isPermissionAllowed", () => {
 	});
 
 	it("denies every capture kind to windows that only display", () => {
-		for (const windowType of [
-			"source-selector",
-			"countdown-overlay",
-			"notes",
-			"bench",
-		] as const) {
+		for (const windowType of ["source-selector", "countdown-overlay", "notes", "bench"] as const) {
 			for (const permission of ["screen", "display-capture", "camera", "microphone"]) {
 				expect(allowed(permission, windowType)).toBe(false);
 			}

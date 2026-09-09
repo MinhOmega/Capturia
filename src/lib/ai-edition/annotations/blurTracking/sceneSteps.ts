@@ -4,7 +4,7 @@ import type {
 	AxcutClip,
 	AxcutClipCropRegion,
 } from "@/lib/ai-edition/schema";
-import { normalizeBlurTrack, type NormRect, resolveTrackedBlurRect, unionRect } from "./keyframes";
+import { type NormRect, normalizeBlurTrack, resolveTrackedBlurRect, unionRect } from "./keyframes";
 
 /**
  * A tracked blur region, expanded into the static blur annotations the scene

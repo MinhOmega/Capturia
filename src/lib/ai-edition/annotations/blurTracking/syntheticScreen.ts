@@ -289,7 +289,7 @@ export function sampleGray(
 				const row = y * source.width;
 				for (let x = fromX; x < toX; x++) {
 					total += source.data[row + x];
-					count++
+					count++;
 				}
 			}
 			out[j * outWidth + i] = count > 0 ? Math.round(total / count) : 0;

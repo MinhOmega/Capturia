@@ -114,7 +114,7 @@ export function resolveTrackedBlurRect(
 		// Before the first keyframe. A track reaches the region's start, but be
 		// tolerant of a span the user widened after tracking.
 		const first = keyframes[0];
-		return first.lost ? null : { rect: rectOf(first), opacity: 1 }
+		return first.lost ? null : { rect: rectOf(first), opacity: 1 };
 	}
 
 	const current = keyframes[index];
@@ -200,7 +200,7 @@ export function simplifyKeyframes(
 
 function normalizeKeyframe(value: unknown): BlurTrackKeyframe | null {
 	if (!value || typeof value !== "object") return null;
-	const raw = value as Record<string, unknown>
+	const raw = value as Record<string, unknown>;
 	if (
 		!isFiniteNumber(raw.timeMs) ||
 		!isFiniteNumber(raw.x) ||
@@ -239,13 +239,13 @@ function normalizeKeyframe(value: unknown): BlurTrackKeyframe | null {
  */
 export function normalizeBlurTrack(value: unknown): BlurTrack | undefined {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-	const raw = value as Record<string, unknown>
+	const raw = value as Record<string, unknown>;
 	if (raw.space !== "source") return undefined;
 	if (!Array.isArray(raw.keyframes) || raw.keyframes.length === 0) return undefined;
 
 	const size = raw.sourceSize;
 	if (!size || typeof size !== "object") return undefined;
-	const rawSize = size as Record<string, unknown>
+	const rawSize = size as Record<string, unknown>;
 	if (!isFiniteNumber(rawSize.width) || !isFiniteNumber(rawSize.height)) return undefined;
 	if (rawSize.width <= 0 || rawSize.height <= 0) return undefined;
 
@@ -282,7 +282,7 @@ export function normalizeBlurTrack(value: unknown): BlurTrack | undefined {
 
 	const quality = raw.quality;
 	if (quality && typeof quality === "object") {
-		const q = quality as Record<string, unknown>
+		const q = quality as Record<string, unknown>;
 		if (isFiniteNumber(q.meanScore) && isFiniteNumber(q.lostMs) && isFiniteNumber(q.trackedMs)) {
 			track.quality = { meanScore: q.meanScore, lostMs: q.lostMs, trackedMs: q.trackedMs };
 		}

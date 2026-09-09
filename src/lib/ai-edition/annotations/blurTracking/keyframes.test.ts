@@ -93,7 +93,7 @@ describe("resolveTrackedBlurRect", () => {
 		// the content uncovered for whole frames, so the rendered rect covers both
 		// ends. The `gap` flag is what says the interval was unobserved.
 		const jump = track([at(0, 100, { gap: true }), at(100, 300)]);
-		const mid = resolveTrackedBlurRect(jump, 50)!
+		const mid = resolveTrackedBlurRect(jump, 50)!;
 		expect(mid.rect.y * SOURCE.height).toBeCloseTo(100, 6);
 		expect(mid.rect.h * SOURCE.height).toBeCloseTo(240, 6);
 		// Ground truth at any instant inside the interval is inside the union.
@@ -163,8 +163,10 @@ describe("simplifyKeyframes", () => {
 		const simplified = simplifyKeyframes(wobbly, SOURCE, 0.5);
 		const rebuilt = track(simplified);
 		for (const original of wobbly) {
-			const resolved = resolveTrackedBlurRect(rebuilt, original.timeMs)!
-			expect(Math.abs(resolved.rect.y - original.y) * SOURCE.height).toBeLessThanOrEqual(0.5 + 1e-9);
+			const resolved = resolveTrackedBlurRect(rebuilt, original.timeMs)!;
+			expect(Math.abs(resolved.rect.y - original.y) * SOURCE.height).toBeLessThanOrEqual(
+				0.5 + 1e-9,
+			);
 		}
 	});
 
@@ -268,7 +270,7 @@ describe("mergeUserPin", () => {
 		const base = track([at(0, 0), at(100, 10), at(200, 20), at(300, 30), at(400, 40)]);
 		const merged = mergeUserPin(base, at(200, 77));
 		expect(merged.keyframes.map((k) => k.timeMs)).toEqual([0, 200, 400]);
-		const pin = merged.keyframes.find((k) => k.timeMs === 200)!
+		const pin = merged.keyframes.find((k) => k.timeMs === 200)!;
 		expect(pin.origin).toBe("user");
 		expect(pin.y * SOURCE.height).toBeCloseTo(77, 6);
 	});

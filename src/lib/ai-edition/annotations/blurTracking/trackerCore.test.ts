@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { SourceRectPx } from "./trackerCore";
 import {
 	createSyntheticScreen,
 	createTrackerFrame,
-	sampleGray,
 	type SyntheticScreen,
+	sampleGray,
 } from "./syntheticScreen";
+import type { SourceRectPx } from "./trackerCore";
 import {
 	BLUR_TRACKER_TUNING,
 	BlurTracker,
@@ -381,7 +381,7 @@ describe("off-screen and back", () => {
 		expect(errorPx(samples[reacquired], truth)).toBeLessThanOrEqual(1);
 
 		// ...and the last samples are back on the content.
-		const last = samples.at(-1)!
+		const last = samples.at(-1)!;
 		expect(last.state).toBe("found");
 		expect(errorPx(last, screen.cellRect)).toBeLessThanOrEqual(1);
 	});
@@ -459,7 +459,9 @@ describe("partial occlusion", () => {
 		);
 		for (const sample of samples) {
 			expect(sample.state).toBe("found");
-			expect(sample.maxQuadrantScore).toBeGreaterThanOrEqual(BLUR_TRACKER_TUNING.quadrantFoundScore);
+			expect(sample.maxQuadrantScore).toBeGreaterThanOrEqual(
+				BLUR_TRACKER_TUNING.quadrantFoundScore,
+			);
 			expect(sample.score).toBeLessThan(BLUR_TRACKER_TUNING.foundScore);
 			expect(errorPx(sample, cell)).toBe(0);
 		}
@@ -562,7 +564,9 @@ describe("similar rows (kill criterion)", () => {
 
 	it("does not re-acquire on a row that only nearly matches", () => {
 		// A lookalike must clear both the coarse and the fine re-acquisition bars.
-		expect(BLUR_TRACKER_TUNING.reacquireCoarseScore).toBeGreaterThan(BLUR_TRACKER_TUNING.foundScore);
+		expect(BLUR_TRACKER_TUNING.reacquireCoarseScore).toBeGreaterThan(
+			BLUR_TRACKER_TUNING.foundScore,
+		);
 		expect(BLUR_TRACKER_TUNING.reacquireFineScore).toBeGreaterThan(BLUR_TRACKER_TUNING.foundScore);
 
 		// Re-rendering the rows with different glyphs leaves a page that looks the

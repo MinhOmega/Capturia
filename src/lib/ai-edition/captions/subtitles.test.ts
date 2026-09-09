@@ -122,12 +122,7 @@ describe("projectCuesToOutputTime", () => {
 		// output = 12 − 1 (cut) − 2 (the region's saving) = 9 s.
 		const trims = [trim({ id: "t1", startSec: 1, endSec: 2 })];
 		const speed = [{ startMs: 4000, endMs: 8000, speed: 2 }];
-		const [projected] = projectCuesToOutputTime(
-			[cue("a", 12_000, 13_000)],
-			ONE_CLIP,
-			trims,
-			speed,
-		);
+		const [projected] = projectCuesToOutputTime([cue("a", 12_000, 13_000)], ONE_CLIP, trims, speed);
 		expect(projected.startMs).toBe(9000);
 		expect(projected.endMs).toBe(10_000);
 	});

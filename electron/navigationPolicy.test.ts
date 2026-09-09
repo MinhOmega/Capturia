@@ -180,14 +180,18 @@ describe("decideNavigation", () => {
 		const trusted = "file:///C:/Program%20Files/OpenScreen/dist/index.html?windowType=editor";
 		const target = "file:///c:/program%20files/openscreen/dist/index.html?windowType=editor";
 
-		expect(decideNavigation({ trustedUrl: trusted, targetUrl: target, platform: "win32" })).toEqual({
-			action: "allow",
-			reason: "same-document",
-		});
-		expect(decideNavigation({ trustedUrl: trusted, targetUrl: target, platform: "linux" })).toEqual({
-			action: "deny",
-			reason: "trusted-origin-other-document",
-		});
+		expect(decideNavigation({ trustedUrl: trusted, targetUrl: target, platform: "win32" })).toEqual(
+			{
+				action: "allow",
+				reason: "same-document",
+			},
+		);
+		expect(decideNavigation({ trustedUrl: trusted, targetUrl: target, platform: "linux" })).toEqual(
+			{
+				action: "deny",
+				reason: "trusted-origin-other-document",
+			},
+		);
 	});
 
 	it("leaves DevTools to itself", () => {
@@ -214,7 +218,9 @@ describe("normalizeExternalUrl", () => {
 		// `shell.openExternal` hands these to the OS handler, so they are not links.
 		expect(normalizeExternalUrl("file:///etc/passwd")).toBeNull();
 		expect(normalizeExternalUrl("ms-msdt:/id PCWDiagnostic")).toBeNull();
-		expect(normalizeExternalUrl("x-apple.systempreferences:com.apple.preference.security")).toBeNull();
+		expect(
+			normalizeExternalUrl("x-apple.systempreferences:com.apple.preference.security"),
+		).toBeNull();
 		expect(normalizeExternalUrl("javascript:alert(1)")).toBeNull();
 		expect(normalizeExternalUrl("not a url")).toBeNull();
 		expect(normalizeExternalUrl("")).toBeNull();

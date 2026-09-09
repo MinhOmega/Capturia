@@ -49,11 +49,7 @@ describe("generateRoughCutSuggestions", () => {
 	it("does not measure gaps against the transcript pane's silence pseudo-words", () => {
 		expect(
 			generateRoughCutSuggestions(
-				[
-					word("hello", 0, 0.5),
-					word("[silence]", 0.5, 3, "silence_1"),
-					word("world", 3, 3.5),
-				],
+				[word("hello", 0, 0.5), word("[silence]", 0.5, 3, "silence_1"), word("world", 3, 3.5)],
 				10,
 			),
 		).toEqual([{ startSec: 0.5, endSec: 3, reason: "silence", confidence: 0.98 }]);

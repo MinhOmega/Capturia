@@ -21,8 +21,8 @@ import type {
 	WebcamBackgroundMode,
 } from "@/components/video-editor/types";
 import { DEFAULT_CROP_REGION, getZoomScale } from "@/components/video-editor/types";
-import { expandTrackedBlurAnnotations } from "@/lib/ai-edition/annotations/blurTracking/sceneSteps";
 import { annotationFontSizeFraction } from "@/lib/ai-edition/annotationScale";
+import { expandTrackedBlurAnnotations } from "@/lib/ai-edition/annotations/blurTracking/sceneSteps";
 import {
 	captionCuesToTextRegions,
 	deriveCaptionCues,
@@ -798,10 +798,8 @@ export function buildSceneDescription(
 	// clip splitting and `clipIndex` from it like any other annotation.
 	const projectedAnnotations = projectRegionsToSource(
 		[
-			...expandTrackedBlurAnnotations(
-				document.annotations ?? [],
-				document.timeline.clips,
-				() => createId("ann"),
+			...expandTrackedBlurAnnotations(document.annotations ?? [], document.timeline.clips, () =>
+				createId("ann"),
 			),
 			...(captionRegions as unknown as NonNullable<AxcutDocument["annotations"]>),
 		],

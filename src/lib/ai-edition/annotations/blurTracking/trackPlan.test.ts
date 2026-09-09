@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { resolveTrackedBlurRect } from "./keyframes";
+import type { TrackerSample } from "./trackerCore";
 import {
 	buildBlurTrack,
 	buildSampleGrid,
@@ -8,7 +9,6 @@ import {
 	planBackwardChunks,
 	shouldDensify,
 } from "./trackPlan";
-import type { TrackerSample } from "./trackerCore";
 
 const SOURCE = { width: 1280, height: 720 };
 

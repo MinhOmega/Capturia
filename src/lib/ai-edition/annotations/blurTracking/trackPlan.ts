@@ -93,7 +93,7 @@ function toKeyframe(
 }
 
 export interface BuildTrackOptions {
-	sourceSize: { width: number; height: number }
+	sourceSize: { width: number; height: number };
 	anchorMs: number;
 	sampleIntervalMs?: number;
 	/** Keyframes the user placed by hand; never moved, never dropped. */
@@ -133,7 +133,7 @@ export function buildBlurTrack(
 	for (const sample of ordered) {
 		if (sample.state === "found") {
 			scoreTotal += sample.score;
-			scoreCount++
+			scoreCount++;
 			trackedMs += sampleIntervalMs;
 		} else if (sample.state === "lost") {
 			lostMs += sampleIntervalMs;

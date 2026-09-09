@@ -166,7 +166,7 @@ export interface TrackerSnapshot {
 export type TrackerCreateResult =
 	| { ok: true; tracker: BlurTracker }
 	| { ok: false; reason: "low-detail"; stdDev: number }
-	| { ok: false; reason: "degenerate-rect"; stdDev: number }
+	| { ok: false; reason: "degenerate-rect"; stdDev: number };
 
 // ---------------------------------------------------------------------------
 // Image helpers
@@ -788,7 +788,7 @@ export class BlurTracker {
 			screenHalvings < 4
 		) {
 			screenScale /= 2;
-			screenHalvings++
+			screenHalvings++;
 		}
 
 		const screenWidth = Math.round(rect.w * screenScale);
@@ -928,7 +928,7 @@ export class BlurTracker {
 		) {
 			// A cursor over the patch, a hover highlight, a selection tint. Hold the
 			// rect where it was and wait for the next clean sample.
-			this.tentativeStreak++
+			this.tentativeStreak++;
 			this.state = "tentative";
 		} else {
 			if (!wasLost) this.lostSampleCount = 0;
@@ -936,7 +936,7 @@ export class BlurTracker {
 			this.tentativeStreak = 0;
 			this.velocityX = 0;
 			this.velocityY = 0;
-			this.lostSampleCount++
+			this.lostSampleCount++;
 		}
 
 		return {
