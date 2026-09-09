@@ -48,8 +48,7 @@ export function hasAllowedExportExtension(
 	filePath: string,
 	platformPath: PlatformPath = nodePath,
 ): boolean {
-	const extension = platformPath.extname(filePath).toLowerCase();
-	return ALLOWED_EXPORT_EXTENSIONS.has(extension) || SIDECAR_EXPORT_EXTENSIONS.has(extension);
+	return ALLOWED_EXPORT_EXTENSIONS.has(platformPath.extname(filePath).toLowerCase());
 }
 
 /** Exact export destinations the user chose, keyed by canonical path. */
@@ -81,7 +80,12 @@ export class ApprovedExportPaths {
 		if (typeof filePath !== "string" || filePath.trim().length === 0) return false;
 		const trimmed = filePath.trim();
 		if (!this.platformPath.isAbsolute(trimmed)) return false;
-		if (!hasAllowedExportExtension(trimmed, this.platformPath)) return false;
+		// No extension gate here on purpose. The set only ever holds what `approve`
+		// registered -- a video the user named, plus its sidecars -- so membership is
+		// already the stronger statement. Re-testing the extension would also drag
+		// sidecar extensions into `hasAllowedExportExtension`, whose other caller is
+		// the save-dialog append gate: widening it there makes a typed `demo.srt`
+		// skip the `.mp4` append and then fail approval outright.
 		return this.files.has(canonicalize(trimmed, this.platformPath));
 	}
 

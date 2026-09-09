@@ -114,3 +114,30 @@ describe("cliExportDestinations", () => {
 		expect(cliExportDestinations({})).toEqual([]);
 	});
 });
+
+describe("subtitle sidecars", () => {
+	it("approves the sidecars that come with an approved video", () => {
+		const approved = new ApprovedExportPaths(posix);
+		approved.approve("/w/demo.mp4");
+		expect(approved.isApproved("/w/demo.srt")).toBe(true);
+		expect(approved.isApproved("/w/demo.vtt")).toBe(true);
+		// A sidecar beside a video nobody approved is still refused.
+		expect(approved.isApproved("/w/other.srt")).toBe(false);
+	});
+
+	it("does not let a sidecar be named as a destination on its own", () => {
+		const approved = new ApprovedExportPaths(posix);
+		expect(approved.approve("/w/demo.srt")).toBeNull();
+		expect(approved.isApproved("/w/demo.srt")).toBe(false);
+	});
+
+	it("keeps sidecar extensions out of the save-dialog append gate", () => {
+		// `hasAllowedExportExtension` has a second caller: the GTK save-dialog path in
+		// handlers.ts appends `.mp4`/`.gif` when it returns false. Widening it to accept
+		// sidecars made a typed `demo.srt` skip that append and then fail approval, so
+		// the export died instead of writing `demo.srt.mp4`. Membership, not extension,
+		// is what authorises a sidecar.
+		expect(hasAllowedExportExtension("/w/demo.srt")).toBe(false);
+		expect(hasAllowedExportExtension("/w/demo.vtt")).toBe(false);
+	});
+});
