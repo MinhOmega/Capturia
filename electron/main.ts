@@ -59,7 +59,9 @@ import {
 	registerIpcHandlers,
 } from "./ipc/handlers";
 import { installMainProcessErrorGuards } from "./main-process-errors";
+import { normalizeExternalUrl } from "./navigationPolicy";
 import { scheduleRecordingsCleanup } from "./recordingsCleanup";
+import { installNavigationPolicy, installPermissionPolicy } from "./securityPolicy";
 import { registerSttIpc, shutdownStt } from "./stt";
 import { checkLatestRelease } from "./update-checker";
 import { loadUpdateMode, saveUpdateMode } from "./update-settings";
@@ -169,6 +171,11 @@ function showMainWindow() {
 
 	createWindow();
 }
+
+// Ahead of the CLI/GUI split and of `whenReady` on purpose: this is the one
+// place every window in either boot path passes through, so no window can exist
+// before the navigation guard is attached to it.
+installNavigationPolicy();
 
 // CLI runs skip the single-instance lock so `openscreen export/record` works
 // while the GUI app is open (they share nothing but the recordings directory).
@@ -814,7 +821,11 @@ async function checkForUpdates(onVerdict?: () => void) {
 		});
 		if (choice.response !== 0) return;
 		if (!canSelfUpdate) {
-			await shell.openExternal(result.releaseUrl);
+			// The release URL arrives from the update feed, so it is not ours to
+			// trust blindly: `shell.openExternal` hands anything else to the OS.
+			const releaseUrl = normalizeExternalUrl(result.releaseUrl);
+			if (releaseUrl) await shell.openExternal(releaseUrl);
+			else console.warn("Refused to open a release URL from the feed:", result.releaseUrl);
 			return;
 		}
 		await downloadAndInstall(result.latestVersion);
@@ -1114,31 +1125,10 @@ appReady?.then(async () => {
 		app.dock?.show();
 	}
 
-	session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
-		const allowed = [
-			"media",
-			"audioCapture",
-			"microphone",
-			"videoCapture",
-			"camera",
-			"screen",
-			"display-capture",
-		];
-		return allowed.includes(permission);
-	});
-
-	session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-		const allowed = [
-			"media",
-			"audioCapture",
-			"microphone",
-			"videoCapture",
-			"camera",
-			"screen",
-			"display-capture",
-		];
-		callback(allowed.includes(permission));
-	});
+	// Was a blanket allowlist that granted capture to any WebContents that asked,
+	// including the editor — which runs with `webSecurity: false` and renders
+	// model-generated content. Now keyed on which window is asking.
+	installPermissionPolicy(session.defaultSession);
 
 	session.defaultSession.setDisplayMediaRequestHandler(
 		(request, callback) => {

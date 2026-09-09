@@ -54,6 +54,7 @@ import type { CursorTelemetryReader } from "../ai-edition/deep-agent/service";
 import { DocumentService } from "../ai-edition/document-service";
 import { LlmConfigStore } from "../ai-edition/llm-config-store";
 import { isDiagnosticModeEnabled, mainLogBuffer } from "../diagnostics/main-log-buffer";
+import { approvedExportPaths, hasAllowedExportExtension } from "../exportPolicy";
 import { mainT } from "../i18n";
 import { getInstallChannel } from "../install-channel";
 import { RECORDINGS_DIR } from "../main";
@@ -78,6 +79,7 @@ import {
 import { findPipeWireCursorHelperPath } from "../native-bridge/cursor/recording/pipeWireCursorRecordingSession";
 import type { CursorRecordingSession } from "../native-bridge/cursor/recording/session";
 import { toHelperRect } from "../native-bridge/helperCoordinates";
+import { normalizeExternalUrl } from "../navigationPolicy";
 import { scoreDeviceNameMatch } from "../recording/deviceNameMatching";
 import {
 	isSalvageableFragmentedCapture,
@@ -90,6 +92,7 @@ import {
 } from "../recording/nativeWindowsCaptureStop";
 import { patchWebmDurationOnDisk } from "../recording/webm-duration";
 import { reindexRecordingOnDisk } from "../recording/webm-seek-index";
+import { settingsPaneUrl } from "../windowPermissions";
 import { registerNativeBridgeHandlers } from "./nativeBridge";
 import { RecordingStreamRegistry, registerRecordingStreamHandlers } from "./recordingStream";
 
@@ -2071,9 +2074,9 @@ export function registerIpcHandlers(
 					? await dialog.showMessageBox(mainWin, messageOptions)
 					: await dialog.showMessageBox(messageOptions);
 			if (result.response === 0) {
-				await shell.openExternal(
-					"x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
-				);
+				const pane = settingsPaneUrl("accessibility");
+				// Built from a fixed table, never from renderer input — see windowPermissions.ts.
+				if (pane) await shell.openExternal(pane);
 			}
 		}
 
@@ -2112,9 +2115,8 @@ export function registerIpcHandlers(
 						? await dialog.showMessageBox(mainWin, messageOptions)
 						: await dialog.showMessageBox(messageOptions);
 				if (result.response === 0) {
-					await shell.openExternal(
-						"x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
-					);
+					const pane = settingsPaneUrl("screen-capture");
+					if (pane) await shell.openExternal(pane);
 				}
 			}
 			return {
@@ -3664,21 +3666,16 @@ export function registerIpcHandlers(
 		return readCursorTelemetryFile(targetVideoPath);
 	});
 
-	// Protocol allowlist. `shell.openExternal` hands the string to the OS handler,
-	// so `file:`, `ms-msdt:`, a UNC path, or any registered custom scheme is a
-	// launch primitive — the renderer runs with webSecurity:false and now renders
-	// model-generated content, so "the renderer is trusted" is not a strong enough
-	// premise to skip this. http/https/mailto is everything the app actually opens.
-	const EXTERNAL_URL_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
-
+	// Protocol allowlist, shared with the navigation policy so a URL the renderer
+	// cannot navigate to is also a URL it cannot ask the OS to open.
 	ipcMain.handle("open-external-url", async (_, url: string) => {
+		const normalized = normalizeExternalUrl(url);
+		if (!normalized) {
+			console.warn("Refused to open external URL:", url);
+			return { success: false, error: "Unsupported URL protocol" };
+		}
 		try {
-			const parsed = new URL(url);
-			if (!EXTERNAL_URL_PROTOCOLS.has(parsed.protocol)) {
-				console.warn(`Refused to open external URL with protocol ${parsed.protocol}`);
-				return { success: false, error: `Unsupported URL protocol: ${parsed.protocol}` };
-			}
-			await shell.openExternal(parsed.toString());
+			await shell.openExternal(normalized);
 			return { success: true };
 		} catch (error) {
 			console.error("Failed to open URL:", error);
@@ -3731,7 +3728,19 @@ export function registerIpcHandlers(
 				return { success: false, canceled: true, message: "Export canceled" };
 			}
 
-			return { success: true, path: path.normalize(result.filePath) };
+			// GTK save dialogs do not append the filter's extension, so a name typed
+			// without one would otherwise reach the writer as an extension-less path.
+			const chosenPath = hasAllowedExportExtension(result.filePath)
+				? result.filePath
+				: `${result.filePath}${isGif ? ".gif" : ".mp4"}`;
+
+			// The user just named this destination, so it becomes writable. Nothing
+			// else does — see exportPolicy.ts.
+			const approved = approvedExportPaths.approve(chosenPath);
+			if (!approved) {
+				return { success: false, message: "Invalid export destination" };
+			}
+			return { success: true, path: approved };
 		} catch (error) {
 			console.error("Failed to show save dialog:", error);
 			return {
@@ -3744,17 +3753,15 @@ export function registerIpcHandlers(
 
 	ipcMain.handle("write-export-to-path", async (_, videoData: ArrayBuffer, filePath: string) => {
 		try {
-			// Sanity-check the path: the renderer is trusted (contextIsolation on), but a
-			// stale-state bug shouldn't be able to clobber arbitrary files.
-			if (typeof filePath !== "string" || !path.isAbsolute(filePath)) {
-				return { success: false, message: "Invalid path" };
-			}
-			const lower = filePath.toLowerCase();
-			if (!lower.endsWith(".mp4") && !lower.endsWith(".gif")) {
-				return { success: false, message: "Invalid file type" };
+			// An extension check is not a destination check — `~/.ssh/config.mp4`
+			// passes one and fails the other. Only a path the user named, through the
+			// save dialog or `openscreen export --out`, is writable here.
+			if (!approvedExportPaths.isApproved(filePath)) {
+				console.warn("Refused to write an export to an unapproved destination:", filePath);
+				return { success: false, message: "Export destination was not approved" };
 			}
 
-			const normalizedPath = path.normalize(filePath);
+			const normalizedPath = path.resolve(filePath);
 			await fs.mkdir(path.dirname(normalizedPath), { recursive: true });
 			await fs.writeFile(normalizedPath, Buffer.from(videoData));
 

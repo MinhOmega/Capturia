@@ -12,6 +12,7 @@ import {
 } from "../../src/native/contracts";
 import type { ChatEventSink } from "../ai-edition/chat-service";
 import type { DocumentService } from "../ai-edition/document-service";
+import { approvedExportPaths } from "../exportPolicy";
 import {
 	type CursorTelemetryLoadResult,
 	TelemetryCursorAdapter,
@@ -126,6 +127,18 @@ function createSuccessResponse<TData>(requestId: string | undefined, data: TData
 		data,
 		meta: createMeta(requestId),
 	} satisfies NativeBridgeResponse<TData>;
+}
+
+/**
+ * The compositor writes wherever `outPath` says, so the renderer must not be
+ * able to name that destination freely — see `exportPolicy.ts`. An absent path
+ * is fine: the service then picks its own scratch file.
+ */
+function exportDestinationAllowed(outPath: unknown): boolean {
+	if (!outPath) return true;
+	if (approvedExportPaths.isApproved(outPath)) return true;
+	console.warn("Refused a native export to an unapproved destination:", outPath);
+	return false;
 }
 
 function createErrorResponse(
@@ -405,6 +418,13 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 							compositorViewService.destroyView(request.payload.id);
 							return createSuccessResponse(requestId, { ok: true });
 						case "exportMulti": {
+							if (!exportDestinationAllowed(request.payload.outPath)) {
+								return createErrorResponse(
+									requestId,
+									"INVALID_REQUEST",
+									"Export destination was not approved.",
+								);
+							}
 							const sender = event.sender;
 							const stats = await compositorViewService.exportMulti(
 								request.payload.clips,
@@ -427,6 +447,13 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 							return createSuccessResponse(requestId, stats);
 						}
 						case "exportGif": {
+							if (!exportDestinationAllowed(request.payload.outPath)) {
+								return createErrorResponse(
+									requestId,
+									"INVALID_REQUEST",
+									"Export destination was not approved.",
+								);
+							}
 							const sender = event.sender;
 							const stats = await compositorViewService.exportGif(
 								request.payload.clips,
