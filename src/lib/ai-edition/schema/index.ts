@@ -408,7 +408,7 @@ const blurDataSchema = z
 // Rectangles are SOURCE-NORMALISED — fractions of the full source frame, before any
 // crop, zoom camera or output aspect — because the tracker measures them against the
 // decoded pixels. That is a different box from the region's own `position`/`size`,
-// which are percentages of the screen rect; `sceneTracked.ts` converts. Times are the
+// which are percentages of the screen rect; `sceneSteps.ts` converts. Times are the
 // clip's own SOURCE time in ms, the same base as `sourceStartSec`/`sourceEndSec`.
 //
 // Absent on every annotation written before tracking existed, and on every untracked
@@ -431,7 +431,7 @@ const blurTrackKeyframeSchema = z.object({
 const blurTrackSchema = z
 	.object({
 		version: z.literal(1),
-		/** Always `"source"`. Present so a future stage-space track cannot be confused with this one. */
+		/** Always `"source"`: present so a future stage-space track cannot be mistaken for this one. */
 		space: z.literal("source"),
 		keyframes: z.array(blurTrackKeyframeSchema).min(1),
 		sourceSize: z.object({ width: z.number().positive(), height: z.number().positive() }),
