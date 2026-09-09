@@ -3,6 +3,7 @@ import {
 	Download,
 	FolderOpen,
 	FolderPlus,
+	HelpCircle,
 	Info,
 	Keyboard,
 	Languages,
@@ -19,6 +20,7 @@ import { useI18n, useScopedT } from "@/contexts/I18nContext";
 import { useTheme } from "@/hooks/useTheme";
 import { getAvailableLocales, getLocaleName, getLocaleShort } from "@/i18n/loader";
 import styles from "./EditorShellV4.module.css";
+import { TutorialHelp } from "./TutorialHelp";
 
 export type EditorMode = "media" | "edit" | "rec";
 
@@ -291,7 +293,13 @@ function AppMenu({ actions }: { actions: TopBarActions }) {
 	const tCommon = useScopedT("common");
 	const tEditor = useScopedT("editor");
 	const tShortcuts = useScopedT("shortcuts");
+	const tDialogs = useScopedT("dialogs");
 	const [open, setOpen] = useState(false);
+	// Held here rather than lifted into TopBarActions: the dialog is self-contained
+	// help with no shell state behind it, so routing it through NewEditorShell would
+	// buy nothing. `ModalShell` already expects to be opened from this menu — it
+	// restores focus for an opener that unmounted, which is exactly what `run` does.
+	const [tutorialOpen, setTutorialOpen] = useState(false);
 	const [version, setVersion] = useState<string | null>(null);
 	const [canUpdate, setCanUpdate] = useState(false);
 	const ref = useRef<HTMLDivElement | null>(null);
@@ -420,6 +428,17 @@ function AppMenu({ actions }: { actions: TopBarActions }) {
 						{tEditor("providerSettings.title")}
 					</button>
 					<div className={styles.appMenuSep} aria-hidden />
+					{/* Below the separator with About, not above with the settings rows: this
+					    explains the product rather than configuring it. */}
+					<button
+						type="button"
+						role="menuitem"
+						className={styles.appMenuRow}
+						onClick={run(() => setTutorialOpen(true))}
+					>
+						<HelpCircle size={15} />
+						{tDialogs("tutorial.triggerLabel")}
+					</button>
 					{/* Only the PERMANENT half of the veto is applied here. A Store/Flathub/Snap/Nix
 					    copy never offers the check at all; the transient half — not during a take —
 					    stays with the main process, which re-checks it on the IPC, because this
@@ -447,6 +466,11 @@ function AppMenu({ actions }: { actions: TopBarActions }) {
 					</button>
 				</div>
 			) : null}
+			{/* Outside the `open` branch: the menu closes as the dialog opens. Gated on the
+			    mount, not passed an `open` prop — the dialog reads the live `addTrim` binding
+			    through `useShortcuts`, which throws without a provider, and the top bar itself
+			    has no other reason to need one. */}
+			{tutorialOpen ? <TutorialHelp onClose={() => setTutorialOpen(false)} /> : null}
 		</div>
 	);
 }
