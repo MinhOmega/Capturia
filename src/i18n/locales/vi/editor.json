@@ -46,6 +46,8 @@
 		"cameraDenied": "Quyền truy cập máy ảnh bị từ chối. Sẽ tiếp tục ghi hình không có webcam.",
 		"cameraDisconnected": "Webcam bị ngắt kết nối.",
 		"cameraNotFound": "Không tìm thấy máy ảnh.",
+		"diskSpaceBlocked": "Không đủ dung lượng đĩa để ghi — chỉ còn trống {{available}}. Hãy giải phóng bớt dung lượng rồi thử lại.",
+		"diskSpaceLow": "Dung lượng đĩa thấp: còn trống {{available}}. Bản ghi dài có thể không đủ chỗ.",
 		"cameraCaptureUnavailable": "Không thể mở máy ảnh. Đang ghi mà không có máy ảnh.",
 		"microphoneDefaulted": "Không xác định được micrô đã chọn. Đang ghi từ đầu vào mặc định.",
 		"permissionDenied": "Quyền ghi hình bị từ chối. Vui lòng cho phép ghi màn hình.",

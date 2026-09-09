@@ -119,6 +119,10 @@ interface Window {
 			message?: string;
 			error?: string;
 		}>;
+		/** Free space on the recordings volume; see `src/lib/recordingDiskSpace.ts`. */
+		getRecordingsDiskSpace: () => Promise<
+			import("../src/lib/recordingDiskSpace").RecordingDiskSpaceSnapshot
+		>;
 		setRecordingState: (
 			recording: boolean,
 			recordingId?: number,

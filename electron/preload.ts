@@ -175,6 +175,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	getRecordedVideoPath: () => {
 		return ipcRenderer.invoke("get-recorded-video-path");
 	},
+	getRecordingsDiskSpace: () => {
+		return ipcRenderer.invoke("get-recordings-disk-space");
+	},
 	setRecordingState: (
 		recording: boolean,
 		recordingId?: number,

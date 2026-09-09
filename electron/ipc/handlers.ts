@@ -3536,6 +3536,32 @@ export function registerIpcHandlers(
 		}
 	});
 
+	// Free space on the recordings volume, asked for right before a recording
+	// starts. None of the three capture helpers watches for a full disk: they
+	// hand frames to their muxer and never inspect a write error, so a volume
+	// that fills mid-take leaves a file truncated wherever the writer was — on
+	// the native path an MP4 with no `moov` box, which opens nowhere. The HUD
+	// warns early and refuses outright when there is not even a usable capture
+	// left to make (`src/lib/recordingDiskSpace.ts` holds the thresholds).
+	ipcMain.handle("get-recordings-disk-space", async () => {
+		try {
+			const stats = await fs.statfs(RECORDINGS_DIR);
+			const blockSize = Number(stats.bsize);
+			// `bavail` is what an unprivileged process may use, which is what
+			// matters here: `bfree` includes the root reserve the recorder can
+			// never touch.
+			const availableBytes = Number(stats.bavail) * blockSize;
+			const totalBytes = Number(stats.blocks) * blockSize;
+			if (!Number.isFinite(availableBytes) || availableBytes < 0) {
+				return { success: false, message: "Filesystem reported no usable free space figure." };
+			}
+			return { success: true, availableBytes, totalBytes };
+		} catch (error) {
+			// Never a recording-blocking failure: the caller reads it as "unknown".
+			return { success: false, message: error instanceof Error ? error.message : String(error) };
+		}
+	});
+
 	ipcMain.handle(
 		"set-recording-state",
 		async (_, recording: boolean, recordingId?: number, cursorCaptureMode?: CursorCaptureMode) => {

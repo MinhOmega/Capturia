@@ -16,6 +16,11 @@ import {
 	type NativeWindowsRecordingRequest,
 	parseWindowHandleFromSourceId,
 } from "@/lib/nativeWindowsRecording";
+import {
+	assessRecordingDiskSpace,
+	formatAvailableSpace,
+	type RecordingDiskSpaceSnapshot,
+} from "@/lib/recordingDiskSpace";
 import type { CursorCaptureMode, RecordedVideoAssetInput } from "@/lib/recordingSession";
 import { requestCameraAccess } from "@/lib/requestCameraAccess";
 import { loadUserPreferences, saveUserPreferences } from "@/lib/userPreferences";
@@ -1697,6 +1702,37 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		}
 	};
 
+	/**
+	 * False when the recordings volume is too full to be worth starting on.
+	 *
+	 * A capture streams straight to disk with nothing watching for ENOSPC, so a
+	 * volume that fills mid-take truncates the file where the writer happened to
+	 * be — on the native path an MP4 with no `moov` box, which opens nowhere. A
+	 * check that could not run (old preload, a volume `statfs` cannot describe)
+	 * answers true: it must never stop a recording that would have been fine.
+	 */
+	const hasRoomToRecord = async (): Promise<boolean> => {
+		let snapshot: RecordingDiskSpaceSnapshot | undefined;
+		try {
+			snapshot = await window.electronAPI?.getRecordingsDiskSpace?.();
+		} catch (error) {
+			console.warn("Failed to read free disk space before recording:", error);
+		}
+
+		const verdict = assessRecordingDiskSpace(snapshot);
+		if (verdict.level === "ok") {
+			return true;
+		}
+
+		const available = formatAvailableSpace(verdict.availableBytes);
+		if (verdict.level === "blocked") {
+			toast.error(t("recording.diskSpaceBlocked", { available }));
+			return false;
+		}
+		toast.warning(t("recording.diskSpaceLow", { available }));
+		return true;
+	};
+
 	const startRecording = async (
 		countdownRunToken?: number,
 		preparedRecordingId?: number | null,
@@ -1706,6 +1742,14 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
 		try {
 			if (!isCountdownRunActive(countdownRunToken)) {
+				teardownMedia();
+				return;
+			}
+
+			// The one choke point every start path funnels through — the countdown,
+			// the tray, the CLI runner and `restartRecording` all land here — so the
+			// disk gate lives here rather than in `startRecordCountdown`.
+			if (!(await hasRoomToRecord())) {
 				teardownMedia();
 				return;
 			}
