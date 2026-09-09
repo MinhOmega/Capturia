@@ -175,6 +175,8 @@
 		"loopGif": "循環播放 GIF",
 		"loopOn": "循環開啟",
 		"loopOff": "循環關閉",
+		"ditherGif": "抖動",
+		"ditherGifHint": "漸層更平滑，匯出更慢。",
 		"pickFormatAndExport": "選擇格式並按下匯出以開始。",
 		"savedTo": "已儲存至",
 		"exportFailedGeneric": "匯出失敗。",

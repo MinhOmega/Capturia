@@ -178,6 +178,8 @@
 		"loopGif": "Lặp GIF",
 		"loopOn": "Lặp bật",
 		"loopOff": "Lặp tắt",
+		"ditherGif": "Khử dải màu",
+		"ditherGifHint": "Chuyển màu mượt hơn, xuất chậm hơn.",
 		"pickFormatAndExport": "Chọn định dạng và nhấn Xuất để bắt đầu.",
 		"savedTo": "Đã lưu vào",
 		"exportFailedGeneric": "Xuất thất bại.",

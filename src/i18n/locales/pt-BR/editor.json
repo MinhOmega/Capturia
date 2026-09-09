@@ -175,6 +175,8 @@
 		"loopGif": "Repetir GIF",
 		"loopOn": "Repetição ativada",
 		"loopOff": "Repetição desativada",
+		"ditherGif": "Pontilhado",
+		"ditherGifHint": "Gradientes mais suaves, exportação mais lenta.",
 		"pickFormatAndExport": "Escolha um formato e clique em Exportar para começar.",
 		"savedTo": "Salvo em",
 		"exportFailedGeneric": "Falha na exportação.",

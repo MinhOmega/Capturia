@@ -175,6 +175,8 @@
 		"loopGif": "GIF 반복",
 		"loopOn": "반복 켜짐",
 		"loopOff": "반복 꺼짐",
+		"ditherGif": "디더링",
+		"ditherGifHint": "그러데이션이 부드러워지고 내보내기는 느려집니다.",
 		"pickFormatAndExport": "형식을 선택하고 내보내기를 눌러 시작하세요.",
 		"savedTo": "저장 위치",
 		"exportFailedGeneric": "내보내기에 실패했습니다.",

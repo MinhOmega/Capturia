@@ -175,6 +175,8 @@
 		"loopGif": "Bucle de GIF",
 		"loopOn": "Bucle activado",
 		"loopOff": "Bucle desactivado",
+		"ditherGif": "Tramado",
+		"ditherGifHint": "Degradados más suaves, exportación más lenta.",
 		"pickFormatAndExport": "Elige un formato y pulsa Exportar para empezar.",
 		"savedTo": "Guardado en",
 		"exportFailedGeneric": "Error al exportar.",

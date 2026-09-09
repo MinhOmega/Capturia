@@ -175,6 +175,8 @@
 		"loopGif": "GIF'i döngüye al",
 		"loopOn": "Döngü açık",
 		"loopOff": "Döngü kapalı",
+		"ditherGif": "Titreşim (dither)",
+		"ditherGifHint": "Daha yumuşak geçişler, daha yavaş dışa aktarma.",
 		"pickFormatAndExport": "Bir format seçin ve başlamak için Dışa Aktar'a basın.",
 		"savedTo": "Kaydedildiği yer",
 		"exportFailedGeneric": "Dışa aktarma başarısız oldu.",
