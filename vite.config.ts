@@ -75,9 +75,14 @@ export default defineConfig({
 		minify: "terser",
 		terserOptions: {
 			compress: {
-				drop_console: true,
+				// Drop the noise, keep the diagnostics. `drop_console: true` takes
+				// console.error and console.warn with it, which leaves a packaged build
+				// with no signal at all for failures that are silent by design -- a
+				// refused subtitle sidecar never throws and never reaches the UI, so
+				// its console.error was the only trace it left. The array form is what
+				// the neighbouring `pure_funcs` list already implied was intended.
+				drop_console: ["log", "debug"],
 				drop_debugger: true,
-				pure_funcs: ["console.log", "console.debug"],
 			},
 		},
 		rollupOptions: {
