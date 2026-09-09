@@ -36,7 +36,9 @@ export {
 	formatVttTimestamp,
 	projectCuesToOutputTime,
 	SUBTITLE_SIDECAR_FORMATS,
+	subtitleSidecarPath,
 } from "./subtitles";
+export { writeSubtitleSidecars } from "./writeSubtitleSidecars";
 export type {
 	CaptionTranslation,
 	CaptionTranslations,

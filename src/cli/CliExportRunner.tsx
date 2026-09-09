@@ -12,6 +12,7 @@ import {
 	toFileUrl,
 	validateProjectData,
 } from "@/components/video-editor/projectPersistence";
+import { writeSubtitleSidecars } from "@/lib/ai-edition/captions";
 import { migrateProjectDataToAxcutDocument } from "@/lib/ai-edition/document/migrate";
 import {
 	collectEffectiveClipDims,
@@ -306,6 +307,7 @@ async function runExport(request: CliExportRequest): Promise<CliDoneResult> {
 				fps: gifFrameRate,
 				loopCount: editor.gifLoop ? 0 : 1,
 			});
+			await writeSubtitleSidecars(axcutDocument, outPath);
 			return {
 				success: true,
 				outputPath: outPath,
@@ -324,6 +326,9 @@ async function runExport(request: CliExportRequest): Promise<CliDoneResult> {
 			fps: MP4_EXPORT_FPS,
 			codec: "h264",
 		});
+		// Before the voiceover mix, which only rewrites the same video file and cannot
+		// move a cue -- so the sidecar is correct either side of it.
+		await writeSubtitleSidecars(axcutDocument, outPath);
 
 		if (request.audioPath) {
 			window.electronAPI.cliProgress({ percentage: 100, phase: "mixing-voiceover" });

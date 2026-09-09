@@ -7,7 +7,9 @@
 // (the obvious implementation) is exactly right for trims and silently wrong the moment
 // any part of the timeline plays at anything other than 1x.
 
+import nodePath from "node:path";
 import { describe, expect, it } from "vitest";
+import { ApprovedExportPaths } from "../../../../electron/exportPolicy";
 import type { AxcutClip, AxcutTrimRange } from "../schema";
 import type { CaptionCue } from "./cues";
 import {
@@ -17,6 +19,7 @@ import {
 	formatSrtTimestamp,
 	formatVttTimestamp,
 	projectCuesToOutputTime,
+	subtitleSidecarPath,
 } from "./subtitles";
 
 function clip(over: Partial<AxcutClip> & { id: string }): AxcutClip {
@@ -173,5 +176,57 @@ describe("cuesToVtt", () => {
 	it("drops blank lines inside a payload, which would otherwise end the cue early", () => {
 		const written = cuesToVtt([cue("a", 0, 1000, "first\n\nsecond")]);
 		expect(written).toContain("first\nsecond");
+	});
+});
+
+// The one assertion that decides whether subtitles appear at all in the packaged app.
+//
+// `write-export-to-path` refuses any path the export policy did not register, and refuses
+// it QUIETLY -- the failure looks like "subtitles just don't appear", not like an error. So
+// the filename this module derives has to match, byte for byte, the siblings
+// `ApprovedExportPaths.approve` registers. Rather than asserting a string we believe the
+// policy produces, this drives the REAL policy: if either side changes its derivation, the
+// pairing breaks here instead of in a user's export.
+describe("subtitleSidecarPath agrees with the export policy", () => {
+	const cases = [
+		// The ordinary case, both containers.
+		"/home/me/Movies/take.mp4",
+		"/home/me/Movies/take.gif",
+		// Dots INSIDE the name. This is the `path.parse().name` trap: that would strip
+		// `.v1.mp4` back to `take` and derive an unapproved `take.srt`.
+		"/home/me/Movies/take.v1.mp4",
+		"/home/me/Movies/2024.10.01 demo.mp4",
+		// A name that ends in the container twice.
+		"/home/me/Movies/take.mp4.mp4",
+		// Upper case: the policy lower-cases the extension before measuring it.
+		"/home/me/Movies/TAKE.MP4",
+		// Dots in a DIRECTORY, none in the file.
+		"/home/me/v1.2/take.mp4",
+	];
+
+	for (const videoPath of cases) {
+		it(`derives an approved sidecar for ${videoPath}`, () => {
+			const registry = new ApprovedExportPaths(nodePath.posix);
+			expect(registry.approve(videoPath)).not.toBeNull();
+			for (const format of ["srt", "vtt"] as const) {
+				expect(registry.isApproved(subtitleSidecarPath(videoPath, format))).toBe(true);
+			}
+		});
+	}
+
+	it("holds on Windows, where the policy compares case-insensitively", () => {
+		const registry = new ApprovedExportPaths(nodePath.win32);
+		for (const videoPath of ["C:\\Users\\me\\take.mp4", "C:\\Users\\me\\take.v1.MP4"]) {
+			expect(registry.approve(videoPath)).not.toBeNull();
+			expect(registry.isApproved(subtitleSidecarPath(videoPath, "srt"))).toBe(true);
+			expect(registry.isApproved(subtitleSidecarPath(videoPath, "vtt"))).toBe(true);
+		}
+	});
+
+	it("keeps a dotted name intact rather than truncating at the first dot", () => {
+		// Stated directly as well as through the policy, because this is the specific
+		// mistake being guarded against and it should be readable without running it.
+		expect(subtitleSidecarPath("/m/take.v1.mp4", "srt")).toBe("/m/take.v1.srt");
+		expect(subtitleSidecarPath("/m/take.gif", "vtt")).toBe("/m/take.vtt");
 	});
 });
