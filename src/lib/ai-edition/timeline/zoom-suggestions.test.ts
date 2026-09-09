@@ -395,7 +395,7 @@ describe("source-time to clip-anchored round trip", () => {
 		reason: "",
 	});
 
-	it("lands a click back on the source second it was recorded at, after a head trim and a reorder", () => {
+	it("lands a click back on its own source second after a head trim and a reorder", () => {
 		// Two slices of ONE recording, laid down out of order: source 60-70 plays
 		// first, then source 20-30. A click at source 24s belongs to the SECOND
 		// clip, at ruler 14s. Get the axis wrong and it lands at ruler 4s — on
