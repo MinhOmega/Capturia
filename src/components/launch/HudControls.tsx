@@ -395,9 +395,12 @@ export const HudRecordingControls = memo(function HudRecordingControls({
 	pauseLabel,
 	restartLabel,
 	cancelLabel,
+	markerLabel,
+	markerCount,
 	onTogglePause,
 	onRestart,
 	onCancel,
+	onAddMarker,
 }: {
 	vertical: boolean;
 	paused: boolean;
@@ -406,14 +409,32 @@ export const HudRecordingControls = memo(function HudRecordingControls({
 	pauseLabel: string;
 	restartLabel: string;
 	cancelLabel: string;
+	markerLabel: string;
+	markerCount: number;
 	onTogglePause: () => void;
 	onRestart: () => void;
 	onCancel: () => void;
+	onAddMarker: () => void;
 }) {
 	return (
 		<div
 			className={`flex items-center gap-0.5 ${vertical ? "flex-col" : ""} ${styles.electronNoDrag}`}
 		>
+			{/* Flag this moment. Disabled while paused for the same reason the
+			    recorder refuses one: the frame on screen is not in the file, so the
+			    marker would point at a moment the recording does not contain. */}
+			<Tooltip content={markerLabel}>
+				<button
+					type="button"
+					data-testid="hud-add-marker"
+					className={hudAuxIconBtnClasses}
+					onClick={onAddMarker}
+					disabled={saving || paused}
+					aria-label={markerLabel}
+				>
+					{getIcon("marker", markerCount > 0 ? "text-emerald-400" : "text-white/60")}
+				</button>
+			</Tooltip>
 			{canPause && (
 				<Tooltip content={pauseLabel}>
 					<button className={hudAuxIconBtnClasses} onClick={onTogglePause} disabled={saving}>

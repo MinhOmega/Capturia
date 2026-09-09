@@ -24,6 +24,7 @@
 		"zoom": "Thu phóng",
 		"trim": "Cắt",
 		"speed": "Tốc độ",
+		"markerAt": "Dấu mốc tại {{time}} — bấm để nhảy tới đây",
 		"zoomItem": "Thu phóng {{index}}",
 		"trimItem": "Cắt {{index}}",
 		"speedItem": "Tốc độ {{index}}",

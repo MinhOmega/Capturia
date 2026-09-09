@@ -65,6 +65,7 @@ import {
 } from "../media/cursorSidecar";
 import { findMediaLinksByFingerprint, registerMediaLinks } from "../media/mediaLinksRegistry";
 import { relinkProjectMedia } from "../media/projectMediaRelinker";
+import { readRecordingMarkers, writeRecordingMarkers } from "../media/recordingMarkers";
 import {
 	type LinuxCaptureSourceKind,
 	LinuxNativeCaptureSession,
@@ -3572,6 +3573,40 @@ export function registerIpcHandlers(
 			console.error("Failed to get video path:", error);
 			return { success: false, message: "Failed to get video path", error: String(error) };
 		}
+	});
+
+	// The moments the user flagged during the capture that just ended, parked
+	// beside the video as `<videoPath>.markers.json`.
+	//
+	// The renderer owns the clock and hands over finished source milliseconds:
+	// `getRecordingDurationMs` is already accumulated-minus-paused, so main would
+	// otherwise need a second copy of the pause bookkeeping in each of the three
+	// native paths, and a marker that disagreed with the file's own clock would
+	// send the user to the wrong frame.
+	ipcMain.handle("write-recording-markers", async (_, videoPath: unknown, markers: unknown) => {
+		if (typeof videoPath !== "string" || !isPathWithinDir(videoPath, RECORDINGS_DIR)) {
+			return { success: false, error: "Refusing to write markers outside the recordings dir." };
+		}
+		try {
+			const count = await writeRecordingMarkers(videoPath, markers);
+			return { success: true, count };
+		} catch (error) {
+			// Never fails the recording: the take is already safe on disk, and
+			// losing the flags is not worth losing the take over.
+			console.warn("[recording-markers] failed to write the sidecar:", error);
+			return { success: false, error: String(error) };
+		}
+	});
+
+	ipcMain.handle("get-recording-markers", async (_, videoPath: unknown) => {
+		if (typeof videoPath !== "string") {
+			return { success: false, markers: [] };
+		}
+		const approved = await approveReadableVideoPath(videoPath);
+		if (!approved) {
+			return { success: false, markers: [] };
+		}
+		return { success: true, markers: await readRecordingMarkers(approved) };
 	});
 
 	// Free space on the recordings volume, asked for right before a recording

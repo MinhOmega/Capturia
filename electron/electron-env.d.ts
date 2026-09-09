@@ -119,6 +119,18 @@ interface Window {
 			message?: string;
 			error?: string;
 		}>;
+		/**
+		 * Parks the moments flagged during a capture beside the recording. Times
+		 * are SOURCE ms into the file (paused stretches already collapsed out) —
+		 * the renderer's `getRecordingDurationMs` clock.
+		 */
+		writeRecordingMarkers: (
+			videoPath: string,
+			markers: number[],
+		) => Promise<{ success: boolean; count?: number; error?: string }>;
+		getRecordingMarkers: (
+			videoPath: string,
+		) => Promise<{ success: boolean; markers: number[] }>;
 		/** Free space on the recordings volume; see `src/lib/recordingDiskSpace.ts`. */
 		getRecordingsDiskSpace: () => Promise<
 			import("../src/lib/recordingDiskSpace").RecordingDiskSpaceSnapshot

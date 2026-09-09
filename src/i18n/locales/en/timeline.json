@@ -24,6 +24,7 @@
 		"zoom": "Zoom",
 		"trim": "Trim",
 		"speed": "Speed",
+		"markerAt": "Marker at {{time}} — click to jump here",
 		"zoomItem": "Zoom {{index}}",
 		"trimItem": "Trim {{index}}",
 		"speedItem": "Speed {{index}}",

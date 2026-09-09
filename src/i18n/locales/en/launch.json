@@ -4,6 +4,7 @@
 		"closeApp": "Close App",
 		"restartRecording": "Restart recording",
 		"cancelRecording": "Cancel recording",
+		"addMarker": "Flag this moment",
 		"pauseRecording": "Pause recording",
 		"resumeRecording": "Resume recording",
 		"useVerticalTray": "Use vertical tray",

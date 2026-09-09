@@ -178,6 +178,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	getRecordingsDiskSpace: () => {
 		return ipcRenderer.invoke("get-recordings-disk-space");
 	},
+	writeRecordingMarkers: (videoPath: string, markers: number[]) => {
+		return ipcRenderer.invoke("write-recording-markers", videoPath, markers);
+	},
+	getRecordingMarkers: (videoPath: string) => {
+		return ipcRenderer.invoke("get-recording-markers", videoPath);
+	},
 	setRecordingState: (
 		recording: boolean,
 		recordingId?: number,
