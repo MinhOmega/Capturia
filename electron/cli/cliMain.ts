@@ -15,6 +15,7 @@ import type {
 } from "../../src/lib/cliContracts";
 import { isDiagnosticModeEnabled } from "../diagnostics/main-log-buffer";
 import { getSelectedDesktopSource, registerIpcHandlers } from "../ipc/handlers";
+import { installPermissionPolicy } from "../securityPolicy";
 import { registerSttIpc } from "../stt";
 import { ASSET_BASE_URL_ARG } from "../windows";
 import { CLI_USAGE, type CliCommand } from "./args";
@@ -333,23 +334,10 @@ export function runCli(command: CliCommand): void {
 			await fs.mkdir(path.join(userDataDir, "recordings"), { recursive: true });
 			milestone("recordings directory ready");
 
-			// Media/screen permissions for the renderer (mic metering, future browser
-			// capture paths). Mirrors the GUI allowlist.
-			const allowed = [
-				"media",
-				"audioCapture",
-				"microphone",
-				"videoCapture",
-				"camera",
-				"screen",
-				"display-capture",
-			];
-			session.defaultSession.setPermissionCheckHandler((_wc, permission) =>
-				allowed.includes(permission),
-			);
-			session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) =>
-				callback(allowed.includes(permission)),
-			);
+			// Media/screen permissions for the renderer (mic metering, browser capture
+			// fallback). The same per-window policy the GUI installs: `cli-record` and
+			// `cli-sources` capture, `cli-export` and `cli-captions` do not.
+			installPermissionPolicy(session.defaultSession);
 
 			// Browser-pipeline recording fallback (e.g. Linux, missing native helper)
 			// resolves the pre-selected source exactly like the GUI does.
