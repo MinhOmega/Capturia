@@ -54,6 +54,7 @@ import type { CursorTelemetryReader } from "../ai-edition/deep-agent/service";
 import { DocumentService } from "../ai-edition/document-service";
 import { LlmConfigStore } from "../ai-edition/llm-config-store";
 import { isDiagnosticModeEnabled, mainLogBuffer } from "../diagnostics/main-log-buffer";
+import { approvedExportPaths, hasAllowedExportExtension } from "../exportPolicy";
 import { mainT } from "../i18n";
 import { getInstallChannel } from "../install-channel";
 import { RECORDINGS_DIR } from "../main";
@@ -3628,7 +3629,19 @@ export function registerIpcHandlers(
 				return { success: false, canceled: true, message: "Export canceled" };
 			}
 
-			return { success: true, path: path.normalize(result.filePath) };
+			// GTK save dialogs do not append the filter's extension, so a name typed
+			// without one would otherwise reach the writer as an extension-less path.
+			const chosenPath = hasAllowedExportExtension(result.filePath)
+				? result.filePath
+				: `${result.filePath}${isGif ? ".gif" : ".mp4"}`;
+
+			// The user just named this destination, so it becomes writable. Nothing
+			// else does — see exportPolicy.ts.
+			const approved = approvedExportPaths.approve(chosenPath);
+			if (!approved) {
+				return { success: false, message: "Invalid export destination" };
+			}
+			return { success: true, path: approved };
 		} catch (error) {
 			console.error("Failed to show save dialog:", error);
 			return {
@@ -3641,17 +3654,15 @@ export function registerIpcHandlers(
 
 	ipcMain.handle("write-export-to-path", async (_, videoData: ArrayBuffer, filePath: string) => {
 		try {
-			// Sanity-check the path: the renderer is trusted (contextIsolation on), but a
-			// stale-state bug shouldn't be able to clobber arbitrary files.
-			if (typeof filePath !== "string" || !path.isAbsolute(filePath)) {
-				return { success: false, message: "Invalid path" };
-			}
-			const lower = filePath.toLowerCase();
-			if (!lower.endsWith(".mp4") && !lower.endsWith(".gif")) {
-				return { success: false, message: "Invalid file type" };
+			// An extension check is not a destination check — `~/.ssh/config.mp4`
+			// passes one and fails the other. Only a path the user named, through the
+			// save dialog or `openscreen export --out`, is writable here.
+			if (!approvedExportPaths.isApproved(filePath)) {
+				console.warn("Refused to write an export to an unapproved destination:", filePath);
+				return { success: false, message: "Export destination was not approved" };
 			}
 
-			const normalizedPath = path.normalize(filePath);
+			const normalizedPath = path.resolve(filePath);
 			await fs.mkdir(path.dirname(normalizedPath), { recursive: true });
 			await fs.writeFile(normalizedPath, Buffer.from(videoData));
 

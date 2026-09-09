@@ -14,6 +14,7 @@ import type {
 	CliSourcesResult,
 } from "../../src/lib/cliContracts";
 import { isDiagnosticModeEnabled } from "../diagnostics/main-log-buffer";
+import { approvedExportPaths, cliExportDestinations } from "../exportPolicy";
 import { getSelectedDesktopSource, registerIpcHandlers } from "../ipc/handlers";
 import { installPermissionPolicy } from "../securityPolicy";
 import { registerSttIpc } from "../stt";
@@ -385,6 +386,14 @@ export function runCli(command: CliCommand): void {
 			ipcMain.handle("update-global-shortcut", () => ({ success: false }));
 
 			const request: CliRequest = command;
+			if (request.kind === "export") {
+				// The destination the user named on the command line. The runner hands
+				// it back through `write-export-to-path`, which writes nothing the user
+				// did not name — see exportPolicy.ts.
+				for (const destination of cliExportDestinations(request)) {
+					approvedExportPaths.approve(destination);
+				}
+			}
 			ipcMain.handle("cli-get-request", () => {
 				milestone("renderer asked for the request");
 				return request;
