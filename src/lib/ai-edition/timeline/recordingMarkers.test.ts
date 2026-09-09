@@ -11,7 +11,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { AxcutClip, AxcutDocument, AxcutTrimRange } from "../schema";
-import { adjacentMarkerSec, resolveRecordingMarkers } from "./recordingMarkers";
+import { resolveRecordingMarkers } from "./recordingMarkers";
 
 function clip(over: Partial<AxcutClip> & { id: string }): AxcutClip {
 	return {
@@ -75,8 +75,8 @@ describe("resolveRecordingMarkers", () => {
 		const markers = resolveRecordingMarkers(doc({}), "a1", [3_000, 14_500]);
 
 		expect(markers).toEqual([
-			{ sourceSec: 3, rulerSec: 3, outputSec: 3, removed: false },
-			{ sourceSec: 14.5, rulerSec: 14.5, outputSec: 14.5, removed: false },
+			{ clipId: "c1", sourceSec: 3, rulerSec: 3, outputSec: 3, removed: false },
+			{ clipId: "c2", sourceSec: 14.5, rulerSec: 14.5, outputSec: 14.5, removed: false },
 		]);
 	});
 
@@ -103,8 +103,8 @@ describe("resolveRecordingMarkers", () => {
 
 		// Source is untouched; ruler and output followed the content.
 		expect(markers).toEqual([
-			{ sourceSec: 14.5, rulerSec: 4.5, outputSec: 4.5, removed: false },
-			{ sourceSec: 3, rulerSec: 13, outputSec: 13, removed: false },
+			{ clipId: "c2", sourceSec: 14.5, rulerSec: 4.5, outputSec: 4.5, removed: false },
+			{ clipId: "c1", sourceSec: 3, rulerSec: 13, outputSec: 13, removed: false },
 		]);
 	});
 
@@ -115,9 +115,9 @@ describe("resolveRecordingMarkers", () => {
 		const markers = resolveRecordingMarkers(doc({ trimRanges: trims }), "a1", [1_000, 8_000]);
 
 		expect(markers).toEqual([
-			{ sourceSec: 1, rulerSec: 1, outputSec: 1, removed: false },
+			{ clipId: "c1", sourceSec: 1, rulerSec: 1, outputSec: 1, removed: false },
 			// 3s of film removed before it: ruler still 8, output 5.
-			{ sourceSec: 8, rulerSec: 8, outputSec: 5, removed: false },
+			{ clipId: "c1", sourceSec: 8, rulerSec: 8, outputSec: 5, removed: false },
 		]);
 	});
 
@@ -140,9 +140,9 @@ describe("resolveRecordingMarkers", () => {
 		const markers = resolveRecordingMarkers(doc({ speedRegions }), "a1", [2_000, 6_000]);
 
 		expect(markers).toEqual([
-			{ sourceSec: 2, rulerSec: 2, outputSec: 1, removed: false },
+			{ clipId: "c1", sourceSec: 2, rulerSec: 2, outputSec: 1, removed: false },
 			// 4s at 2x = 2s, plus the 2s after the region at 1x.
-			{ sourceSec: 6, rulerSec: 6, outputSec: 4, removed: false },
+			{ clipId: "c1", sourceSec: 6, rulerSec: 6, outputSec: 4, removed: false },
 		]);
 	});
 
@@ -162,6 +162,42 @@ describe("resolveRecordingMarkers", () => {
 		expect(marker.outputSec).toBeCloseTo(3.5, 6);
 	});
 
+	// The case neither this suite nor zoom-suggestions' had, which is why the two
+	// features disagreed about it in silence: one source instant produced a zoom
+	// suggestion on both copies of a duplicated take and a marker on only the
+	// first. `buildAutoZoomSuggestionsForClips` loops every matching clip; so does
+	// this now.
+	it("flags EVERY clip that replays the instant, not just the first", () => {
+		// One recording laid down twice: source 0-10 at ruler 0-10, then again at
+		// ruler 10-20 — the same fixture zoom-suggestions pins this behaviour with.
+		const duplicated = [
+			clip({ id: "c1", sourceEndSec: 10, timelineEndSec: 10 }),
+			clip({ id: "c2", sourceEndSec: 10, timelineStartSec: 10, timelineEndSec: 20 }),
+		];
+
+		const markers = resolveRecordingMarkers(doc({ clips: duplicated }), "a1", [4_000]);
+
+		expect(markers).toEqual([
+			{ clipId: "c1", sourceSec: 4, rulerSec: 4, outputSec: 4, removed: false },
+			// The SAME flagged instant, on the copy that replays it.
+			{ clipId: "c2", sourceSec: 4, rulerSec: 14, outputSec: 14, removed: false },
+		]);
+	});
+
+	it("gives a shared clip boundary to both clips, as zoom-suggestions does", () => {
+		// c1 ends and c2 begins at source 10. zoom-suggestions' window test is
+		// `>= start && <= start + window` on both ends, so an instant landing exactly
+		// there belongs to both; matching it is what keeps the two features agreeing
+		// on edges and not just on fan-out. Contiguous clips map it to one ruler
+		// point, so `clipId` is the only thing separating the two rows.
+		const markers = resolveRecordingMarkers(doc({}), "a1", [10_000]);
+
+		expect(markers.map((m) => [m.clipId, m.rulerSec])).toEqual([
+			["c1", 10],
+			["c2", 10],
+		]);
+	});
+
 	it("drops a marker no clip carries any more, and one from another asset", () => {
 		// Only the first half of the recording is still on the timeline.
 		const oneClip = [clip({ id: "c1", sourceEndSec: 10, timelineEndSec: 10 })];
@@ -179,25 +215,7 @@ describe("resolveRecordingMarkers", () => {
 		// A non-array speedRegions is a real shape on disk: `legacyEditor` is a
 		// passthrough blob zod does not validate.
 		expect(resolveRecordingMarkers(doc({ speedRegions: "nope" }), "a1", [3_000])).toEqual([
-			{ sourceSec: 3, rulerSec: 3, outputSec: 3, removed: false },
+			{ clipId: "c1", sourceSec: 3, rulerSec: 3, outputSec: 3, removed: false },
 		]);
-	});
-});
-
-describe("adjacentMarkerSec", () => {
-	const markers = resolveRecordingMarkers(doc({}), "a1", [3_000, 8_000, 14_500]);
-
-	it("finds the next and previous marker by ruler position", () => {
-		expect(adjacentMarkerSec(markers, 0, "next")).toBe(3);
-		expect(adjacentMarkerSec(markers, 3, "next")).toBe(8);
-		expect(adjacentMarkerSec(markers, 20, "next")).toBeNull();
-		expect(adjacentMarkerSec(markers, 20, "previous")).toBe(14.5);
-		expect(adjacentMarkerSec(markers, 3, "previous")).toBeNull();
-	});
-
-	it("does not land back on the marker the playhead already sits on", () => {
-		// A seek rounds the time; without the epsilon the next jump returns here.
-		expect(adjacentMarkerSec(markers, 3.001, "next")).toBe(8);
-		expect(adjacentMarkerSec(markers, 7.999, "previous")).toBe(3);
 	});
 });

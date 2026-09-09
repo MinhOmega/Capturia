@@ -8,12 +8,17 @@
 // travel the same two hops every other source-anchored thing travels, and it has
 // to survive a clip being moved, split, retimed or trimmed underneath it.
 //
-// Nothing here is new machinery. `locateSourcePosition` is the existing
-// source→raw mapping (exact, because trims do not compact the raw axis);
+// Nothing here is new machinery. `placementRawSec` is the existing source→raw
+// shift (exact, because trims do not compact the raw axis);
 // `projectRawTimelineSecToPlayback` is the existing raw→output projection, the
 // same one the exporter and the audio mixer use; `removedRawSpans`/`removalAt`
 // are the existing "is this moment in the film at all" test. This module only
 // composes them and says what to do when they disagree.
+//
+// It does NOT use `locateSourcePosition`, which is the obvious-looking choice
+// and the wrong one: that is a `findIndex` built for a playhead, which is in
+// exactly one place at a time. A flagged instant is not — see the fan-out note
+// on `resolveRecordingMarkers`.
 //
 // Markers are NOT stored in the document. They live next to the recording as
 // source time and are resolved on demand, which is what makes them survive every
@@ -23,10 +28,19 @@
 
 import { type PlaybackSpeedRegion, projectRawTimelineSecToPlayback } from "../document/timeline";
 import type { AxcutDocument } from "../schema";
+import { placementRawSec } from "./aggregated-transcript";
 import { removalAt, removedRawSpans } from "./programme-time";
-import { locateSourcePosition } from "./virtual-preview";
 
 export interface ResolvedRecordingMarker {
+	/**
+	 * The clip replaying this instant.
+	 *
+	 * Present because one marker can resolve several times, so `sourceSec` alone
+	 * no longer identifies a row — and at a shared "A ends where B begins"
+	 * boundary neither does `rulerSec`, since both clips map that instant to the
+	 * same point on the ruler. This is what a caller keys a list on.
+	 */
+	clipId: string;
 	/** Seconds into the recorded file. The stored, canonical value. */
 	sourceSec: number;
 	/** Where it sits on the RAW ruler — the coordinate the playhead seeks to. */
@@ -64,10 +78,26 @@ function speedRegionsOf(document: AxcutDocument): PlaybackSpeedRegion[] {
 /**
  * Source-time markers as timeline positions, ordered by where they now play.
  *
- * A marker no clip carries is dropped outright: the take it belonged to was
- * removed from the project, so there is no moment to jump to. That is distinct
- * from `removed`, which means the moment IS in a clip but a trim cuts it — those
- * are kept and flagged.
+ * ONE MARKER PER CLIP THAT REPLAYS IT, not one per marker. Put the same take on
+ * the timeline twice — duplicate a clip, or split one without trimming — and the
+ * flagged instant is genuinely played twice, so it is flagged twice. Resolving
+ * only the first clip (which is what `locateSourcePosition` does: it is a
+ * `findIndex`, built for a playhead that is in exactly one place) put every
+ * marker on the first copy and left the second bare.
+ *
+ * That is also what `buildAutoZoomSuggestionsForClips` does with cursor dwells,
+ * and the two sit on the same ruler: before this, one source instant produced a
+ * zoom suggestion on both copies and a marker on only one. Same document, same
+ * instant, two different answers — which reads as a bug whichever of them the
+ * user notices first. The window test below is `>=`/`<=` on both ends for the
+ * same reason: it is the test zoom-suggestions uses, so an instant landing
+ * exactly on a shared "A ends where B begins" boundary appears on both clips in
+ * both features rather than on whichever one each happened to pick.
+ *
+ * A marker no clip carries at all is dropped: the take it belonged to is no
+ * longer in the project, so there is no moment to jump to. That is distinct from
+ * `removed`, which means the moment IS in a clip but a trim cuts it — those are
+ * kept and flagged.
  */
 export function resolveRecordingMarkers(
 	document: AxcutDocument | null | undefined,
@@ -86,46 +116,25 @@ export function resolveRecordingMarkers(
 	for (const markerMs of markersMs) {
 		if (!Number.isFinite(markerMs) || markerMs < 0) continue;
 		const sourceSec = markerMs / 1000;
-		const position = locateSourcePosition(clips, sourceSec, assetId);
-		if (!position) continue;
 
-		resolved.push({
-			sourceSec,
-			rulerSec: position.virtualTimeSec,
-			outputSec: projectRawTimelineSecToPlayback(
-				clips,
-				trimRanges,
-				position.virtualTimeSec,
-				speedRegions,
-			),
-			removed: removalAt(removed, position.virtualTimeSec) !== null,
-		});
+		for (const clip of clips) {
+			if (clip.assetId !== assetId) continue;
+			// An unprobed clip has no source window to fall inside yet. Skipped
+			// rather than passed through, matching zoom-suggestions' `windowMs <= 0`.
+			const sourceEndSec = clip.sourceEndSec ?? clip.sourceStartSec;
+			if (sourceEndSec <= clip.sourceStartSec) continue;
+			if (sourceSec < clip.sourceStartSec || sourceSec > sourceEndSec) continue;
+
+			const rulerSec = placementRawSec(clip, sourceSec);
+			resolved.push({
+				clipId: clip.id,
+				sourceSec,
+				rulerSec,
+				outputSec: projectRawTimelineSecToPlayback(clips, trimRanges, rulerSec, speedRegions),
+				removed: removalAt(removed, rulerSec) !== null,
+			});
+		}
 	}
 
 	return resolved.sort((a, b) => a.rulerSec - b.rulerSec);
-}
-
-/**
- * The marker to jump to from `fromSec`, or null when there is none that way.
- *
- * `epsilonSec` keeps a jump from landing back on the marker the playhead is
- * already sitting on after a seek has rounded the time.
- */
-export function adjacentMarkerSec(
-	markers: readonly ResolvedRecordingMarker[],
-	fromSec: number,
-	direction: "next" | "previous",
-	epsilonSec = 0.005,
-): number | null {
-	if (markers.length === 0 || !Number.isFinite(fromSec)) return null;
-
-	let best: number | null = null;
-	for (const { rulerSec } of markers) {
-		if (direction === "next") {
-			if (rulerSec > fromSec + epsilonSec && (best === null || rulerSec < best)) best = rulerSec;
-		} else if (rulerSec < fromSec - epsilonSec && (best === null || rulerSec > best)) {
-			best = rulerSec;
-		}
-	}
-	return best;
 }
