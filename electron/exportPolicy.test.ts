@@ -79,20 +79,38 @@ describe("ApprovedExportPaths", () => {
 describe("cliExportDestinations", () => {
 	it("takes --out exactly as the user typed it", () => {
 		expect(
-			cliExportDestinations({ projectPath: "/w/demo.openscreen", outPath: "/w/out.gif" }, posix),
+			cliExportDestinations({ projectPath: "/w/demo.openscreen", outPath: "/w/out.gif" }),
 		).toEqual(["/w/out.gif"]);
 	});
 
 	it("covers both containers the runner may derive when --out is omitted", () => {
 		// The format can come from the project file, which only the renderer reads,
 		// so both candidates are approved rather than resolving the format twice.
-		expect(cliExportDestinations({ projectPath: "/w/demo.openscreen", outPath: null }, posix)).toEqual(
-			["/w/demo.mp4", "/w/demo.gif"],
-		);
+		expect(cliExportDestinations({ projectPath: "/w/demo.openscreen", outPath: null })).toEqual([
+			"/w/demo.mp4",
+			"/w/demo.gif",
+		]);
+		expect(cliExportDestinations({ projectPath: "/w/demo.json", outPath: null })).toEqual([
+			"/w/demo.mp4",
+			"/w/demo.gif",
+		]);
+	});
+
+	it("strips exactly what CliExportRunner.replaceExtension strips", () => {
+		// `path.parse` would drop the ".demo" here and miss the real destination.
+		expect(cliExportDestinations({ projectPath: "/w/my.demo.openscreen", outPath: null })).toEqual([
+			"/w/my.demo.mp4",
+			"/w/my.demo.gif",
+		]);
+		// An extension the runner does not strip is kept, exactly as the runner keeps it.
+		expect(cliExportDestinations({ projectPath: "/w/demo.txt", outPath: null })).toEqual([
+			"/w/demo.txt.mp4",
+			"/w/demo.txt.gif",
+		]);
 	});
 
 	it("has nothing to approve without a project", () => {
-		expect(cliExportDestinations({ projectPath: null, outPath: null }, posix)).toEqual([]);
-		expect(cliExportDestinations({}, posix)).toEqual([]);
+		expect(cliExportDestinations({ projectPath: null, outPath: null })).toEqual([]);
+		expect(cliExportDestinations({})).toEqual([]);
 	});
 });

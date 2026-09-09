@@ -89,20 +89,21 @@ export const approvedExportPaths = new ApprovedExportPaths();
  * With `--out` the path is exactly what the user typed. Without it the runner
  * derives one from the project file, and the extension depends on a format that
  * is only resolved renderer-side (it can come from the project itself), so both
- * candidates are approved rather than duplicating that resolution here — the
- * user named the project file either way, and the alternative is a second copy
- * of the format rules that has to stay in step with the first.
+ * candidates are approved rather than duplicating that resolution here.
+ *
+ * Kept in lock-step with `replaceExtension` in `src/cli/CliExportRunner.tsx`:
+ * it strips a trailing `.openscreen`/`.json` and nothing else, so `path.parse`
+ * — which would strip any final extension — is deliberately not used. A
+ * destination this misses is one the export cannot write.
  */
-export function cliExportDestinations(
-	request: { readonly projectPath?: string | null; readonly outPath?: string | null },
-	platformPath: PlatformPath = nodePath,
-): string[] {
+export function cliExportDestinations(request: {
+	readonly projectPath?: string | null;
+	readonly outPath?: string | null;
+}): string[] {
 	if (request.outPath) return [request.outPath];
 	const projectPath = request.projectPath;
 	if (!projectPath) return [];
-	const parsed = platformPath.parse(projectPath);
-	if (!parsed.name) return [];
-	return [...ALLOWED_EXPORT_EXTENSIONS].map((extension) =>
-		platformPath.join(parsed.dir, `${parsed.name}${extension}`),
-	);
+	const stem = projectPath.replace(/\.(openscreen|json)$/i, "");
+	if (!stem) return [];
+	return [...ALLOWED_EXPORT_EXTENSIONS].map((extension) => `${stem}${extension}`);
 }
