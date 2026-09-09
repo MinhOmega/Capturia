@@ -1,7 +1,7 @@
 // @see - https://www.electron.build/configuration/configuration
 {
   "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
-  "appId": "com.etiennelescot.openscreen",
+  "appId": "com.capturia.app",
   "asar": true,
   // .node binaries can't be dlopen'd from inside an asar — must live unpacked.
   // onnxruntime-node distributes as a `.node` shared object that whisper.cpp
@@ -9,7 +9,7 @@
   "asarUnpack": [
     "**/*.node"
   ],
-  "productName": "Openscreen",
+  "productName": "Capturia",
   // There is deliberately no `electronVersion` here. electron-builder needs an EXACT
   // version because it downloads the binaries for one release, and it takes that from
   // package.json's `electron` devDependency, which is pinned without a caret for this
@@ -22,11 +22,14 @@
   // electron-builder looks only at the project's. The fix is `npm ci` in the worktree, not
   // a second declaration of the version.
   // Declared rather than left to default BECAUSE the default is package.json's `author` — one
-  // name, where LICENSE has two holders. Feeds Info.plist's NSHumanReadableCopyright and the
-  // Windows LegalCopyright, so leaving it implicit put an attribution on the binary that the
-  // LICENSE it ships alongside does not make. Any other surface that renders this line must
-  // repeat it byte-for-byte.
-  "copyright": "© 2025-2026 OpenScreen contributors — MIT License",
+  // name, where LICENSE has holders on both sides of the fork. Feeds Info.plist's
+  // NSHumanReadableCopyright and the Windows LegalCopyright, so leaving it implicit put an
+  // attribution on the binary that the LICENSE it ships alongside does not make. Capturia is a
+  // fork of OpenScreen and a large part of this binary is still theirs, so both are named here
+  // for the same reason LICENSE names both. Any other surface that renders this line must
+  // repeat it byte-for-byte — electron/about.ts COPYRIGHT does, and about.test.ts pins them
+  // together.
+  "copyright": "© 2025-2026 Capturia contributors — MIT License. Includes OpenScreen, © 2025-2026 OpenScreen contributors.",
   // Declared explicitly, NOT to start publishing from CI — every build still passes
   // `--publish never`, which suppresses uploading only. What this turns on is the update
   // METADATA: `latest.yml` / `latest-mac.yml` / `latest-linux.yml`, the `.blockmap` used for
@@ -44,8 +47,8 @@
   "publish": [
     {
       "provider": "github",
-      "owner": "getopenscreen",
-      "repo": "openscreen"
+      "owner": "MinhOmega",
+      "repo": "Capturia"
     }
   ],
   // Fails the build when compositor_view.node is older than the crates/ Rust sources. Plain
@@ -160,10 +163,10 @@
       }
     ],
     "extendInfo": {
-      "NSAudioCaptureUsageDescription": "OpenScreen needs audio capture permission to record system audio.",
-      "NSMicrophoneUsageDescription": "OpenScreen needs microphone access to record voice audio.",
-      "NSCameraUsageDescription": "OpenScreen needs camera access to record webcam video.",
-      "NSScreenCaptureUsageDescription": "OpenScreen needs screen recording permission to detect and capture windows.",
+      "NSAudioCaptureUsageDescription": "Capturia needs audio capture permission to record system audio.",
+      "NSMicrophoneUsageDescription": "Capturia needs microphone access to record voice audio.",
+      "NSCameraUsageDescription": "Capturia needs camera access to record webcam video.",
+      "NSScreenCaptureUsageDescription": "Capturia needs screen recording permission to detect and capture windows.",
       "NSCameraUseContinuityCameraDeviceType": true
     }
   },
@@ -181,7 +184,7 @@
     ],
     "icon": "icons/icons/png",
     "artifactName": "${productName}-Linux-${version}.${ext}",
-    "maintainer": "Etienne Lescot <etiennelescot@gmail.com>",
+    "maintainer": "MinhOmega",
     "category": "AudioVideo",
     "extraResources": [
       {
@@ -392,14 +395,23 @@
     "oneClick": false,
     "allowToChangeInstallationDirectory": true
   },
-  // Microsoft Store packaging identity, from Partner Center's "Product identity" page
-  // (Applications et jeux > OpenScreen > Product identity).
+  // Microsoft Store packaging identity.
+  //
+  // NOT SUBMITTABLE AS-IS. `publisher` is a Partner Center account identity, and the value
+  // below is the one Capturia inherited from OpenScreen at the re-baseline — it identifies
+  // THEIR Store account, not ours. It is left in place only so the appx target keeps building
+  // and the tile-asset checks in build.yml keep running; a package signed against it would be
+  // claiming someone else's publisher identity, so it must be replaced with Capturia's own
+  // CN=<GUID> from our Partner Center "Product identity" page before anything is submitted to
+  // the Store. `identityName` and `publisherDisplayName` must be changed in the same edit:
+  // the Store rejects a package whose identity does not match the reserved name on the
+  // account that submits it.
   "appx": {
-    "identityName": "EtienneLescot.OpenScreen",
+    "identityName": "MinhOmega.Capturia",
     "publisher": "CN=03B0FC8C-2067-45D9-BE82-9F15CE264B4A",
-    "publisherDisplayName": "Etienne Lescot",
-    "applicationId": "Openscreen",
-    "displayName": "OpenScreen",
+    "publisherDisplayName": "MinhOmega",
+    "applicationId": "Capturia",
+    "displayName": "Capturia",
     "backgroundColor": "transparent",
     "capabilities": ["runFullTrust", "microphone", "webcam"],
     // Mirrors SUPPORTED_LOCALES in src/i18n/config.ts. This list is what the Store

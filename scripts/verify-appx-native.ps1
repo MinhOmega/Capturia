@@ -38,7 +38,7 @@ The .appx to verify.
 Leave the package registered afterwards, to click through the app by hand.
 
 .EXAMPLE
-powershell -File scripts/verify-appx-native.ps1 -Appx release/1.9.1/Openscreen.Setup.1.9.1.appx
+powershell -File scripts/verify-appx-native.ps1 -Appx release/2.0.0/Capturia.Setup.2.0.0.appx
 
 .NOTES
 Loose registration needs Developer Mode (Settings > System > For developers).
@@ -214,7 +214,7 @@ try {
 	$childArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -InPackage -PackageRoot `"$extracted`" -ReportPath `"$report`""
 	Invoke-CommandInDesktopPackage `
 		-PackageFamilyName $pkg.PackageFamilyName `
-		-AppId "Openscreen" `
+		-AppId "Capturia" `
 		-Command "powershell.exe" `
 		-Args $childArgs `
 		-ErrorAction Stop

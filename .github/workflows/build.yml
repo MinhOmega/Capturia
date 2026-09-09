@@ -73,8 +73,8 @@ jobs:
           # download a delta instead of the full ~243 MB installer. Both were already produced
           # by every build and thrown away here, because this glob only matched the .exe.
           path: |
-            release/**/Openscreen.Setup.*.exe
-            release/**/Openscreen.Setup.*.exe.blockmap
+            release/**/Capturia.Setup.*.exe
+            release/**/Capturia.Setup.*.exe.blockmap
             release/**/latest.yml
           if-no-files-found: error
           retention-days: 30
@@ -87,7 +87,7 @@ jobs:
         run: |
           test -f "$(find release -name latest.yml | head -1)" \
             || { echo "::error::latest.yml missing — electron-updater has no feed to read"; exit 1; }
-          test -f "$(find release -name 'Openscreen.Setup.*.exe.blockmap' | head -1)" \
+          test -f "$(find release -name 'Capturia.Setup.*.exe.blockmap' | head -1)" \
             || { echo "::error::blockmap missing — differential updates would silently degrade"; exit 1; }
 
   build-windows-store:
@@ -214,7 +214,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: openscreen-windows-store
-          path: release/**/Openscreen.Setup.*.appx
+          path: release/**/Capturia.Setup.*.appx
           if-no-files-found: error
           retention-days: 30
 
@@ -415,7 +415,7 @@ jobs:
       # slow enough to be unusable, so a mislabelled DMG is a real user harm.
       - name: Verify .app architecture matches the job
         run: |
-          BIN="${{ steps.find_app.outputs.app_bundle }}/Contents/MacOS/Openscreen"
+          BIN="${{ steps.find_app.outputs.app_bundle }}/Contents/MacOS/Capturia"
           if [[ "${{ matrix.arch }}" == "arm64" ]]; then EXPECTED="arm64"; else EXPECTED="x86_64"; fi
           ACTUAL="$(lipo -archs "$BIN")"
           echo "job arch=${{ matrix.arch }}  expected=${EXPECTED}  actual=${ACTUAL}"
@@ -493,7 +493,7 @@ jobs:
           RELEASE_DIR="release/${VERSION}"
           # The instruction set, NOT the marketing name used for the DMG: electron-updater picks
           # the file for an Apple Silicon client by matching the literal substring "arm64".
-          ZIP="${RELEASE_DIR}/Openscreen-Mac-${{ matrix.arch }}-${VERSION}.zip"
+          ZIP="${RELEASE_DIR}/Capturia-Mac-${{ matrix.arch }}-${VERSION}.zip"
           ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
           node scripts/mac-update-feed.mjs describe "$ZIP" "$VERSION" \
             "${RELEASE_DIR}/update-info-${{ matrix.arch }}.json"
@@ -505,8 +505,8 @@ jobs:
       - name: Verify update ZIP
         run: |
           ZIP="${{ steps.update_zip.outputs.zip_path }}"
-          unzip -l "$ZIP" | grep -q "Openscreen.app/Contents/MacOS/" \
-            || { echo "::error::${ZIP} does not contain Openscreen.app/Contents/MacOS — ditto lost the bundle root"; exit 1; }
+          unzip -l "$ZIP" | grep -q "Capturia.app/Contents/MacOS/" \
+            || { echo "::error::${ZIP} does not contain Capturia.app/Contents/MacOS — ditto lost the bundle root"; exit 1; }
           if [ "${{ matrix.arch }}" = "arm64" ]; then
             case "$ZIP" in
               *arm64*) ;;
@@ -529,7 +529,7 @@ jobs:
             x64)   ARCH_LABEL="Intel" ;;
             *)     ARCH_LABEL="$ARCH" ;;
           esac
-          DMG_NAME="Openscreen-macOS-${ARCH_LABEL}-${VERSION}.dmg"
+          DMG_NAME="Capturia-macOS-${ARCH_LABEL}-${VERSION}.dmg"
           RELEASE_DIR="release/${VERSION}"
           DMG_OUTPUT="${RELEASE_DIR}/${DMG_NAME}"
           STAGING="${RELEASE_DIR}/dmg-staging"
@@ -542,7 +542,7 @@ jobs:
 
           hdiutil create \
             -srcfolder "$STAGING" \
-            -volname "Openscreen" \
+            -volname "Capturia" \
             -fs HFS+ \
             -fsargs "-c c=64,a=16,e=16" \
             -format UDBZ \

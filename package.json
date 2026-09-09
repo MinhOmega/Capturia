@@ -1,9 +1,9 @@
 {
-	"name": "openscreen",
+	"name": "capturia",
 	"private": true,
-	"version": "1.10.0",
-	"description": "Record your screen and polish the demo",
-	"homepage": "https://getopenscreen.com/",
+	"version": "2.0.0",
+	"description": "Free, open-source screen recorder & editor with intelligent cursor tracking, zoom effects, and cinematic output",
+	"homepage": "https://github.com/MinhOmega/Capturia",
 	"license": "MIT",
 	"type": "module",
 	"packageManager": "npm@10.9.4",
@@ -12,23 +12,36 @@
 		"npm": "10.9.4"
 	},
 	"author": {
-		"name": "Etienne Lescot",
-		"url": "https://github.com/EtienneLescot"
+		"name": "MinhOmega",
+		"url": "https://github.com/MinhOmega"
 	},
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/getopenscreen/openscreen.git"
+		"url": "git+https://github.com/MinhOmega/Capturia.git"
 	},
-	"contributors": [
-		{
-			"name": "Siddharth Vaddem",
-			"url": "https://github.com/siddharthvaddem"
-		}
+	"bugs": {
+		"url": "https://github.com/MinhOmega/Capturia/issues"
+	},
+	"keywords": [
+		"screen-recorder",
+		"screen-recording",
+		"video-editor",
+		"electron",
+		"cursor-tracking",
+		"zoom-effects",
+		"macos",
+		"open-source",
+		"screencast",
+		"demo-recording"
 	],
-	"maintainers": [
+	"contributors": [
 		{
 			"name": "Etienne Lescot",
 			"url": "https://github.com/EtienneLescot"
+		},
+		{
+			"name": "Siddharth Vaddem",
+			"url": "https://github.com/siddharthvaddem"
 		}
 	],
 	"scripts": {

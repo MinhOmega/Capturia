@@ -1,9 +1,18 @@
 # Third-party notices
 
-OpenScreen is MIT licensed (see [LICENSE](LICENSE)). The installers additionally
+Capturia is MIT licensed (see [LICENSE](LICENSE)). The installers additionally
 bundle the pre-built native components below. This file ships inside the
 application resources and satisfies the attribution and source-offer obligations
 that come with them.
+
+## Capturia is a fork of OpenScreen
+
+Capturia derives from **OpenScreen** — <https://github.com/getopenscreen/openscreen> —
+and is baselined on upstream commit `70e30c1f`, released as **v1.10.0**. OpenScreen
+is MIT licensed; its copyright notice is reproduced in [LICENSE](LICENSE) alongside
+Capturia's, which is what that licence requires of a derivative work. Everything
+below this section was inherited from that baseline unless noted otherwise, and the
+components it describes are bundled by Capturia on the same terms.
 
 npm dependencies are not listed here: they are resolved from `package.json` and
 distributed by their own registries, not redistributed inside our binaries.
@@ -123,11 +132,25 @@ distributed by their own registries, not redistributed inside our binaries.
   so nothing of PipeWire's ships inside our installers beyond the compiled
   result of its headers (inline functions and struct layouts).
 
-## OpenScreen native helpers
+## Geist and Geist Mono — fonts
+
+- **Components**: `Geist-Variable.woff2` and `GeistMono-Variable.woff2`, bundled
+  into the renderer by Vite from `src/assets/fonts/` and served from `app.asar`.
+- **License**: **SIL Open Font License 1.1** —
+  <https://github.com/vercel/geist-font>. The full licence text is committed at
+  `src/assets/fonts/OFL.txt`.
+- **Why it is listed here**: the OFL requires its text to travel with the font
+  files wherever they are redistributed. `OFL.txt` is not imported by any module,
+  so Vite does not emit it into `dist/` and it does not reach the installer — this
+  file, which ships in `resources/`, is the only copy of the notice a user
+  receives. Do not drop this section while those two `.woff2` files ship.
+
+## Native capture helpers
 
 `wgc-capture` (Windows Graphics Capture), the ScreenCaptureKit helper (macOS),
 the PipeWire helper (Linux) and the compositor addon are part of this repository
-and are covered by [LICENSE](LICENSE).
+and are covered by [LICENSE](LICENSE). They originate in OpenScreen; see the fork
+note at the top of this file.
 
 ## Bundled fonts — SIL Open Font License 1.1
 
@@ -156,4 +179,4 @@ and are covered by [LICENSE](LICENSE).
 ---
 
 To report an omission or request source for anything bundled here, open an issue
-at <https://github.com/getopenscreen/openscreen/issues>.
+at <https://github.com/MinhOmega/Capturia/issues>.

@@ -1,5 +1,13 @@
 MIT License
 
+Copyright (c) 2025-2026 MinhOmega and Capturia contributors
+
+Capturia is a fork of OpenScreen — https://github.com/getopenscreen/openscreen —
+baselined on upstream commit 70e30c1f (v1.10.0). Substantial parts of this
+software are OpenScreen's, unmodified or modified. The upstream notice below is
+reproduced as the MIT License requires; the notice above is in addition to it and
+does not replace or supersede it.
+
 Copyright (c) 2025 Siddharth Vaddem
 Copyright (c) 2025-2026 OpenScreen contributors
 

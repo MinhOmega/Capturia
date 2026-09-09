@@ -93,7 +93,7 @@ if ! eval "$INSTALL_CMD" >/tmp/install.log 2>&1; then
 fi
 echo "ok install: declared depends resolved"
 
-ROOT=/opt/Openscreen
+ROOT=/opt/Capturia
 if [[ ! -d "$ROOT" ]]; then
 	echo "FAIL layout: $ROOT does not exist after install"
 	exit 1
