@@ -3650,8 +3650,12 @@ export function registerIpcHandlers(
 			if (typeof filePath !== "string" || !path.isAbsolute(filePath)) {
 				return { success: false, message: "Invalid path" };
 			}
+			// The guard above is about blast radius, not about video: it stops a stale-state
+			// bug in the renderer clobbering an arbitrary file. `.srt`/`.vtt` join it because
+			// the export now writes a subtitle sidecar next to the video, and they keep the
+			// property that matters — an extension nothing on the machine executes or loads.
 			const lower = filePath.toLowerCase();
-			if (!lower.endsWith(".mp4") && !lower.endsWith(".gif")) {
+			if (![".mp4", ".gif", ".srt", ".vtt"].some((ext) => lower.endsWith(ext))) {
 				return { success: false, message: "Invalid file type" };
 			}
 
