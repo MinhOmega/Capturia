@@ -2033,7 +2033,10 @@ export function V4Timeline({
 							))}
 							{recordingMarkers.map((marker) => (
 								<button
-									key={marker.sourceSec}
+									// Not `sourceSec`: one flagged instant now resolves once per clip
+									// that replays it, and at a shared clip boundary those rows share a
+									// `rulerSec` too. The clip is what tells them apart.
+									key={`${marker.clipId}@${marker.sourceSec}`}
 									type="button"
 									className={`${styles.tlMarker}${marker.removed ? ` ${styles.tlMarkerRemoved}` : ""}`}
 									style={{ left: `${pctAt(marker.rulerSec)}%` }}

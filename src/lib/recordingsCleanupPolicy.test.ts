@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
 	createRecordingCleanupPolicy,
-	isManagedRecordingArtifactName,
 	planRecordingCleanup,
 	type RecordingArtifactEntry,
 	type RecordingCleanupPolicy,
@@ -34,7 +33,6 @@ describe("naming", () => {
 			"recording-1.webm.duration-patch.tmp",
 			"recording-1.webm.reindex.tmp",
 		]) {
-			expect(isManagedRecordingArtifactName(name), name).toBe(true);
 			expect(recordingGroupKeyFromFileName(name), name).toBe("recording-1");
 		}
 	});
@@ -49,7 +47,7 @@ describe("naming", () => {
 			"holiday-recording-1.mp4",
 			"recording-1.txt",
 		]) {
-			expect(isManagedRecordingArtifactName(name), name).toBe(false);
+			expect(recordingGroupKeyFromFileName(name), name).toBeNull();
 		}
 	});
 });

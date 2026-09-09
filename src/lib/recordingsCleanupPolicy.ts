@@ -117,12 +117,9 @@ function parseManagedArtifactName(fileName: string): { key: string; kind: Manage
 	return { key: video[1], kind: "video" };
 }
 
+/** The take a file belongs to, or null when this cleanup does not own the file. */
 export function recordingGroupKeyFromFileName(fileName: string): string | null {
 	return parseManagedArtifactName(fileName)?.key ?? null;
-}
-
-export function isManagedRecordingArtifactName(fileName: string): boolean {
-	return parseManagedArtifactName(fileName) !== null;
 }
 
 export function createRecordingCleanupPolicy(
