@@ -274,11 +274,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		return () => ipcRenderer.removeListener("stop-recording-from-tray", listener);
 	},
 	onNativeCaptureHelperExited: (
-		callback: (payload: {
-			platform: string;
-			recordingId: number | null;
-			detail: string;
-		}) => void,
+		callback: (payload: { platform: string; recordingId: number | null; detail: string }) => void,
 	) => {
 		const listener = (
 			_: unknown,

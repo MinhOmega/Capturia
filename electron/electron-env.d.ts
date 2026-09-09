@@ -283,11 +283,7 @@ interface Window {
 		 * been replaced (a restart) is not mistaken for a crash of the live one.
 		 */
 		onNativeCaptureHelperExited: (
-			callback: (payload: {
-				platform: string;
-				recordingId: number | null;
-				detail: string;
-			}) => void,
+			callback: (payload: { platform: string; recordingId: number | null; detail: string }) => void,
 		) => () => void;
 		openExternalUrl: (url: string) => Promise<{ success: boolean; error?: string }>;
 		pickExportSavePath: (

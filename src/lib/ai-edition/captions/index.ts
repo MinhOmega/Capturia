@@ -38,7 +38,6 @@ export {
 	SUBTITLE_SIDECAR_FORMATS,
 	subtitleSidecarPath,
 } from "./subtitles";
-export { writeSubtitleSidecars } from "./writeSubtitleSidecars";
 export type {
 	CaptionTranslation,
 	CaptionTranslations,
@@ -52,3 +51,4 @@ export {
 	translationCoverage,
 	untranslatedUnits,
 } from "./translations";
+export { writeSubtitleSidecars } from "./writeSubtitleSidecars";

@@ -22,7 +22,6 @@ import type {
 } from "@/components/video-editor/types";
 import { DEFAULT_CROP_REGION, getZoomScale } from "@/components/video-editor/types";
 import { annotationFontSizeFraction } from "@/lib/ai-edition/annotationScale";
-import { expandTrackedBlurAnnotations } from "@/lib/ai-edition/annotations/blurTracking/sceneSteps";
 import {
 	captionCuesToTextRegions,
 	deriveCaptionCues,
@@ -790,17 +789,9 @@ export function buildSceneDescription(
 		captionSettings,
 		captionAspect,
 	);
-	// A tracked blur is one authored region whose box MOVES. It reaches native as a run of
-	// short static ones, one per step of its track — the compositor's annotation already
-	// carries its own time span, so motion needs no new field, no Rust and no shader work
-	// (see `annotations/blurTracking/sceneSteps.ts` for the step rule and its ceiling).
-	// Expanded here, upstream of the projection, so the fragments inherit trim clipping,
-	// clip splitting and `clipIndex` from it like any other annotation.
 	const projectedAnnotations = projectRegionsToSource(
 		[
-			...expandTrackedBlurAnnotations(document.annotations ?? [], document.timeline.clips, () =>
-				createId("ann"),
-			),
+			...(document.annotations ?? []),
 			...(captionRegions as unknown as NonNullable<AxcutDocument["annotations"]>),
 		],
 		visibleClips,

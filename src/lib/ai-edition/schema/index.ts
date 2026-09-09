@@ -399,55 +399,6 @@ const blurDataSchema = z
 	})
 	.optional();
 
-// A tracked blur follows its content instead of sitting still: the region the user
-// drew at one instant is located again at later ones, and the list of those positions
-// IS the persisted truth (nothing re-tracks on load). See
-// `annotations/blurTracking/keyframes.ts` for the read rules and
-// `docs/specs/tracked-blur-regions.md` for the design.
-//
-// Rectangles are SOURCE-NORMALISED — fractions of the full source frame, before any
-// crop, zoom camera or output aspect — because the tracker measures them against the
-// decoded pixels. That is a different box from the region's own `position`/`size`,
-// which are percentages of the screen rect; `sceneSteps.ts` converts. Times are the
-// clip's own SOURCE time in ms, the same base as `sourceStartSec`/`sourceEndSec`.
-//
-// Absent on every annotation written before tracking existed, and on every untracked
-// blur: additive, so no schema-version bump (an older build simply drops the key on
-// save, and the region falls back to the static box it already has).
-const blurTrackKeyframeSchema = z.object({
-	timeMs: z.number().nonnegative(),
-	x: z.number(),
-	y: z.number(),
-	w: z.number().positive(),
-	h: z.number().positive(),
-	/** Content not visible from here until the next non-lost keyframe; rect = last known. */
-	lost: z.literal(true).optional(),
-	/** The interval to the next keyframe was never observed at source frame rate. */
-	gap: z.literal(true).optional(),
-	/** Placed by hand; the tracker never moves it. */
-	origin: z.literal("user").optional(),
-});
-
-const blurTrackSchema = z
-	.object({
-		version: z.literal(1),
-		/** Always `"source"`: present so a future stage-space track cannot be mistaken for this one. */
-		space: z.literal("source"),
-		keyframes: z.array(blurTrackKeyframeSchema).min(1),
-		sourceSize: z.object({ width: z.number().positive(), height: z.number().positive() }),
-		sampleIntervalMs: z.number().positive(),
-		anchorMs: z.number().nonnegative(),
-		/** Settings-panel readout only; no renderer reads it. */
-		quality: z
-			.object({
-				meanScore: z.number(),
-				lostMs: z.number().nonnegative(),
-				trackedMs: z.number().nonnegative(),
-			})
-			.optional(),
-	})
-	.optional();
-
 const figureDataSchema = z
 	.object({
 		arrowDirection: z
@@ -513,7 +464,6 @@ export const annotationRegionSchema = endGteStart(
 		annotationSource: z.literal("auto-caption").optional(),
 		figureData: figureDataSchema,
 		blurData: blurDataSchema,
-		blurTrack: blurTrackSchema,
 	}),
 	"endMs",
 	"startMs",
@@ -1139,8 +1089,6 @@ export type AxcutTrimRange = z.infer<typeof trimRangeSchema>;
 export type AxcutTimeline = z.infer<typeof timelineSchema>;
 export type AxcutTimelineOperation = z.infer<typeof timelineOperationSchema>;
 export type AxcutAnnotationRegion = z.infer<typeof annotationRegionSchema>;
-export type AxcutBlurTrack = NonNullable<z.infer<typeof blurTrackSchema>>;
-export type AxcutBlurTrackKeyframe = z.infer<typeof blurTrackKeyframeSchema>;
 export type AxcutZoomRegion = z.infer<typeof zoomRegionSchema>;
 export type AxcutCameraTrack = z.infer<typeof cameraTrackSchema>;
 export type AxcutAudioTrack = z.infer<typeof audioTrackSchema>;
