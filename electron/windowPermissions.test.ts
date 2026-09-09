@@ -5,9 +5,9 @@ import {
 	type OpenScreenWindowType,
 	rememberWindowType,
 	settingsPaneUrl,
+	WINDOW_TYPES,
 	windowTypeForContents,
 	windowTypeFromUrl,
-	WINDOW_TYPES,
 } from "./windowPermissions";
 
 /**
