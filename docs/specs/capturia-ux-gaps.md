@@ -224,6 +224,15 @@ The semantics are unchanged since Capturia: `tl.trimRanges`, `coalescedTrimGroup
 (`src/lib/shortcuts.ts:114`). So the explanation upstream already translated is still
 *correct* — it describes the shipping product.
 
+*What guidance already exists, so the question is answered fairly.*
+`EditorEmptyState.tsx` covers "there is nothing here yet" well — title, description, new
+project / import buttons, supported formats, drag-and-drop hint, and typed drop errors —
+and `src/components/launch/` (LaunchWindow, HUD, SourceSelector, teleprompter notes) covers
+getting a recording made. Both answer *how do I get material in*. Neither says anything
+about what a trim range means, and a general onboarding tour would be the wrong shape for
+one specific inverted control. This is the only piece missing, which is also why the scope
+is one dialog and not a tour framework.
+
 That leaves a binary choice, because the current state is a defect either way: build the
 component, or delete twenty keys across thirteen files and the test that guards them.
 Building is cheaper than it looks (the expensive part of a 13-locale feature is the
