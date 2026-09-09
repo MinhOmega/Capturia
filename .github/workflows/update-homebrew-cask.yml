@@ -217,19 +217,19 @@ jobs:
               url "https://github.com/${REPO}/releases/download/v#{version}/${X64_NAME}"
             end
 
-            name "Openscreen"
+            name "Capturia"
             desc "Screen recorder and video editor"
             homepage "https://github.com/${REPO}"
 
             auto_updates false
             depends_on macos: ">= :big_sur"
 
-            app "Openscreen.app"
+            app "Capturia.app"
 
             zap trash: [
-              "~/Library/Application Support/Openscreen",
+              "~/Library/Application Support/Capturia",
               "~/Library/Caches/com.etiennelescot.openscreen",
-              "~/Library/Logs/Openscreen",
+              "~/Library/Logs/Capturia",
               "~/Library/Preferences/com.etiennelescot.openscreen.plist",
               "~/Library/Saved Application State/com.etiennelescot.openscreen.savedState",
             ]
