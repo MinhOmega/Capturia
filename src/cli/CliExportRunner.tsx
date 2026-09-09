@@ -12,7 +12,7 @@ import {
 	toFileUrl,
 	validateProjectData,
 } from "@/components/video-editor/projectPersistence";
-import type { CursorTelemetryPoint } from "@/components/video-editor/types";
+import type { CursorRecordingSample } from "@/native/contracts";
 import { migrateProjectDataToAxcutDocument } from "@/lib/ai-edition/document/migrate";
 import {
 	collectEffectiveClipDims,
@@ -117,7 +117,7 @@ function gifOutputDims(
 
 function appendAutoZoomRanges(
 	axcutDocument: AxcutDocument,
-	cursorTelemetry: CursorTelemetryPoint[],
+	cursorTelemetry: CursorRecordingSample[],
 	totalMs: number,
 ): number {
 	const suggestions = buildAutoZoomSuggestions({
@@ -132,8 +132,8 @@ function appendAutoZoomRanges(
 			id: `cli-auto-zoom-${nextId++}`,
 			startMs: Math.round(suggestion.span.start),
 			endMs: Math.round(suggestion.span.end),
-			depth: DEFAULT_ZOOM_DEPTH,
-			customScale: ZOOM_DEPTH_SCALES[DEFAULT_ZOOM_DEPTH],
+			depth: suggestion.depth ?? DEFAULT_ZOOM_DEPTH,
+			customScale: ZOOM_DEPTH_SCALES[suggestion.depth ?? DEFAULT_ZOOM_DEPTH],
 			focus: clampZoomFocus(suggestion.focus),
 			focusMode: "auto",
 			source: "auto",
@@ -184,10 +184,16 @@ async function runExport(request: CliExportRequest): Promise<CliDoneResult> {
 		request.outPath ?? replaceExtension(request.projectPath, format === "gif" ? ".gif" : ".mp4");
 	// Cursor telemetry: only needed to compute --auto-zoom suggestions. The
 	// native compositor discovers the `<video>.cursor.json` sidecar itself.
-	let cursorTelemetry: CursorTelemetryPoint[] = [];
+	//
+	// `getRecordingData` rather than `getTelemetry` for the same reason V4Timeline
+	// uses it: the telemetry projection drops `interactionType`, so the suggester
+	// would never see a click. --auto-zoom and the editor button are one feature
+	// and must not disagree about what the recording contains.
+	let cursorTelemetry: CursorRecordingSample[] = [];
 	if (request.autoZoom) {
 		try {
-			cursorTelemetry = await nativeBridgeClient.cursor.getTelemetry(media.screenVideoPath);
+			cursorTelemetry =
+				(await nativeBridgeClient.cursor.getRecordingData(media.screenVideoPath))?.samples ?? [];
 		} catch {
 			cursorTelemetry = [];
 		}

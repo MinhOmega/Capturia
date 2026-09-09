@@ -1500,8 +1500,16 @@ export function V4Timeline({
 			const existingRegions = tl.zoomRegions.map((z) => ({ startMs: z.startMs, endMs: z.endMs }));
 			const perSource = await Promise.all(
 				sources.map(async (source) => {
+					// `getRecordingData`, not `getTelemetry`: the latter is a projection
+					// that keeps positions and DROPS `interactionType` (see
+					// `readCursorTelemetryFile`), so every click the recorder captured
+					// was thrown away one call before the detector that wants it. That
+					// projection is right for the timeline overlay it was written for
+					// and wrong here — it left the suggester guessing from stillness
+					// while the ground truth sat in the same sidecar.
 					const telemetry =
-						(await nativeBridgeClient.cursor.getTelemetry(fromFileUrl(source.src))) ?? [];
+						(await nativeBridgeClient.cursor.getRecordingData(fromFileUrl(source.src)))
+							?.samples ?? [];
 					return buildAutoZoomSuggestionsForClips({
 						cursorTelemetry: telemetry,
 						assetId: source.id,
