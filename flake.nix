@@ -1,0 +1,150 @@
+{
+  description = "OpenScreen — desktop screen recorder with built-in editor";
+
+  inputs = {
+    # Do not roll flake.lock BACK past nixpkgs d2f6794 (2026-08-29). Before it,
+    # `importCargoLock` fetched every crate from
+    # `https://crates.io/api/v1/crates/<name>/<version>/download`, which crates.io
+    # now answers with 403 — it rate-limits that endpoint to 1 req/s and points
+    # clients at the CDN instead (rust-lang/crates.io#13482). Every crate in the
+    # lockfile failed, so `nix build` died in `cargo-vendor-dir` before reaching a
+    # single derivation of ours: `Nix build` was red on main from 2026-08-30, and
+    # since `nix-check.yml` only compares npmDepsHash and `nix-build.yml` did not
+    # run on pull requests, the derivation itself was not being built anywhere --
+    # not before a merge, and not after one either while this was red.
+    # d2f6794 carries the switch to `https://static.crates.io/crates`.
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  };
+
+  outputs =
+    { self, nixpkgs }:
+    let
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+      ];
+      forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
+    in
+    {
+      # -- Per-system outputs (packages, dev shells) --
+
+      packages = forAllSystems (
+        pkgs:
+        let
+          # Bound once and reused. compositor-view used to be applied twice --
+          # once for the exposed attribute, once inline as package.nix's argument
+          # -- which produces the same store path today but means an override
+          # applied to the attribute never reaches the app. With a second native
+          # component the same mistake would have been made twice.
+          ffmpeg-lgpl = pkgs.callPackage ./nix/ffmpeg-lgpl.nix { };
+          compositor-view = pkgs.callPackage ./nix/compositor-view.nix { inherit ffmpeg-lgpl; };
+          pipewire-helper = pkgs.callPackage ./nix/pipewire-helper.nix { inherit ffmpeg-lgpl; };
+          whisper-stt = pkgs.callPackage ./nix/whisper-stt.nix { };
+        in
+        {
+          inherit compositor-view pipewire-helper whisper-stt;
+          openscreen = pkgs.callPackage ./nix/package.nix {
+            inherit compositor-view pipewire-helper whisper-stt;
+          };
+          default = self.packages.${pkgs.stdenv.hostPlatform.system}.openscreen;
+        }
+      );
+
+      devShells = forAllSystems (
+        pkgs:
+        let
+          electron = pkgs.electron;
+
+          # Libraries Electron needs at runtime on Linux
+          runtimeLibs = with pkgs; [
+            # X11
+            libx11
+            libxcomposite
+            libxdamage
+            libxext
+            libxfixes
+            libxrandr
+            libxtst
+            libxcb
+            libxshmfence
+
+            # Wayland
+            wayland
+
+            # GTK / UI toolkit
+            gtk3
+            glib
+            pango
+            cairo
+            gdk-pixbuf
+            atk
+            at-spi2-atk
+            at-spi2-core
+
+            # Graphics
+            mesa
+            libGL
+            libdrm
+            vulkan-loader
+
+            # Networking / crypto (NSS for Chromium)
+            nss
+            nspr
+
+            # Audio
+            alsa-lib
+            pipewire
+            pulseaudio
+
+            # System
+            dbus
+            cups
+            expat
+            libnotify
+            libsecret
+            util-linux # libuuid
+          ];
+        in
+        {
+          default = pkgs.mkShell {
+            packages = with pkgs; [
+              nodejs_22
+              electron
+
+              # Native module compilation
+              python3
+              pkg-config
+              gcc
+
+              # Playwright browser tests
+              playwright-driver.browsers
+            ];
+
+            # Electron's prebuilt binary needs these at runtime
+            LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath runtimeLibs;
+
+            # Tell the npm `electron` package to use the Nix-provided binary
+            # instead of downloading its own. vite-plugin-electron respects this.
+            ELECTRON_OVERRIDE_DIST_PATH = "${electron}/libexec/electron";
+
+            # Playwright browser path for test:browser / test:e2e
+            PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
+            PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD = "1";
+
+            shellHook = ''
+              echo "OpenScreen dev shell — node $(node --version), electron v$(electron --version 2>/dev/null | tr -d 'v')"
+            '';
+          };
+        }
+      );
+
+      # -- System-wide outputs (modules, overlay) --
+
+      overlays.default = final: _prev: {
+        openscreen = self.packages.${final.stdenv.hostPlatform.system}.openscreen;
+      };
+
+      nixosModules.default = import ./nix/module.nix self;
+      homeManagerModules.default = import ./nix/hm-module.nix self;
+    };
+}

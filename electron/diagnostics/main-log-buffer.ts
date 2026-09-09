@@ -1,112 +1,102 @@
 /**
  * Ring buffer for main-process console output.
  *
- * Captures the last `capacity` lines written via console.log / info / warn /
- * error into one in-memory buffer so a diagnostic report or a bug-report URL
- * can carry the tail of what main was doing. Capturia installs it always at a
- * low capacity (see main.ts); `CAPTURIA_DIAGNOSTIC=1` raises it for a more
- * complete "Save diagnostics" payload.
+ * Captures the last `capacity` lines written via console.info / console.warn /
+ * console.error / console.log into a single in-memory buffer. Disabled by
+ * default — install only when verbose diagnostics are wanted, e.g. when
+ * OPENSCREEN_DIAGNOSTIC=1 is set or when a developer wants a more complete
+ * "Save Diagnostics" payload for an upstream bug report.
  *
- * Cost when installed: one array push + occasional splice per console call.
+ * Cost when enabled: one array.push + occasional shift per console call,
+ * negligible against the rest of the app. Cost when disabled: zero, the
+ * original console methods are kept untouched.
  */
 
-const DEFAULT_CAPACITY = 500
+const DEFAULT_CAPACITY = 500;
 
 export interface MainLogEntry {
-  timestampMs: number
-  level: 'info' | 'warn' | 'error' | 'log'
-  text: string
+	timestampMs: number;
+	level: "info" | "warn" | "error" | "log";
+	text: string;
 }
-
-type ConsoleLevel = MainLogEntry['level']
-type ConsoleFn = (...args: unknown[]) => void
-
-const LEVELS: readonly ConsoleLevel[] = ['log', 'info', 'warn', 'error']
 
 export class MainLogBuffer {
-  private readonly capacity: number
-  private readonly entries: MainLogEntry[] = []
-  private installed = false
-  private readonly originals: Partial<Record<ConsoleLevel, ConsoleFn>> = {}
+	private readonly capacity: number;
+	private readonly entries: MainLogEntry[] = [];
+	private installed = false;
+	private readonly originals: Partial<
+		Record<"log" | "info" | "warn" | "error", (...args: unknown[]) => void>
+	> = {};
 
-  constructor(capacity = DEFAULT_CAPACITY) {
-    this.capacity = Math.max(1, capacity)
-  }
+	constructor(capacity = DEFAULT_CAPACITY) {
+		this.capacity = Math.max(1, capacity);
+	}
 
-  install(): void {
-    if (this.installed) return
-    this.installed = true
-    const console_ = console as unknown as Record<ConsoleLevel, ConsoleFn>
-    for (const level of LEVELS) {
-      this.originals[level] = console_[level].bind(console)
-      console_[level] = (...args: unknown[]) => {
-        this.push(level, args)
-        this.originals[level]?.(...args)
-      }
-    }
-  }
+	install(): void {
+		if (this.installed) return;
+		this.installed = true;
+		const console_ = console as unknown as Record<
+			"log" | "info" | "warn" | "error",
+			(...args: unknown[]) => void
+		>;
+		for (const level of ["log", "info", "warn", "error"] as const) {
+			this.originals[level] = console_[level].bind(console);
+			console_[level] = (...args: unknown[]) => {
+				this.push(level, args);
+				this.originals[level]?.(...args);
+			};
+		}
+	}
 
-  uninstall(): void {
-    if (!this.installed) return
-    this.installed = false
-    const console_ = console as unknown as Record<ConsoleLevel, ConsoleFn>
-    for (const level of LEVELS) {
-      const original = this.originals[level]
-      if (original) console_[level] = original
-      this.originals[level] = undefined
-    }
-  }
+	uninstall(): void {
+		if (!this.installed) return;
+		this.installed = false;
+		const console_ = console as unknown as Record<
+			"log" | "info" | "warn" | "error",
+			(...args: unknown[]) => void
+		>;
+		for (const level of ["log", "info", "warn", "error"] as const) {
+			if (this.originals[level]) {
+				console_[level] = this.originals[level] as (...args: unknown[]) => void;
+			}
+		}
+		this.originals.log = undefined;
+		this.originals.info = undefined;
+		this.originals.warn = undefined;
+		this.originals.error = undefined;
+	}
 
-  snapshot(): MainLogEntry[] {
-    return this.entries.slice()
-  }
+	snapshot(): MainLogEntry[] {
+		return this.entries.slice();
+	}
 
-  /** Last `count` entries rendered as `HH:MM:SS.mmm LEVEL text` lines. */
-  tail(count: number): string[] {
-    const start = Math.max(0, this.entries.length - Math.max(0, count))
-    return this.entries.slice(start).map(formatMainLogEntry)
-  }
+	clear(): void {
+		this.entries.length = 0;
+	}
 
-  clear(): void {
-    this.entries.length = 0
-  }
-
-  private push(level: ConsoleLevel, args: unknown[]): void {
-    const text = args
-      .map((arg) => {
-        if (typeof arg === 'string') return arg
-        if (arg instanceof Error) return arg.stack || arg.message
-        try {
-          return JSON.stringify(arg)
-        } catch {
-          return String(arg)
-        }
-      })
-      .join(' ')
-    this.entries.push({ timestampMs: Date.now(), level, text })
-    if (this.entries.length > this.capacity) {
-      this.entries.splice(0, this.entries.length - this.capacity)
-    }
-  }
+	private push(level: MainLogEntry["level"], args: unknown[]): void {
+		const text = args
+			.map((arg) => {
+				if (typeof arg === "string") return arg;
+				try {
+					return JSON.stringify(arg);
+				} catch {
+					return String(arg);
+				}
+			})
+			.join(" ");
+		this.entries.push({ timestampMs: Date.now(), level, text });
+		if (this.entries.length > this.capacity) {
+			this.entries.splice(0, this.entries.length - this.capacity);
+		}
+	}
 }
 
-export function formatMainLogEntry(entry: MainLogEntry): string {
-  const time = new Date(entry.timestampMs).toISOString().slice(11, 23)
-  return `${time} ${entry.level.toUpperCase().padEnd(5)} ${entry.text}`
+export const mainLogBuffer = new MainLogBuffer();
+
+export function isDiagnosticModeEnabled(): boolean {
+	const raw = process.env.OPENSCREEN_DIAGNOSTIC;
+	if (!raw) return false;
+	const lowered = raw.trim().toLowerCase();
+	return lowered === "1" || lowered === "true" || lowered === "yes";
 }
-
-export function isDiagnosticModeEnabled(
-  env: Record<string, string | undefined> = process.env,
-): boolean {
-  const raw = env.CAPTURIA_DIAGNOSTIC
-  if (!raw) return false
-  const lowered = raw.trim().toLowerCase()
-  return lowered === '1' || lowered === 'true' || lowered === 'yes'
-}
-
-/** Lines kept when diagnostic mode is off: enough for an issue body, cheap to hold. */
-export const LOW_CAPACITY = 200
-
-export const mainLogBuffer = new MainLogBuffer(
-  isDiagnosticModeEnabled() ? DEFAULT_CAPACITY : LOW_CAPACITY,
-)

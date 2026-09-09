@@ -1,444 +1,491 @@
-import { BLUR_REGIONS_ENABLED } from '@/components/video-editor/featureFlags'
-import type { AnnotationRegion, ArrowDirection } from '@/components/video-editor/types'
-import { getRenderableAnnotations } from '@/lib/annotations/renderOrder'
-import { getNormalizedMosaicBlockSize, renderMosaicRegion } from '@/lib/blurEffects'
+import { type AnnotationRegion, type ArrowDirection } from "@/components/video-editor/types";
+import { getTextAnimationState } from "@/lib/annotationTextAnimation";
 import {
-  applyTextAnimationToCanvas,
-  getRevealedText,
-  getTextAnimationState,
-} from '@/lib/annotationTextAnimation'
-import { wrapTextLines } from './textWrap'
+	applyMosaicToImageData,
+	getBlurOverlayColor,
+	getNormalizedBlurIntensity,
+	getNormalizedMosaicBlockSize,
+	normalizeBlurType,
+} from "@/lib/blurEffects";
+
+let blurScratchCanvas: HTMLCanvasElement | null = null;
+let blurScratchCtx: CanvasRenderingContext2D | null = null;
+
+// Han/Hiragana/Katakana/Hangul code points, to split CJK text at character
+// boundaries during wrap (CJK has no word-separating whitespace). Script
+// escapes need ES2018+; tsconfig targets ES2020.
+const CJK_CHAR = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+
+type GraphemeSegmenter = {
+	segment(value: string): Iterable<{ segment: string }>;
+};
+
+type IntlWithSegmenter = typeof Intl & {
+	Segmenter?: new (
+		locales?: string | string[],
+		options?: { granularity?: "grapheme" },
+	) => GraphemeSegmenter;
+};
+
+const Segmenter = (Intl as IntlWithSegmenter).Segmenter;
+const graphemeSegmenter =
+	typeof Segmenter === "function" ? new Segmenter(undefined, { granularity: "grapheme" }) : null;
+
+function splitGraphemes(value: string): string[] {
+	if (!graphemeSegmenter) return Array.from(value);
+	return Array.from(graphemeSegmenter.segment(value), ({ segment }) => segment);
+}
+
+function tokenizeForWrap(line: string): string[] {
+	// Split Latin on whitespace (kept as its own token) and split CJK runs into
+	// individual chars so each is breakable, mirroring the editor's CSS
+	// word-break: break-word for CJK.
+	const tokens: string[] = [];
+	let buffer = "";
+	const chars = Array.from(line);
+	const flushBuffer = () => {
+		if (buffer) {
+			tokens.push(...buffer.split(/(\s+)/).filter((s) => s.length > 0));
+			buffer = "";
+		}
+	};
+	for (const ch of chars) {
+		if (CJK_CHAR.test(ch)) {
+			flushBuffer();
+			tokens.push(ch);
+		} else {
+			buffer += ch;
+		}
+	}
+	flushBuffer();
+	return tokens;
+}
 
 // SVG path data for each arrow direction
 const ARROW_PATHS: Record<ArrowDirection, string[]> = {
-  'up': ['M 50 20 L 50 80', 'M 50 20 L 35 35', 'M 50 20 L 65 35'],
-  'down': ['M 50 20 L 50 80', 'M 50 80 L 35 65', 'M 50 80 L 65 65'],
-  'left': ['M 80 50 L 20 50', 'M 20 50 L 35 35', 'M 20 50 L 35 65'],
-  'right': ['M 20 50 L 80 50', 'M 80 50 L 65 35', 'M 80 50 L 65 65'],
-  'up-right': ['M 25 75 L 75 25', 'M 75 25 L 60 30', 'M 75 25 L 70 40'],
-  'up-left': ['M 75 75 L 25 25', 'M 25 25 L 40 30', 'M 25 25 L 30 40'],
-  'down-right': ['M 25 25 L 75 75', 'M 75 75 L 70 60', 'M 75 75 L 60 70'],
-  'down-left': ['M 75 25 L 25 75', 'M 25 75 L 30 60', 'M 25 75 L 40 70'],
-}
-
-const ANNOTATION_IMAGE_CACHE_LIMIT = 128
-const annotationImageCache = new Map<string, Promise<HTMLImageElement | null>>()
-
-function loadAnnotationImage(content: string): Promise<HTMLImageElement | null> {
-  const cached = annotationImageCache.get(content)
-  if (cached) {
-    return cached
-  }
-
-  const loading = new Promise<HTMLImageElement | null>((resolve) => {
-    const img = new Image()
-    img.onload = () => resolve(img)
-    img.onerror = () => {
-      console.error('[AnnotationRenderer] Failed to load image annotation')
-      resolve(null)
-    }
-    img.src = content
-  })
-
-  annotationImageCache.set(content, loading)
-  if (annotationImageCache.size > ANNOTATION_IMAGE_CACHE_LIMIT) {
-    const oldestKey = annotationImageCache.keys().next().value as string | undefined
-    if (oldestKey) {
-      annotationImageCache.delete(oldestKey)
-    }
-  }
-
-  return loading
-}
+	up: ["M 50 20 L 50 80", "M 50 20 L 35 35", "M 50 20 L 65 35"],
+	down: ["M 50 20 L 50 80", "M 50 80 L 35 65", "M 50 80 L 65 65"],
+	left: ["M 80 50 L 20 50", "M 20 50 L 35 35", "M 20 50 L 35 65"],
+	right: ["M 20 50 L 80 50", "M 80 50 L 65 35", "M 80 50 L 65 65"],
+	"up-right": ["M 25 75 L 75 25", "M 75 25 L 60 30", "M 75 25 L 70 40"],
+	"up-left": ["M 75 75 L 25 25", "M 25 25 L 40 30", "M 25 25 L 30 40"],
+	"down-right": ["M 25 25 L 75 75", "M 75 75 L 70 60", "M 75 75 L 60 70"],
+	"down-left": ["M 75 25 L 25 75", "M 25 75 L 30 60", "M 25 75 L 40 70"],
+};
 
 function parseSvgPath(
-  pathString: string,
-  scaleX: number,
-  scaleY: number,
+	pathString: string,
+	scaleX: number,
+	scaleY: number,
 ): Array<{ cmd: string; args: number[] }> {
-  const commands: Array<{ cmd: string; args: number[] }> = []
-  const parts = pathString.trim().split(/\s+/)
+	const commands: Array<{ cmd: string; args: number[] }> = [];
+	const parts = pathString.trim().split(/\s+/);
 
-  let i = 0
-  while (i < parts.length) {
-    const cmd = parts[i]
-    if (cmd === 'M' || cmd === 'L') {
-      const x = parseFloat(parts[i + 1]) * scaleX
-      const y = parseFloat(parts[i + 2]) * scaleY
-      commands.push({ cmd, args: [x, y] })
-      i += 3
-    } else {
-      i++
-    }
-  }
+	let i = 0;
+	while (i < parts.length) {
+		const cmd = parts[i];
+		if (cmd === "M" || cmd === "L") {
+			const x = parseFloat(parts[i + 1]) * scaleX;
+			const y = parseFloat(parts[i + 2]) * scaleY;
+			commands.push({ cmd, args: [x, y] });
+			i += 3;
+		} else {
+			i++;
+		}
+	}
 
-  return commands
+	return commands;
 }
 
 function renderArrow(
-  ctx: CanvasRenderingContext2D,
-  direction: ArrowDirection,
-  color: string,
-  strokeWidth: number,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  _scaleFactor: number,
+	ctx: CanvasRenderingContext2D,
+	direction: ArrowDirection,
+	color: string,
+	strokeWidth: number,
+	x: number,
+	y: number,
+	width: number,
+	height: number,
+	_scaleFactor: number,
 ) {
-  const paths = ARROW_PATHS[direction]
-  if (!paths) return
+	const paths = ARROW_PATHS[direction];
+	if (!paths) return;
 
-  ctx.save()
-  ctx.translate(x, y)
+	ctx.save();
+	ctx.translate(x, y);
 
-  const padding = 8 * _scaleFactor
-  const availableWidth = Math.max(0, width - padding * 2)
-  const availableHeight = Math.max(0, height - padding * 2)
+	const padding = 8 * _scaleFactor;
+	const availableWidth = Math.max(0, width - padding * 2);
+	const availableHeight = Math.max(0, height - padding * 2);
 
-  const scale = Math.min(availableWidth / 100, availableHeight / 100)
+	const scale = Math.min(availableWidth / 100, availableHeight / 100);
 
-  const offsetX = padding + (availableWidth - 100 * scale) / 2
-  const offsetY = padding + (availableHeight - 100 * scale) / 2
+	const offsetX = padding + (availableWidth - 100 * scale) / 2;
+	const offsetY = padding + (availableHeight - 100 * scale) / 2;
 
-  // Apply centering offset
-  ctx.translate(offsetX, offsetY)
+	ctx.translate(offsetX, offsetY);
 
-  // Apply shadow filter
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.3)'
-  ctx.shadowBlur = 8 * scale
-  ctx.shadowOffsetX = 0
-  ctx.shadowOffsetY = 4 * scale
+	ctx.shadowColor = "rgba(0, 0, 0, 0.3)";
+	ctx.shadowBlur = 8 * scale;
+	ctx.shadowOffsetX = 0;
+	ctx.shadowOffsetY = 4 * scale;
 
-  ctx.strokeStyle = color
-  ctx.lineWidth = strokeWidth * scale
-  ctx.lineCap = 'round'
-  ctx.lineJoin = 'round'
+	ctx.strokeStyle = color;
+	ctx.lineWidth = strokeWidth * scale;
+	ctx.lineCap = "round";
+	ctx.lineJoin = "round";
 
-  // Draw all paths as a single shape to avoid overlapping shadows/strokes
-  ctx.beginPath()
+	// One shape so shadows/strokes don't overlap
+	ctx.beginPath();
 
-  for (const pathString of paths) {
-    const commands = parseSvgPath(pathString, scale, scale)
+	for (const pathString of paths) {
+		const commands = parseSvgPath(pathString, scale, scale);
 
-    for (const { cmd, args } of commands) {
-      if (cmd === 'M') {
-        ctx.moveTo(args[0], args[1])
-      } else if (cmd === 'L') {
-        ctx.lineTo(args[0], args[1])
-      }
-    }
-  }
+		for (const { cmd, args } of commands) {
+			if (cmd === "M") {
+				ctx.moveTo(args[0], args[1]);
+			} else if (cmd === "L") {
+				ctx.lineTo(args[0], args[1]);
+			}
+		}
+	}
 
-  ctx.stroke()
+	ctx.stroke();
 
-  ctx.restore()
+	ctx.restore();
 }
 
-/**
- * Layout constants mirrored from the preview overlay (`AnnotationOverlay`):
- * Tailwind `p-2` on the container, `padding: 0.1em 0.2em` and
- * `line-height: 1.4` on the span. The wrap width and the per-line background
- * box derive from the same numbers so preview and export break lines at the
- * same width.
- */
-const TEXT_BOX_PADDING_PX = 8
-const TEXT_SPAN_HORIZONTAL_PADDING_EM = 0.2
-const TEXT_SPAN_VERTICAL_PADDING_EM = 0.1
-const TEXT_LINE_HEIGHT = 1.4
+function drawBlurPath(
+	ctx: CanvasRenderingContext2D,
+	annotation: AnnotationRegion,
+	x: number,
+	y: number,
+	width: number,
+	height: number,
+) {
+	const shape = annotation.blurData?.shape || "rectangle";
+	if (shape === "rectangle") {
+		ctx.beginPath();
+		ctx.rect(x, y, width, height);
+		return;
+	}
+
+	if (shape === "oval") {
+		ctx.beginPath();
+		ctx.ellipse(x + width / 2, y + height / 2, width / 2, height / 2, 0, 0, Math.PI * 2);
+		return;
+	}
+
+	const points = annotation.blurData?.freehandPoints;
+	if (shape === "freehand" && points && points.length >= 3) {
+		ctx.beginPath();
+		ctx.moveTo(x + (points[0].x / 100) * width, y + (points[0].y / 100) * height);
+		for (let i = 1; i < points.length; i++) {
+			ctx.lineTo(x + (points[i].x / 100) * width, y + (points[i].y / 100) * height);
+		}
+		ctx.closePath();
+		return;
+	}
+
+	ctx.beginPath();
+	ctx.rect(x, y, width, height);
+}
+
+function renderBlur(
+	ctx: CanvasRenderingContext2D,
+	annotation: AnnotationRegion,
+	x: number,
+	y: number,
+	width: number,
+	height: number,
+	scaleFactor: number,
+) {
+	const canvas = ctx.canvas;
+	const blurType = normalizeBlurType(annotation.blurData?.type);
+
+	const blurRadius = Math.max(
+		1,
+		Math.round(getNormalizedBlurIntensity(annotation.blurData) * scaleFactor),
+	);
+	const samplePadding =
+		blurType === "mosaic"
+			? Math.max(0, Math.ceil(getNormalizedMosaicBlockSize(annotation.blurData, scaleFactor)))
+			: Math.max(2, Math.ceil(blurRadius * 2));
+	const sx = Math.max(0, Math.floor(x) - samplePadding);
+	const sy = Math.max(0, Math.floor(y) - samplePadding);
+	const ex = Math.min(canvas.width, Math.ceil(x + width) + samplePadding);
+	const ey = Math.min(canvas.height, Math.ceil(y + height) + samplePadding);
+	const sw = Math.max(0, ex - sx);
+	const sh = Math.max(0, ey - sy);
+	if (sw <= 0 || sh <= 0) return;
+
+	if (!blurScratchCanvas || !blurScratchCtx) {
+		blurScratchCanvas = document.createElement("canvas");
+		blurScratchCtx = blurScratchCanvas.getContext("2d");
+	}
+	if (!blurScratchCanvas || !blurScratchCtx) return;
+
+	blurScratchCanvas.width = sw;
+	blurScratchCanvas.height = sh;
+	blurScratchCtx.clearRect(0, 0, sw, sh);
+	blurScratchCtx.drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
+
+	if (blurType === "mosaic") {
+		const imageData = blurScratchCtx.getImageData(0, 0, sw, sh);
+		applyMosaicToImageData(
+			imageData,
+			getNormalizedMosaicBlockSize(annotation.blurData, scaleFactor),
+		);
+		blurScratchCtx.putImageData(imageData, 0, 0);
+	}
+
+	ctx.save();
+	drawBlurPath(ctx, annotation, x, y, width, height);
+	ctx.clip();
+	ctx.filter = blurType === "mosaic" ? "none" : `blur(${blurRadius}px)`;
+	ctx.drawImage(blurScratchCanvas, sx, sy);
+	ctx.filter = "none";
+	ctx.fillStyle = getBlurOverlayColor(annotation.blurData);
+	ctx.fillRect(sx, sy, sw, sh);
+	ctx.restore();
+}
 
 function renderText(
-  ctx: CanvasRenderingContext2D,
-  annotation: AnnotationRegion,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  scaleFactor: number,
-  currentTimeMs: number,
+	ctx: CanvasRenderingContext2D,
+	annotation: AnnotationRegion,
+	x: number,
+	y: number,
+	width: number,
+	height: number,
+	scaleFactor: number,
+	currentTimeMs: number,
 ) {
-  const style = annotation.style
-  const animationState = getTextAnimationState(annotation, currentTimeMs)
+	const style = annotation.style;
+	const animationState = getTextAnimationState(annotation, currentTimeMs);
 
-  ctx.save()
+	ctx.save();
 
-  // Entrance animation about the box centre (preview: transform-origin center)
-  applyTextAnimationToCanvas(ctx, animationState, x + width / 2, y + height / 2, scaleFactor)
+	const transformOriginX = x + width / 2;
+	const transformOriginY = y + height / 2;
+	ctx.translate(transformOriginX, transformOriginY);
+	ctx.translate(animationState.translateX * scaleFactor, animationState.translateY * scaleFactor);
+	ctx.scale(animationState.scale, animationState.scale);
+	ctx.translate(-transformOriginX, -transformOriginY);
+	ctx.globalAlpha *= animationState.opacity;
 
-  // Clip to the box, matching the preview's overflow: hidden
-  ctx.beginPath()
-  ctx.rect(x, y, width, height)
-  ctx.clip()
+	// Clip to box bounds, matching editor's overflow: hidden
+	ctx.beginPath();
+	ctx.rect(x, y, width, height);
+	ctx.clip();
 
-  const scaledFontSize = style.fontSize * scaleFactor
-  ctx.font = getAnnotationFontShorthand(style, scaleFactor)
-  ctx.textBaseline = 'middle'
+	const fontWeight = style.fontWeight === "bold" ? "bold" : "normal";
+	const fontStyle = style.fontStyle === "italic" ? "italic" : "normal";
+	const scaledFontSize = style.fontSize * scaleFactor;
+	ctx.font = `${fontStyle} ${fontWeight} ${scaledFontSize}px ${style.fontFamily}`;
+	ctx.textBaseline = "middle";
 
-  const containerPadding = TEXT_BOX_PADDING_PX * scaleFactor
-  const horizontalPadding = scaledFontSize * TEXT_SPAN_HORIZONTAL_PADDING_EM
-  const verticalPadding = scaledFontSize * TEXT_SPAN_VERTICAL_PADDING_EM
+	const containerPadding = 8 * scaleFactor;
 
-  let textX = x
-  const textY = y + height / 2
+	let textX = x;
+	let textY = y + height / 2;
 
-  if (style.textAlign === 'center') {
-    textX = x + width / 2
-  } else if (style.textAlign === 'right') {
-    textX = x + width - containerPadding - horizontalPadding
-  } else {
-    textX = x + containerPadding + horizontalPadding
-  }
+	if (style.textAlign === "center") {
+		textX = x + width / 2;
+		ctx.textAlign = "center";
+	} else if (style.textAlign === "right") {
+		textX = x + width - containerPadding;
+		ctx.textAlign = "right";
+	} else {
+		textX = x + containerPadding;
+		ctx.textAlign = "left";
+	}
 
-  // Same available width as the preview span: the box minus the container
-  // padding and the span's own horizontal padding on both sides.
-  const availableWidth = width - containerPadding * 2 - horizontalPadding * 2
-  const lines = wrapTextLines(
-    annotation.content,
-    availableWidth,
-    (text) => ctx.measureText(text).width,
-  )
-  const lineHeight = scaledFontSize * TEXT_LINE_HEIGHT
+	const availableWidth = width - containerPadding * 2;
+	const rawLines = annotation.content.split("\n");
+	const lines: string[] = [];
+	for (const rawLine of rawLines) {
+		if (!rawLine) {
+			lines.push("");
+			continue;
+		}
+		const tokens = tokenizeForWrap(rawLine);
+		let current = "";
+		for (const token of tokens) {
+			const test = current + token;
+			if (current && ctx.measureText(test).width > availableWidth) {
+				lines.push(current);
+				current = token.trimStart();
+			} else {
+				current = test;
+			}
+		}
+		if (current) lines.push(current);
+	}
+	const lineHeight = scaledFontSize * 1.4;
 
-  const startY = textY - ((lines.length - 1) * lineHeight) / 2
+	const startY = textY - ((lines.length - 1) * lineHeight) / 2;
 
-  // Lines are drawn left-aligned from their own start x so the typewriter
-  // reveal keeps the full line's alignment origin (the preview clips the span
-  // from the right instead of re-centring the visible part).
-  ctx.textAlign = 'left'
+	lines.forEach((line, index) => {
+		const currentY = startY + index * lineHeight;
+		const revealProgress = animationState.revealProgress;
+		const graphemes = splitGraphemes(line);
+		const visibleCount = Math.ceil(graphemes.length * revealProgress);
+		const visibleLine = revealProgress >= 1 ? line : graphemes.slice(0, visibleCount).join("");
+		if (!visibleLine && revealProgress < 1) return;
 
-  lines.forEach((fullLine, index) => {
-    const currentY = startY + index * lineHeight
-    const line = getRevealedText(fullLine, animationState.revealProgress)
-    if (!line && animationState.revealProgress < 1) return
+		const previousAlign = ctx.textAlign;
+		const fullMetrics = ctx.measureText(line);
+		let startX = textX;
 
-    const fullWidth = ctx.measureText(fullLine).width
-    const lineStartX =
-      style.textAlign === 'center'
-        ? textX - fullWidth / 2
-        : style.textAlign === 'right'
-          ? textX - fullWidth
-          : textX
+		if (ctx.textAlign === "center") {
+			startX = textX - fullMetrics.width / 2;
+			ctx.textAlign = "left";
+		} else if (ctx.textAlign === "right" || ctx.textAlign === "end") {
+			startX = textX - fullMetrics.width;
+			ctx.textAlign = "left";
+		}
 
-    if (style.backgroundColor && style.backgroundColor !== 'transparent') {
-      const metrics = ctx.measureText(line)
-      const borderRadius = 4 * scaleFactor
+		if (style.backgroundColor && style.backgroundColor !== "transparent") {
+			const metrics = ctx.measureText(visibleLine);
+			const verticalPadding = scaledFontSize * 0.1;
+			const horizontalPadding = scaledFontSize * 0.2;
+			const borderRadius = 4 * scaleFactor;
 
-      const bgX = lineStartX - horizontalPadding
-      const bgWidth = metrics.width + horizontalPadding * 2
+			let bgX = startX - horizontalPadding;
+			const bgWidth = metrics.width + horizontalPadding * 2;
 
-      const bgHeight = lineHeight + verticalPadding * 2
-      const bgY = currentY - bgHeight / 2
+			const contentHeight = scaledFontSize * 1.4;
+			const bgHeight = contentHeight + verticalPadding * 2;
+			const bgY = currentY - bgHeight / 2;
 
-      ctx.fillStyle = style.backgroundColor
-      ctx.beginPath()
-      ctx.roundRect(bgX, bgY, bgWidth, bgHeight, borderRadius)
-      ctx.fill()
-    }
+			if (previousAlign === "left" || previousAlign === "start") {
+				bgX = textX - horizontalPadding;
+			}
 
-    ctx.fillStyle = style.color
-    ctx.fillText(line, lineStartX, currentY)
+			ctx.fillStyle = style.backgroundColor;
+			ctx.beginPath();
+			ctx.roundRect(bgX, bgY, bgWidth, bgHeight, borderRadius);
+			ctx.fill();
+		}
 
-    if (style.textDecoration === 'underline') {
-      const metrics = ctx.measureText(line)
-      const underlineX = lineStartX
-      const underlineY = currentY + scaledFontSize * 0.15
+		ctx.fillStyle = style.color;
+		ctx.fillText(visibleLine, startX, currentY);
 
-      ctx.strokeStyle = style.color
-      ctx.lineWidth = Math.max(1, scaledFontSize / 16)
-      ctx.beginPath()
-      ctx.moveTo(underlineX, underlineY)
-      ctx.lineTo(underlineX + metrics.width, underlineY)
-      ctx.stroke()
-    }
-  })
+		if (style.textDecoration === "underline") {
+			const metrics = ctx.measureText(visibleLine);
+			let underlineX = startX;
+			const underlineY = currentY + scaledFontSize * 0.15;
 
-  ctx.restore()
+			if (previousAlign === "left" || previousAlign === "start") {
+				underlineX = textX;
+			}
+
+			ctx.strokeStyle = style.color;
+			ctx.lineWidth = Math.max(1, scaledFontSize / 16);
+			ctx.beginPath();
+			ctx.moveTo(underlineX, underlineY);
+			ctx.lineTo(underlineX + metrics.width, underlineY);
+			ctx.stroke();
+		}
+
+		ctx.textAlign = previousAlign;
+	});
+
+	ctx.restore();
 }
 
 async function renderImage(
-  ctx: CanvasRenderingContext2D,
-  annotation: AnnotationRegion,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
+	ctx: CanvasRenderingContext2D,
+	annotation: AnnotationRegion,
+	x: number,
+	y: number,
+	width: number,
+	height: number,
 ): Promise<void> {
-  if (!annotation.content || !annotation.content.startsWith('data:image')) {
-    return
-  }
+	if (!annotation.content || !annotation.content.startsWith("data:image")) {
+		return;
+	}
 
-  const img = await loadAnnotationImage(annotation.content)
-  if (!img) {
-    return
-  }
+	return new Promise((resolve) => {
+		const img = new Image();
+		img.onload = () => {
+			// Contain within bounds, preserving aspect ratio
+			const imgAspect = img.width / img.height;
+			const boxAspect = width / height;
 
-  // Preserve aspect ratio - contain the image within the bounds
-  const imgAspect = img.width / img.height
-  const boxAspect = width / height
+			let drawWidth = width;
+			let drawHeight = height;
+			let drawX = x;
+			let drawY = y;
 
-  let drawWidth = width
-  let drawHeight = height
-  let drawX = x
-  let drawY = y
+			if (imgAspect > boxAspect) {
+				drawHeight = width / imgAspect;
+				drawY = y + (height - drawHeight) / 2;
+			} else {
+				drawWidth = height * imgAspect;
+				drawX = x + (width - drawWidth) / 2;
+			}
 
-  if (imgAspect > boxAspect) {
-    drawHeight = width / imgAspect
-    drawY = y + (height - drawHeight) / 2
-  } else {
-    drawWidth = height * imgAspect
-    drawX = x + (width - drawWidth) / 2
-  }
-
-  ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight)
-}
-
-/**
- * Mosaics the frame pixels under a blur region, in place on the composite
- * canvas. The region is snapped to whole output pixels, the block size is
- * scaled with the output (`scaleFactor` = output px per preview px), and the
- * pixels run through the same `renderMosaicRegion` the preview overlay uses,
- * so export and preview show the same mosaic at the output resolution.
- */
-export function renderBlurRegion(
-  ctx: CanvasRenderingContext2D,
-  annotation: AnnotationRegion,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  scaleFactor: number,
-): void {
-  const canvasWidth = ctx.canvas.width
-  const canvasHeight = ctx.canvas.height
-  const left = Math.max(0, Math.round(x))
-  const top = Math.max(0, Math.round(y))
-  const right = Math.min(canvasWidth, Math.round(x + width))
-  const bottom = Math.min(canvasHeight, Math.round(y + height))
-  const sampleWidth = right - left
-  const sampleHeight = bottom - top
-  if (sampleWidth <= 0 || sampleHeight <= 0) return
-
-  const imageData = ctx.getImageData(left, top, sampleWidth, sampleHeight)
-  renderMosaicRegion(
-    imageData,
-    annotation.blurData,
-    getNormalizedMosaicBlockSize(annotation.blurData, scaleFactor),
-  )
-  ctx.putImageData(imageData, left, top)
-}
-
-const FONT_LOAD_TIMEOUT_MS = 5000
-
-/** The CSS font shorthand used both to load a family and to draw with it. */
-export function getAnnotationFontShorthand(
-  style: AnnotationRegion['style'],
-  scaleFactor = 1,
-): string {
-  const fontWeight = style.fontWeight === 'bold' ? 'bold' : 'normal'
-  const fontStyle = style.fontStyle === 'italic' ? 'italic' : 'normal'
-  return `${fontStyle} ${fontWeight} ${style.fontSize * scaleFactor}px ${style.fontFamily}`
-}
-
-/**
- * Wait for the web fonts used by text annotations to be loaded. Canvas
- * `fillText` falls back silently when a `@font-face` family has not been
- * fetched yet (they load lazily, on first use in the DOM), so the exporter
- * awaits `document.fonts.load` for every distinct face before rendering.
- * Failures and timeouts are logged, never thrown: a fallback font is better
- * than a failed export.
- */
-export async function preloadAnnotationFonts(
-  annotations: AnnotationRegion[],
-  fontFaceSet: Pick<FontFaceSet, 'load'> | undefined = typeof document !== 'undefined'
-    ? document.fonts
-    : undefined,
-): Promise<void> {
-  if (!fontFaceSet || typeof fontFaceSet.load !== 'function') return
-  const shorthands = new Set<string>()
-  for (const annotation of annotations) {
-    if (annotation.type !== 'text' || !annotation.content) continue
-    shorthands.add(getAnnotationFontShorthand(annotation.style))
-  }
-  if (shorthands.size === 0) return
-
-  await Promise.all(
-    Array.from(shorthands, async (shorthand) => {
-      let timer: ReturnType<typeof setTimeout> | undefined
-      try {
-        await Promise.race([
-          fontFaceSet.load(shorthand),
-          new Promise<void>((_, reject) => {
-            timer = setTimeout(() => reject(new Error('Font load timeout')), FONT_LOAD_TIMEOUT_MS)
-          }),
-        ])
-      } catch (err) {
-        console.warn(
-          '[AnnotationRenderer] Font not ready for export, falling back:',
-          shorthand,
-          err,
-        )
-      } finally {
-        if (timer) clearTimeout(timer)
-      }
-    }),
-  )
-}
-
-/** Pre-load all image annotations so renderAnnotations never blocks on I/O. */
-export async function preloadAnnotationImages(annotations: AnnotationRegion[]): Promise<void> {
-  const imageAnnotations = annotations.filter(
-    (a) => a.type === 'image' && a.content && a.content.startsWith('data:image'),
-  )
-  if (imageAnnotations.length === 0) return
-  await Promise.all(imageAnnotations.map((a) => loadAnnotationImage(a.content)))
+			ctx.drawImage(img, drawX, drawY, drawWidth, drawHeight);
+			resolve();
+		};
+		img.onerror = () => {
+			console.error("[AnnotationRenderer] Failed to load image annotation");
+			resolve();
+		};
+		img.src = annotation.content;
+	});
 }
 
 export async function renderAnnotations(
-  ctx: CanvasRenderingContext2D,
-  annotations: AnnotationRegion[],
-  canvasWidth: number,
-  canvasHeight: number,
-  currentTimeMs: number,
-  scaleFactor: number = 1.0,
+	ctx: CanvasRenderingContext2D,
+	annotations: AnnotationRegion[],
+	canvasWidth: number,
+	canvasHeight: number,
+	currentTimeMs: number,
+	scaleFactor: number = 1.0,
 ): Promise<void> {
-  const sortedAnnotations = getRenderableAnnotations(annotations, currentTimeMs)
+	const activeAnnotations = annotations.filter(
+		(ann) => currentTimeMs >= ann.startMs && currentTimeMs < ann.endMs,
+	);
 
-  for (const annotation of sortedAnnotations) {
-    const x = (annotation.position.x / 100) * canvasWidth
-    const y = (annotation.position.y / 100) * canvasHeight
-    const width = (annotation.size.width / 100) * canvasWidth
-    const height = (annotation.size.height / 100) * canvasHeight
+	// Lower z-index first so higher draws on top
+	const sortedAnnotations = [...activeAnnotations].sort((a, b) => a.zIndex - b.zIndex);
 
-    switch (annotation.type) {
-      case 'text':
-        renderText(ctx, annotation, x, y, width, height, scaleFactor, currentTimeMs)
-        break
+	for (const annotation of sortedAnnotations) {
+		const x = (annotation.position.x / 100) * canvasWidth;
+		const y = (annotation.position.y / 100) * canvasHeight;
+		const width = (annotation.size.width / 100) * canvasWidth;
+		const height = (annotation.size.height / 100) * canvasHeight;
 
-      case 'image':
-        await renderImage(ctx, annotation, x, y, width, height)
-        break
+		switch (annotation.type) {
+			case "text":
+				renderText(ctx, annotation, x, y, width, height, scaleFactor, currentTimeMs);
+				break;
 
-      case 'figure':
-        if (annotation.figureData) {
-          renderArrow(
-            ctx,
-            annotation.figureData.arrowDirection,
-            annotation.figureData.color,
-            annotation.figureData.strokeWidth,
-            x,
-            y,
-            width,
-            height,
-            scaleFactor,
-          )
-        }
-        break
+			case "image":
+				await renderImage(ctx, annotation, x, y, width, height);
+				break;
 
-      case 'blur':
-        if (BLUR_REGIONS_ENABLED) {
-          renderBlurRegion(ctx, annotation, x, y, width, height, scaleFactor)
-        }
-        break
-    }
-  }
+			case "figure":
+				if (annotation.figureData) {
+					renderArrow(
+						ctx,
+						annotation.figureData.arrowDirection,
+						annotation.figureData.color,
+						annotation.figureData.strokeWidth,
+						x,
+						y,
+						width,
+						height,
+						scaleFactor,
+					);
+				}
+				break;
+
+			case "blur":
+				renderBlur(ctx, annotation, x, y, width, height, scaleFactor);
+				break;
+		}
+	}
 }

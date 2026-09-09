@@ -1,188 +1,241 @@
 // @vitest-environment jsdom
-//
-// Teleprompter controls of the Notes toolbar through the real i18n provider,
-// so the readouts and labels are checked as the reader sees them.
-import '@testing-library/jest-dom/vitest'
-import { fireEvent, render, screen, within } from '@testing-library/react'
-import type { Editor } from '@tiptap/react'
-import { type ReactNode, useLayoutEffect } from 'react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { I18nProvider, LOCALE_STORAGE_KEY, useI18n } from '@/i18n'
-import { NotesToolbar, type NotesToolbarProps } from './NotesToolbar'
+import "@testing-library/jest-dom";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import type { Editor } from "@tiptap/react";
+import { type ReactNode, useLayoutEffect, useState } from "react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { I18nProvider, useI18n } from "@/contexts/I18nContext";
+import { LOCALE_STORAGE_KEY } from "@/i18n/config";
+import { NotesToolbar, type NotesToolbarProps } from "./NotesToolbar";
 
-vi.mock('@/components/ui/tooltip', () => ({
-  Tooltip: ({ children }: { children: ReactNode }) => children,
-}))
+vi.mock("@/components/ui/tooltip", () => ({
+	Tooltip: ({ children }: { children: React.ReactNode }) => children,
+}));
 
 beforeEach(() => {
-  // `setLocale` persists its choice and the provider reads it back on mount;
-  // without this the locale-switching test would leak into the ones after it.
-  localStorage.removeItem(LOCALE_STORAGE_KEY)
-})
+	// `setLocale` persists its choice, and `I18nProvider` reads it back on mount — without
+	// this, the one test that switches language would leak into every test after it.
+	localStorage.removeItem(LOCALE_STORAGE_KEY);
+});
 
 function createEditor(): Editor {
-  const chain: Record<string, ReturnType<typeof vi.fn>> = {}
-  for (const command of [
-    'focus',
-    'toggleBold',
-    'toggleItalic',
-    'toggleStrike',
-    'toggleBulletList',
-    'toggleOrderedList',
-    'toggleBlockquote',
-    'toggleCodeBlock',
-  ]) {
-    chain[command] = vi.fn(() => chain)
-  }
-  chain.run = vi.fn(() => true)
+	const chain: Record<string, ReturnType<typeof vi.fn>> = {};
+	for (const command of [
+		"focus",
+		"toggleBold",
+		"toggleItalic",
+		"toggleStrike",
+		"toggleBulletList",
+		"toggleOrderedList",
+		"toggleBlockquote",
+		"toggleCodeBlock",
+	]) {
+		chain[command] = vi.fn(() => chain);
+	}
+	chain.run = vi.fn(() => true);
 
-  return {
-    can: () => ({ chain: () => chain }),
-    chain: () => chain,
-    isActive: () => false,
-    on: vi.fn(),
-    off: vi.fn(),
-  } as unknown as Editor
+	return {
+		can: () => ({ chain: () => chain }),
+		chain: () => chain,
+		isActive: () => false,
+		on: vi.fn(),
+		off: vi.fn(),
+	} as unknown as Editor;
 }
 
 function createProps(overrides: Partial<NotesToolbarProps> = {}): NotesToolbarProps {
-  return {
-    editor: createEditor(),
-    teleprompterEnabled: true,
-    isPlaying: false,
-    speed: 40,
-    fontSize: 16,
-    mirrored: false,
-    onToggleTeleprompter: vi.fn(),
-    onTogglePlaying: vi.fn(),
-    onRestart: vi.fn(),
-    onSpeedChange: vi.fn(),
-    onDecreaseFontSize: vi.fn(),
-    onIncreaseFontSize: vi.fn(),
-    onToggleMirror: vi.fn(),
-    ...overrides,
-  }
+	return {
+		editor: createEditor(),
+		isPlaying: false,
+		formattingDisabled: false,
+		speed: 40,
+		fontSize: 16,
+		mirrored: false,
+		onTogglePlaying: vi.fn(),
+		onDecreaseSpeed: vi.fn(),
+		onIncreaseSpeed: vi.fn(),
+		onDecreaseFontSize: vi.fn(),
+		onIncreaseFontSize: vi.fn(),
+		onToggleMirror: vi.fn(),
+		...overrides,
+	};
 }
 
 function ActiveLocale({ children, locale }: { children: ReactNode; locale: string }) {
-  const { setLocale } = useI18n()
+	const { setLocale } = useI18n();
 
-  useLayoutEffect(() => {
-    setLocale(locale)
-  }, [locale, setLocale])
+	useLayoutEffect(() => {
+		setLocale(locale);
+	}, [locale, setLocale]);
 
-  return children
+	return children;
 }
 
-function renderToolbar(props: NotesToolbarProps, locale = 'en') {
-  return render(
-    <I18nProvider>
-      <ActiveLocale locale={locale}>
-        <NotesToolbar {...props} />
-      </ActiveLocale>
-    </I18nProvider>,
-  )
+function renderToolbar(props: NotesToolbarProps, locale = "en") {
+	return render(
+		<I18nProvider>
+			<ActiveLocale locale={locale}>
+				<NotesToolbar {...props} />
+			</ActiveLocale>
+		</I18nProvider>,
+	);
 }
 
-describe('NotesToolbar teleprompter controls', () => {
-  it('hides the playback row and keeps formatting live while the mode is off', () => {
-    const props = createProps({ teleprompterEnabled: false })
-    renderToolbar(props)
+describe("NotesToolbar teleprompter controls", () => {
+	it("exposes values and dispatches every manual control", async () => {
+		const user = userEvent.setup();
+		const props = createProps();
+		renderToolbar(props);
 
-    expect(screen.queryByTestId('notes-teleprompter-controls')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Bold' })).toBeEnabled()
-    const toggle = screen.getByRole('button', { name: 'Teleprompter mode' })
-    expect(toggle).toHaveAttribute('aria-pressed', 'false')
+		const speed = within(screen.getByRole("group", { name: "Scroll speed" })).getByRole("status");
+		const fontSize = within(screen.getByRole("group", { name: "Font size" })).getByRole("status");
+		expect(speed).not.toHaveAccessibleName();
+		expect(speed).toHaveTextContent("40 px/s");
+		expect(fontSize).not.toHaveAccessibleName();
+		expect(fontSize).toHaveTextContent("16 px");
+		expect(screen.getByRole("button", { name: "Mirror horizontally" })).toHaveAttribute(
+			"aria-pressed",
+			"false",
+		);
+		expect(screen.getByRole("button", { name: "Decrease scroll speed" })).not.toHaveAttribute(
+			"aria-pressed",
+		);
+		expect(screen.getByRole("button", { name: "Increase font size" })).not.toHaveAttribute(
+			"aria-pressed",
+		);
 
-    fireEvent.click(toggle)
-    expect(props.onToggleTeleprompter).toHaveBeenCalledOnce()
-  })
+		await user.click(screen.getByRole("button", { name: "Start auto-scroll" }));
+		await user.click(screen.getByRole("button", { name: "Decrease scroll speed" }));
+		await user.click(screen.getByRole("button", { name: "Increase scroll speed" }));
+		await user.click(screen.getByRole("button", { name: "Decrease font size" }));
+		await user.click(screen.getByRole("button", { name: "Increase font size" }));
+		await user.click(screen.getByRole("button", { name: "Mirror horizontally" }));
 
-  it('exposes readouts and dispatches every control while the mode is on', () => {
-    const props = createProps()
-    renderToolbar(props)
+		expect(props.onTogglePlaying).toHaveBeenCalledOnce();
+		expect(props.onDecreaseSpeed).toHaveBeenCalledOnce();
+		expect(props.onIncreaseSpeed).toHaveBeenCalledOnce();
+		expect(props.onDecreaseFontSize).toHaveBeenCalledOnce();
+		expect(props.onIncreaseFontSize).toHaveBeenCalledOnce();
+		expect(props.onToggleMirror).toHaveBeenCalledOnce();
+	});
 
-    expect(screen.getByRole('button', { name: 'Teleprompter mode' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    )
-    expect(screen.getByRole('button', { name: 'Bold' })).toBeDisabled()
+	it("disables controls at their bounds", () => {
+		const { rerender } = renderToolbar(createProps({ speed: 10, fontSize: 14 }));
+		expect(screen.getByRole("button", { name: "Decrease scroll speed" })).toBeDisabled();
+		expect(screen.getByRole("button", { name: "Decrease font size" })).toBeDisabled();
 
-    const speedGroup = screen.getByRole('group', { name: 'Scroll speed' })
-    const slider = within(speedGroup).getByRole('slider', { name: 'Scroll speed' })
-    expect(slider).toHaveValue('40')
-    expect(within(speedGroup).getByRole('status')).toHaveTextContent('40 px/s')
-    expect(slider).toHaveAccessibleDescription('40 px/s')
+		rerender(
+			<I18nProvider>
+				<NotesToolbar {...createProps({ speed: 100, fontSize: 48 })} />
+			</I18nProvider>,
+		);
+		expect(screen.getByRole("button", { name: "Increase scroll speed" })).toBeDisabled();
+		expect(screen.getByRole("button", { name: "Increase font size" })).toBeDisabled();
+	});
 
-    const fontGroup = screen.getByRole('group', { name: 'Font size' })
-    expect(within(fontGroup).getByRole('status')).toHaveTextContent('16 px')
+	it("keeps playback paused and disabled until the editor is ready", () => {
+		renderToolbar(createProps({ editor: null }));
+		expect(screen.getByRole("button", { name: "Start auto-scroll" })).toBeDisabled();
+		expect(screen.queryByRole("button", { name: "Pause auto-scroll" })).not.toBeInTheDocument();
+	});
 
-    const play = screen.getByRole('button', { name: 'Start auto-scroll' })
-    expect(play).not.toHaveAttribute('aria-pressed')
-    expect(play).toHaveAccessibleDescription('Space plays or pauses while the note is not focused')
-    expect(screen.getByRole('button', { name: 'Mirror horizontally' })).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    )
+	it("announces playback through its label rather than a second pressed state", () => {
+		const { rerender } = renderToolbar(createProps());
+		expect(screen.getByRole("button", { name: "Start auto-scroll" })).not.toHaveAttribute(
+			"aria-pressed",
+		);
 
-    fireEvent.click(play)
-    fireEvent.click(screen.getByRole('button', { name: 'Restart from top' }))
-    fireEvent.change(slider, { target: { value: '95' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Decrease font size' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Increase font size' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Mirror horizontally' }))
+		rerender(
+			<I18nProvider>
+				<NotesToolbar {...createProps({ isPlaying: true, formattingDisabled: true })} />
+			</I18nProvider>,
+		);
+		expect(screen.getByRole("button", { name: "Pause auto-scroll" })).not.toHaveAttribute(
+			"aria-pressed",
+		);
+	});
 
-    expect(props.onTogglePlaying).toHaveBeenCalledOnce()
-    expect(props.onRestart).toHaveBeenCalledOnce()
-    expect(props.onSpeedChange).toHaveBeenCalledWith(95)
-    expect(props.onDecreaseFontSize).toHaveBeenCalledOnce()
-    expect(props.onIncreaseFontSize).toHaveBeenCalledOnce()
-    expect(props.onToggleMirror).toHaveBeenCalledOnce()
-  })
+	it("locks formatting when the note is locked, keeping teleprompter controls live", () => {
+		// formattingDisabled without isPlaying is the mirrored-while-paused case.
+		renderToolbar(createProps({ formattingDisabled: true }));
 
-  it('disables the font-size steps at their bounds and bounds the slider', () => {
-    const { rerender } = renderToolbar(createProps({ fontSize: 14 }))
-    expect(screen.getByRole('button', { name: 'Decrease font size' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Increase font size' })).toBeEnabled()
-    const slider = screen.getByRole('slider', { name: 'Scroll speed' })
-    expect(slider).toHaveAttribute('min', '10')
-    expect(slider).toHaveAttribute('max', '150')
-    expect(slider).toHaveAttribute('step', '5')
+		// Sweep the whole row rather than a hand-written list, so a formatting button added
+		// later cannot quietly escape the lock.
+		const formatting = within(screen.getByTestId("notes-formatting-controls")).getAllByRole(
+			"button",
+		);
+		expect(formatting).toHaveLength(7);
+		for (const button of formatting) {
+			expect(button).toBeDisabled();
+		}
 
-    rerender(
-      <I18nProvider>
-        <NotesToolbar {...createProps({ fontSize: 48 })} />
-      </I18nProvider>,
-    )
-    expect(screen.getByRole('button', { name: 'Increase font size' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Decrease font size' })).toBeEnabled()
-  })
+		// Teleprompter controls stay live so the lock can always be lifted, and the play
+		// button's label keeps tracking isPlaying alone rather than the lock.
+		expect(screen.getByRole("button", { name: "Start auto-scroll" })).toBeEnabled();
+		expect(screen.getByRole("button", { name: "Mirror horizontally" })).toBeEnabled();
+		expect(screen.getByRole("button", { name: "Decrease scroll speed" })).toBeEnabled();
+		expect(screen.getByRole("button", { name: "Increase font size" })).toBeEnabled();
+	});
 
-  it('announces playback through the label and keeps it disabled until the editor is ready', () => {
-    const { rerender } = renderToolbar(createProps({ editor: null }))
-    expect(screen.getByRole('button', { name: 'Start auto-scroll' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Restart from top' })).toBeDisabled()
+	it("formats readout values for the active locale", () => {
+		renderToolbar(createProps(), "ar");
+		const speed = within(screen.getByRole("group", { name: "سرعة التمرير" })).getByRole("status");
+		const fontSize = within(screen.getByRole("group", { name: "حجم الخط" })).getByRole("status");
 
-    rerender(
-      <I18nProvider>
-        <NotesToolbar {...createProps({ isPlaying: true })} />
-      </I18nProvider>,
-    )
-    const pause = screen.getByRole('button', { name: 'Pause auto-scroll' })
-    expect(pause).toBeEnabled()
-    expect(pause).not.toHaveAttribute('aria-pressed')
-    expect(screen.queryByRole('button', { name: 'Start auto-scroll' })).not.toBeInTheDocument()
-  })
+		expect(speed).not.toHaveAccessibleName();
+		expect(speed).toHaveTextContent(`${new Intl.NumberFormat("ar").format(40)} بكسل/ثانية`);
+		expect(fontSize).not.toHaveAccessibleName();
+		expect(fontSize).toHaveTextContent(`${new Intl.NumberFormat("ar").format(16)} بكسل`);
+	});
+});
 
-  it('localises the readouts', () => {
-    renderToolbar(createProps({ speed: 120, fontSize: 24 }), 'vi')
+function ToolbarHarness() {
+	const [isPlaying, setIsPlaying] = useState(false);
+	const [mirrored, setMirrored] = useState(false);
 
-    expect(
-      within(screen.getByRole('group', { name: 'Tốc độ cuộn' })).getByRole('status'),
-    ).toHaveTextContent('120 px/giây')
-    expect(
-      within(screen.getByRole('group', { name: 'Cỡ chữ' })).getByRole('status'),
-    ).toHaveTextContent('24 px')
-    expect(screen.getByRole('button', { name: 'Bắt đầu tự cuộn' })).toBeInTheDocument()
-  })
-})
+	return (
+		<NotesToolbar
+			{...createProps({
+				isPlaying,
+				mirrored,
+				formattingDisabled: isPlaying || mirrored,
+				onTogglePlaying: () => setIsPlaying((current) => !current),
+				onToggleMirror: () => setMirrored((current) => !current),
+			})}
+		/>
+	);
+}
+
+describe("NotesToolbar keyboard reachability", () => {
+	it("walks every teleprompter control in order and toggles them from the keyboard", async () => {
+		const user = userEvent.setup();
+		const { container } = render(
+			<I18nProvider>
+				<ToolbarHarness />
+			</I18nProvider>,
+		);
+
+		const row = container.querySelector<HTMLElement>('[data-testid="notes-teleprompter-controls"]');
+		const controls = Array.from(
+			container.querySelectorAll<HTMLButtonElement>("[data-teleprompter-control]"),
+		);
+		expect(row).not.toBeNull();
+		expect(controls).toHaveLength(6);
+
+		controls[0]?.focus();
+		expect(document.activeElement).toBe(controls[0]);
+		for (let index = 1; index < controls.length; index++) {
+			await user.tab();
+			expect(document.activeElement).toBe(controls[index]);
+		}
+
+		controls[0]?.focus();
+		await user.keyboard("{Enter}");
+		expect(controls[0]).toHaveAttribute("aria-label", "Pause auto-scroll");
+
+		const mirror = controls.at(-1);
+		await user.click(mirror as HTMLButtonElement);
+		expect(mirror).toHaveAttribute("aria-pressed", "true");
+	});
+});

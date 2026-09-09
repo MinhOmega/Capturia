@@ -1,203 +1,136 @@
-import { afterAll, beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from "vitest";
 import {
-  DEFAULT_PREFS,
-  getExportFolder,
-  loadUserPreferences,
-  parentDirectoryOf,
-  saveUserPreferences,
-  USER_PREFERENCES_STORAGE_KEY,
-} from './userPreferences'
-import { DEFAULT_HIDE_HUD_FROM_RECORDING } from '../../electron/recordingPrivacy'
+	DEFAULT_PREFS,
+	getProjectFolder,
+	loadUserPreferences,
+	parentDirectoryOf,
+	saveUserPreferences,
+} from "./userPreferences";
 
-describe('parentDirectoryOf', () => {
-  it('returns the directory for a POSIX path', () => {
-    expect(parentDirectoryOf('/Users/me/Movies/clip.mp4')).toBe('/Users/me/Movies')
-  })
+describe("parentDirectoryOf", () => {
+	it("returns the directory for a POSIX path", () => {
+		expect(parentDirectoryOf("/Users/me/Movies/clip.mp4")).toBe("/Users/me/Movies");
+	});
 
-  it('returns the directory for a Windows path', () => {
-    expect(parentDirectoryOf('C:\\Users\\me\\Movies\\clip.mp4')).toBe('C:\\Users\\me\\Movies')
-  })
+	it("returns the directory for a Windows path", () => {
+		expect(parentDirectoryOf("C:\\Users\\me\\Movies\\clip.mp4")).toBe("C:\\Users\\me\\Movies");
+	});
 
-  it('preserves the POSIX root when the file is at /', () => {
-    expect(parentDirectoryOf('/video.mp4')).toBe('/')
-  })
+	it("preserves the POSIX root when the file is at /", () => {
+		expect(parentDirectoryOf("/video.mp4")).toBe("/");
+	});
 
-  it('preserves the Windows drive root with its trailing separator', () => {
-    expect(parentDirectoryOf('C:\\video.mp4')).toBe('C:\\')
-    expect(parentDirectoryOf('D:/video.mp4')).toBe('D:/')
-  })
+	it("preserves the Windows drive root with its trailing separator", () => {
+		expect(parentDirectoryOf("C:\\video.mp4")).toBe("C:\\");
+		expect(parentDirectoryOf("D:/video.mp4")).toBe("D:/");
+	});
 
-  it('returns null when no separator is present', () => {
-    expect(parentDirectoryOf('video.mp4')).toBeNull()
-    expect(parentDirectoryOf('')).toBeNull()
-  })
-})
+	it("returns null when no separator is present", () => {
+		expect(parentDirectoryOf("video.mp4")).toBeNull();
+		expect(parentDirectoryOf("")).toBeNull();
+	});
+});
 
-// vitest runs in the node environment here, so stub localStorage with an
-// in-memory shim that mirrors the subset of the Storage API we touch.
-function installLocalStorageStub() {
-  const store = new Map<string, string>()
-  const stub = {
-    getItem: (key: string) => store.get(key) ?? null,
-    setItem: (key: string, value: string) => {
-      store.set(key, String(value))
-    },
-    removeItem: (key: string) => {
-      store.delete(key)
-    },
-    clear: () => store.clear(),
-    key: (i: number) => Array.from(store.keys())[i] ?? null,
-    get length() {
-      return store.size
-    },
-  }
-  Object.defineProperty(globalThis, 'localStorage', {
-    value: stub,
-    configurable: true,
-    writable: true,
-  })
-}
+describe("projectFolder preference", () => {
+	// jsdom's localStorage isn't exposed as a global in this vitest setup, so
+	// stub it with an in-memory shim before each test. Mirrors what the real
+	// browser localStorage exposes, scoped to the keys we touch.
+	beforeEach(() => {
+		const store = new Map<string, string>();
+		const stub = {
+			getItem: (key: string) => store.get(key) ?? null,
+			setItem: (key: string, value: string) => {
+				store.set(key, String(value));
+			},
+			removeItem: (key: string) => {
+				store.delete(key);
+			},
+			clear: () => store.clear(),
+			key: (i: number) => Array.from(store.keys())[i] ?? null,
+			get length() {
+				return store.size;
+			},
+		};
+		Object.defineProperty(globalThis, "localStorage", {
+			value: stub,
+			configurable: true,
+		});
+	});
 
-describe('user preferences persistence', () => {
-  const originalDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+	it("defaults to null when nothing is persisted", () => {
+		expect(loadUserPreferences().projectFolder).toBeNull();
+		expect(getProjectFolder()).toBeUndefined();
+	});
 
-  beforeEach(() => {
-    installLocalStorageStub()
-  })
+	it("round-trips a saved project folder", () => {
+		saveUserPreferences({ projectFolder: "/Users/me/Projects/demos" });
+		expect(loadUserPreferences().projectFolder).toBe("/Users/me/Projects/demos");
+		expect(getProjectFolder()).toBe("/Users/me/Projects/demos");
+	});
 
-  afterAll(() => {
-    if (originalDescriptor) {
-      Object.defineProperty(globalThis, 'localStorage', originalDescriptor)
-    } else {
-      delete (globalThis as { localStorage?: unknown }).localStorage
-    }
-  })
+	it("ignores non-string persisted values and falls back to the default", () => {
+		localStorage.setItem("openscreen_user_preferences", JSON.stringify({ projectFolder: 42 }));
+		expect(loadUserPreferences().projectFolder).toBe(DEFAULT_PREFS.projectFolder);
+	});
 
-  it('returns defaults when nothing is persisted', () => {
-    expect(loadUserPreferences()).toEqual(DEFAULT_PREFS)
-    expect(getExportFolder()).toBeUndefined()
-  })
+	it("ignores empty-string persisted values and falls back to the default", () => {
+		localStorage.setItem("openscreen_user_preferences", JSON.stringify({ projectFolder: "" }));
+		expect(loadUserPreferences().projectFolder).toBe(DEFAULT_PREFS.projectFolder);
+	});
 
-  it('stores under the capturia-prefixed key', () => {
-    saveUserPreferences({ padding: 20 })
-    expect(USER_PREFERENCES_STORAGE_KEY.startsWith('capturia.')).toBe(true)
-    expect(localStorage.getItem(USER_PREFERENCES_STORAGE_KEY)).not.toBeNull()
-  })
+	it("is independent of exportFolder", () => {
+		saveUserPreferences({ exportFolder: "/Users/me/Downloads" });
+		saveUserPreferences({ projectFolder: "/Users/me/Projects/demos" });
+		const prefs = loadUserPreferences();
+		expect(prefs.exportFolder).toBe("/Users/me/Downloads");
+		expect(prefs.projectFolder).toBe("/Users/me/Projects/demos");
+	});
+});
 
-  it('round-trips a saved export folder', () => {
-    saveUserPreferences({ exportFolder: '/Users/me/Downloads' })
-    expect(loadUserPreferences().exportFolder).toBe('/Users/me/Downloads')
-    expect(getExportFolder()).toBe('/Users/me/Downloads')
-  })
+describe("user preferences", () => {
+	beforeEach(() => {
+		localStorage.clear();
+	});
 
-  it('merges partial saves without clobbering other fields', () => {
-    saveUserPreferences({ exportFolder: '/Users/me/Downloads' })
-    saveUserPreferences({ aspectRatio: '9:16', exportFormat: 'gif' })
-    const prefs = loadUserPreferences()
-    expect(prefs.exportFolder).toBe('/Users/me/Downloads')
-    expect(prefs.aspectRatio).toBe('9:16')
-    expect(prefs.exportFormat).toBe('gif')
-    expect(prefs.padding).toBe(DEFAULT_PREFS.padding)
-  })
+	it("persists the tray layout preference", () => {
+		saveUserPreferences({ trayLayout: "vertical" });
 
-  it('ignores non-string and empty export folders', () => {
-    localStorage.setItem(USER_PREFERENCES_STORAGE_KEY, JSON.stringify({ exportFolder: 42 }))
-    expect(loadUserPreferences().exportFolder).toBeNull()
-    localStorage.setItem(USER_PREFERENCES_STORAGE_KEY, JSON.stringify({ exportFolder: '' }))
-    expect(loadUserPreferences().exportFolder).toBeNull()
-  })
+		expect(loadUserPreferences().trayLayout).toBe("vertical");
+	});
 
-  it('falls back to defaults for invalid enum values', () => {
-    localStorage.setItem(
-      USER_PREFERENCES_STORAGE_KEY,
-      JSON.stringify({ aspectRatio: '3:2', exportQuality: 'ultra', exportFormat: 'webm' }),
-    )
-    const prefs = loadUserPreferences()
-    expect(prefs.aspectRatio).toBe(DEFAULT_PREFS.aspectRatio)
-    expect(prefs.exportQuality).toBe(DEFAULT_PREFS.exportQuality)
-    expect(prefs.exportFormat).toBe(DEFAULT_PREFS.exportFormat)
-  })
+	it("falls back to the default tray layout for invalid stored values", () => {
+		localStorage.setItem("openscreen_user_preferences", JSON.stringify({ trayLayout: "diagonal" }));
 
-  it('defaults the HUD orientation to horizontal and round-trips vertical', () => {
-    expect(loadUserPreferences().hudOrientation).toBe('horizontal')
-    saveUserPreferences({ hudOrientation: 'vertical' })
-    expect(loadUserPreferences().hudOrientation).toBe('vertical')
-    localStorage.setItem(
-      USER_PREFERENCES_STORAGE_KEY,
-      JSON.stringify({ hudOrientation: 'diagonal' }),
-    )
-    expect(loadUserPreferences().hudOrientation).toBe('horizontal')
-  })
+		expect(loadUserPreferences().trayLayout).toBe("horizontal");
+	});
 
-  it('defaults the notes teleprompter settings and round-trips speed and font size', () => {
-    expect(loadUserPreferences().notesTeleprompter).toEqual({ speed: 40, fontSize: 16 })
-    saveUserPreferences({ notesTeleprompter: { speed: 75, fontSize: 24 } })
-    expect(loadUserPreferences().notesTeleprompter).toEqual({ speed: 75, fontSize: 24 })
-    localStorage.setItem(
-      USER_PREFERENCES_STORAGE_KEY,
-      JSON.stringify({ notesTeleprompter: { speed: 9_999, fontSize: 'big', extra: true } }),
-    )
-    expect(loadUserPreferences().notesTeleprompter).toEqual({ speed: 150, fontSize: 16 })
-    localStorage.setItem(USER_PREFERENCES_STORAGE_KEY, JSON.stringify({ notesTeleprompter: 3 }))
-    expect(loadUserPreferences().notesTeleprompter).toEqual({ speed: 40, fontSize: 16 })
-  })
+	it("persists the software encoder preference", () => {
+		saveUserPreferences({ preferSoftwareEncoder: true });
 
-  it('falls back to defaults for out-of-range numbers', () => {
-    localStorage.setItem(
-      USER_PREFERENCES_STORAGE_KEY,
-      JSON.stringify({ padding: 150, seekStepSeconds: 0, previewPlaybackRate: 32 }),
-    )
-    const prefs = loadUserPreferences()
-    expect(prefs.padding).toBe(DEFAULT_PREFS.padding)
-    expect(prefs.seekStepSeconds).toBe(DEFAULT_PREFS.seekStepSeconds)
-    expect(prefs.previewPlaybackRate).toBe(DEFAULT_PREFS.previewPlaybackRate)
-  })
+		expect(loadUserPreferences().preferSoftwareEncoder).toBe(true);
+	});
 
-  it('accepts in-range playback preferences', () => {
-    saveUserPreferences({ seekStepSeconds: 10, previewPlaybackRate: 1.5 })
-    const prefs = loadUserPreferences()
-    expect(prefs.seekStepSeconds).toBe(10)
-    expect(prefs.previewPlaybackRate).toBe(1.5)
-  })
+	it("falls back to the default software encoder preference for invalid stored values", () => {
+		localStorage.setItem(
+			"openscreen_user_preferences",
+			JSON.stringify({ preferSoftwareEncoder: "yes" }),
+		);
 
-  it('survives malformed JSON in storage', () => {
-    localStorage.setItem(USER_PREFERENCES_STORAGE_KEY, '{not json')
-    expect(loadUserPreferences()).toEqual(DEFAULT_PREFS)
-  })
+		expect(loadUserPreferences().preferSoftwareEncoder).toBe(false);
+	});
 
-  it('survives a throwing localStorage', () => {
-    Object.defineProperty(globalThis, 'localStorage', {
-      value: {
-        getItem: () => {
-          throw new Error('denied')
-        },
-        setItem: () => {
-          throw new Error('denied')
-        },
-      },
-      configurable: true,
-      writable: true,
-    })
-    expect(loadUserPreferences()).toEqual(DEFAULT_PREFS)
-    expect(() => saveUserPreferences({ padding: 10 })).not.toThrow()
-  })
+	it("persists the software encoder fallback notice suppression", () => {
+		saveUserPreferences({ hideSoftwareEncoderFallbackNotice: true });
 
-  describe('hideHudFromRecording (D1)', () => {
-    it('defaults to on and matches the main-process mirror', () => {
-      expect(DEFAULT_PREFS.hideHudFromRecording).toBe(true)
-      // Nothing under src/ may import from electron/, so the default is written
-      // twice. This is the assertion that keeps the two copies honest.
-      expect(DEFAULT_PREFS.hideHudFromRecording).toBe(DEFAULT_HIDE_HUD_FROM_RECORDING)
-    })
+		expect(loadUserPreferences().hideSoftwareEncoderFallbackNotice).toBe(true);
+	});
 
-    it('round-trips and ignores a non-boolean stored value', () => {
-      saveUserPreferences({ hideHudFromRecording: false })
-      expect(loadUserPreferences().hideHudFromRecording).toBe(false)
-      localStorage.setItem(
-        USER_PREFERENCES_STORAGE_KEY,
-        JSON.stringify({ hideHudFromRecording: 'nope' }),
-      )
-      expect(loadUserPreferences().hideHudFromRecording).toBe(true)
-    })
-  })
-})
+	it("falls back to showing the software encoder fallback notice for invalid stored values", () => {
+		localStorage.setItem(
+			"openscreen_user_preferences",
+			JSON.stringify({ hideSoftwareEncoderFallbackNotice: "yes" }),
+		);
+
+		expect(loadUserPreferences().hideSoftwareEncoderFallbackNotice).toBe(false);
+	});
+});

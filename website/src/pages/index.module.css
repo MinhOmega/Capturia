@@ -1,0 +1,448 @@
+/* Marketing landing page. Both themes — every colour here is an --os-* token,
+   which swaps under [data-theme="light"]; nothing may be a literal. */
+
+.hero,
+.features,
+.quickStart {
+	background: var(--os-bg);
+	color: var(--os-fg);
+}
+
+/* A full screen, as the design has it: the recreation is meant to begin only
+   once the hero has been scrolled past. */
+.hero {
+	position: relative;
+	/* One screen, navbar included. At a flat 100vh the hero is 60px taller than
+	   the viewport it is meant to fill, so its bottom edge — and the scroll hint
+	   pinned to it — sat below the fold, which is the one place an edge marker
+	   must not be. */
+	min-height: calc(100vh - var(--ifm-navbar-height, 60px));
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 88px 28px 56px;
+	text-align: center;
+	background: radial-gradient(ellipse 60% 40% at 50% 0%, var(--os-accent-wash), transparent 60%), var(--os-bg);
+}
+
+.heroInner {
+	max-width: 720px;
+	margin: 0 auto;
+}
+
+.badge {
+	display: inline-flex;
+	align-items: center;
+	padding: 0.3rem 0.85rem;
+	border-radius: 999px;
+	background: var(--os-accent-soft);
+	border: 1px solid var(--os-accent-border);
+	color: var(--os-accent);
+	font-size: 0.8rem;
+	font-weight: 600;
+	margin-bottom: 22px;
+}
+
+/* --os-accent clears 4.5:1 against --os-bg, but the pill is not --os-bg: its own
+   --os-accent-soft tint composites to rgb(224,237,234) and takes the label down
+   to 4.28:1 at 12.8px/600, the one place on the page where accent text sits on
+   an accent-tinted surface. Light only — --os-brand-lo measures 4.45:1 on the
+   dark pill, so unscoped this would trade the failure rather than fix it. */
+:global([data-theme="light"]) .badge {
+	color: var(--os-brand-lo);
+}
+
+.title {
+	margin: 20px 0 0;
+	font-size: clamp(42px, 6vw, 68px);
+	font-weight: 700;
+	letter-spacing: -0.03em;
+	line-height: 1.05;
+	color: var(--os-fg-emphasis);
+}
+
+/* Second line of the h1. Block-level at the tagline's own size so the heading
+   reads as wordmark-over-descriptor and not as one oversized sentence. */
+.titleTagline {
+	display: block;
+	margin: 20px auto 0;
+	max-width: 560px;
+	font-size: 19px;
+	font-weight: 400;
+	letter-spacing: normal;
+	line-height: 1.55;
+	color: var(--os-fg-2);
+}
+
+/* Zero top margin: this paragraph now continues the line the h1's descriptor
+   started, so it has to sit at line-box distance, not block distance. */
+.tagline {
+	font-size: 19px;
+	line-height: 1.55;
+	color: var(--os-fg-2);
+	margin: 0 auto;
+	max-width: 560px;
+}
+
+.actions {
+	display: flex;
+	gap: 12px;
+	justify-content: center;
+	flex-wrap: wrap;
+	margin: 30px 0 0;
+}
+
+.primaryCta,
+.secondaryCta {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.65rem 1.35rem;
+	border-radius: 9px;
+	font-weight: 600;
+	font-size: 0.95rem;
+	text-decoration: none;
+	transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* The glow is derived from the accent rather than written as a literal: the old
+   rgba(16,185,129,.25) was the *dark* accent, and it shipped unchanged into the
+   light theme. Foreground is --os-bg, not #fff — white on the light-theme accent
+   measures 3.76:1, which is a Level AA failure on the page's main call to
+   action. Against --os-bg the same button measures 7.81:1 dark and 4.96:1 light:
+   AA in both, AAA in one. */
+.primaryCta {
+	background: var(--os-accent);
+	color: var(--os-bg);
+	box-shadow: 0 8px 24px var(--os-accent-ring);
+}
+
+.primaryCta:hover {
+	transform: translateY(-2px);
+	color: var(--os-bg);
+}
+
+.secondaryCta {
+	background: transparent;
+	color: var(--os-fg-2);
+	border: 1px solid var(--os-border);
+}
+
+.secondaryCta:hover {
+	transform: translateY(-2px);
+	border-color: var(--os-fg-2);
+	color: var(--os-fg-2);
+}
+
+/* ---- shared section chrome ---- */
+
+.sectionKicker {
+	font-family: var(--ifm-font-family-monospace);
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: 0.16em;
+	color: var(--os-accent);
+	text-transform: uppercase;
+}
+
+.sectionTitle {
+	margin: 14px 0 0 !important;
+	font-size: clamp(24px, 2.8vw, 32px);
+	font-weight: 750 !important;
+	letter-spacing: -0.025em;
+	color: var(--os-fg-emphasis) !important;
+}
+
+/* ---- coda ----
+   Three claims that are not events: a licence, an absence of network traffic, a
+   list of platforms. Everything that *is* an event — the editor, the recorder,
+   the captions, the agent — is demonstrated above, so these three are set as
+   columns of prose rather than as cards: a card is a container for a thing, and
+   there is no thing here, only a sentence. The rules between them are the only
+   chrome, and they are what makes three paragraphs read as one list. */
+
+.features {
+	padding: 140px 28px 0;
+}
+
+.featuresInner {
+	max-width: 1080px;
+	margin: 0 auto;
+	text-align: center;
+}
+
+.trio {
+	margin-top: 52px;
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	text-align: left;
+}
+
+.trioItem {
+	padding: 6px 38px;
+	border-left: 1px solid var(--os-border-soft);
+}
+
+/* The first column's rule would be a rule against nothing, and its text has to
+   line up with the heading above it, so it keeps the gutter and loses the edge.
+   The last one only loses the gutter. */
+.trioItem:first-child {
+	padding-left: 0;
+	border-left: none;
+}
+
+.trioItem:last-child {
+	padding-right: 0;
+}
+
+.trioTick {
+	color: var(--os-accent);
+}
+
+.trioItem h3 {
+	margin: 16px 0 0;
+	font-size: 16.5px;
+	font-weight: 650;
+	letter-spacing: -0.015em;
+	color: var(--os-fg-emphasis);
+}
+
+.trioItem p {
+	margin: 10px 0 0;
+	font-size: 13.5px;
+	line-height: 1.75;
+	color: var(--os-fg);
+	text-wrap: pretty;
+}
+
+@media (max-width: 900px) {
+	.trio {
+		grid-template-columns: 1fr;
+		gap: 34px;
+	}
+
+	/* Stacked, a left rule points down the page instead of between the columns
+	   it was separating. */
+	.trioItem,
+	.trioItem:first-child {
+		padding: 0;
+		border-left: none;
+	}
+}
+
+/* ---- quick start ---- */
+
+.quickStart {
+	padding: 140px 28px 100px;
+	display: flex;
+	justify-content: center;
+}
+
+.quickStartInner {
+	width: 100%;
+	max-width: 1080px;
+	text-align: center;
+}
+
+/* Grid items stretch, which is what keeps the three panes equal height even
+   though only two of them carry a command. */
+.installGrid {
+	margin-top: 52px;
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 0.875rem;
+	text-align: left;
+}
+
+@media (max-width: 700px) {
+	.installGrid {
+		grid-template-columns: 1fr;
+	}
+}
+
+.artifactChip {
+	margin-left: auto;
+	padding: 1px 7px;
+	border-radius: 999px;
+	border: 1px solid var(--os-border-soft);
+	font-family: var(--ifm-font-family-monospace);
+	font-size: 10.5px;
+	color: var(--os-muted);
+}
+
+/* Windows has no command to run. Styling the line as prose rather than as
+   accented code keeps the pane the same size without implying it's typed. */
+.plainAction {
+	color: var(--os-fg-2);
+	font-family: var(--ifm-font-family-base);
+	font-style: italic;
+}
+
+/* Flex column so .terminalBody can absorb the slack: the install commands are
+   1–3 lines depending on platform, and without this the foot rule would sit at
+   a different height in each of the three panes. */
+.terminal {
+	display: flex;
+	flex-direction: column;
+	border-radius: 14px;
+	border: 1px solid var(--os-border);
+	background: var(--os-surface-1);
+	box-shadow: var(--os-elev-card);
+	overflow: hidden;
+	text-align: left;
+}
+
+.terminalHeader {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 10px 16px;
+	border-bottom: 1px solid var(--os-border-soft);
+	font-size: 12px;
+	font-weight: 500;
+	color: var(--os-fg-2);
+}
+
+.terminalBody {
+	flex: 1;
+	margin: 0;
+	padding: 1rem;
+	font-size: 12.5px;
+	line-height: 1.7;
+	color: var(--os-fg-2);
+	overflow-x: auto;
+	white-space: pre-wrap;
+}
+
+/* Colours the `#` comment lines inside the three install panes. */
+.meta {
+	color: var(--os-muted);
+}
+
+/* Second half of each pane: what the platform actually gives you. */
+.paneFoot {
+	margin: 0;
+	padding: 0.875rem 1rem;
+	border-top: 1px solid var(--os-border-soft);
+	font-size: 12px;
+	line-height: 1.55;
+	color: var(--os-muted);
+}
+
+.accentText {
+	color: var(--os-accent);
+}
+
+.quickStartNote {
+	margin: 30px auto 0;
+	max-width: 700px;
+	font-size: 12.5px;
+	line-height: 1.7;
+	color: var(--os-muted);
+}
+
+.quickStartNote a {
+	color: var(--os-accent);
+}
+
+.quickStartNote code {
+	margin: 0 2px;
+	padding: 1px 5px;
+	border-radius: 5px;
+	border: 1px solid var(--os-border-soft);
+	background: var(--os-surface-1);
+	font-size: 11.5px;
+	color: var(--os-fg-2);
+}
+
+/* ---- phone ----
+   The 28px section gutter is a third of the width of a small phone. */
+
+@media (max-width: 600px) {
+	.hero {
+		padding: 64px 20px 0;
+	}
+
+	.features {
+		padding: 96px 20px 0;
+	}
+
+	.quickStart {
+		padding: 96px 20px 76px;
+	}
+}
+
+
+/* ---- hero, v4 ---- */
+
+.badgeRow {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 10px;
+	margin: 0 0 16px;
+}
+
+.badgeNew {
+	display: inline-flex;
+	align-items: center;
+	padding: 3px 10px;
+	border-radius: 999px;
+	background: var(--os-accent);
+	/* --os-bg, not a literal near-black: the accent swaps under
+	   [data-theme="light"] and a fixed foreground therefore sits on two
+	   different greens. #04110b measured 7.59:1 on the dark accent and 3.75:1 on
+	   the light one — an AA failure at this size. Against --os-bg the same label
+	   is 7.81:1 and 4.96:1, which is the CTA's solution and the CTA's reason. */
+	color: var(--os-bg);
+	font-family: var(--ifm-font-family-monospace);
+	font-size: 10.5px;
+	font-weight: 700;
+	letter-spacing: 0.06em;
+}
+
+.badgeText {
+	font-size: 13.5px;
+	color: var(--os-fg-2);
+}
+
+/* Pinned to the bottom of the first screen, where an edge belongs, rather than
+   trailing the copy as one more paragraph. No media gate any more: it used to
+   carry a claim that was only true where the driver runs, and "there is more
+   below" is true everywhere. */
+.scrollHint {
+	position: absolute;
+	left: 50%;
+	/* 81px, the design's own offset. At 34 it clung to the edge with a void
+	   above it; this reads as the bottom of a screen rather than as the bottom
+	   of the window. */
+	bottom: 81px;
+	transform: translateX(-50%);
+	margin: 0;
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	font-size: 13px;
+	font-weight: 500;
+	color: var(--os-fg-2);
+	animation: os-scroll-nudge 2.4s var(--ifm-transition-timing-default, ease-in-out) infinite;
+}
+
+/* The design's nudge: four pixels, slowly, which is enough to read as "keep
+   going" and little enough not to nag. */
+@keyframes os-scroll-nudge {
+	0%,
+	100% {
+		transform: translateX(-50%) translateY(0);
+	}
+
+	50% {
+		transform: translateX(-50%) translateY(4px);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.scrollHint {
+		animation: none;
+	}
+}

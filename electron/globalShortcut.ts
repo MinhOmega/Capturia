@@ -1,259 +1,77 @@
-// OS-level (global) shortcuts: "open Capturia", "stop recording" and
-// "flag this moment" (D2).
-//
-// The global actions share one registry, one persistence file
-// (`shortcuts.json`, the same file the editor's ShortcutsConfigDialog writes)
-// and one accelerator conversion. The Electron `globalShortcut` API is injected
-// (`GlobalShortcutRegistry`) so the registration logic runs under vitest.
-//
-// Rules:
-// - register the NEW accelerator before unregistering the old one, so a failure
-//   leaves the previous binding working;
-// - a failure is reported to the caller (`{ ok: false, error }`), never thrown;
-// - two actions may not share an accelerator.
+import fs from "node:fs/promises";
+import { globalShortcut } from "electron";
+import { type ShortcutBinding } from "../src/lib/shortcuts";
+import { SHORTCUTS_FILE } from "./ipc/handlers";
 
-import fs from 'node:fs/promises'
-import { DEFAULT_SHORTCUTS, type ShortcutBinding } from '../src/lib/shortcuts'
-import { atomicWriteJson } from './ipc/atomicSave'
+const DEFAULT_OPEN_APP_BINDING: ShortcutBinding = { key: "o", ctrl: true, shift: true };
 
-export type GlobalShortcutAction = 'openApp' | 'stopRecording' | 'markMoment'
-
-export const GLOBAL_SHORTCUT_ACTIONS: readonly GlobalShortcutAction[] = [
-  'openApp',
-  'stopRecording',
-  'markMoment',
-]
-
-/** Same file `get-shortcuts` / `save-shortcuts` in ipc/handlers.ts read and write. */
-export const SHORTCUTS_FILE_NAME = 'shortcuts.json'
-
-export interface GlobalShortcutRegistry {
-  register: (accelerator: string, callback: () => void) => boolean
-  unregister: (accelerator: string) => void
-  unregisterAll: () => void
-  /** Optional: Electron's `isRegistered`; used for the conflict pre-check when available. */
-  isRegistered?: (accelerator: string) => boolean
-}
-
-export type GlobalShortcutError = 'empty' | 'conflict' | 'unavailable'
-
-export interface GlobalShortcutResult {
-  ok: boolean
-  /** Accelerator now bound to the action (the previous one when `ok` is false). */
-  accelerator: string
-  error?: GlobalShortcutError
-}
-
-// Maps KeyboardEvent.key values to Electron accelerator key names.
+// Maps KeyboardEvent.key values to Electron accelerator key names
 const KEY_TO_ACCELERATOR: Record<string, string> = {
-  ' ': 'Space',
-  '+': 'Plus',
-  '-': 'numsub',
-  '*': 'nummult',
-  '/': 'numdiv',
-  arrowup: 'Up',
-  arrowdown: 'Down',
-  arrowleft: 'Left',
-  arrowright: 'Right',
-  escape: 'Escape',
-  enter: 'Return',
-  backspace: 'Backspace',
-  delete: 'Delete',
-  tab: 'Tab',
-  home: 'Home',
-  end: 'End',
-  pageup: 'PageUp',
-  pagedown: 'PageDown',
-  insert: 'Insert',
+	" ": "Space",
+	"+": "Plus",
+	"-": "numsub",
+	"*": "nummult",
+	"/": "numdiv",
+	arrowup: "Up",
+	arrowdown: "Down",
+	arrowleft: "Left",
+	arrowright: "Right",
+	escape: "Escape",
+	enter: "Return",
+	backspace: "Backspace",
+	delete: "Delete",
+	tab: "Tab",
+};
+
+function bindingToAccelerator(binding: ShortcutBinding): string {
+	const parts: string[] = [];
+	if (binding.ctrl) parts.push("CommandOrControl");
+	if (binding.shift) parts.push("Shift");
+	if (binding.alt) parts.push("Alt");
+
+	const keyLower = binding.key.toLowerCase();
+	const acceleratorKey = KEY_TO_ACCELERATOR[keyLower] ?? binding.key.toUpperCase();
+	parts.push(acceleratorKey);
+
+	return parts.join("+");
 }
 
-const ACCELERATOR_TO_KEY: Record<string, string> = Object.fromEntries(
-  Object.entries(KEY_TO_ACCELERATOR).map(([key, accelerator]) => [accelerator.toLowerCase(), key]),
-)
+let currentAccelerator: string | null = null;
 
-/** `{ key: 'o', ctrl, shift }` -> `CommandOrControl+Shift+O`. */
-export function bindingToAccelerator(binding: ShortcutBinding): string {
-  const parts: string[] = []
-  if (binding.ctrl) parts.push('CommandOrControl')
-  if (binding.shift) parts.push('Shift')
-  if (binding.alt) parts.push('Alt')
+export function registerOpenAppShortcut(binding: ShortcutBinding, onTrigger: () => void): boolean {
+	const accelerator = bindingToAccelerator(binding);
 
-  const keyLower = binding.key.toLowerCase()
-  const isSingleCharOrFKey = keyLower.length === 1 || /^f\d{1,2}$/.test(keyLower)
-  const acceleratorKey =
-    KEY_TO_ACCELERATOR[keyLower] ?? (isSingleCharOrFKey ? keyLower.toUpperCase() : binding.key)
-  parts.push(acceleratorKey)
+	if (accelerator === currentAccelerator) {
+		return true;
+	}
 
-  return parts.join('+')
+	// Register the new shortcut before unregistering the old, so a failure leaves the old binding intact
+	const success = globalShortcut.register(accelerator, onTrigger);
+
+	if (success) {
+		if (currentAccelerator) {
+			globalShortcut.unregister(currentAccelerator);
+		}
+		currentAccelerator = accelerator;
+		console.log(`Global shortcut registered: ${accelerator}`);
+	} else {
+		console.warn(`Failed to register global shortcut: ${accelerator}`);
+	}
+
+	return success;
 }
 
-/**
- * Inverse of `bindingToAccelerator` for the raw accelerator strings the HUD
- * still sends (`Command+Shift+2`, `Control+Alt+R`). Command/Control/Cmd/Ctrl
- * all map to the platform-neutral `ctrl` flag. Returns null for an empty or
- * modifier-only string.
- */
-export function acceleratorToBinding(accelerator: string): ShortcutBinding | null {
-  const parts = accelerator
-    .split('+')
-    .map((part) => part.trim())
-    .filter(Boolean)
-  if (parts.length === 0) return null
-
-  const binding: ShortcutBinding = { key: '' }
-  for (const part of parts) {
-    const lower = part.toLowerCase()
-    switch (lower) {
-      case 'commandorcontrol':
-      case 'cmdorctrl':
-      case 'command':
-      case 'cmd':
-      case 'control':
-      case 'ctrl':
-      case 'super':
-      case 'meta':
-        binding.ctrl = true
-        break
-      case 'shift':
-        binding.shift = true
-        break
-      case 'alt':
-      case 'option':
-      case 'altgr':
-        binding.alt = true
-        break
-      default:
-        binding.key = ACCELERATOR_TO_KEY[lower] ?? (part.length === 1 ? lower : lower)
-    }
-  }
-  if (!binding.key) return null
-  return binding
+export async function loadAndRegisterGlobalShortcut(onTrigger: () => void): Promise<void> {
+	try {
+		const data = await fs.readFile(SHORTCUTS_FILE, "utf-8");
+		const shortcuts = JSON.parse(data);
+		const binding = shortcuts.openApp || DEFAULT_OPEN_APP_BINDING;
+		registerOpenAppShortcut(binding, onTrigger);
+	} catch {
+		registerOpenAppShortcut(DEFAULT_OPEN_APP_BINDING, onTrigger);
+	}
 }
 
-/** Global accelerators without a modifier would swallow a plain key system-wide. */
-export function isGlobalBindingAllowed(binding: ShortcutBinding): boolean {
-  return Boolean(binding.ctrl || binding.alt) && binding.key.trim().length > 0
-}
-
-export const DEFAULT_GLOBAL_BINDINGS: Record<GlobalShortcutAction, ShortcutBinding> = {
-  openApp: DEFAULT_SHORTCUTS.openApp,
-  stopRecording: DEFAULT_SHORTCUTS.stopRecording,
-  markMoment: DEFAULT_SHORTCUTS.markMoment,
-}
-
-type Handlers = Record<GlobalShortcutAction, () => void>
-
-export class GlobalShortcutManager {
-  private readonly current = new Map<GlobalShortcutAction, string>()
-
-  constructor(
-    private readonly registry: GlobalShortcutRegistry,
-    private readonly handlers: Handlers,
-  ) {}
-
-  getAccelerator(action: GlobalShortcutAction): string | null {
-    return this.current.get(action) ?? null
-  }
-
-  /** Register `binding` (or a raw accelerator) for `action`, keeping the old one on failure. */
-  register(action: GlobalShortcutAction, binding: ShortcutBinding | string): GlobalShortcutResult {
-    const previous = this.current.get(action) ?? ''
-    const accelerator = typeof binding === 'string' ? binding.trim() : bindingToAccelerator(binding)
-    if (!accelerator) {
-      return { ok: false, accelerator: previous, error: 'empty' }
-    }
-    if (accelerator === previous) {
-      return { ok: true, accelerator }
-    }
-
-    for (const [otherAction, otherAccelerator] of this.current) {
-      if (otherAction !== action && otherAccelerator === accelerator) {
-        return { ok: false, accelerator: previous, error: 'conflict' }
-      }
-    }
-
-    // Register the new shortcut before unregistering the old, so a failure
-    // leaves the old binding intact.
-    let registered = false
-    try {
-      registered = this.registry.register(accelerator, () => this.handlers[action]())
-    } catch (error) {
-      console.warn(`[global-shortcut] register threw for ${accelerator}:`, error)
-      registered = false
-    }
-    if (!registered) {
-      console.warn(`[global-shortcut] failed to register ${action}: ${accelerator}`)
-      return { ok: false, accelerator: previous, error: 'unavailable' }
-    }
-
-    if (previous) {
-      try {
-        this.registry.unregister(previous)
-      } catch {
-        // ignore unregister errors
-      }
-    }
-    this.current.set(action, accelerator)
-    console.log(`[global-shortcut] ${action} = ${accelerator}`)
-    return { ok: true, accelerator }
-  }
-
-  /** Register every action from `bindings`, falling back to the default binding when a custom one fails. */
-  registerAll(bindings: Partial<Record<GlobalShortcutAction, ShortcutBinding>>): void {
-    for (const action of GLOBAL_SHORTCUT_ACTIONS) {
-      const binding = bindings[action] ?? DEFAULT_GLOBAL_BINDINGS[action]
-      const result = this.register(action, binding)
-      if (!result.ok && bindings[action]) {
-        this.register(action, DEFAULT_GLOBAL_BINDINGS[action])
-      }
-    }
-  }
-
-  unregisterAll(): void {
-    this.registry.unregisterAll()
-    this.current.clear()
-  }
-}
-
-function isBinding(value: unknown): value is ShortcutBinding {
-  return (
-    Boolean(value) &&
-    typeof value === 'object' &&
-    typeof (value as ShortcutBinding).key === 'string'
-  )
-}
-
-/** Read the global bindings stored in `shortcuts.json` (missing/invalid entries are skipped). */
-export async function readStoredGlobalBindings(
-  shortcutsFile: string,
-): Promise<Partial<Record<GlobalShortcutAction, ShortcutBinding>>> {
-  try {
-    const data = await fs.readFile(shortcutsFile, 'utf-8')
-    const parsed = JSON.parse(data) as Record<string, unknown>
-    const bindings: Partial<Record<GlobalShortcutAction, ShortcutBinding>> = {}
-    for (const action of GLOBAL_SHORTCUT_ACTIONS) {
-      const value = parsed?.[action]
-      if (isBinding(value)) bindings[action] = value
-    }
-    return bindings
-  } catch {
-    return {}
-  }
-}
-
-/** Merge one global binding into `shortcuts.json` (used by the HUD's legacy raw-accelerator path). */
-export async function persistStoredGlobalBinding(
-  shortcutsFile: string,
-  action: GlobalShortcutAction,
-  binding: ShortcutBinding,
-): Promise<void> {
-  let existing: Record<string, unknown> = {}
-  try {
-    existing = JSON.parse(await fs.readFile(shortcutsFile, 'utf-8')) as Record<string, unknown>
-    if (!existing || typeof existing !== 'object') existing = {}
-  } catch {
-    existing = {}
-  }
-  existing[action] = binding
-  await atomicWriteJson(shortcutsFile, existing, { space: 2 })
+export function unregisterAllGlobalShortcuts(): void {
+	globalShortcut.unregisterAll();
 }

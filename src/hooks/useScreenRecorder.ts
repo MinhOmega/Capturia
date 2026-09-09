@@ -1,2000 +1,2353 @@
-import { useState, useRef, useEffect } from 'react'
-import { fixWebmDuration } from '@fix-webm-duration/fix'
-import { toast } from 'sonner'
-import { computeCameraOverlayRect, type CameraOverlayShape } from './cameraOverlay'
-import { createRecorderHandle, type RecorderHandle } from './recorderHandle'
+import { fixWebmDuration } from "@fix-webm-duration/fix";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+import { useScopedT } from "@/contexts/I18nContext";
+import { MIC_GAIN_BOOST, mixAudioTracks } from "@/lib/audioMix";
 import {
-  beginStopTransition,
-  canPauseRecording,
-  canRequestDiscard,
-  canRequestRestart,
-  planNativeStopSideEffects,
-  planRecorderExitInterruption,
-  resolveStopRoute,
-  shouldStartAfterRestart,
-  type RecordingPhase,
-  type RecordingTransitionState,
-} from './recordingPhase'
-import { useI18n } from '@/i18n'
-import { mixAudioTracks, normalizeMicrophoneGain } from '@/lib/audioMix'
-import { resolveNativeRecorderStartFailureMessage } from '@/lib/permissions/nativeRecorderErrors'
-import { assessRecordingDiskSpace, formatAvailableSpace } from '@/lib/recordingDiskSpace'
-import { reportUserActionError } from '@/lib/userErrorFeedback'
-import { webcamDeviceIdentityFrom } from '@/lib/webcamDeviceIdentity'
+	type NativeLinuxRecordingRequest,
+	portalOwnsSourceSelection,
+} from "@/lib/nativeLinuxRecording";
+import {
+	type NativeMacRecordingRequest,
+	parseMacDisplayIdFromSourceId,
+	parseMacWindowIdFromSourceId,
+} from "@/lib/nativeMacRecording";
+import {
+	type NativeWindowsRecordingRequest,
+	parseWindowHandleFromSourceId,
+} from "@/lib/nativeWindowsRecording";
+import type { CursorCaptureMode, RecordedVideoAssetInput } from "@/lib/recordingSession";
+import { requestCameraAccess } from "@/lib/requestCameraAccess";
+import { loadUserPreferences, saveUserPreferences } from "@/lib/userPreferences";
+import { createRecorderHandle, type RecorderHandle } from "./recorderHandle";
+import { webcamDeviceIdentityFrom } from "./webcamDeviceIdentity";
+
+const TARGET_FRAME_RATE = 60;
+const MIN_FRAME_RATE = 30;
+const TARGET_WIDTH = 3840;
+const TARGET_HEIGHT = 2160;
+const FOUR_K_PIXELS = TARGET_WIDTH * TARGET_HEIGHT;
+const QHD_WIDTH = 2560;
+const QHD_HEIGHT = 1440;
+const QHD_PIXELS = QHD_WIDTH * QHD_HEIGHT;
+
+const BITRATE_4K = 45_000_000;
+const BITRATE_QHD = 28_000_000;
+const BITRATE_BASE = 18_000_000;
+const HIGH_FRAME_RATE_THRESHOLD = 60;
+const HIGH_FRAME_RATE_BOOST = 1.7;
+
+const DEFAULT_WIDTH = 1920;
+const DEFAULT_HEIGHT = 1080;
+
+const CODEC_ALIGNMENT = 2;
+
+const BITS_PER_MEGABIT = 1_000_000;
+const CHROME_MEDIA_SOURCE = "desktop";
+const RECORDING_FILE_PREFIX = "recording-";
+const VIDEO_FILE_EXTENSION = ".webm";
+const WEBCAM_FILE_SUFFIX = "-webcam";
+
+/**
+ * The cursor mode a BROWSER-pipeline take can actually honour, which is not always the
+ * one the user picked.
+ *
+ * Only win32 reaches that pipeline through `getDisplayMedia`, the sole browser API here
+ * that can exclude the system cursor (`cursor: "never"`). Everywhere else the
+ * desktop-capture stream bakes the real cursor into the pixels, so keeping
+ * "editable-overlay" would start cursor telemetry and have the editor composite a
+ * SECOND, synthetic cursor on top of it.
+ *
+ * This only bites when a platform falls back to browser capture with the editable cursor
+ * selected — on macOS 12 that is now the normal path (#515), and on Linux it is the
+ * no-PipeWire path, where the same latent defect lives.
+ *
+ * One function rather than the expression inlined twice: the mode reported to the main
+ * process at start and the mode persisted at finalize have to agree, and they are ~1200
+ * lines apart.
+ */
+function effectiveBrowserCursorMode(
+	platform: string,
+	requested: CursorCaptureMode,
+): CursorCaptureMode {
+	return platform === "win32" ? requested : "system";
+}
+
+const AUDIO_BITRATE_VOICE = 128_000;
+const AUDIO_BITRATE_SYSTEM = 192_000;
+
+const WEBCAM_TARGET_FRAME_RATE = 30;
 
 type UseScreenRecorderReturn = {
-  recording: boolean
-  recordingState: RecordingPhase
-  /**
-   * Pause/resume is available on the MediaRecorder path and, since A5, on the native
-   * macOS path when the running helper announced pause support (old helper: hidden).
-   */
-  canPause: boolean
-  /**
-   * The native macOS helper announced system-audio capture on its last start
-   * (remembered across launches). The HUD hides the system-audio toggle on macOS
-   * until this is true; on Windows/Linux the browser path handles it directly.
-   */
-  nativeSystemAudioSupported: boolean
-  toggleRecording: () => void
-  pauseRecording: () => void
-  resumeRecording: () => void
-  discardRecording: () => void
-  /** Discard the active session and start a fresh one with the same source, skipping the HUD countdown. */
-  restartRecording: () => void
-  startTimeRef: React.RefObject<number>
-  cumulativePauseMsRef: React.RefObject<number>
-  pauseStartTimeRef: React.RefObject<number>
-}
+	recording: boolean;
+	paused: boolean;
+	saving: boolean;
+	elapsedSeconds: number;
+	toggleRecording: () => void;
+	/** Starts recording with no countdown overlay. Used by the headless CLI runner. */
+	startRecordingImmediately: () => Promise<void>;
+	togglePaused: () => void;
+	canPauseRecording: boolean;
+	restartRecording: () => void;
+	cancelRecording: () => void;
+	microphoneEnabled: boolean;
+	setMicrophoneEnabled: (enabled: boolean) => void;
+	microphoneDeviceId: string | undefined;
+	setMicrophoneDeviceId: (deviceId: string | undefined) => void;
+	microphoneDeviceName: string | undefined;
+	setMicrophoneDeviceName: (deviceName: string | undefined) => void;
+	webcamDeviceId: string | undefined;
+	setWebcamDeviceId: (deviceId: string | undefined) => void;
+	webcamDeviceName: string | undefined;
+	setWebcamDeviceName: (deviceName: string | undefined) => void;
+	systemAudioEnabled: boolean;
+	setSystemAudioEnabled: (enabled: boolean) => void;
+	webcamEnabled: boolean;
+	setWebcamEnabled: (enabled: boolean) => Promise<boolean>;
+	cursorCaptureMode: CursorCaptureMode;
+	setCursorCaptureMode: (mode: CursorCaptureMode) => void;
+	softwareEncoderFallbackNoticeVisible: boolean;
+	dismissSoftwareEncoderFallbackNotice: (dontShowAgain?: boolean) => void;
+};
 
-type UseScreenRecorderOptions = {
-  includeCamera?: boolean
-  cameraShape?: CameraOverlayShape
-  cameraSizePercent?: number
-  /** Camera chosen in the HUD picker (Chromium deviceId); empty = automatic pick. */
-  cameraDeviceId?: string
-  /** Label of that camera, forwarded to the native helper which matches by name. */
-  cameraDeviceName?: string
-  captureProfile?: CaptureProfile
-  captureFrameRate?: CaptureFrameRate
-  captureResolutionPreset?: CaptureResolutionPreset
-  recordSystemCursor?: boolean
-  microphoneGain?: number
-  /** Off = record without an audio track. Default on. */
-  microphoneEnabled?: boolean
-  /** Microphone chosen in the HUD picker (Chromium deviceId); empty = system default. */
-  microphoneDeviceId?: string
-  /**
-   * Record what the computer plays (loopback on Windows, the desktop audio source
-   * on Linux) mixed with the microphone. Default off. Ignored on the macOS browser
-   * fallback path, where Chromium cannot capture system audio.
-   */
-  systemAudioEnabled?: boolean
-  /** Label of that microphone for the native helper (looked up from the id when absent). */
-  microphoneDeviceName?: string
-}
+type NativeWindowsRecordingHandle = {
+	recordingId: number;
+	finalizing: boolean;
+	paused: boolean;
+};
 
-/** Remembered answer of the native macOS helper to "can you capture system audio?". */
-const NATIVE_SYSTEM_AUDIO_STORAGE_KEY = 'capturia.nativeSystemAudioSupported'
+type NativeMacRecordingHandle = {
+	recordingId: number;
+	finalizing: boolean;
+	paused: boolean;
+	/**
+	 * Milliseconds the browser-recorded webcam clip started before the native
+	 * macOS helper confirmed its screen recording actually began (negative --
+	 * the webcam MediaRecorder starts immediately in the renderer, but the
+	 * ScreenCaptureKit helper needs to spawn a process and start capturing
+	 * before its own recording truly starts). `null` if webcam wasn't
+	 * recorded via the browser sidecar for this session.
+	 */
+	webcamOffsetMs: number | null;
+};
 
-function readNativeSystemAudioSupported(): boolean {
-  try {
-    return window.localStorage.getItem(NATIVE_SYSTEM_AUDIO_STORAGE_KEY) === '1'
-  } catch {
-    return false
-  }
-}
+type NativeLinuxRecordingHandle = {
+	recordingId: number;
+	finalizing: boolean;
+	paused: boolean;
+	/**
+	 * As on macOS: the webcam MediaRecorder starts immediately in the renderer,
+	 * while the helper has to spawn, negotiate a portal session and WAIT FOR THE
+	 * USER to answer a picker before its first frame exists. That last part makes
+	 * the gap here unbounded rather than merely a process spawn, so trimming it
+	 * matters more than it does on macOS. `null` when no webcam was recorded.
+	 */
+	webcamOffsetMs: number | null;
+};
 
-function writeNativeSystemAudioSupported(supported: boolean): void {
-  try {
-    window.localStorage.setItem(NATIVE_SYSTEM_AUDIO_STORAGE_KEY, supported ? '1' : '0')
-  } catch {
-    // no-op
-  }
-}
-
-export type CaptureProfile = 'balanced' | 'quality' | 'ultra'
-export type CaptureFrameRate = 24 | 30 | 60 | 120
-export type CaptureResolutionPreset = 'auto' | '1080p' | '1440p' | '2160p'
-type CursorMode = 'always' | 'never'
-
-type LegacyDesktopGetUserMedia = (constraints: {
-  audio?:
-    | { mandatory?: Record<string, string | number | boolean | undefined> }
-    | MediaTrackConstraints
-    | boolean
-  video?: {
-    mandatory?: Record<string, string | number | boolean | undefined>
-    cursor?: CursorMode
-  }
-}) => Promise<MediaStream>
-
-type CompositionResources = {
-  compositeStream: MediaStream
-  width: number
-  height: number
-  frameRate: number
-  cleanup: () => void
-}
-
-type SelectedCaptureSource = {
-  id?: string
-  name?: string
-  display_id?: string | number | null
-  width?: number
-  height?: number
-}
-
-const VIRTUAL_CAMERA_KEYWORDS = [
-  'virtual',
-  'obs',
-  'continuity',
-  'desk view',
-  'presenter',
-  'iphone',
-  'epoccam',
-  'ndi',
-  'snap camera',
-]
-
-function isLikelyVirtualCameraLabel(label: string): boolean {
-  const normalized = label.trim().toLowerCase()
-  return VIRTUAL_CAMERA_KEYWORDS.some((keyword) => normalized.includes(keyword))
-}
-
-function dedupe<T>(items: T[]): T[] {
-  return Array.from(new Set(items))
+/**
+ * How far AHEAD of the native screen recording the browser-recorded webcam
+ * started, in whole milliseconds (negative, since the webcam always starts
+ * first). `null` when this session recorded no webcam.
+ *
+ * WHOLE milliseconds on purpose. Both timestamps come from `performance.now()`,
+ * whose resolution is 100 µs, so the raw subtraction is almost never an integer
+ * — and this number ends up in `cameraTrack.offsetMs`, which the document schema
+ * declares as an int. A fractional value failed validation, the camera link was
+ * dropped as if the recording had no camera, and the editor drew the screen
+ * video in the camera's place. Rounding loses nothing: one frame at 60 fps is
+ * 16.7 ms.
+ */
+export function webcamOffsetMsFrom(
+	webcamRecorder: RecorderHandle | null,
+	webcamStartedAtMs: number | null,
+	nativeStartedAtMs: number,
+): number | null {
+	if (!webcamRecorder || webcamStartedAtMs === null) {
+		return null;
+	}
+	return -Math.round(nativeStartedAtMs - webcamStartedAtMs);
 }
 
 /**
- * Video from `videoStream` plus the audio of `audioStream` (the mixed recording
- * audio). Only video tracks are taken from `videoStream`, so a raw system-audio
- * track riding on the desktop stream is never added twice.
+ * Turn a finished webcam recorder into the asset the native attach IPC wants, or
+ * into the reason it cannot be saved. Shared by the macOS and Linux finalizers,
+ * which differ only in the name they log under.
+ *
+ * A streamed recording resolves an empty blob by design — its bytes are already
+ * on disk — so it hands over the file name alone and the main process closes the
+ * stream and patches the duration there. Only a buffered recording is read into
+ * memory, and flattening one of those into a single ArrayBuffer is exactly what
+ * used to throw past ~2 GB and cost the user the whole camera track (#253).
+ *
+ * Never resolves to "nothing happened": every failure comes back with a reason,
+ * because the screen recording still saves and a silent drop just opens the
+ * editor with the camera mysteriously absent.
  */
-function combineVideoAndAudioStream(
-  videoStream: MediaStream,
-  audioStream?: MediaStream | null,
-): MediaStream {
-  const tracks: MediaStreamTrack[] = [...videoStream.getVideoTracks()]
-  if (audioStream) {
-    tracks.push(...audioStream.getAudioTracks())
-  }
-  return new MediaStream(tracks)
+export async function finalizeWebcamAsset(
+	webcamRecorder: RecorderHandle,
+	fileName: string,
+	durationMs: number,
+	platformLabel: string,
+): Promise<{ asset?: RecordedVideoAssetInput; error?: string }> {
+	try {
+		if (webcamRecorder.recorder.state !== "inactive") {
+			webcamRecorder.recorder.stop();
+		}
+		// Rejects on a mid-stream write failure, so a truncated recording lands in
+		// the catch below rather than passing for a good one.
+		const webcamBlob = await webcamRecorder.recordedBlobPromise;
+		if (webcamRecorder.isStreaming()) {
+			return { asset: { videoData: new ArrayBuffer(0), fileName } };
+		}
+		if (!webcamBlob || webcamBlob.size === 0) {
+			return { error: "the webcam produced no data" };
+		}
+		const fixedWebcamBlob = await fixWebmDuration(webcamBlob, durationMs);
+		return { asset: { videoData: await fixedWebcamBlob.arrayBuffer(), fileName } };
+	} catch (error) {
+		console.error(`Failed to finalize native ${platformLabel} webcam recording:`, error);
+		return { error: error instanceof Error ? error.message : String(error) };
+	}
 }
 
-function normalizeSelectedCaptureSource(input: unknown): SelectedCaptureSource | null {
-  if (!input || typeof input !== 'object') return null
-  const row = input as Record<string, unknown>
-  const id = typeof row.id === 'string' ? row.id : undefined
-  const display_id =
-    typeof row.display_id === 'string' || typeof row.display_id === 'number' ? row.display_id : null
-  const name = typeof row.name === 'string' ? row.name : undefined
-  const width = Number(row.width)
-  const height = Number(row.height)
-
-  if (!id && display_id === null) return null
-
-  return {
-    id,
-    display_id,
-    name,
-    width: Number.isFinite(width) && width > 1 ? Math.round(width) : undefined,
-    height: Number.isFinite(height) && height > 1 ? Math.round(height) : undefined,
-  }
-}
-
-/** Label Chromium reports for an audio input id; the native helper matches devices by label. */
-async function lookupMicrophoneLabel(deviceId: string): Promise<string | undefined> {
-  try {
-    const devices = await navigator.mediaDevices.enumerateDevices()
-    return (
-      devices.find((device) => device.kind === 'audioinput' && device.deviceId === deviceId)
-        ?.label || undefined
-    )
-  } catch {
-    return undefined
-  }
-}
-
-async function pickPreferredCameraId(): Promise<string | undefined> {
-  try {
-    const devices = await navigator.mediaDevices.enumerateDevices()
-    const cameras = devices.filter((device) => device.kind === 'videoinput')
-    if (cameras.length === 0) return undefined
-
-    const nonVirtual = cameras.filter((camera) => !isLikelyVirtualCameraLabel(camera.label))
-    const preferred = nonVirtual[0] ?? cameras[0]
-    return preferred?.deviceId || undefined
-  } catch (error) {
-    console.warn('Failed to enumerate camera devices, using system default camera.', error)
-    return undefined
-  }
-}
-
-export function useScreenRecorder(options: UseScreenRecorderOptions = {}): UseScreenRecorderReturn {
-  const { t } = useI18n()
-  const includeCamera = options.includeCamera ?? false
-  const cameraShape = options.cameraShape ?? 'rounded'
-  const cameraSizePercent = options.cameraSizePercent ?? 22
-  const cameraDeviceId = options.cameraDeviceId || undefined
-  const cameraDeviceName = options.cameraDeviceName || undefined
-  const captureProfile = options.captureProfile ?? 'quality'
-  const captureFrameRate = options.captureFrameRate
-  const captureResolutionPreset = options.captureResolutionPreset
-  const recordSystemCursor = options.recordSystemCursor ?? true
-  const microphoneGain = normalizeMicrophoneGain(options.microphoneGain)
-  const microphoneEnabled = options.microphoneEnabled ?? true
-  const systemAudioEnabled = options.systemAudioEnabled ?? false
-  const microphoneDeviceId = options.microphoneDeviceId || undefined
-  const microphoneDeviceName = options.microphoneDeviceName || undefined
-  const [recording, setRecording] = useState(false)
-  const [nativeSystemAudioSupported, setNativeSystemAudioSupported] = useState(
-    readNativeSystemAudioSupported,
-  )
-  const [recordingState, setRecordingPhase] = useState<RecordingPhase>('idle')
-  // The native-helper-exit subscription is registered once; it reads the phase
-  // from here instead of from the closure it was created in.
-  const recordingPhaseRef = useRef<RecordingPhase>('idle')
-  recordingPhaseRef.current = recordingState
-  // Mirrors `nativeRecordingActive` for rendering (refs don't re-render): the HUD hides
-  // Pause while the native recorder owns the session.
-  const [nativeSessionActive, setNativeSessionActive] = useState(false)
-  // Announced by the helper at start (`canPause`); false for a helper built before
-  // the stdin protocol, in which case the HUD keeps hiding Pause on the native path.
-  const [nativePauseSupported, setNativePauseSupported] = useState(false)
-  // A native pause/resume round-trips to the helper; ignore re-entrant clicks meanwhile.
-  const pauseTransitionInFlight = useRef(false)
-  // Wraps the MediaRecorder and streams its chunks to disk (or buffers them in memory
-  // when the stream IPC is unavailable). Null outside a MediaRecorder session.
-  const recorderHandle = useRef<RecorderHandle | null>(null)
-  const stream = useRef<MediaStream | null>(null)
-  const cameraStream = useRef<MediaStream | null>(null)
-  // Identity of the camera actually opened for the last (attempted) recording.
-  const openedCameraRef = useRef<{ deviceId?: string; deviceName?: string } | null>(null)
-  // Audio handed to the recorder: the mixed mic + system destination stream, or a
-  // stream around the lone system track. Null when the recording has no audio.
-  const recordingAudioStream = useRef<MediaStream | null>(null)
-  // Raw microphone capture feeding the mix (kept so it is released on teardown).
-  const microphoneSourceStream = useRef<MediaStream | null>(null)
-  // AudioContext owning the mix graph (gain ramps, user gain, limiter).
-  const audioMixContext = useRef<AudioContext | null>(null)
-  const startTime = useRef<number>(0)
-  const compositionCleanup = useRef<(() => void) | null>(null)
-  const cursorTrackingActive = useRef(false)
-  const nativeRecordingActive = useRef(false)
-  const transitionInFlight = useRef(false)
-  const cumulativePauseMs = useRef(0)
-  const pauseStartTime = useRef(0)
-  const discardFlag = useRef(false)
-  // A restart is a discard followed by a start once the hook is idle again; the ref
-  // survives the stop/idle re-renders and blocks a second restart until then.
-  const restartPending = useRef(false)
-  const nativeRecordingMetadata = useRef<{
-    frameRate: number
-    width: number
-    height: number
-    mimeType: string
-    systemCursorMode: CursorMode
-    hasMicrophoneAudio: boolean
-  } | null>(null)
-
-  const profileSettings: Record<
-    CaptureProfile,
-    {
-      targetFps: number
-      maxFps: number
-      bitrateScale: number
-      cameraCompositeFpsCap: number
-      maxLongEdge: number
-    }
-  > = {
-    balanced: {
-      targetFps: 30,
-      maxFps: 60,
-      bitrateScale: 0.9,
-      cameraCompositeFpsCap: 30,
-      maxLongEdge: 1920,
-    },
-    quality: {
-      targetFps: 60,
-      maxFps: 60,
-      bitrateScale: 1.1,
-      cameraCompositeFpsCap: 60,
-      maxLongEdge: 3840,
-    },
-    // Experimental profile: only beneficial on devices that can sustain high-refresh desktop capture.
-    ultra: {
-      targetFps: 120,
-      maxFps: 120,
-      bitrateScale: 1.25,
-      cameraCompositeFpsCap: 60,
-      maxLongEdge: 5120,
-    },
-  }
-
-  const activeProfile = profileSettings[captureProfile]
-  const resolutionLongEdgeByPreset: Record<Exclude<CaptureResolutionPreset, 'auto'>, number> = {
-    '1080p': 1920,
-    '1440p': 2560,
-    '2160p': 3840,
-  }
-  const hasExplicitFrameRate = Number.isFinite(captureFrameRate)
-  const requestedFrameRate = hasExplicitFrameRate
-    ? Number(captureFrameRate)
-    : activeProfile.targetFps
-  const MAX_CAPTURE_FPS = hasExplicitFrameRate ? 120 : activeProfile.maxFps
-  const TARGET_CAPTURE_FPS = Math.max(24, Math.min(MAX_CAPTURE_FPS, Math.round(requestedFrameRate)))
-  const targetMaxLongEdge =
-    captureResolutionPreset && captureResolutionPreset !== 'auto'
-      ? resolutionLongEdgeByPreset[captureResolutionPreset]
-      : captureResolutionPreset === 'auto'
-        ? undefined
-        : activeProfile.maxLongEdge
-  const cameraCompositeFpsCap = hasExplicitFrameRate ? 60 : activeProfile.cameraCompositeFpsCap
-
-  const ensureEvenDimension = (value: number, fallback: number) => {
-    const resolved = Number.isFinite(value) && value > 0 ? value : fallback
-    return Math.max(2, Math.floor(resolved / 2) * 2)
-  }
-
-  const normalizeCaptureDimensions = (
-    rawWidth: number,
-    rawHeight: number,
-    maxLongEdge = targetMaxLongEdge,
-  ): { width: number; height: number } => {
-    let width = ensureEvenDimension(rawWidth, 1920)
-    let height = ensureEvenDimension(rawHeight, 1080)
-
-    if (!Number.isFinite(maxLongEdge) || !maxLongEdge || maxLongEdge <= 0) {
-      return { width, height }
-    }
-
-    const longEdge = Math.max(width, height)
-    if (longEdge <= maxLongEdge) {
-      return { width, height }
-    }
-
-    const scale = maxLongEdge / longEdge
-    width = ensureEvenDimension(Math.round(width * scale), 1920)
-    height = ensureEvenDimension(Math.round(height * scale), 1080)
-    return { width, height }
-  }
-
-  const selectMimeType = () => {
-    // Prefer H.264 first for decoding/export compatibility and smoother timeline playback.
-    const preferred = [
-      'video/webm;codecs=h264',
-      'video/mp4;codecs=h264',
-      'video/webm;codecs=vp8',
-      'video/webm;codecs=vp9',
-      'video/webm;codecs=av1',
-      'video/webm',
-    ]
-
-    return preferred.find((type) => MediaRecorder.isTypeSupported(type)) ?? 'video/webm'
-  }
-
-  const computeBitrate = (width: number, height: number, frameRate: number) => {
-    const pixels = width * height
-    const frameRateBoost = frameRate >= 50 ? 1.25 : frameRate >= 30 ? 1 : 0.85
-
-    if (pixels >= 3840 * 2160)
-      return Math.round(50_000_000 * frameRateBoost * activeProfile.bitrateScale)
-    if (pixels >= 2560 * 1440)
-      return Math.round(32_000_000 * frameRateBoost * activeProfile.bitrateScale)
-    if (pixels >= 1920 * 1080)
-      return Math.round(20_000_000 * frameRateBoost * activeProfile.bitrateScale)
-    return Math.round(12_000_000 * frameRateBoost * activeProfile.bitrateScale)
-  }
-
-  const createMediaRecorderWithFallback = (
-    sourceStream: MediaStream,
-    preferredMimeType: string,
-    bitrate: number,
-  ): MediaRecorder => {
-    const mimeCandidates = dedupe(
-      [
-        preferredMimeType,
-        'video/webm;codecs=h264',
-        'video/mp4;codecs=h264',
-        'video/webm;codecs=vp8',
-        'video/webm;codecs=vp9',
-        'video/webm',
-      ].filter((mime) => MediaRecorder.isTypeSupported(mime)),
-    )
-
-    let lastError: unknown = null
-    for (const mimeType of mimeCandidates) {
-      try {
-        return new MediaRecorder(sourceStream, {
-          mimeType,
-          videoBitsPerSecond: bitrate,
-        })
-      } catch (error) {
-        lastError = error
-        // Retry same codec without explicit bitrate (some machines reject high-bitrate options)
-        try {
-          return new MediaRecorder(sourceStream, { mimeType })
-        } catch (retryError) {
-          lastError = retryError
-        }
-      }
-    }
-
-    try {
-      return new MediaRecorder(sourceStream, { videoBitsPerSecond: bitrate })
-    } catch (error) {
-      lastError = error
-    }
-
-    throw lastError instanceof Error
-      ? lastError
-      : new Error('Failed to create MediaRecorder with available codecs.')
-  }
-
-  /** Stop the mixed + source microphone streams and close the mix AudioContext. */
-  const releaseAudioCapture = () => {
-    const mixedStream = recordingAudioStream.current
-    if (mixedStream) {
-      mixedStream.getTracks().forEach((track) => track.stop())
-      recordingAudioStream.current = null
-    }
-    const sourceMicStream = microphoneSourceStream.current
-    if (sourceMicStream && sourceMicStream !== mixedStream) {
-      sourceMicStream.getTracks().forEach((track) => track.stop())
-    }
-    microphoneSourceStream.current = null
-    if (audioMixContext.current) {
-      void audioMixContext.current.close().catch((error) => {
-        console.warn('Failed to close the recording AudioContext during cleanup.', error)
-      })
-      audioMixContext.current = null
-    }
-  }
-
-  const cleanupActiveMedia = (options: { stopNative?: boolean } = {}) => {
-    const stopNative = options.stopNative ?? true
-
-    if (stopNative && nativeRecordingActive.current) {
-      nativeRecordingActive.current = false
-      setNativeSessionActive(false)
-      setNativePauseSupported(false)
-      nativeRecordingMetadata.current = null
-      void window.electronAPI?.stopNativeScreenRecording?.().catch((error) => {
-        console.warn('Failed to stop native ScreenCaptureKit recorder during cleanup.', error)
-      })
-      window.electronAPI?.setRecordingState(false)
-    }
-
-    if (cursorTrackingActive.current) {
-      cursorTrackingActive.current = false
-      void window.electronAPI?.stopCursorTracking?.().catch((error) => {
-        console.warn('Failed to stop cursor tracking during cleanup.', error)
-      })
-    }
-    if (compositionCleanup.current) {
-      compositionCleanup.current()
-      compositionCleanup.current = null
-    }
-    if (cameraStream.current) {
-      cameraStream.current.getTracks().forEach((track) => track.stop())
-      cameraStream.current = null
-    }
-    releaseAudioCapture()
-    if (stream.current) {
-      stream.current.getTracks().forEach((track) => track.stop())
-      stream.current = null
-    }
-  }
-
-  /**
-   * Stop the native ScreenCaptureKit session. With `discard`, main deletes the output
-   * file and the HUD returns to idle without opening the editor. Every exit path goes
-   * through `finally`, so the transition flag and cursor tracker are always reset.
-   */
-  const stopNativeRecording = async (options: { discard?: boolean } = {}) => {
-    const discard = options.discard === true
-    const initialMetadata = nativeRecordingMetadata.current
-    nativeRecordingActive.current = false
-    setNativeSessionActive(false)
-    setNativePauseSupported(false)
-    pauseTransitionInFlight.current = false
-    nativeRecordingMetadata.current = null
-
-    let capturedCursorTrack: CursorTrackMetadata | undefined
-
-    if (cursorTrackingActive.current) {
-      cursorTrackingActive.current = false
-      try {
-        const cursorResult = await window.electronAPI.stopCursorTracking()
-        capturedCursorTrack = discard ? undefined : cursorResult.track
-      } catch (error) {
-        console.warn('Failed to retrieve cursor tracking payload for native recording.', error)
-      }
-    }
-
-    try {
-      const stopResult = await window.electronAPI.stopNativeScreenRecording(
-        discard ? { discard: true } : undefined,
-      )
-      setRecording(false)
-      setRecordingPhase('stopping')
-      window.electronAPI?.setRecordingState(false)
-
-      const plan = planNativeStopSideEffects({
-        discard,
-        stopSucceeded: Boolean(stopResult.success && stopResult.path),
-      })
-      if (plan.reportFailure) {
-        console.error('Failed to stop native ScreenCaptureKit recording:', stopResult.message)
-        // A3: the helper was killed before it wrote the MP4 `moov` box, so the
-        // file on disk cannot be decoded. Name the path so the user can point a
-        // repair tool at it instead of losing track of the recording.
-        const unplayable = stopResult.code === 'output_missing_moov'
-        reportUserActionError({
-          t,
-          userMessage: unplayable
-            ? t('launch.recordingFileUnplayable', { path: stopResult.path ?? '' })
-            : t('launch.recordStopFailed'),
-          error: stopResult.message || 'native-screen-recorder-stop returned no path',
-          context: 'recording.stop.native',
-          details: stopResult,
-          dedupeKey: 'recording.stop.native',
-        })
-        return
-      }
-      if (!plan.openEditor || !stopResult.path) {
-        // Discarded: main already removed the file; nothing to publish.
-        return
-      }
-
-      const fallbackMetadata = initialMetadata ?? {
-        frameRate: 60,
-        width: 1920,
-        height: 1080,
-        mimeType: 'video/mp4',
-        systemCursorMode: 'always' as CursorMode,
-        hasMicrophoneAudio: false,
-      }
-      const metadata = stopResult.metadata ?? fallbackMetadata
-      const capturedAt = stopResult.metadata?.capturedAt ?? Date.now()
-
-      await window.electronAPI.setCurrentVideoPath(stopResult.path, {
-        frameRate: metadata.frameRate,
-        width: metadata.width,
-        height: metadata.height,
-        mimeType: metadata.mimeType ?? 'video/mp4',
-        capturedAt,
-        systemCursorMode: metadata.systemCursorMode ?? fallbackMetadata.systemCursorMode,
-        hasMicrophoneAudio: metadata.hasMicrophoneAudio ?? fallbackMetadata.hasMicrophoneAudio,
-        cursorTrack: capturedCursorTrack,
-      })
-
-      await window.electronAPI.switchToEditor()
-    } catch (error) {
-      console.error('Failed to finalize native ScreenCaptureKit recording:', error)
-      reportUserActionError({
-        t,
-        userMessage: t('launch.recordStopFailed'),
-        error,
-        context: 'recording.stop.native.finalize',
-        dedupeKey: 'recording.stop.native.finalize',
-      })
-      setRecording(false)
-      window.electronAPI?.setRecordingState(false)
-    } finally {
-      discardFlag.current = false
-      transitionInFlight.current = false
-      setRecording(false)
-      setRecordingPhase('idle')
-      window.electronAPI?.setRecordingState(false)
-      cleanupActiveMedia({ stopNative: false })
-    }
-  }
-
-  /**
-   * A2: the native helper process ended on its own with a session still open —
-   * it crashed, the OS killed it, or a capture permission was revoked. Main has
-   * already checked what it left on disk, so the HUD returns to idle and offers
-   * the partial recording only when it is actually playable.
-   */
-  const handleNativeRecorderExit = async (info: NativeRecorderExitPayload) => {
-    const plan = planRecorderExitInterruption({
-      state: {
-        phase: recordingPhaseRef.current,
-        recording: nativeRecordingActive.current,
-        transitionInFlight: transitionInFlight.current,
-        discardRequested: discardFlag.current,
-      },
-      // A stop of our own already cleared the session flag; that exit belongs to
-      // the stop path and must not surface as an interruption.
-      stopRequested: !nativeRecordingActive.current,
-      outputPlayable: info.outputPlayable,
-    })
-    if (!plan) return
-
-    console.warn('Native recorder helper exited unexpectedly.', info)
-    const metadata = nativeRecordingMetadata.current
-    nativeRecordingActive.current = false
-    setNativeSessionActive(false)
-    setNativePauseSupported(false)
-    pauseTransitionInFlight.current = false
-    nativeRecordingMetadata.current = null
-
-    let capturedCursorTrack: CursorTrackMetadata | undefined
-    if (cursorTrackingActive.current) {
-      cursorTrackingActive.current = false
-      try {
-        capturedCursorTrack = (await window.electronAPI.stopCursorTracking()).track
-      } catch (error) {
-        console.warn('Failed to retrieve cursor tracking payload after a helper exit.', error)
-      }
-    }
-
-    cleanupActiveMedia({ stopNative: false })
-    discardFlag.current = plan.state.discardRequested
-    transitionInFlight.current = plan.state.transitionInFlight
-    setRecording(plan.state.recording)
-    setRecordingPhase(plan.state.phase)
-    window.electronAPI?.setRecordingState(false)
-
-    if (!plan.offerOpen) {
-      // The file has no `moov` box: handing it to the editor would only produce
-      // a video that will not decode, so name the path and stop there.
-      toast.error(t('launch.recordingFileUnplayable', { path: info.outputPath }))
-      return
-    }
-
-    if (!plan.notify) return
-    toast.warning(t('launch.recordingInterrupted'), {
-      action: {
-        label: t('launch.recordingInterruptedOpenAction'),
-        onClick: () => {
-          void (async () => {
-            try {
-              await window.electronAPI.setCurrentVideoPath(info.outputPath, {
-                frameRate: metadata?.frameRate ?? 60,
-                width: metadata?.width ?? 1920,
-                height: metadata?.height ?? 1080,
-                mimeType: metadata?.mimeType ?? 'video/mp4',
-                capturedAt: Date.now(),
-                systemCursorMode: metadata?.systemCursorMode ?? 'always',
-                hasMicrophoneAudio: metadata?.hasMicrophoneAudio ?? false,
-                cursorTrack: capturedCursorTrack,
-              })
-              await window.electronAPI.switchToEditor()
-            } catch (error) {
-              reportUserActionError({
-                t,
-                userMessage: t('launch.openVideoFailed'),
-                error,
-                context: 'recording.interrupted.open',
-                dedupeKey: 'recording.interrupted.open',
-              })
-            }
-          })()
-        },
-      },
-    })
-  }
-
-  // The subscription below is installed once, so it calls through this ref to
-  // reach the handler of the current render rather than the first one.
-  const nativeRecorderExitHandler = useRef(handleNativeRecorderExit)
-  nativeRecorderExitHandler.current = handleNativeRecorderExit
-
-  const stopRecording = useRef(() => {
-    if (transitionInFlight.current) {
-      return
-    }
-
-    const recorder = recorderHandle.current?.recorder ?? null
-    const route = resolveStopRoute({
-      nativeRecordingActive: nativeRecordingActive.current,
-      recorderState: recorder?.state,
-    })
-    if (route === 'native') {
-      transitionInFlight.current = true
-      setRecording(false)
-      setRecordingPhase('stopping')
-      window.electronAPI?.setRecordingState(false)
-      void stopNativeRecording()
-      return
-    }
-    if (route === 'media-recorder' && recorder) {
-      // Account for any in-progress pause
-      if (pauseStartTime.current > 0) {
-        cumulativePauseMs.current += Date.now() - pauseStartTime.current
-        pauseStartTime.current = 0
-      }
-      transitionInFlight.current = true
-      setRecording(false)
-      setRecordingPhase('stopping')
-      window.electronAPI?.setRecordingState(false)
-      recorder.stop()
-      return
-    }
-    setRecording(false)
-    setRecordingPhase('idle')
-    window.electronAPI?.setRecordingState(false)
-    transitionInFlight.current = false
-    cleanupActiveMedia()
-  })
-
-  useEffect(() => {
-    let cleanup: (() => void) | undefined
-
-    if (window.electronAPI?.onStopRecordingFromTray) {
-      cleanup = window.electronAPI.onStopRecordingFromTray(() => {
-        stopRecording.current()
-      })
-    }
-    const exitCleanup = window.electronAPI?.onNativeRecorderExited?.((info) => {
-      void nativeRecorderExitHandler.current(info)
-    })
-
-    return () => {
-      if (cleanup) cleanup()
-      if (exitCleanup) exitCleanup()
-
-      const recorder = recorderHandle.current?.recorder
-      if (recorder?.state === 'recording') {
-        recorder.stop()
-        return
-      }
-
-      cleanupActiveMedia()
-      setRecording(false)
-      setRecordingPhase('idle')
-      window.electronAPI?.setRecordingState(false)
-      transitionInFlight.current = false
-    }
-  }, [])
-
-  const buildCompositedStream = async (
-    desktopStream: MediaStream,
-    sourceWidthHint: number,
-    sourceHeightHint: number,
-    sourceFrameRateHint: number,
-    overlayOptions: { shape: CameraOverlayShape; sizePercent: number },
-  ): Promise<CompositionResources> => {
-    const openWebcam = async (deviceId: string | undefined): Promise<MediaStream> => {
-      // No size hint on purpose: asking for 1280x720 made some drivers rotate a
-      // portrait camera into landscape. The native frame is centre-cropped into
-      // the overlay box by `drawVideoCover`, so any orientation renders undistorted.
-      const videoConstraints: MediaTrackConstraints = {
-        frameRate: { ideal: 30, max: 60 },
-      }
-      if (deviceId) {
-        videoConstraints.deviceId = { exact: deviceId }
-      }
-      return await navigator.mediaDevices.getUserMedia({ audio: false, video: videoConstraints })
-    }
-
-    let webcamStream: MediaStream
-    if (cameraDeviceId) {
-      try {
-        webcamStream = await openWebcam(cameraDeviceId)
-      } catch (error) {
-        // The picked camera may have been unplugged since the HUD enumerated it;
-        // fall back to the automatic pick before giving up on the overlay.
-        console.warn(
-          'Selected camera is unavailable, falling back to the automatic camera pick.',
-          error,
-        )
-        webcamStream = await openWebcam(await pickPreferredCameraId())
-      }
-    } else {
-      webcamStream = await openWebcam(await pickPreferredCameraId())
-    }
-    cameraStream.current = webcamStream
-    openedCameraRef.current = webcamDeviceIdentityFrom(
-      webcamStream,
-      cameraDeviceId,
-      cameraDeviceName,
-    )
-    console.log(
-      '[capture] camera overlay device:',
-      openedCameraRef.current.deviceName ?? openedCameraRef.current.deviceId,
-    )
-
-    const desktopVideo = document.createElement('video')
-    desktopVideo.srcObject = desktopStream
-    desktopVideo.muted = true
-    desktopVideo.playsInline = true
-    await desktopVideo.play()
-
-    const webcamVideo = document.createElement('video')
-    webcamVideo.srcObject = webcamStream
-    webcamVideo.muted = true
-    webcamVideo.playsInline = true
-    await webcamVideo.play()
-
-    const sourceWidth = ensureEvenDimension(desktopVideo.videoWidth, sourceWidthHint)
-    const sourceHeight = ensureEvenDimension(desktopVideo.videoHeight, sourceHeightHint)
-    const sourceFrameRate = Math.max(
-      24,
-      Math.min(
-        MAX_CAPTURE_FPS,
-        Math.round(
-          sourceFrameRateHint ||
-            Number(desktopStream.getVideoTracks()[0]?.getSettings().frameRate) ||
-            TARGET_CAPTURE_FPS,
-        ),
-      ),
-    )
-    const compositeFrameRate = Math.min(sourceFrameRate, cameraCompositeFpsCap)
-    console.log(
-      `Compositing camera overlay on ${desktopVideo.videoWidth || sourceWidthHint}x${desktopVideo.videoHeight || sourceHeightHint} -> ${sourceWidth}x${sourceHeight} @ ${compositeFrameRate}fps`,
-    )
-
-    const canvas = document.createElement('canvas')
-    canvas.width = sourceWidth
-    canvas.height = sourceHeight
-    const ctx = canvas.getContext('2d')
-    if (!ctx) {
-      throw new Error('Failed to create 2D context for camera composition.')
-    }
-
-    const overlay = computeCameraOverlayRect(sourceWidth, sourceHeight, overlayOptions)
-    const drawVideoCover = (
-      ctx2d: CanvasRenderingContext2D,
-      video: HTMLVideoElement,
-      x: number,
-      y: number,
-      targetWidth: number,
-      targetHeight: number,
-    ) => {
-      const sourceWidthPx = video.videoWidth || targetWidth
-      const sourceHeightPx = video.videoHeight || targetHeight
-      const sourceRatio = sourceWidthPx / sourceHeightPx
-      const targetRatio = targetWidth / targetHeight
-
-      let cropWidth = sourceWidthPx
-      let cropHeight = sourceHeightPx
-      let cropX = 0
-      let cropY = 0
-      if (sourceRatio > targetRatio) {
-        cropWidth = sourceHeightPx * targetRatio
-        cropX = (sourceWidthPx - cropWidth) / 2
-      } else if (sourceRatio < targetRatio) {
-        cropHeight = sourceWidthPx / targetRatio
-        cropY = (sourceHeightPx - cropHeight) / 2
-      }
-      ctx2d.drawImage(video, cropX, cropY, cropWidth, cropHeight, x, y, targetWidth, targetHeight)
-    }
-    const drawRoundedRectPath = (
-      ctx2d: CanvasRenderingContext2D,
-      x: number,
-      y: number,
-      width: number,
-      height: number,
-      radius: number,
-    ) => {
-      const clamped = Math.max(0, Math.min(radius, Math.min(width, height) / 2))
-      ctx2d.beginPath()
-      ctx2d.moveTo(x + clamped, y)
-      ctx2d.lineTo(x + width - clamped, y)
-      ctx2d.quadraticCurveTo(x + width, y, x + width, y + clamped)
-      ctx2d.lineTo(x + width, y + height - clamped)
-      ctx2d.quadraticCurveTo(x + width, y + height, x + width - clamped, y + height)
-      ctx2d.lineTo(x + clamped, y + height)
-      ctx2d.quadraticCurveTo(x, y + height, x, y + height - clamped)
-      ctx2d.lineTo(x, y + clamped)
-      ctx2d.quadraticCurveTo(x, y, x + clamped, y)
-      ctx2d.closePath()
-    }
-
-    let rafToken = 0
-    let videoFrameCallbackToken: number | null = null
-    let running = true
-    let lastDrawTime = 0
-    const frameIntervalMs = 1000 / compositeFrameRate
-
-    // Camera unplugged mid-recording: the <video> keeps showing its last frame, so
-    // without this flag the overlay would freeze on it. Drop the overlay, keep
-    // recording the plain desktop and tell the user once. `track.stop()` from our
-    // own cleanup does not fire `ended`, so this only reacts to a real loss.
-    let webcamLost = false
-    const webcamTrack = webcamStream.getVideoTracks()[0]
-    const handleWebcamEnded = () => {
-      if (!running || webcamLost) return
-      webcamLost = true
-      console.warn('[capture] camera track ended mid-recording; continuing without the overlay.')
-      toast.warning(t('editor.recordingCameraDisconnected'))
-    }
-    webcamTrack?.addEventListener('ended', handleWebcamEnded)
-
-    const drawCompositedFrame = () => {
-      if (desktopVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-        ctx.drawImage(desktopVideo, 0, 0, sourceWidth, sourceHeight)
-      }
-
-      if (!webcamLost && webcamVideo.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
-        const x = overlay.x
-        const y = overlay.y
-        const w = overlay.width
-        const h = overlay.height
-
-        ctx.save()
-        if (overlayOptions.shape === 'circle') {
-          const radius = Math.min(w, h) / 2
-          ctx.beginPath()
-          ctx.arc(x + w / 2, y + h / 2, radius, 0, Math.PI * 2)
-          ctx.closePath()
-        } else if (overlayOptions.shape === 'square') {
-          ctx.beginPath()
-          ctx.rect(x, y, w, h)
-          ctx.closePath()
-        } else {
-          drawRoundedRectPath(ctx, x, y, w, h, overlay.cornerRadius)
-        }
-        ctx.clip()
-        drawVideoCover(ctx, webcamVideo, x, y, w, h)
-        ctx.restore()
-
-        ctx.lineWidth = 2
-        ctx.strokeStyle = 'rgba(255,255,255,0.45)'
-        if (overlayOptions.shape === 'circle') {
-          const radius = Math.min(w, h) / 2
-          ctx.beginPath()
-          ctx.arc(x + w / 2, y + h / 2, radius, 0, Math.PI * 2)
-          ctx.closePath()
-          ctx.stroke()
-        } else if (overlayOptions.shape === 'square') {
-          ctx.strokeRect(x, y, w, h)
-        } else {
-          drawRoundedRectPath(ctx, x, y, w, h, overlay.cornerRadius)
-          ctx.stroke()
-        }
-      }
-    }
-
-    const maybeDrawFrame = (timestamp: number) => {
-      if (timestamp - lastDrawTime < frameIntervalMs) {
-        return
-      }
-      lastDrawTime = timestamp
-      drawCompositedFrame()
-    }
-
-    const hasVideoFrameCallback = typeof desktopVideo.requestVideoFrameCallback === 'function'
-    if (hasVideoFrameCallback) {
-      const scheduleVideoFrame = () => {
-        if (!running) return
-        videoFrameCallbackToken = desktopVideo.requestVideoFrameCallback((timestamp) => {
-          maybeDrawFrame(timestamp)
-          scheduleVideoFrame()
-        })
-      }
-      scheduleVideoFrame()
-    } else {
-      const tick = (timestamp: number) => {
-        if (!running) return
-        maybeDrawFrame(timestamp)
-        rafToken = requestAnimationFrame(tick)
-      }
-      rafToken = requestAnimationFrame(tick)
-    }
-
-    const compositeStream = canvas.captureStream(compositeFrameRate)
-    const compositeTrack = compositeStream.getVideoTracks()[0]
-    if (compositeTrack && 'contentHint' in compositeTrack) {
-      compositeTrack.contentHint = 'detail'
-    }
-    return {
-      compositeStream,
-      width: sourceWidth,
-      height: sourceHeight,
-      frameRate: compositeFrameRate,
-      cleanup: () => {
-        running = false
-        webcamTrack?.removeEventListener('ended', handleWebcamEnded)
-        cancelAnimationFrame(rafToken)
-        if (
-          videoFrameCallbackToken !== null &&
-          typeof desktopVideo.cancelVideoFrameCallback === 'function'
-        ) {
-          desktopVideo.cancelVideoFrameCallback(videoFrameCallbackToken)
-        }
-        desktopVideo.pause()
-        webcamVideo.pause()
-        webcamStream.getTracks().forEach((track) => track.stop())
-      },
-    }
-  }
-
-  /**
-   * Desktop capture for the MediaRecorder path. With `withSystemAudio` the stream
-   * is asked for the desktop's audio as well (main grants Windows loopback through
-   * the display-media handler; the legacy constraints reach PulseAudio/PipeWire on
-   * Linux). A request that fails *with* audio is retried without it, so system
-   * audio never costs the recording; the caller checks the returned audio tracks
-   * and tells the user when none arrived.
-   */
-  const captureDesktopStream = async (
-    selectedSource: { id?: string | null },
-    cursorMode: CursorMode,
-    withSystemAudio: boolean,
-  ): Promise<MediaStream> => {
-    const captureWithLegacyDesktopConstraints = async (
-      includeAudio: boolean,
-    ): Promise<MediaStream> => {
-      console.log(
-        '[capture] using legacy getUserMedia with chromeMediaSource=desktop, cursor:',
-        cursorMode,
-        'sourceId:',
-        selectedSource.id,
-        'systemAudio:',
-        includeAudio,
-      )
-      const getLegacyUserMedia = navigator.mediaDevices.getUserMedia.bind(
-        navigator.mediaDevices,
-      ) as unknown as LegacyDesktopGetUserMedia
-      const stream = await getLegacyUserMedia({
-        audio: includeAudio ? { mandatory: { chromeMediaSource: 'desktop' } } : false,
-        video: {
-          mandatory: {
-            chromeMediaSource: 'desktop',
-            chromeMediaSourceId: selectedSource.id ?? undefined,
-            maxFrameRate: TARGET_CAPTURE_FPS,
-            cursor: cursorMode,
-          },
-          cursor: cursorMode,
-        },
-      })
-      const trackSettings = stream.getVideoTracks()[0]?.getSettings()
-      console.log('[capture] legacy stream obtained, track settings:', trackSettings)
-      return stream
-    }
-    const captureLegacy = async (): Promise<MediaStream> => {
-      if (!withSystemAudio) return await captureWithLegacyDesktopConstraints(false)
-      try {
-        return await captureWithLegacyDesktopConstraints(true)
-      } catch (error) {
-        console.warn(
-          '[capture] legacy desktop capture with system audio failed, retrying video-only.',
-          error,
-        )
-        return await captureWithLegacyDesktopConstraints(false)
-      }
-    }
-
-    // Hide-native-cursor path: prefer legacy constraints first because this path is
-    // currently more reliable on Electron/macOS for cursor suppression.
-    if (cursorMode === 'never') {
-      try {
-        return await captureLegacy()
-      } catch (error) {
-        console.warn(
-          'Legacy desktop capture failed for cursor hidden mode, trying displayMedia.',
-          error,
-        )
-      }
-    }
-
-    const getDisplayMedia = navigator.mediaDevices.getDisplayMedia?.bind(navigator.mediaDevices)
-    if (typeof getDisplayMedia === 'function') {
-      const requestDisplayMedia = (includeAudio: boolean) =>
-        getDisplayMedia({
-          audio: includeAudio,
-          video: {
-            frameRate: { ideal: TARGET_CAPTURE_FPS, max: MAX_CAPTURE_FPS },
-            cursor: cursorMode,
-          } as MediaTrackConstraints,
-        })
-      try {
-        console.log(
-          '[capture] trying getDisplayMedia with cursor:',
-          cursorMode,
-          'systemAudio:',
-          withSystemAudio,
-        )
-        let stream: MediaStream
-        try {
-          stream = await requestDisplayMedia(withSystemAudio)
-        } catch (error) {
-          if (!withSystemAudio) throw error
-          console.warn(
-            '[capture] getDisplayMedia with system audio failed, retrying video-only.',
-            error,
-          )
-          stream = await requestDisplayMedia(false)
-        }
-        console.log('[capture] getDisplayMedia succeeded')
-        return stream
-      } catch (error) {
-        console.warn(
-          '[capture] getDisplayMedia failed, falling back to legacy desktop capture constraints.',
-          error,
-        )
-      }
-    }
-
-    return await captureLegacy()
-  }
-
-  /**
-   * Raw microphone capture for the MediaRecorder path (gain, ramp and limiter are
-   * applied later by the mix graph together with system audio). Resolves to `null`
-   * when the mic is switched off or cannot be opened (denied, unplugged): the
-   * recording then proceeds without a mic instead of failing outright.
-   */
-  const captureOptionalMicrophoneStream = async (): Promise<MediaStream | null> => {
-    if (!microphoneEnabled) {
-      return null
-    }
-
-    const openMicrophone = async (deviceId: string | undefined): Promise<MediaStream> => {
-      const audioConstraints: MediaTrackConstraints = {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      }
-      if (deviceId) {
-        audioConstraints.deviceId = { exact: deviceId }
-      }
-      return await navigator.mediaDevices.getUserMedia({ audio: audioConstraints, video: false })
-    }
-
-    try {
-      let sourceStream: MediaStream
-      if (microphoneDeviceId) {
-        try {
-          sourceStream = await openMicrophone(microphoneDeviceId)
-        } catch (error) {
-          // The picked mic may have been unplugged since the HUD enumerated it.
-          console.warn(
-            'Selected microphone is unavailable, falling back to the system default.',
-            error,
-          )
-          sourceStream = await openMicrophone(undefined)
-        }
-      } else {
-        sourceStream = await openMicrophone(undefined)
-      }
-      microphoneSourceStream.current = sourceStream
-      return sourceStream
-    } catch (error) {
-      console.warn('Microphone unavailable, recording without audio.', error)
-      notifyMicrophoneFallback()
-      return null
-    }
-  }
-
-  /** System audio was asked for but the platform gave no track; the recording goes on without it. */
-  const notifySystemAudioUnavailable = () => {
-    toast.warning(t('editor.recordingSystemAudioUnavailable'))
-  }
-
-  /** The recording continues without the webcam overlay; tell the user instead of failing silently. */
-  const notifyCameraFallback = () => {
-    toast.warning(t('launch.cameraFallback'))
-  }
-
-  /** The recording continues without an audio track; tell the user instead of aborting. */
-  const notifyMicrophoneFallback = () => {
-    toast.warning(t('launch.microphoneFallback'))
-  }
-
-  /**
-   * A5: both recorder paths go through here before anything is opened. Returns
-   * false only when the volume is too full for the recording to be worth
-   * starting; a check that could not run never blocks one.
-   */
-  const hasRoomToRecord = async (): Promise<boolean> => {
-    let snapshot: Awaited<ReturnType<NonNullable<typeof window.electronAPI.getRecordingsDiskSpace>>>
-    try {
-      snapshot = await window.electronAPI?.getRecordingsDiskSpace?.()
-    } catch (error) {
-      console.warn('Could not read the free space of the recordings folder.', error)
-      return true
-    }
-
-    const verdict = assessRecordingDiskSpace(snapshot)
-    if (verdict.level === 'blocked') {
-      toast.error(
-        t('launch.diskSpaceBlocked', { available: formatAvailableSpace(verdict.availableBytes) }),
-      )
-      return false
-    }
-    if (verdict.level === 'warn') {
-      toast.warning(
-        t('launch.diskSpaceLow', { available: formatAvailableSpace(verdict.availableBytes) }),
-      )
-    }
-    return true
-  }
-
-  const isNativeMicrophoneFailure = (code: string | undefined): boolean =>
-    code === 'microphone_permission_denied' || code === 'microphone_unavailable'
-
-  const startRecording = async () => {
-    if (transitionInFlight.current || recordingState !== 'idle') {
-      return
-    }
-
-    if (!(await hasRoomToRecord())) {
-      return
-    }
-
-    transitionInFlight.current = true
-    setRecordingPhase('starting')
-
-    // D1: re-assert content protection on the HUD family before either capture
-    // path opens. The HUD is hidden and restored around every take and some
-    // window managers drop the flag on re-show, so applying it once at window
-    // creation is not enough to keep Capturia out of its own recording.
-    try {
-      await window.electronAPI?.reassertHudRecordingPrivacy?.()
-    } catch (error) {
-      console.warn('[capture] could not re-assert HUD recording privacy', error)
-    }
-
-    let nativeStartFailure:
-      | {
-          code?: string
-          message?: string
-          sourceId?: string
-        }
-      | undefined
-
-    try {
-      const selectedSource = normalizeSelectedCaptureSource(
-        await window.electronAPI.getSelectedSource(),
-      )
-      if (!selectedSource) {
-        throw new Error(t('launch.recordSourceRequired'))
-      }
-
-      const cursorMode: CursorMode = recordSystemCursor ? 'always' : 'never'
-      const systemCursorMode: CursorMode = cursorMode
-      const platform = await window.electronAPI.getPlatform()
-      const shouldUseNativeRecorder = platform === 'darwin'
-      const selectedSourceWidth = Number(selectedSource.width)
-      const selectedSourceHeight = Number(selectedSource.height)
-      const nativeTargetSize =
-        Number.isFinite(selectedSourceWidth) &&
-        Number.isFinite(selectedSourceHeight) &&
-        selectedSourceWidth > 1 &&
-        selectedSourceHeight > 1
-          ? normalizeCaptureDimensions(selectedSourceWidth, selectedSourceHeight)
-          : undefined
-
-      if (shouldUseNativeRecorder) {
-        const sourceRef = {
-          id: typeof selectedSource.id === 'string' ? selectedSource.id : undefined,
-          display_id: selectedSource.display_id ?? undefined,
-        }
-        const nativeMicrophoneDeviceName =
-          microphoneDeviceName ??
-          (microphoneDeviceId ? await lookupMicrophoneLabel(microphoneDeviceId) : undefined)
-        const startNative = async (
-          cameraEnabled: boolean,
-          nativeMicrophoneEnabled = microphoneEnabled,
-        ) =>
-          await window.electronAPI.startNativeScreenRecording({
-            source: sourceRef,
-            cursorMode,
-            microphoneEnabled: nativeMicrophoneEnabled,
-            microphoneGain,
-            microphoneDeviceId,
-            microphoneDeviceName: nativeMicrophoneDeviceName,
-            systemAudio: systemAudioEnabled,
-            cameraEnabled,
-            cameraShape,
-            cameraSizePercent,
-            cameraDeviceId,
-            cameraDeviceName,
-            frameRate: TARGET_CAPTURE_FPS,
-            bitrateScale: activeProfile.bitrateScale,
-            maxLongEdge: targetMaxLongEdge,
-            width: nativeTargetSize?.width,
-            height: nativeTargetSize?.height,
-          })
-
-        let nativeStart = await startNative(includeCamera)
-        if (
-          !nativeStart.success &&
-          microphoneEnabled &&
-          isNativeMicrophoneFailure(nativeStart.code)
-        ) {
-          // Same policy as the browser path: a denied or missing mic must not
-          // abort the recording. Retry silent and tell the user.
-          console.warn(
-            'Native microphone capture failed, retrying native recording without audio.',
-            nativeStart.message,
-          )
-          nativeStart = await startNative(includeCamera, false)
-          if (nativeStart.success) {
-            notifyMicrophoneFallback()
-          }
-        }
-        if (!nativeStart.success && includeCamera) {
-          console.warn(
-            'Native camera overlay capture failed, retrying native recording without camera overlay.',
-            nativeStart.message,
-          )
-          nativeStart = await startNative(false)
-          if (nativeStart.success) {
-            notifyCameraFallback()
-          }
-        }
-
-        if (!nativeStart.success) {
-          // For unsupported OS versions, fall back to WebRTC recorder instead of failing
-          if (nativeStart.code === 'os_version_unsupported') {
-            console.warn(
-              'macOS version does not support ScreenCaptureKit, falling back to WebRTC recorder.',
-              nativeStart.message,
-            )
-            // Continue to WebRTC path below
-          } else {
-            nativeStartFailure = {
-              code: nativeStart.code,
-              message: nativeStart.message,
-              sourceId: sourceRef.id,
-            }
-            const userMessage = resolveNativeRecorderStartFailureMessage(nativeStartFailure)
-            console.error('Native ScreenCaptureKit recorder start failed.', {
-              code: nativeStart.code,
-              message: nativeStart.message,
-              sourceId: sourceRef.id,
-            })
-            throw new Error(userMessage)
-          }
-        }
-
-        if (nativeStart.success) {
-          const nativeWidth = Math.max(2, Math.round(nativeStart.width ?? 1920))
-          const nativeHeight = Math.max(2, Math.round(nativeStart.height ?? 1080))
-          const nativeFrameRate = Math.max(
-            24,
-            Math.min(MAX_CAPTURE_FPS, Math.round(nativeStart.frameRate ?? TARGET_CAPTURE_FPS)),
-          )
-
-          nativeRecordingMetadata.current = {
-            frameRate: nativeFrameRate,
-            width: nativeWidth,
-            height: nativeHeight,
-            mimeType: 'video/mp4',
-            systemCursorMode,
-            hasMicrophoneAudio: nativeStart.hasMicrophoneAudio === true,
-          }
-          nativeRecordingActive.current = true
-          setNativeSessionActive(true)
-          setNativePauseSupported(nativeStart.canPause === true)
-          pauseTransitionInFlight.current = false
-          if (nativeStart.warnings?.includes('mic_device_not_found')) {
-            // The helper opened the default microphone instead of the picked one.
-            toast.warning(t('launch.microphoneDeviceNotFound'))
-          }
-          // A helper that knows about system audio reports whether it can capture it;
-          // an older one says nothing, which is remembered as "not supported".
-          const nativeSystemAudio = nativeStart.canCaptureSystemAudio
-          if (typeof nativeSystemAudio === 'boolean') {
-            setNativeSystemAudioSupported(nativeSystemAudio)
-            writeNativeSystemAudioSupported(nativeSystemAudio)
-          }
-          if (systemAudioEnabled && nativeSystemAudio !== true) {
-            // Helper built before system audio: the recording goes on without it.
-            toast.warning(t('launch.systemAudioUnavailable'))
-          }
-
-          try {
-            const trackingResult = await window.electronAPI.startCursorTracking({
-              source: sourceRef,
-              captureSize: { width: nativeWidth, height: nativeHeight },
-            })
-            cursorTrackingActive.current = Boolean(trackingResult?.success)
-            if (trackingResult?.warningMessage) {
-              console.warn(
-                'Cursor tracking warning:',
-                trackingResult.warningCode,
-                trackingResult.warningMessage,
-              )
-              toast.warning(trackingResult.warningMessage)
-            }
-          } catch (error) {
-            cursorTrackingActive.current = false
-            console.warn('Failed to start cursor tracking for native recording.', error)
-          }
-
-          startTime.current = Date.now()
-          cumulativePauseMs.current = 0
-          pauseStartTime.current = 0
-          discardFlag.current = false
-          setRecording(true)
-          setRecordingPhase('recording')
-          window.electronAPI?.setRecordingState(true)
-          transitionInFlight.current = false
-          return
-        }
-      }
-
-      // Chromium cannot capture system audio on macOS; this path only runs there as
-      // the fallback for an unsupported OS version, and the HUD hides the toggle.
-      const systemAudioRequested = systemAudioEnabled && platform !== 'darwin'
-
-      // Capture screen + microphone in parallel: the gap between the two getUserMedia
-      // calls is the dominant source of mic-vs-video lag at the start of a recording.
-      const screenCapture = captureDesktopStream(selectedSource, cursorMode, systemAudioRequested)
-      const micCapture = captureOptionalMicrophoneStream()
-
-      let desktopStream: MediaStream
-      try {
-        desktopStream = await screenCapture
-      } catch (error) {
-        // The mic may resolve after cleanupActiveMedia() has already run, which would
-        // leave its tracks (and the OS mic indicator) on. Release it when it settles.
-        void micCapture
-          .then((micStream) => {
-            micStream?.getTracks().forEach((track) => track.stop())
-            releaseAudioCapture()
-          })
-          .catch(() => undefined)
-        throw error
-      }
-      stream.current = desktopStream
-      if (!desktopStream) {
-        throw new Error('Media stream is not available.')
-      }
-      const videoTrack = desktopStream.getVideoTracks()[0]
-      if (!videoTrack) {
-        throw new Error('No video track available from desktop stream.')
-      }
-      if ('contentHint' in videoTrack) {
-        videoTrack.contentHint = 'detail'
-      }
-      try {
-        await videoTrack.applyConstraints({
-          frameRate: { ideal: TARGET_CAPTURE_FPS, max: MAX_CAPTURE_FPS },
-          // Keep cursor visibility preference stable across subsequent constraint updates.
-          ...({ cursor: cursorMode } as MediaTrackConstraints),
-        } as MediaTrackConstraints)
-      } catch (error) {
-        console.warn(
-          'Unable to lock recording frame-rate constraints, using best available track settings.',
-          error,
-        )
-      }
-
-      let { width = 1920, height = 1080, frameRate = TARGET_CAPTURE_FPS } = videoTrack.getSettings()
-      const normalizedCaptureSize = normalizeCaptureDimensions(width, height)
-      width = normalizedCaptureSize.width
-      height = normalizedCaptureSize.height
-
-      try {
-        await videoTrack.applyConstraints({
-          width: { ideal: width, max: width },
-          height: { ideal: height, max: height },
-          frameRate: { ideal: TARGET_CAPTURE_FPS, max: MAX_CAPTURE_FPS },
-          ...({ cursor: cursorMode } as MediaTrackConstraints),
-        } as MediaTrackConstraints)
-      } catch (error) {
-        console.warn(
-          'Unable to apply normalized capture dimensions, keeping source track dimensions.',
-          error,
-        )
-      }
-
-      const finalSettings = videoTrack.getSettings()
-      const finalNormalizedCaptureSize = normalizeCaptureDimensions(
-        finalSettings.width ?? width,
-        finalSettings.height ?? height,
-      )
-      width = finalNormalizedCaptureSize.width
-      height = finalNormalizedCaptureSize.height
-      frameRate = Math.max(
-        24,
-        Math.min(
-          MAX_CAPTURE_FPS,
-          Math.round(finalSettings.frameRate || frameRate || TARGET_CAPTURE_FPS),
-        ),
-      )
-
-      const micStream = await micCapture
-      const micAudioTrack = micStream?.getAudioTracks()[0] ?? null
-      const systemAudioTrack = systemAudioRequested
-        ? (desktopStream.getAudioTracks()[0] ?? null)
-        : null
-      if (systemAudioRequested && !systemAudioTrack) {
-        console.warn(
-          '[capture] system audio requested but the desktop stream carries no audio track.',
-        )
-        notifySystemAudioUnavailable()
-      }
-      // One recordable track: mic (user gain, 20 ms ramp) + system audio through a
-      // soft limiter; a lone system track passes through untouched.
-      const audioMix = mixAudioTracks({ micAudioTrack, systemAudioTrack, microphoneGain })
-      audioMixContext.current = audioMix.context
-      recordingAudioStream.current = audioMix.stream
-      const desktopRecordingStream = combineVideoAndAudioStream(desktopStream, audioMix.stream)
-      const hasMicrophoneAudio = micAudioTrack !== null
-      const hasSystemAudio = systemAudioTrack !== null
-
-      let recordingStream: MediaStream = desktopRecordingStream
-      if (includeCamera) {
-        try {
-          const composition = await buildCompositedStream(desktopStream, width, height, frameRate, {
-            shape: cameraShape,
-            sizePercent: cameraSizePercent,
-          })
-          compositionCleanup.current = composition.cleanup
-          recordingStream = combineVideoAndAudioStream(composition.compositeStream, audioMix.stream)
-          width = composition.width
-          height = composition.height
-          frameRate = composition.frameRate
-        } catch (error) {
-          console.warn('Camera capture failed, fallback to screen-only recording.', error)
-          notifyCameraFallback()
-        }
-      }
-
-      const videoBitsPerSecond = computeBitrate(width, height, frameRate)
-      const mimeType = selectMimeType()
-      console.log(
-        `Recording [${captureProfile}] at ${width}x${height} @ ${frameRate}fps using ${mimeType} / ${Math.round(
-          videoBitsPerSecond / 1_000_000,
-        )} Mbps`,
-      )
-
-      let recorder: MediaRecorder
-      try {
-        recorder = createMediaRecorderWithFallback(recordingStream, mimeType, videoBitsPerSecond)
-      } catch (error) {
-        // Some machines fail MediaRecorder init for canvas capture + certain codecs.
-        // Fallback to screen-only stream so recording can still start.
-        if (recordingStream !== desktopRecordingStream) {
-          console.warn(
-            'Failed to initialize recorder for camera composited stream, fallback to screen-only.',
-            error,
-          )
-          if (compositionCleanup.current) {
-            compositionCleanup.current()
-            compositionCleanup.current = null
-          }
-          recorder = createMediaRecorderWithFallback(
-            desktopRecordingStream,
-            mimeType,
-            videoBitsPerSecond,
-          )
-          notifyCameraFallback()
-        } else {
-          throw error
-        }
-      }
-
-      const recordedMimeType = recorder.mimeType || mimeType
-      console.log(`MediaRecorder initialized with ${recordedMimeType}`)
-
-      recorder.onstart = () => {
-        void (async () => {
-          try {
-            if (recorderHandle.current?.recorder !== recorder || recorder.state !== 'recording')
-              return
-            const trackingResult = await window.electronAPI.startCursorTracking({
-              source: {
-                id: typeof selectedSource.id === 'string' ? selectedSource.id : undefined,
-                display_id: selectedSource.display_id ?? undefined,
-              },
-              captureSize: { width, height },
-            })
-            cursorTrackingActive.current = Boolean(trackingResult?.success)
-            if (trackingResult?.warningMessage) {
-              console.warn(
-                'Cursor tracking warning:',
-                trackingResult.warningCode,
-                trackingResult.warningMessage,
-              )
-              toast.warning(trackingResult.warningMessage)
-            }
-          } catch (error) {
-            cursorTrackingActive.current = false
-            console.warn(
-              'Failed to start cursor tracking, falling back to synthetic cursor behavior.',
-              error,
-            )
-          }
-        })()
-      }
-      // The file name is fixed at start so chunks can stream into it; `store-recorded-video`
-      // finalizes the same file (or writes the in-memory fallback to it) on stop.
-      const videoFileName = `recording-${Date.now()}.webm`
-      // Sets ondataavailable/onstop/onerror and starts the recorder with a 1000 ms timeslice.
-      const handle = createRecorderHandle(recorder, videoFileName)
-      recorderHandle.current = handle
-
-      const finalizeRecording = async () => {
-        let recordedBlob: Blob | null = null
-        let recordError: unknown = null
-        try {
-          recordedBlob = await handle.recordedBlobPromise
-        } catch (error) {
-          recordError = error
-        }
-
-        // Discard: skip saving, drop the partial file, just clean up
-        if (discardFlag.current) {
-          discardFlag.current = false
-          if (cursorTrackingActive.current) {
-            cursorTrackingActive.current = false
-            try {
-              await window.electronAPI.stopCursorTracking()
-            } catch {
-              /* ignore */
-            }
-          }
-          cleanupActiveMedia()
-          recorderHandle.current = null
-          try {
-            await handle.discard()
-          } catch (error) {
-            console.warn('Failed to remove discarded recording stream.', error)
-          }
-          setRecording(false)
-          setRecordingPhase('idle')
-          window.electronAPI?.setRecordingState(false)
-          transitionInFlight.current = false
-          return
-        }
-
-        try {
-          let capturedCursorTrack: CursorTrackMetadata | undefined
-
-          if (cursorTrackingActive.current) {
-            cursorTrackingActive.current = false
-            try {
-              const cursorResult = await window.electronAPI.stopCursorTracking()
-              capturedCursorTrack = cursorResult.track
-            } catch (error) {
-              console.warn('Failed to retrieve cursor tracking payload.', error)
-            }
-          }
-          cleanupActiveMedia()
-          recorderHandle.current = null
-          if (recordError) {
-            // A chunk failed to reach disk mid-stream: the file is truncated, so drop
-            // it rather than saving a silently partial recording.
-            await handle.discard().catch(() => undefined)
-            throw recordError
-          }
-          const streamed = handle.isStreaming()
-          if (!streamed && (!recordedBlob || recordedBlob.size === 0)) return
-          const duration = Date.now() - startTime.current - cumulativePauseMs.current
-          const timestamp = Date.now()
-
-          let arrayBuffer: ArrayBuffer
-          if (streamed) {
-            // Bytes are already on disk; main patches the WebM Duration header there.
-            arrayBuffer = new ArrayBuffer(0)
-          } else {
-            // In-memory fallback (stream IPC unavailable or failed to open): fix the
-            // header here as before and hand the whole blob to main.
-            const videoBlob = await fixWebmDuration(recordedBlob as Blob, duration)
-            arrayBuffer = await videoBlob.arrayBuffer()
-            recordedBlob = null
-          }
-          const captureMetadata = {
-            frameRate,
-            width,
-            height,
-            mimeType: recordedMimeType,
-            capturedAt: timestamp,
-            systemCursorMode,
-            // The editor reads this as "the file carries an audio track".
-            hasMicrophoneAudio: hasMicrophoneAudio || hasSystemAudio,
-            durationMs: duration,
-            cursorTrack: capturedCursorTrack,
-          }
-          const videoResult = await window.electronAPI.storeRecordedVideo(
-            arrayBuffer,
-            videoFileName,
-            captureMetadata,
-          )
-          if (!videoResult.success) {
-            console.error('Failed to store video:', videoResult.message)
-            reportUserActionError({
-              t,
-              userMessage: t('launch.recordSaveFailed'),
-              error: videoResult.message || 'storeRecordedVideo returned unsuccessful result',
-              context: 'recording.save.store-recorded-video',
-              details: videoResult,
-              dedupeKey: 'recording.save.store-recorded-video',
-            })
-            return
-          }
-
-          // storeRecordedVideo already updates current video path + metadata in main process.
-          // Avoid sending a second large metadata payload over IPC, which can delay editor launch.
-
-          await window.electronAPI.switchToEditor()
-        } catch (error) {
-          console.error('Error saving recording:', error)
-          reportUserActionError({
-            t,
-            userMessage: t('launch.recordSaveFailed'),
-            error,
-            context: 'recording.save.media-recorder.onstop',
-            dedupeKey: 'recording.save.media-recorder.onstop',
-          })
-        } finally {
-          transitionInFlight.current = false
-          setRecording(false)
-          setRecordingPhase('idle')
-          window.electronAPI?.setRecordingState(false)
-        }
-      }
-      // A MediaRecorder `error` rejects `recordedBlobPromise`; finalizeRecording reports
-      // it, drops the partial stream and resets the phase, replacing the old onerror.
-      void finalizeRecording()
-      startTime.current = Date.now()
-      cumulativePauseMs.current = 0
-      pauseStartTime.current = 0
-      discardFlag.current = false
-      setRecording(true)
-      setRecordingPhase('recording')
-      window.electronAPI?.setRecordingState(true)
-      transitionInFlight.current = false
-    } catch (error) {
-      const message =
-        error instanceof Error && error.message ? error.message : 'Failed to start recording.'
-      const userMessage =
-        message === 'Failed to start recording.' ? t('launch.recordStartFailed') : message
-      console.error('Failed to start recording:', error)
-      // If the recorder had already started, let finalizeRecording discard it; it owns
-      // the transition reset in that case.
-      const startedHandle = recorderHandle.current
-      if (startedHandle && startedHandle.recorder.state !== 'inactive') {
-        discardFlag.current = true
-        startedHandle.recorder.stop()
-      } else {
-        transitionInFlight.current = false
-        setRecording(false)
-        setRecordingPhase('idle')
-        window.electronAPI?.setRecordingState(false)
-        cleanupActiveMedia()
-      }
-      reportUserActionError({
-        t,
-        userMessage,
-        error,
-        context: 'recording.start',
-        details: {
-          includeCamera,
-          cameraShape,
-          cameraSizePercent,
-          cameraDeviceId,
-          cameraDeviceName,
-          openedCamera: openedCameraRef.current,
-          captureProfile,
-          microphoneGain,
-          microphoneEnabled,
-          microphoneDeviceId,
-          systemAudioEnabled,
-          recordSystemCursor,
-          normalizedMessage: message,
-          nativeStartCode: nativeStartFailure?.code,
-          nativeStartMessage: nativeStartFailure?.message,
-          nativeStartSourceId: nativeStartFailure?.sourceId,
-        },
-        dedupeKey: 'recording.start',
-      })
-    }
-  }
-
-  // The cursor tracker samples on the wall clock; tell it about pauses so main can
-  // compact them out of the track (both recorder paths, see cursor-tracker-pause).
-  const notifyCursorTrackerPaused = (paused: boolean) => {
-    if (!cursorTrackingActive.current) return
-    const call = paused
-      ? window.electronAPI?.pauseCursorTracking
-      : window.electronAPI?.resumeCursorTracking
-    void call?.().catch((error) => {
-      console.warn(`Failed to ${paused ? 'pause' : 'resume'} cursor tracking.`, error)
-    })
-  }
-
-  /**
-   * Native path: ask the helper over stdin and only flip the phase once it acked.
-   * On failure the recording simply continues (or stays paused) and the user is told.
-   */
-  const toggleNativePause = async (pause: boolean) => {
-    if (pauseTransitionInFlight.current) return
-    if (!nativePauseSupported) return
-    if (pause && recordingState !== 'recording') return
-    if (!pause && recordingState !== 'paused') return
-    pauseTransitionInFlight.current = true
-    try {
-      const api = pause
-        ? window.electronAPI?.pauseNativeScreenRecording
-        : window.electronAPI?.resumeNativeScreenRecording
-      const result = await api?.()
-      if (!result?.success) {
-        if (result && !result.supported) {
-          // Helper turned out not to support pause after all: hide the button.
-          setNativePauseSupported(false)
-        }
-        reportUserActionError({
-          t,
-          userMessage: t(pause ? 'launch.pauseFailed' : 'launch.resumeFailed'),
-          error:
-            result?.message || `${pause ? 'pause' : 'resume'}-native-recording returned no success`,
-          context: pause ? 'recording.pause.native' : 'recording.resume.native',
-          details: result,
-          dedupeKey: pause ? 'recording.pause.native' : 'recording.resume.native',
-        })
-        return
-      }
-      if (!nativeRecordingActive.current) return // stopped while the command was in flight
-      if (pause) {
-        pauseStartTime.current = Date.now()
-        setRecordingPhase('paused')
-      } else {
-        if (pauseStartTime.current > 0) {
-          cumulativePauseMs.current += Date.now() - pauseStartTime.current
-          pauseStartTime.current = 0
-        }
-        setRecordingPhase('recording')
-      }
-      notifyCursorTrackerPaused(pause)
-    } catch (error) {
-      console.warn(`Native ${pause ? 'pause' : 'resume'} failed.`, error)
-    } finally {
-      pauseTransitionInFlight.current = false
-    }
-  }
-
-  const pauseRecording = () => {
-    if (nativeRecordingActive.current) {
-      void toggleNativePause(true)
-      return
-    }
-    const recorder = recorderHandle.current?.recorder
-    if (!recorder) return
-    if (recorder.state === 'recording') {
-      pauseStartTime.current = Date.now()
-      recorder.pause()
-      setRecordingPhase('paused')
-      notifyCursorTrackerPaused(true)
-    }
-  }
-
-  const resumeRecording = () => {
-    if (nativeRecordingActive.current) {
-      void toggleNativePause(false)
-      return
-    }
-    const recorder = recorderHandle.current?.recorder
-    if (!recorder) return
-    if (recorder.state === 'paused') {
-      if (pauseStartTime.current > 0) {
-        cumulativePauseMs.current += Date.now() - pauseStartTime.current
-        pauseStartTime.current = 0
-      }
-      recorder.resume()
-      setRecordingPhase('recording')
-      notifyCursorTrackerPaused(false)
-    }
-  }
-
-  const discardRecording = () => {
-    const current: RecordingTransitionState = {
-      phase: recordingState,
-      recording,
-      transitionInFlight: transitionInFlight.current,
-      discardRequested: discardFlag.current,
-    }
-    if (!canRequestDiscard(current)) return
-
-    const next = beginStopTransition(current, { discard: true })
-    discardFlag.current = next.discardRequested
-    transitionInFlight.current = next.transitionInFlight
-    setRecording(next.recording)
-    setRecordingPhase(next.phase)
-    window.electronAPI?.setRecordingState(false)
-
-    const recorder = recorderHandle.current?.recorder ?? null
-    const route = resolveStopRoute({
-      nativeRecordingActive: nativeRecordingActive.current,
-      recorderState: recorder?.state,
-    })
-    if (route === 'native') {
-      // Same path as a normal stop so `finally` resets the transition flag, phase and
-      // cursor tracker; main deletes the output file instead of returning it.
-      void stopNativeRecording({ discard: true })
-      return
-    }
-
-    if (route === 'media-recorder' && recorder) {
-      // finalizeRecording sees discardFlag once the recorder drains and cleans up.
-      recorder.stop()
-      return
-    }
-
-    cleanupActiveMedia()
-    const handle = recorderHandle.current
-    recorderHandle.current = null
-    if (handle) {
-      void handle.discard().catch((error) => {
-        console.warn('Failed to remove discarded recording stream.', error)
-      })
-    }
-    discardFlag.current = false
-    setRecordingPhase('idle')
-    transitionInFlight.current = false
-  }
-
-  /**
-   * Restart = discard + start. Both recorder paths (MediaRecorder drain, native
-   * `stopNativeRecording({ discard: true })`) end in the `idle` phase with the
-   * transition flag cleared; the effect below picks the start up from there so it
-   * never runs against the stale `recordingState` closure of this call. The start
-   * re-reads `getSelectedSource`, so the same source is reused, and it bypasses the
-   * HUD countdown on purpose (the user already recorded once with it).
-   */
-  const restartRecording = () => {
-    const current: RecordingTransitionState = {
-      phase: recordingState,
-      recording,
-      transitionInFlight: transitionInFlight.current,
-      discardRequested: discardFlag.current,
-    }
-    if (!canRequestRestart(current, { restartPending: restartPending.current })) return
-    restartPending.current = true
-    discardRecording()
-  }
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: startRecording is recreated every render; the effect must only fire on the phase transition back to idle.
-  useEffect(() => {
-    if (
-      !shouldStartAfterRestart({
-        phase: recordingState,
-        transitionInFlight: transitionInFlight.current,
-        restartPending: restartPending.current,
-      })
-    ) {
-      return
-    }
-    restartPending.current = false
-    void startRecording()
-  }, [recordingState])
-
-  const toggleRecording = () => {
-    if (transitionInFlight.current) {
-      return
-    }
-
-    if (recordingState === 'starting' || recordingState === 'stopping') {
-      return
-    }
-
-    if (recording || recordingState === 'recording' || recordingState === 'paused') {
-      stopRecording.current()
-      return
-    }
-
-    void startRecording()
-  }
-
-  const canPause = canPauseRecording({
-    phase: recordingState,
-    nativeRecordingActive: nativeSessionActive,
-    nativePauseSupported,
-  })
-
-  return {
-    recording,
-    recordingState,
-    canPause,
-    nativeSystemAudioSupported,
-    toggleRecording,
-    pauseRecording,
-    resumeRecording,
-    discardRecording,
-    restartRecording,
-    startTimeRef: startTime,
-    cumulativePauseMsRef: cumulativePauseMs,
-    pauseStartTimeRef: pauseStartTime,
-  }
+export function useScreenRecorder(): UseScreenRecorderReturn {
+	const t = useScopedT("editor");
+	/**
+	 * `t` through a ref, for the callbacks that must not be rebuilt when it
+	 * changes identity.
+	 *
+	 * `finalizeNativeWindowsRecording` is one of them: it sits in the dependency
+	 * array of the unmount effect below, whose cleanup bumps `countdownRunId` and
+	 * discards any native recording in flight. Recreating that callback therefore
+	 * re-runs the effect, and its cleanup silently cancels the countdown a
+	 * recording is starting from — the take never begins, with nothing logged.
+	 */
+	const tRef = useRef(t);
+	// In an effect, not during render: a render React discards still leaves a ref
+	// written there, and a later recording error would then be worded by a UI that
+	// never reached the screen.
+	useEffect(() => {
+		tRef.current = t;
+	}, [t]);
+	const [recording, setRecording] = useState(false);
+	const [paused, setPaused] = useState(false);
+	const [saving, setSaving] = useState(false);
+	const [elapsedSeconds, setElapsedSeconds] = useState(0);
+	const [microphoneEnabled, setMicrophoneEnabled] = useState(false);
+	const [microphoneDeviceId, setMicrophoneDeviceId] = useState<string | undefined>(undefined);
+	const [microphoneDeviceName, setMicrophoneDeviceName] = useState<string | undefined>(undefined);
+	const [webcamDeviceId, setWebcamDeviceId] = useState<string | undefined>(undefined);
+	const [webcamDeviceName, setWebcamDeviceName] = useState<string | undefined>(undefined);
+	const [systemAudioEnabled, setSystemAudioEnabled] = useState(false);
+	const [webcamEnabled, setWebcamEnabledState] = useState(false);
+	const [cursorCaptureMode, setCursorCaptureMode] = useState<CursorCaptureMode>("editable-overlay");
+	const [softwareEncoderFallbackNoticeVisible, setSoftwareEncoderFallbackNoticeVisible] =
+		useState(false);
+
+	// Seed from the main-process recording-prefs SSOT on mount, so choices
+	// made in the editor's Rec-mode stage (a different renderer window) carry
+	// over instead of this hook silently reverting to its own hardcoded
+	// defaults every time startNewRecording() switches to the HUD window.
+	useEffect(() => {
+		let cancelled = false;
+		void window.electronAPI
+			?.getRecordingPrefs?.()
+			.then((prefs) => {
+				if (cancelled || !prefs) return;
+				setMicrophoneEnabled(prefs.micEnabled);
+				if (prefs.micDeviceId) setMicrophoneDeviceId(prefs.micDeviceId);
+				// The name matters as much as the id: the native Windows helper picks
+				// the microphone by NAME, and falls back to the Windows default
+				// endpoint when it is empty. Seeding only the id left an auto-started
+				// recording racing this window's own device enumeration for it, and
+				// losing (getopenscreen/openscreen#404).
+				if (prefs.micDeviceName) setMicrophoneDeviceName(prefs.micDeviceName);
+				setWebcamEnabledState(prefs.camEnabled);
+				if (prefs.camDeviceId) setWebcamDeviceId(prefs.camDeviceId);
+				setSystemAudioEnabled(prefs.systemAudioEnabled);
+				setCursorCaptureMode(prefs.cursorCaptureMode);
+			})
+			.catch((err) => {
+				// Bare ipcRenderer.invoke — rejects if the main handler throws. Falling
+				// back to this hook's own defaults is acceptable; an unhandled rejection
+				// on every HUD mount is not.
+				console.warn("Failed to seed the recording prefs:", err);
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, []);
+
+	const screenRecorder = useRef<RecorderHandle | null>(null);
+	const webcamRecorder = useRef<RecorderHandle | null>(null);
+	const nativeWindowsRecording = useRef<NativeWindowsRecordingHandle | null>(null);
+	const nativeMacRecording = useRef<NativeMacRecordingHandle | null>(null);
+	const nativeLinuxRecording = useRef<NativeLinuxRecordingHandle | null>(null);
+	const stream = useRef<MediaStream | null>(null);
+	const screenStream = useRef<MediaStream | null>(null);
+	const microphoneStream = useRef<MediaStream | null>(null);
+	const webcamStream = useRef<MediaStream | null>(null);
+	const mixingContext = useRef<AudioContext | null>(null);
+	const recordingId = useRef<number>(0);
+	const accumulatedDurationMs = useRef(0);
+	const segmentStartedAt = useRef<number | null>(null);
+	const finalizingRecordingId = useRef<number | null>(null);
+	const allowAutoFinalize = useRef(false);
+	const discardRecordingId = useRef<number | null>(null);
+	const restarting = useRef(false);
+	const countdownRunId = useRef(0);
+	const [countdownActive, setCountdownActive] = useState(false);
+	const webcamReady = useRef(false);
+	const webcamAcquireId = useRef(0);
+	const canPauseRecording =
+		recording &&
+		Boolean(
+			(nativeWindowsRecording.current && !nativeWindowsRecording.current.finalizing) ||
+				(nativeMacRecording.current && !nativeMacRecording.current.finalizing) ||
+				(nativeLinuxRecording.current && !nativeLinuxRecording.current.finalizing) ||
+				(screenRecorder.current && screenRecorder.current.recorder.state !== "inactive"),
+		);
+
+	const getRecordingDurationMs = useCallback(() => {
+		const segmentDuration =
+			segmentStartedAt.current === null ? 0 : Date.now() - segmentStartedAt.current;
+		return accumulatedDurationMs.current + segmentDuration;
+	}, []);
+
+	const selectMimeType = () => {
+		// H.264 first: hardware-accelerated, so sharp real-time output. AV1/VP9 are
+		// better for distribution but too CPU-heavy for live 60 fps capture (software
+		// encoder falls behind and produces blurry frames).
+		const preferred = [
+			"video/webm;codecs=h264",
+			"video/webm;codecs=vp8",
+			"video/webm;codecs=vp9",
+			"video/webm;codecs=av1",
+			"video/webm",
+		];
+
+		return preferred.find((type) => MediaRecorder.isTypeSupported(type)) ?? "video/webm";
+	};
+
+	const computeBitrate = (width: number, height: number) => {
+		const pixels = width * height;
+		const highFrameRateBoost =
+			TARGET_FRAME_RATE >= HIGH_FRAME_RATE_THRESHOLD ? HIGH_FRAME_RATE_BOOST : 1;
+
+		if (pixels >= FOUR_K_PIXELS) {
+			return Math.round(BITRATE_4K * highFrameRateBoost);
+		}
+
+		if (pixels >= QHD_PIXELS) {
+			return Math.round(BITRATE_QHD * highFrameRateBoost);
+		}
+
+		return Math.round(BITRATE_BASE * highFrameRateBoost);
+	};
+
+	const teardownMedia = useCallback(() => {
+		if (stream.current) {
+			stream.current.getTracks().forEach((track) => track.stop());
+			stream.current = null;
+		}
+		if (screenStream.current) {
+			screenStream.current.getTracks().forEach((track) => track.stop());
+			screenStream.current = null;
+		}
+		if (microphoneStream.current) {
+			microphoneStream.current.getTracks().forEach((track) => track.stop());
+			microphoneStream.current = null;
+		}
+		if (mixingContext.current) {
+			mixingContext.current.close().catch(() => {
+				// Ignore close errors during recorder teardown.
+			});
+			mixingContext.current = null;
+		}
+	}, []);
+
+	/**
+	 * The camera to name in a native capture request. See
+	 * `webcamDeviceIdentityFrom` for why it is read off the live track rather than
+	 * off this hook's two separate pieces of state. Must be called before
+	 * `stopWebcamPreviewStream()`, which is why the Windows path captures it up
+	 * front instead of at the point of use.
+	 */
+	const readWebcamDeviceIdentity = useCallback(
+		() => webcamDeviceIdentityFrom(webcamStream.current, webcamDeviceId, webcamDeviceName),
+		[webcamDeviceId, webcamDeviceName],
+	);
+
+	const stopWebcamPreviewStream = useCallback(() => {
+		if (!webcamStream.current) {
+			return;
+		}
+
+		webcamAcquireId.current++;
+		webcamStream.current.getTracks().forEach((track) => {
+			track.onended = null;
+			track.stop();
+		});
+		webcamStream.current = null;
+		webcamReady.current = true;
+	}, []);
+
+	const setWebcamEnabled = useCallback(
+		async (enabled: boolean) => {
+			if (!enabled) {
+				setWebcamEnabledState(false);
+				return true;
+			}
+
+			const accessResult = await requestCameraAccess();
+			if (!accessResult.success) {
+				toast.error(t("recording.failedCameraAccess"));
+				return false;
+			}
+
+			if (!accessResult.granted) {
+				toast.error(t("recording.cameraBlocked"));
+				return false;
+			}
+
+			setWebcamEnabledState(true);
+			return true;
+		},
+		[t],
+	);
+
+	useEffect(() => {
+		if (!webcamEnabled) return;
+
+		let cancelled = false;
+		let acquiredStream: MediaStream | null = null;
+		const thisAcquireId = ++webcamAcquireId.current;
+		webcamReady.current = false;
+
+		const acquire = async () => {
+			try {
+				const stream = await navigator.mediaDevices.getUserMedia({
+					audio: false,
+					video: webcamDeviceId
+						? {
+								deviceId: { exact: webcamDeviceId },
+								frameRate: { ideal: WEBCAM_TARGET_FRAME_RATE, max: WEBCAM_TARGET_FRAME_RATE },
+							}
+						: {
+								frameRate: { ideal: WEBCAM_TARGET_FRAME_RATE, max: WEBCAM_TARGET_FRAME_RATE },
+							},
+				});
+
+				if (cancelled || thisAcquireId !== webcamAcquireId.current) {
+					stream.getTracks().forEach((track) => {
+						track.onended = null;
+						track.stop();
+					});
+					return;
+				}
+
+				acquiredStream = stream;
+				stream.getVideoTracks().forEach((track) => {
+					track.onended = () => {
+						webcamStream.current = null;
+						if (!restarting.current) {
+							setWebcamEnabledState(false);
+							toast.error(t("recording.cameraDisconnected"));
+						}
+					};
+				});
+				webcamStream.current = stream;
+				webcamReady.current = true;
+			} catch (cameraError) {
+				if (!cancelled) {
+					console.warn("Failed to get webcam access:", cameraError);
+					setWebcamEnabledState(false);
+					const isDeviceError =
+						cameraError instanceof DOMException &&
+						[
+							"NotFoundError",
+							"DevicesNotFoundError",
+							"OverconstrainedError",
+							"NotReadableError",
+						].includes(cameraError.name);
+					toast.error(t(isDeviceError ? "recording.cameraNotFound" : "recording.cameraBlocked"));
+					webcamReady.current = true;
+				}
+			}
+		};
+
+		void acquire();
+
+		return () => {
+			cancelled = true;
+			webcamReady.current = false;
+			if (acquiredStream) {
+				acquiredStream.getTracks().forEach((track) => {
+					track.onended = null;
+					track.stop();
+				});
+				webcamStream.current = null;
+			}
+		};
+	}, [webcamEnabled, webcamDeviceId, t]);
+
+	const finalizeRecording = useCallback(
+		(
+			activeScreenRecorder: RecorderHandle,
+			activeWebcamRecorder: RecorderHandle | null,
+			duration: number,
+			activeRecordingId: number,
+		) => {
+			if (finalizingRecordingId.current === activeRecordingId) {
+				return;
+			}
+			finalizingRecordingId.current = activeRecordingId;
+			// Only show the "Saving…" spinner for genuine saves — not for cancel/restart
+			// flows where discardRecordingId has already been set.
+			const isDiscarded = discardRecordingId.current === activeRecordingId;
+			if (!isDiscarded) {
+				setSaving(true);
+			}
+
+			if (screenRecorder.current === activeScreenRecorder) {
+				screenRecorder.current = null;
+			}
+			if (activeWebcamRecorder && webcamRecorder.current === activeWebcamRecorder) {
+				webcamRecorder.current = null;
+			}
+
+			teardownMedia();
+			setRecording(false);
+			setPaused(false);
+			setElapsedSeconds(0);
+			accumulatedDurationMs.current = 0;
+			segmentStartedAt.current = null;
+			window.electronAPI?.setRecordingState(false);
+
+			void (async () => {
+				// Each disk stream must end up either saved or explicitly discarded.
+				// store-recorded-session finalizes the streams included in a successful
+				// save; the finally block discards everything else.
+				let storeSucceeded = false;
+				let webcamIncludedInSave = false;
+				try {
+					const screenBlob = await activeScreenRecorder.recordedBlobPromise;
+					if (discardRecordingId.current === activeRecordingId) {
+						window.electronAPI?.discardCursorTelemetry(activeRecordingId);
+						return;
+					}
+					// When streaming succeeded the blob is empty; the data is already on disk.
+					if (!activeScreenRecorder.isStreaming() && screenBlob.size === 0) {
+						return;
+					}
+
+					const screenFileName = `${RECORDING_FILE_PREFIX}${activeRecordingId}${VIDEO_FILE_EXTENSION}`;
+					const webcamFileName = `${RECORDING_FILE_PREFIX}${activeRecordingId}${WEBCAM_FILE_SUFFIX}${VIDEO_FILE_EXTENSION}`;
+
+					// Only fix duration / convert to ArrayBuffer for in-memory data;
+					// streamed recordings are patched on disk by the main process.
+					let screenVideoData: ArrayBuffer = new ArrayBuffer(0);
+					if (!activeScreenRecorder.isStreaming() && screenBlob.size > 0) {
+						const fixedScreenBlob = await fixWebmDuration(screenBlob, duration);
+						screenVideoData = await fixedScreenBlob.arrayBuffer();
+					}
+
+					let webcamVideoData: ArrayBuffer | undefined;
+					if (activeWebcamRecorder) {
+						const webcamBlob = await activeWebcamRecorder.recordedBlobPromise.catch(() => null);
+						if (!activeWebcamRecorder.isStreaming() && webcamBlob && webcamBlob.size > 0) {
+							const fixedWebcamBlob = await fixWebmDuration(webcamBlob, duration);
+							webcamVideoData = await fixedWebcamBlob.arrayBuffer();
+						} else if (activeWebcamRecorder.isStreaming()) {
+							webcamVideoData = new ArrayBuffer(0);
+						}
+					}
+					webcamIncludedInSave = webcamVideoData !== undefined;
+
+					const result = await window.electronAPI.storeRecordedSession({
+						screen: {
+							videoData: screenVideoData,
+							fileName: screenFileName,
+						},
+						webcam:
+							webcamVideoData !== undefined
+								? { videoData: webcamVideoData, fileName: webcamFileName }
+								: undefined,
+						createdAt: activeRecordingId,
+						// What this take actually did, not what was requested. Only the browser
+						// pipeline reaches this finalizer (stopRecording returns earlier for all
+						// three native paths), and off win32 it cannot exclude the system cursor
+						// — so the mode reported to the main process was forced to "system" and
+						// the stored metadata has to agree. It is user-visible: `openscreen
+						// project show` prints it.
+						cursorCaptureMode: effectiveBrowserCursorMode(
+							window.electronAPI.getPlatform(),
+							cursorCaptureMode,
+						),
+						durationMs: duration,
+					});
+
+					if (!result.success) {
+						console.error("Failed to store recording session:", result.message);
+						return;
+					}
+					// store-recorded-session has flushed and closed the saved streams.
+					storeSucceeded = true;
+
+					if (result.session) {
+						await window.electronAPI.setCurrentRecordingSession(result.session);
+					} else if (result.path) {
+						await window.electronAPI.setCurrentVideoPath(result.path);
+					}
+
+					await window.electronAPI.switchToEditor();
+				} catch (error) {
+					console.error("Error saving recording:", error);
+				} finally {
+					// Discard any recorder whose data wasn't part of a successful save (discarded
+					// run, failed save, or a webcam whose disk write failed while the screen still
+					// saved) so no stream or partial file is left open or orphaned.
+					if (!storeSucceeded) {
+						await activeScreenRecorder.discard().catch(() => undefined);
+					}
+					if (activeWebcamRecorder && !(storeSucceeded && webcamIncludedInSave)) {
+						await activeWebcamRecorder.discard().catch(() => undefined);
+					}
+					if (finalizingRecordingId.current === activeRecordingId) {
+						finalizingRecordingId.current = null;
+					}
+					if (discardRecordingId.current === activeRecordingId) {
+						discardRecordingId.current = null;
+					}
+					setSaving(false);
+				}
+			})();
+		},
+		[cursorCaptureMode, teardownMedia],
+	);
+
+	const finalizeNativeWindowsRecording = useCallback(async (discard = false) => {
+		const activeNativeRecording = nativeWindowsRecording.current;
+		if (!activeNativeRecording || activeNativeRecording.finalizing) {
+			return false;
+		}
+
+		activeNativeRecording.finalizing = true;
+		if (!discard) {
+			setSaving(true);
+		}
+
+		const clearNativeRecordingState = () => {
+			nativeWindowsRecording.current = null;
+			setRecording(false);
+			setPaused(false);
+			setElapsedSeconds(0);
+			accumulatedDurationMs.current = 0;
+			segmentStartedAt.current = null;
+		};
+
+		try {
+			const result = await window.electronAPI.stopNativeWindowsRecording(discard);
+			if (discard || result.discarded) {
+				clearNativeRecordingState();
+				return true;
+			}
+			if (!result.success) {
+				console.error("Failed to stop native Windows recording:", result.error);
+				toast.error(result.error ?? "Failed to stop native Windows recording");
+				// Clear anyway. The main process releases its helper handle
+				// unconditionally, so holding on here left the two sides
+				// disagreeing about whether anything was recording: the HUD kept
+				// showing a stop button, and pressing it sent a second stop that
+				// came back "Native Windows capture is not running." (issue #252).
+				// Reaching here now means the take really is unreadable -- a failed
+				// stop that left a playable fragmented file comes back `success`
+				// with a session and takes the editor path below, so this branch no
+				// longer decides the fate of a recoverable recording.
+				clearNativeRecordingState();
+				return true;
+			}
+
+			clearNativeRecordingState();
+			// The other way a camera goes missing, and the quieter one: the device
+			// opened, so nothing warned at start, but it never produced a frame and
+			// the file it left behind was empty. Say so before the editor opens
+			// without a camera and leaves the user to work out why. Through `tRef`
+			// because this callback has to stay referentially stable — see the ref's
+			// own comment.
+			if (result.webcamDropped) {
+				toast.error(tRef.current("recording.cameraCaptureUnavailable"));
+			}
+			if (result.session) {
+				await window.electronAPI.setCurrentRecordingSession(result.session);
+			} else if (result.path) {
+				await window.electronAPI.setCurrentVideoPath(result.path);
+			}
+
+			await window.electronAPI.switchToEditor();
+			return true;
+		} catch (error) {
+			console.error("Error saving native Windows recording:", error);
+			toast.error(
+				error instanceof Error ? error.message : "Failed to save native Windows recording",
+			);
+			clearNativeRecordingState();
+			return true;
+		} finally {
+			if (discardRecordingId.current === activeNativeRecording.recordingId) {
+				discardRecordingId.current = null;
+			}
+			setSaving(false);
+		}
+	}, []);
+
+	const finalizeNativeMacRecording = useCallback(
+		async (discard = false) => {
+			const activeNativeRecording = nativeMacRecording.current;
+			if (!activeNativeRecording || activeNativeRecording.finalizing) {
+				return false;
+			}
+
+			activeNativeRecording.finalizing = true;
+			if (!discard) {
+				setSaving(true);
+			}
+			const duration = Math.max(0, getRecordingDurationMs());
+			const activeWebcamRecorder = webcamRecorder.current;
+			if (activeWebcamRecorder && webcamRecorder.current === activeWebcamRecorder) {
+				webcamRecorder.current = null;
+			}
+			// The webcam MediaRecorder started before the native recording did (see
+			// webcamOffsetMs on NativeMacRecordingHandle), so its real content is
+			// longer than the screen's active `duration` by that same head start.
+			// Patching the WebM's declared duration to the screen's shorter duration
+			// would make that extra leading footage unseekable in a standard <video>
+			// element (which trusts the container's declared duration/seek range) --
+			// exactly the footage the editor needs to skip into to compensate for
+			// webcamOffsetMs, so it must stay reachable.
+			const webcamHeadStartMs = Math.max(0, -(activeNativeRecording.webcamOffsetMs ?? 0));
+			const webcamDurationMs = duration + webcamHeadStartMs;
+			const webcamFileName = `${RECORDING_FILE_PREFIX}${activeNativeRecording.recordingId}${WEBCAM_FILE_SUFFIX}${VIDEO_FILE_EXTENSION}`;
+			const webcamResultPromise: Promise<{
+				asset?: RecordedVideoAssetInput;
+				error?: string;
+			}> = activeWebcamRecorder
+				? finalizeWebcamAsset(activeWebcamRecorder, webcamFileName, webcamDurationMs, "macOS")
+				: Promise.resolve({});
+
+			const clearNativeRecordingState = () => {
+				nativeMacRecording.current = null;
+				setRecording(false);
+				setPaused(false);
+				setElapsedSeconds(0);
+				accumulatedDurationMs.current = 0;
+				segmentStartedAt.current = null;
+			};
+
+			let webcamSaved = false;
+			try {
+				const result = await window.electronAPI.stopNativeMacRecording(discard);
+				const webcamResult = await webcamResultPromise;
+				if (discard || result.discarded) {
+					clearNativeRecordingState();
+					return true;
+				}
+				if (!result.success) {
+					console.error("Failed to stop native macOS recording:", result.error);
+					toast.error(result.error ?? "Failed to stop native macOS recording");
+					// See the Windows finalizer: the main process has already
+					// released its helper handle, so keeping ours leaves the HUD
+					// stuck in a recording state the app can never be stopped out
+					// of (issue #252).
+					clearNativeRecordingState();
+					return true;
+				}
+
+				if (webcamResult.asset && result.path) {
+					const attachResult = await window.electronAPI.attachNativeMacWebcamRecording({
+						screenVideoPath: result.path,
+						recordingId: activeNativeRecording.recordingId,
+						webcam: webcamResult.asset,
+						cursorCaptureMode,
+						durationMs: webcamDurationMs,
+						...(typeof activeNativeRecording.webcamOffsetMs === "number"
+							? { webcamOffsetMs: activeNativeRecording.webcamOffsetMs }
+							: {}),
+					});
+					if (attachResult.success) {
+						result.session = attachResult.session;
+						webcamSaved = true;
+					} else {
+						console.error("Failed to attach native macOS webcam recording:", attachResult.error);
+						toast.error(attachResult.error ?? "Failed to store webcam recording");
+					}
+				} else if (webcamResult.error) {
+					// The screen recording still saves, so without this the editor just
+					// opens with the camera missing and nothing said about it (#253).
+					toast.error(`Webcam not saved (${webcamResult.error}). The screen recording was kept.`);
+				}
+
+				clearNativeRecordingState();
+				if (result.session) {
+					await window.electronAPI.setCurrentRecordingSession(result.session);
+				} else if (result.path) {
+					await window.electronAPI.setCurrentVideoPath(result.path);
+				}
+
+				await window.electronAPI.switchToEditor();
+				return true;
+			} catch (error) {
+				console.error("Error saving native macOS recording:", error);
+				toast.error(
+					error instanceof Error ? error.message : "Failed to save native macOS recording",
+				);
+				clearNativeRecordingState();
+				return true;
+			} finally {
+				// A webcam stream that wasn't folded into a saved session has to be closed
+				// and its partial file removed, or a discarded or failed take orphans a
+				// half-written .webm now that the bytes go to disk as they arrive.
+				if (activeWebcamRecorder && !webcamSaved) {
+					await activeWebcamRecorder.discard().catch(() => undefined);
+				}
+				if (discardRecordingId.current === activeNativeRecording.recordingId) {
+					discardRecordingId.current = null;
+				}
+				setSaving(false);
+			}
+		},
+		[cursorCaptureMode, getRecordingDurationMs],
+	);
+
+	/**
+	 * The Linux twin of `finalizeNativeMacRecording`. Same shape, because the two
+	 * platforms make the same split: helper owns screen and audio, renderer owns
+	 * the webcam, and the two are reconciled here.
+	 */
+	const finalizeNativeLinuxRecording = useCallback(
+		async (discard = false) => {
+			const activeNativeRecording = nativeLinuxRecording.current;
+			if (!activeNativeRecording || activeNativeRecording.finalizing) {
+				return false;
+			}
+
+			activeNativeRecording.finalizing = true;
+			if (!discard) {
+				setSaving(true);
+			}
+			const duration = Math.max(0, getRecordingDurationMs());
+			const activeWebcamRecorder = webcamRecorder.current;
+			if (activeWebcamRecorder && webcamRecorder.current === activeWebcamRecorder) {
+				webcamRecorder.current = null;
+			}
+			// See the identical comment in finalizeNativeMacRecording: the
+			// leading footage recorded while the portal picker was up must
+			// stay seekable, so the declared duration includes it.
+			const webcamHeadStartMs = Math.max(0, -(activeNativeRecording.webcamOffsetMs ?? 0));
+			const webcamDurationMs = duration + webcamHeadStartMs;
+			const webcamFileName = `${RECORDING_FILE_PREFIX}${activeNativeRecording.recordingId}${WEBCAM_FILE_SUFFIX}${VIDEO_FILE_EXTENSION}`;
+			const webcamResultPromise: Promise<{
+				asset?: RecordedVideoAssetInput;
+				error?: string;
+			}> = activeWebcamRecorder
+				? finalizeWebcamAsset(activeWebcamRecorder, webcamFileName, webcamDurationMs, "Linux")
+				: Promise.resolve({});
+
+			const clearNativeRecordingState = () => {
+				nativeLinuxRecording.current = null;
+				setRecording(false);
+				setPaused(false);
+				setElapsedSeconds(0);
+				accumulatedDurationMs.current = 0;
+				segmentStartedAt.current = null;
+			};
+
+			let webcamSaved = false;
+			try {
+				const result = await window.electronAPI.stopNativeLinuxRecording(discard);
+				const webcamResult = await webcamResultPromise;
+				if (discard || result.discarded) {
+					clearNativeRecordingState();
+					return true;
+				}
+				if (!result.success) {
+					console.error("Failed to stop native Linux recording:", result.error);
+					toast.error(result.error ?? "Failed to stop native Linux recording");
+					// See the Windows finalizer: the main process has already
+					// released its helper handle, so keeping ours leaves the HUD
+					// stuck in a recording state the app can never be stopped out
+					// of (issue #252).
+					clearNativeRecordingState();
+					return true;
+				}
+
+				if (webcamResult.asset && result.path) {
+					const attachResult = await window.electronAPI.attachNativeLinuxWebcamRecording({
+						screenVideoPath: result.path,
+						recordingId: activeNativeRecording.recordingId,
+						webcam: webcamResult.asset,
+						cursorCaptureMode,
+						durationMs: webcamDurationMs,
+						...(typeof activeNativeRecording.webcamOffsetMs === "number"
+							? { webcamOffsetMs: activeNativeRecording.webcamOffsetMs }
+							: {}),
+					});
+					if (attachResult.success) {
+						result.session = attachResult.session;
+						webcamSaved = true;
+					} else {
+						console.error("Failed to attach native Linux webcam recording:", attachResult.error);
+						toast.error(attachResult.error ?? "Failed to store webcam recording");
+					}
+				} else if (webcamResult.error) {
+					// The screen recording still saves, so without this the editor just
+					// opens with the camera missing and nothing said about it (#253).
+					toast.error(`Webcam not saved (${webcamResult.error}). The screen recording was kept.`);
+				}
+
+				clearNativeRecordingState();
+				if (result.session) {
+					await window.electronAPI.setCurrentRecordingSession(result.session);
+				} else if (result.path) {
+					await window.electronAPI.setCurrentVideoPath(result.path);
+				}
+
+				await window.electronAPI.switchToEditor();
+				return true;
+			} catch (error) {
+				console.error("Error saving native Linux recording:", error);
+				toast.error(
+					error instanceof Error ? error.message : "Failed to save native Linux recording",
+				);
+				clearNativeRecordingState();
+				return true;
+			} finally {
+				// A webcam stream that wasn't folded into a saved session has to be closed
+				// and its partial file removed, or a discarded or failed take orphans a
+				// half-written .webm now that the bytes go to disk as they arrive.
+				if (activeWebcamRecorder && !webcamSaved) {
+					await activeWebcamRecorder.discard().catch(() => undefined);
+				}
+				if (discardRecordingId.current === activeNativeRecording.recordingId) {
+					discardRecordingId.current = null;
+				}
+				setSaving(false);
+			}
+		},
+		[cursorCaptureMode, getRecordingDurationMs],
+	);
+
+	const stopRecording = useRef(() => {
+		if (nativeWindowsRecording.current) {
+			void finalizeNativeWindowsRecording(false);
+			return;
+		}
+		if (nativeMacRecording.current) {
+			void finalizeNativeMacRecording(false);
+			return;
+		}
+		if (nativeLinuxRecording.current) {
+			void finalizeNativeLinuxRecording(false);
+			return;
+		}
+
+		const activeScreenRecorder = screenRecorder.current;
+		if (!activeScreenRecorder) {
+			return;
+		}
+
+		const activeWebcamRecorder = webcamRecorder.current;
+		const duration = getRecordingDurationMs();
+		const activeRecordingId = recordingId.current;
+
+		finalizeRecording(
+			activeScreenRecorder,
+			activeWebcamRecorder ?? null,
+			duration,
+			activeRecordingId,
+		);
+
+		if (
+			activeScreenRecorder.recorder.state === "recording" ||
+			activeScreenRecorder.recorder.state === "paused"
+		) {
+			try {
+				activeScreenRecorder.recorder.stop();
+			} catch {
+				// Recorder may already be stopping.
+			}
+		}
+		if (activeWebcamRecorder) {
+			if (
+				activeWebcamRecorder.recorder.state === "recording" ||
+				activeWebcamRecorder.recorder.state === "paused"
+			) {
+				try {
+					activeWebcamRecorder.recorder.stop();
+				} catch {
+					// Recorder may already be stopping.
+				}
+			}
+		}
+	});
+
+	const safeHideCountdownOverlay = useCallback(async (runId: number) => {
+		try {
+			await window.electronAPI.hideCountdownOverlay(runId);
+		} catch (error) {
+			console.warn("Failed to hide countdown overlay:", error);
+		}
+	}, []);
+
+	useEffect(() => {
+		let cleanup: (() => void) | undefined;
+
+		if (window.electronAPI?.onStopRecordingFromTray) {
+			cleanup = window.electronAPI.onStopRecordingFromTray(() => {
+				stopRecording.current();
+			});
+		}
+
+		return () => {
+			const activeRunId = countdownRunId.current;
+			if (cleanup) cleanup();
+			countdownRunId.current += 1;
+			void safeHideCountdownOverlay(activeRunId);
+			allowAutoFinalize.current = false;
+			restarting.current = false;
+			discardRecordingId.current = null;
+			if (nativeWindowsRecording.current) {
+				void finalizeNativeWindowsRecording(true);
+			}
+			if (nativeMacRecording.current) {
+				void finalizeNativeMacRecording(true);
+			}
+			if (nativeLinuxRecording.current) {
+				void finalizeNativeLinuxRecording(true);
+			}
+
+			if (
+				screenRecorder.current?.recorder.state === "recording" ||
+				screenRecorder.current?.recorder.state === "paused"
+			) {
+				try {
+					screenRecorder.current.recorder.stop();
+				} catch {
+					// Ignore recorder teardown errors during cleanup.
+				}
+			}
+			if (
+				webcamRecorder.current?.recorder.state === "recording" ||
+				webcamRecorder.current?.recorder.state === "paused"
+			) {
+				try {
+					webcamRecorder.current.recorder.stop();
+				} catch {
+					// Ignore recorder teardown errors during cleanup.
+				}
+			}
+			screenRecorder.current = null;
+			webcamRecorder.current = null;
+			teardownMedia();
+		};
+	}, [
+		teardownMedia,
+		safeHideCountdownOverlay,
+		finalizeNativeWindowsRecording,
+		finalizeNativeMacRecording,
+		finalizeNativeLinuxRecording,
+	]);
+
+	const safeShowCountdownOverlay = async (value: number, runId: number) => {
+		try {
+			await window.electronAPI.showCountdownOverlay(value, runId);
+			return true;
+		} catch (error) {
+			console.warn("Failed to show countdown overlay:", error);
+			return false;
+		}
+	};
+
+	const cancelCountdown = () => {
+		const activeRunId = countdownRunId.current;
+		countdownRunId.current += 1;
+		setCountdownActive(false);
+		void safeHideCountdownOverlay(activeRunId);
+	};
+
+	const safeSetCountdownOverlayValue = async (value: number, runId: number) => {
+		try {
+			await window.electronAPI.setCountdownOverlayValue(value, runId);
+		} catch (error) {
+			console.warn("Failed to update countdown overlay value:", error);
+		}
+	};
+
+	const isCountdownRunActive = (runId?: number) =>
+		runId === undefined || countdownRunId.current === runId;
+
+	const waitForWebcamReady = async () => {
+		if (webcamReady.current) {
+			return;
+		}
+
+		await new Promise<void>((resolve) => {
+			const interval = setInterval(() => {
+				if (webcamReady.current) {
+					clearInterval(interval);
+					resolve();
+				}
+			}, 50);
+			setTimeout(() => {
+				clearInterval(interval);
+				resolve();
+			}, 5000);
+		});
+	};
+
+	const startNativeWindowsRecordingIfAvailable = async (
+		selectedSource: ProcessedDesktopSource,
+		countdownRunToken?: number,
+	) => {
+		try {
+			const platform = window.electronAPI.getPlatform();
+			if (platform !== "win32") {
+				return false;
+			}
+
+			const availability = await window.electronAPI.isNativeWindowsCaptureAvailable();
+			if (!availability.success || !availability.available) {
+				if (availability.reason === "unsupported-os") {
+					return false;
+				}
+				if (availability.reason === "missing-helper") {
+					console.warn("Native Windows capture helper is not available; using browser capture.");
+					return false;
+				}
+
+				throw new Error(availability.error ?? "Native Windows capture is not available.");
+			}
+
+			if (!isCountdownRunActive(countdownRunToken)) {
+				return true;
+			}
+
+			const activeRecordingId = Date.now();
+			const displayId = Number(selectedSource.display_id);
+			const sourceType = selectedSource.id.startsWith("window:") ? "window" : "display";
+			const windowHandle = parseWindowHandleFromSourceId(selectedSource.id);
+			let webcamIdentity = { deviceId: webcamDeviceId, deviceName: webcamDeviceName };
+			if (webcamEnabled) {
+				await waitForWebcamReady();
+				if (!isCountdownRunActive(countdownRunToken)) {
+					return true;
+				}
+				// Read the device off the live track before letting go of it: this is
+				// the only moment where the id and the name are known to describe the
+				// same camera (see readWebcamDeviceIdentity).
+				webcamIdentity = readWebcamDeviceIdentity();
+				// Release the renderer-side validation stream before asking the native
+				// helper to open the same device: most webcams only allow one exclusive
+				// capture session, and native (Media Foundation/DirectShow) now owns
+				// webcam capture directly, sharing the same recording-start clock as
+				// screen video and audio instead of racing a separately-started browser
+				// MediaRecorder against the helper's own process-spawn/WGC-init latency.
+				stopWebcamPreviewStream();
+			}
+			const request: NativeWindowsRecordingRequest = {
+				recordingId: activeRecordingId,
+				preferSoftwareEncoder: loadUserPreferences().preferSoftwareEncoder,
+				source: {
+					type: sourceType,
+					sourceId: selectedSource.id,
+					...(Number.isFinite(displayId) ? { displayId } : {}),
+					...(windowHandle ? { windowHandle } : {}),
+				},
+				video: {
+					fps: TARGET_FRAME_RATE,
+					width: TARGET_WIDTH,
+					height: TARGET_HEIGHT,
+				},
+				audio: {
+					system: {
+						enabled: systemAudioEnabled,
+					},
+					microphone: {
+						enabled: microphoneEnabled,
+						deviceId: microphoneDeviceId,
+						deviceName: microphoneDeviceName,
+						gain: MIC_GAIN_BOOST,
+					},
+				},
+				webcam: {
+					enabled: webcamEnabled,
+					deviceId: webcamIdentity.deviceId,
+					deviceName: webcamIdentity.deviceName,
+					width: 0,
+					height: 0,
+					fps: WEBCAM_TARGET_FRAME_RATE,
+				},
+				cursor: {
+					mode: cursorCaptureMode,
+				},
+			};
+			const result = await window.electronAPI.startNativeWindowsRecording(request);
+			if (!result.success || !result.recordingId) {
+				throw new Error(result.error ?? "Native Windows capture failed.");
+			}
+
+			// The take goes on without the camera rather than failing, so this is the
+			// only moment the user can learn about it while it is still cheap to stop
+			// and retry. Left unsaid, the camera's absence was discovered in the
+			// editor, long after the moment was gone.
+			if (result.webcamUnavailable) {
+				toast.error(t("recording.cameraCaptureUnavailable"));
+			}
+			if (result.microphoneDefaulted) {
+				toast.error(t("recording.microphoneDefaulted"));
+			}
+
+			// Tell the user when the helper silently switched away from the default
+			// GPU encoder; an explicit software-preferred selection needs no notice.
+			setSoftwareEncoderFallbackNoticeVisible(
+				result.videoEncoderSelection === "software-fallback" &&
+					!loadUserPreferences().hideSoftwareEncoderFallbackNotice,
+			);
+
+			recordingId.current = result.recordingId;
+			nativeWindowsRecording.current = {
+				recordingId: result.recordingId,
+				finalizing: false,
+				paused: false,
+			};
+			accumulatedDurationMs.current = 0;
+			segmentStartedAt.current = Date.now();
+			allowAutoFinalize.current = true;
+			setRecording(true);
+			setPaused(false);
+			setElapsedSeconds(0);
+			return true;
+		} catch (error) {
+			console.error("Native Windows capture failed:", error);
+			throw error;
+		}
+	};
+
+	const startNativeMacRecordingIfAvailable = async (
+		selectedSource: ProcessedDesktopSource,
+		countdownRunToken?: number,
+	) => {
+		try {
+			const platform = window.electronAPI.getPlatform();
+			if (platform !== "darwin") {
+				return false;
+			}
+
+			const availability = await window.electronAPI.isNativeMacCaptureAvailable();
+			if (!availability.success || !availability.available) {
+				if (availability.reason === "unsupported-platform") {
+					return false;
+				}
+
+				throw new Error(
+					availability.reason === "missing-helper"
+						? "Native macOS capture helper is not available."
+						: (availability.error ?? "Native macOS capture is not available."),
+				);
+			}
+
+			if (!isCountdownRunActive(countdownRunToken)) {
+				return true;
+			}
+
+			const activeRecordingId = Date.now();
+			const sourceType = selectedSource.id.startsWith("window:") ? "window" : "display";
+			const displayId =
+				Number(selectedSource.display_id) || parseMacDisplayIdFromSourceId(selectedSource.id);
+			const windowId = parseMacWindowIdFromSourceId(selectedSource.id);
+			let nativeWebcamRecorder: RecorderHandle | null = null;
+			// createRecorderHandle() calls MediaRecorder.start() synchronously, so the
+			// webcam clip's first frame is captured right now -- before the native
+			// ScreenCaptureKit helper below has even been spawned. Stamp that instant
+			// so the gap to the helper's confirmed start can be trimmed from the
+			// webcam asset later instead of leaving the camera looking like it lags
+			// behind screen/audio (see webcamOffsetMs on NativeMacRecordingHandle).
+			let nativeWebcamRecorderStartedAtMs: number | null = null;
+			if (webcamEnabled) {
+				if (!webcamReady.current) {
+					await new Promise<void>((resolve) => {
+						const interval = setInterval(() => {
+							if (webcamReady.current) {
+								clearInterval(interval);
+								resolve();
+							}
+						}, 50);
+						setTimeout(() => {
+							clearInterval(interval);
+							resolve();
+						}, 5000);
+					});
+				}
+				if (!isCountdownRunActive(countdownRunToken)) {
+					return true;
+				}
+				if (webcamStream.current) {
+					nativeWebcamRecorderStartedAtMs = performance.now();
+					// Stream to disk. Buffered in memory, a long take had to be flattened
+					// into one ArrayBuffer at finalize -- past ~2GB that throws, and the
+					// camera was dropped without a word (#253). The main process reuses the
+					// recordingId we send here, so this name is the one finalize rebuilds.
+					nativeWebcamRecorder = createRecorderHandle(
+						webcamStream.current,
+						{
+							mimeType: selectMimeType(),
+							videoBitsPerSecond: BITRATE_BASE,
+						},
+						`${RECORDING_FILE_PREFIX}${activeRecordingId}${WEBCAM_FILE_SUFFIX}${VIDEO_FILE_EXTENSION}`,
+					);
+				} else {
+					webcamAcquireId.current++;
+					setWebcamEnabledState(false);
+				}
+			}
+			if (!isCountdownRunActive(countdownRunToken)) {
+				return true;
+			}
+			const request: NativeMacRecordingRequest = {
+				schemaVersion: 1,
+				recordingId: activeRecordingId,
+				source: {
+					type: sourceType,
+					sourceId: selectedSource.id,
+					...(displayId ? { displayId } : {}),
+					...(windowId ? { windowId } : {}),
+				},
+				video: {
+					fps: TARGET_FRAME_RATE,
+					width: TARGET_WIDTH,
+					height: TARGET_HEIGHT,
+					bitrate: computeBitrate(TARGET_WIDTH, TARGET_HEIGHT),
+					hideSystemCursor: cursorCaptureMode === "editable-overlay",
+				},
+				audio: {
+					system: {
+						enabled: systemAudioEnabled,
+					},
+					microphone: {
+						enabled: microphoneEnabled,
+						deviceId: microphoneDeviceId,
+						deviceName: microphoneDeviceName,
+						gain: MIC_GAIN_BOOST,
+					},
+				},
+				webcam: {
+					enabled: webcamEnabled,
+					// Same pairing rule as the Windows path; here the stream is still
+					// open, so the identity can be read at the point of use.
+					...readWebcamDeviceIdentity(),
+					width: 0,
+					height: 0,
+					fps: WEBCAM_TARGET_FRAME_RATE,
+				},
+				cursor: {
+					mode: cursorCaptureMode,
+				},
+				outputs: {
+					screenPath: "",
+				},
+			};
+			const result = await window.electronAPI.startNativeMacRecording(request);
+			if (!result.success || !result.recordingId) {
+				throw new Error(result.error ?? "Native macOS capture failed.");
+			}
+			if (!isCountdownRunActive(countdownRunToken)) {
+				await window.electronAPI.stopNativeMacRecording(true);
+				return true;
+			}
+
+			// The IPC call above only resolves once the helper's stdout confirms its
+			// screen capture has truly started (see waitForNativeMacCaptureStart in
+			// electron/ipc/handlers.ts), so this is a reliable proxy for the native
+			// recording's real t=0 in the same clock the webcam timestamp used above.
+			const nativeRecordingConfirmedStartedAtMs = performance.now();
+			recordingId.current = result.recordingId;
+			nativeMacRecording.current = {
+				recordingId: result.recordingId,
+				finalizing: false,
+				paused: false,
+				webcamOffsetMs: webcamOffsetMsFrom(
+					nativeWebcamRecorder,
+					nativeWebcamRecorderStartedAtMs,
+					nativeRecordingConfirmedStartedAtMs,
+				),
+			};
+			webcamRecorder.current = nativeWebcamRecorder;
+			accumulatedDurationMs.current = 0;
+			segmentStartedAt.current = Date.now();
+			allowAutoFinalize.current = true;
+			setRecording(true);
+			setPaused(false);
+			setElapsedSeconds(0);
+			return true;
+		} catch (error) {
+			console.error("Native macOS capture failed:", error);
+			throw error;
+		}
+	};
+
+	/**
+	 * The Linux native path.
+	 *
+	 * Two things make it shorter than its Windows and macOS siblings, and both
+	 * come from Wayland rather than from anything being unfinished:
+	 *
+	 *   * No `source`. The ScreenCast portal raises its OWN picker and the
+	 *     compositor decides what it hands over. `selectedSource` is a
+	 *     placeholder there, so passing it along would be passing a guess.
+	 *   * The IPC call does not resolve until the user has answered that picker,
+	 *     which has no upper bound. That is also what makes the returned instant
+	 *     a trustworthy t=0 for the webcam offset below.
+	 */
+	/**
+	 * The helper request, built in ONE place because it is now sent TWICE: once
+	 * to negotiate the portal before the countdown, once to start recording after
+	 * it. The two must describe the same capture — the session armed at the end
+	 * is the one negotiated at the start, so a divergence in audio or cursor
+	 * settings would record something the second call never asked for.
+	 */
+	const buildNativeLinuxRequest = (recordingId?: number): NativeLinuxRecordingRequest => ({
+		...(recordingId === undefined ? {} : { recordingId }),
+		video: {
+			// No bitrate on purpose. TARGET_WIDTH/HEIGHT are the app's 4K ceiling,
+			// not the capture size — on Wayland nobody knows that until the portal
+			// has negotiated it, and the user may well have picked a single window.
+			// Sending computeBitrate() of the ceiling asked for 76.5 Mbit/s for a
+			// 1080p capture. The helper derives it from the size it actually got.
+			fps: TARGET_FRAME_RATE,
+		},
+		audio: {
+			system: { enabled: systemAudioEnabled },
+			microphone: {
+				enabled: microphoneEnabled,
+				// The device LABEL, not the id. Chromium's deviceId is an opaque
+				// per-origin hash that means nothing to PipeWire, whereas on a
+				// PipeWire system the label IS the node's `node.description` — which
+				// is what the helper matches against the graph it enumerates.
+				// Sending nothing here is what made a user who picked their built-in
+				// microphone get the empty headphone jack recorded, because the
+				// helper then fell back to the session default source.
+				...(microphoneDeviceName ? { deviceName: microphoneDeviceName } : {}),
+				gain: MIC_GAIN_BOOST,
+			},
+		},
+		cursor: { mode: cursorCaptureMode },
+	});
+
+	const startNativeLinuxRecordingIfAvailable = async (
+		countdownRunToken?: number,
+		preparedRecordingId?: number | null,
+	) => {
+		try {
+			const platform = window.electronAPI.getPlatform();
+			if (platform !== "linux") {
+				return false;
+			}
+
+			const availability = await window.electronAPI.isNativeLinuxCaptureAvailable();
+			if (!availability.success || !availability.available) {
+				if (availability.reason === "unsupported-platform") {
+					return false;
+				}
+				if (availability.reason === "missing-helper") {
+					// The browser path still works, just without hardware encode,
+					// cursor telemetry or a single picker. Falling back beats
+					// refusing to record.
+					console.warn("Native Linux capture helper is not available; using browser capture.");
+					return false;
+				}
+				throw new Error(availability.error ?? "Native Linux capture is not available.");
+			}
+
+			if (!isCountdownRunActive(countdownRunToken)) {
+				return true;
+			}
+
+			// Reuse the prepared recording's id, or the main process cannot match
+			// the session it is holding to the recording being started and would
+			// discard it — negotiating a second portal session, and raising a
+			// second picker, for a grant it already had.
+			const activeRecordingId = preparedRecordingId ?? Date.now();
+			let nativeWebcamRecorder: RecorderHandle | null = null;
+			let nativeWebcamRecorderStartedAtMs: number | null = null;
+			if (webcamEnabled) {
+				await waitForWebcamReady();
+				if (!isCountdownRunActive(countdownRunToken)) {
+					return true;
+				}
+				if (webcamStream.current) {
+					nativeWebcamRecorderStartedAtMs = performance.now();
+					// See the identical comment in the macOS path: stream to disk so a long
+					// take is never flattened into one ArrayBuffer at finalize (#253).
+					nativeWebcamRecorder = createRecorderHandle(
+						webcamStream.current,
+						{
+							mimeType: selectMimeType(),
+							videoBitsPerSecond: BITRATE_BASE,
+						},
+						`${RECORDING_FILE_PREFIX}${activeRecordingId}${WEBCAM_FILE_SUFFIX}${VIDEO_FILE_EXTENSION}`,
+					);
+				} else {
+					webcamAcquireId.current++;
+					setWebcamEnabledState(false);
+				}
+			}
+
+			const result = await window.electronAPI.startNativeLinuxRecording(
+				buildNativeLinuxRequest(activeRecordingId),
+			);
+			if (!result.success || !result.recordingId) {
+				throw new Error(result.error ?? "Native Linux capture failed.");
+			}
+			if (!isCountdownRunActive(countdownRunToken)) {
+				await window.electronAPI.stopNativeLinuxRecording(true);
+				return true;
+			}
+
+			// Resolved only after the helper's first encoded frame, so this is the
+			// native recording's real t=0 in the same clock the webcam used above.
+			const nativeRecordingConfirmedStartedAtMs = performance.now();
+			recordingId.current = result.recordingId;
+			nativeLinuxRecording.current = {
+				recordingId: result.recordingId,
+				finalizing: false,
+				paused: false,
+				webcamOffsetMs: webcamOffsetMsFrom(
+					nativeWebcamRecorder,
+					nativeWebcamRecorderStartedAtMs,
+					nativeRecordingConfirmedStartedAtMs,
+				),
+			};
+			webcamRecorder.current = nativeWebcamRecorder;
+			accumulatedDurationMs.current = 0;
+			segmentStartedAt.current = Date.now();
+			allowAutoFinalize.current = true;
+			setRecording(true);
+			setPaused(false);
+			setElapsedSeconds(0);
+			return true;
+		} catch (error) {
+			console.error("Native Linux capture failed:", error);
+			throw error;
+		}
+	};
+
+	const startRecordCountdown = async () => {
+		if (countdownActive || recording) {
+			return;
+		}
+
+		const runId = countdownRunId.current + 1;
+		countdownRunId.current = runId;
+
+		let selectedSource: ProcessedDesktopSource | null = null;
+		try {
+			selectedSource = await window.electronAPI.getSelectedSource();
+		} catch (error) {
+			console.warn("Failed to read selected source before countdown:", error);
+		}
+
+		// Resolved before the liveness check below so every await stays ahead of it.
+		const portalOwnsSource = await portalOwnsSourceSelection(window.electronAPI);
+
+		if (!isCountdownRunActive(runId)) {
+			return;
+		}
+
+		// The countdown's OWN source gate, distinct from the one in
+		// `startRecording`. On Linux the portal has not been asked anything yet —
+		// its picker is raised when capture starts, several steps after this — so
+		// there is nothing to have selected, and refusing here blocked recording
+		// outright once the in-app picker was removed.
+		if (!selectedSource && !portalOwnsSource) {
+			if (countdownRunId.current === runId) {
+				setCountdownActive(false);
+			}
+			alert(t("recording.selectSource"));
+			return;
+		}
+
+		try {
+			const platform = window.electronAPI.getPlatform();
+			if (platform === "darwin" && cursorCaptureMode === "editable-overlay") {
+				// Stop before the countdown ONLY when the user genuinely denied
+				// Accessibility — the main process is showing them a dialog that
+				// deep-links to the settings pane, so pressing record again after
+				// granting it will work.
+				//
+				// When the helper simply could not run (missing from the build, killed
+				// by the loader, crashed, hung) there is nothing for the user to grant,
+				// and blocking here is what left macOS 12 unable to record at all
+				// (#515). Recording degrades on its own: the session falls back to
+				// position-only cursor telemetry and the editor draws the cursor from
+				// its bundled sprites, so only the pointer/text shape hints are lost.
+				const access = await window.electronAPI.requestNativeMacCursorAccess();
+				if (!access.granted && access.status === "not-determined") {
+					return;
+				}
+				if (!access.granted) {
+					console.warn(
+						`Editable cursor unavailable (${access.status}); recording with position-only cursor telemetry.`,
+					);
+				}
+			}
+		} catch (error) {
+			console.warn("Failed to preflight macOS cursor accessibility before countdown:", error);
+		}
+
+		// THE PICKER GOES BEFORE THE COUNTDOWN. On Wayland the compositor's dialog
+		// is the source chooser, and it only appears once the portal session is
+		// started — so counting down first meant counting down before the user had
+		// been asked anything, then freezing the overlay while they read a dialog
+		// that has no time limit. Kooha does the same in the same order: session,
+		// then timer, then play.
+		//
+		// Best-effort on purpose. A failure here is not a failure to record: the
+		// start below still negotiates the portal itself, which is exactly the
+		// behaviour that shipped before this existed.
+		let preparedRecordingId: number | null = null;
+		if (portalOwnsSource) {
+			try {
+				const prepared = await window.electronAPI.prepareNativeLinuxRecording(
+					buildNativeLinuxRequest(),
+				);
+				if (prepared.success && typeof prepared.recordingId === "number") {
+					preparedRecordingId = prepared.recordingId;
+				} else if (prepared.reason) {
+					console.info(`Native Linux capture was not prepared: ${prepared.reason}`);
+				}
+			} catch (error) {
+				console.warn("Failed to prepare the native Linux capture:", error);
+			}
+			// The user can dismiss the picker, or answer it slower than they change
+			// their mind about recording at all.
+			if (!isCountdownRunActive(runId)) {
+				void window.electronAPI.cancelNativeLinuxPrepare?.();
+				return;
+			}
+		}
+
+		if (!isCountdownRunActive(runId)) {
+			return;
+		}
+
+		setCountdownActive(true);
+
+		let overlayHiddenBeforeStart = false;
+		try {
+			const values = [3, 2, 1];
+			const overlayShown = await safeShowCountdownOverlay(values[0], runId);
+
+			if (countdownRunId.current !== runId) {
+				return;
+			}
+
+			for (const value of values) {
+				if (countdownRunId.current !== runId) {
+					return;
+				}
+
+				if (overlayShown && value !== values[0]) {
+					await safeSetCountdownOverlayValue(value, runId);
+
+					if (countdownRunId.current !== runId) {
+						return;
+					}
+				}
+
+				await new Promise((resolve) => window.setTimeout(resolve, 1000));
+			}
+
+			if (countdownRunId.current !== runId) {
+				return;
+			}
+
+			setCountdownActive(false);
+			await safeHideCountdownOverlay(runId);
+			overlayHiddenBeforeStart = true;
+
+			if (countdownRunId.current !== runId) {
+				return;
+			}
+
+			await startRecording(runId, preparedRecordingId);
+		} finally {
+			if (!overlayHiddenBeforeStart && countdownRunId.current === runId) {
+				setCountdownActive(false);
+				await safeHideCountdownOverlay(runId);
+			}
+			// Unconditional, and safe: a start that used the prepared session
+			// already claimed it, so this is a no-op there. Every OTHER way out of
+			// this block — cancelled countdown, an overlay that threw, a source
+			// that vanished — would otherwise leave a live ScreenCast session and
+			// the compositor's sharing indicator up with nothing recording.
+			if (portalOwnsSource) {
+				void window.electronAPI.cancelNativeLinuxPrepare?.();
+			}
+		}
+	};
+
+	const startRecording = async (
+		countdownRunToken?: number,
+		preparedRecordingId?: number | null,
+	) => {
+		const platform = window.electronAPI.getPlatform();
+		const browserCursorCaptureMode = effectiveBrowserCursorMode(platform, cursorCaptureMode);
+
+		try {
+			if (!isCountdownRunActive(countdownRunToken)) {
+				teardownMedia();
+				return;
+			}
+
+			// BEFORE THE SOURCE GATE, on purpose. On Wayland the portal raises its
+			// own picker and is the only thing that can choose a source, so there
+			// is nothing for the app to have selected — and the helper needs no
+			// `selectedSource` to run. Gating here demanded an answer to a
+			// question this platform never asks the app. It returns false when the
+			// native helper is missing, and the browser fallback below does need a
+			// source, so the gate still guards the path that uses one.
+			if (await startNativeLinuxRecordingIfAvailable(countdownRunToken, preparedRecordingId)) {
+				return;
+			}
+
+			const selectedSource = await window.electronAPI.getSelectedSource();
+			if (!selectedSource) {
+				alert(t("recording.selectSource"));
+				return;
+			}
+
+			if (await startNativeWindowsRecordingIfAvailable(selectedSource, countdownRunToken)) {
+				return;
+			}
+			if (await startNativeMacRecordingIfAvailable(selectedSource, countdownRunToken)) {
+				return;
+			}
+
+			// Capture screen + microphone in parallel: the gap between the two
+			// `getUserMedia` calls is the dominant source of the mic-vs-video lag at the
+			// start of the recording (issue #57).
+			const screenCapture = (async (): Promise<MediaStream> => {
+				if (platform === "win32") {
+					// getDisplayMedia + setDisplayMediaRequestHandler (main.ts) supplies the
+					// pre-selected source. Editable cursor mode excludes the system cursor so
+					// the editor can render a replacement; system mode bakes it into the video.
+					return navigator.mediaDevices.getDisplayMedia({
+						video: {
+							cursor: cursorCaptureMode === "editable-overlay" ? "never" : "always",
+							width: { max: TARGET_WIDTH },
+							height: { max: TARGET_HEIGHT },
+							frameRate: { ideal: TARGET_FRAME_RATE },
+						} as MediaTrackConstraints,
+						audio: systemAudioEnabled,
+					} as DisplayMediaStreamOptions);
+				}
+
+				const videoConstraints = {
+					mandatory: {
+						chromeMediaSource: CHROME_MEDIA_SOURCE,
+						chromeMediaSourceId: selectedSource.id,
+						maxWidth: TARGET_WIDTH,
+						maxHeight: TARGET_HEIGHT,
+						maxFrameRate: TARGET_FRAME_RATE,
+						minFrameRate: MIN_FRAME_RATE,
+					},
+				};
+
+				if (systemAudioEnabled) {
+					try {
+						return navigator.mediaDevices.getUserMedia({
+							audio: {
+								mandatory: {
+									chromeMediaSource: CHROME_MEDIA_SOURCE,
+									chromeMediaSourceId: selectedSource.id,
+								},
+							},
+							video: videoConstraints,
+						} as unknown as MediaStreamConstraints);
+					} catch (audioErr) {
+						console.warn("System audio capture failed, falling back to video-only:", audioErr);
+						toast.error(t("recording.systemAudioUnavailable"));
+						return navigator.mediaDevices.getUserMedia({
+							audio: false,
+							video: videoConstraints,
+						} as unknown as MediaStreamConstraints);
+					}
+				}
+
+				return navigator.mediaDevices.getUserMedia({
+					audio: false,
+					video: videoConstraints,
+				} as unknown as MediaStreamConstraints);
+			})();
+
+			const micCapture: Promise<MediaStream | null> = microphoneEnabled
+				? (async () => {
+						try {
+							return await navigator.mediaDevices.getUserMedia({
+								audio: microphoneDeviceId
+									? {
+											deviceId: { exact: microphoneDeviceId },
+											echoCancellation: true,
+											noiseSuppression: true,
+											autoGainControl: true,
+										}
+									: {
+											echoCancellation: true,
+											noiseSuppression: true,
+											autoGainControl: true,
+										},
+								video: false,
+							});
+						} catch (audioError) {
+							console.warn("Failed to get microphone access:", audioError);
+							toast.error(t("recording.microphoneDenied"));
+							setMicrophoneEnabled(false);
+							return null;
+						}
+					})()
+				: Promise.resolve(null);
+
+			// Await both in-flight captures. If the screen capture rejects it would
+			// otherwise orphan a mic stream that resolved in parallel (leaving the
+			// screen/mic indicator on), so stop that stream before rethrowing.
+			let screenMediaStream: MediaStream;
+			try {
+				screenMediaStream = await screenCapture;
+			} catch (error) {
+				void micCapture
+					.then((micStream) => micStream?.getTracks().forEach((track) => track.stop()))
+					.catch(() => {
+						// Mic capture itself failed too; nothing left to stop.
+					});
+				throw error;
+			}
+			const micMediaStream = await micCapture;
+
+			// Assign the refs before the cancellation check below so teardownMedia() can
+			// stop the freshly acquired streams if the countdown was cancelled mid-capture.
+			screenStream.current = screenMediaStream;
+			microphoneStream.current = micMediaStream;
+
+			if (!isCountdownRunActive(countdownRunToken)) {
+				teardownMedia();
+				return;
+			}
+
+			if (webcamEnabled) {
+				if (!webcamReady.current) {
+					await new Promise<void>((resolve) => {
+						const interval = setInterval(() => {
+							if (webcamReady.current) {
+								clearInterval(interval);
+								resolve();
+							}
+						}, 50);
+						setTimeout(() => {
+							clearInterval(interval);
+							resolve();
+						}, 5000);
+					});
+				}
+				if (!webcamStream.current) {
+					webcamAcquireId.current++;
+					setWebcamEnabledState(false);
+				}
+			}
+
+			if (!isCountdownRunActive(countdownRunToken)) {
+				teardownMedia();
+				return;
+			}
+
+			stream.current = new MediaStream();
+			const videoTrack = screenMediaStream.getVideoTracks()[0];
+			if (!videoTrack) {
+				throw new Error("Video track is not available.");
+			}
+			stream.current.addTrack(videoTrack);
+
+			const systemAudioTrack = screenMediaStream.getAudioTracks()[0];
+			const micAudioTrack = microphoneStream.current?.getAudioTracks()[0];
+
+			const { context: mixingCtx, track: mixedTrack } = mixAudioTracks({
+				systemAudioTrack,
+				micAudioTrack,
+			});
+			if (mixingCtx) {
+				mixingContext.current = mixingCtx;
+			}
+			if (mixedTrack) {
+				stream.current.addTrack(mixedTrack);
+			}
+
+			try {
+				await videoTrack.applyConstraints({
+					frameRate: { ideal: TARGET_FRAME_RATE, max: TARGET_FRAME_RATE },
+					width: { ideal: TARGET_WIDTH, max: TARGET_WIDTH },
+					height: { ideal: TARGET_HEIGHT, max: TARGET_HEIGHT },
+				});
+			} catch (constraintError) {
+				console.warn(
+					"Unable to lock 4K/60fps constraints, using best available track settings.",
+					constraintError,
+				);
+			}
+
+			if (!isCountdownRunActive(countdownRunToken)) {
+				teardownMedia();
+				return;
+			}
+
+			let {
+				width = DEFAULT_WIDTH,
+				height = DEFAULT_HEIGHT,
+				frameRate = TARGET_FRAME_RATE,
+			} = videoTrack.getSettings();
+
+			width = Math.floor(width / CODEC_ALIGNMENT) * CODEC_ALIGNMENT;
+			height = Math.floor(height / CODEC_ALIGNMENT) * CODEC_ALIGNMENT;
+
+			const videoBitsPerSecond = computeBitrate(width, height);
+			const mimeType = selectMimeType();
+
+			console.log(
+				`Recording at ${width}x${height} @ ${frameRate ?? TARGET_FRAME_RATE}fps using ${mimeType} / ${Math.round(
+					videoBitsPerSecond / BITS_PER_MEGABIT,
+				)} Mbps`,
+			);
+
+			const hasAudio = stream.current.getAudioTracks().length > 0;
+			if (!isCountdownRunActive(countdownRunToken)) {
+				teardownMedia();
+				return;
+			}
+
+			recordingId.current = Date.now();
+			const activeRecordingId = recordingId.current;
+			screenRecorder.current = createRecorderHandle(
+				stream.current,
+				{
+					mimeType,
+					videoBitsPerSecond,
+					...(hasAudio
+						? { audioBitsPerSecond: systemAudioTrack ? AUDIO_BITRATE_SYSTEM : AUDIO_BITRATE_VOICE }
+						: {}),
+				},
+				`${RECORDING_FILE_PREFIX}${activeRecordingId}${VIDEO_FILE_EXTENSION}`,
+			);
+			screenRecorder.current.recorder.addEventListener(
+				"error",
+				() => {
+					setRecording(false);
+				},
+				{ once: true },
+			);
+
+			if (webcamStream.current) {
+				webcamRecorder.current = createRecorderHandle(
+					webcamStream.current,
+					{ mimeType, videoBitsPerSecond: Math.min(videoBitsPerSecond, BITRATE_BASE) },
+					`${RECORDING_FILE_PREFIX}${activeRecordingId}${WEBCAM_FILE_SUFFIX}${VIDEO_FILE_EXTENSION}`,
+				);
+			}
+
+			accumulatedDurationMs.current = 0;
+			segmentStartedAt.current = Date.now();
+			allowAutoFinalize.current = true;
+			setRecording(true);
+			setPaused(false);
+			setElapsedSeconds(0);
+			window.electronAPI?.setRecordingState(true, recordingId.current, browserCursorCaptureMode);
+
+			const activeScreenRecorder = screenRecorder.current;
+			const activeWebcamRecorder = webcamRecorder.current;
+			if (activeScreenRecorder) {
+				activeScreenRecorder.recorder.addEventListener(
+					"stop",
+					() => {
+						if (!allowAutoFinalize.current) {
+							return;
+						}
+						finalizeRecording(
+							activeScreenRecorder,
+							activeWebcamRecorder ?? null,
+							Math.max(0, getRecordingDurationMs()),
+							activeRecordingId,
+						);
+					},
+					{ once: true },
+				);
+			}
+		} catch (error) {
+			console.error("Failed to start recording:", error);
+			const errorMsg = error instanceof Error ? error.message : "Failed to start recording";
+			if (errorMsg.includes("Permission denied") || errorMsg.includes("NotAllowedError")) {
+				toast.error(t("recording.permissionDenied"));
+			} else {
+				toast.error(errorMsg);
+			}
+			setRecording(false);
+			setPaused(false);
+			setElapsedSeconds(0);
+			accumulatedDurationMs.current = 0;
+			segmentStartedAt.current = null;
+			screenRecorder.current = null;
+			webcamRecorder.current = null;
+			teardownMedia();
+		}
+	};
+
+	const togglePaused = () => {
+		const activeNativeWindowsRecording = nativeWindowsRecording.current;
+		if (activeNativeWindowsRecording && !activeNativeWindowsRecording.finalizing) {
+			void (async () => {
+				try {
+					if (activeNativeWindowsRecording.paused) {
+						const result = await window.electronAPI.resumeNativeWindowsRecording();
+						if (!result.success) {
+							throw new Error(result.error ?? "Failed to resume native Windows recording");
+						}
+						activeNativeWindowsRecording.paused = false;
+						segmentStartedAt.current = Date.now();
+						setPaused(false);
+						return;
+					}
+
+					const pausedAtMs = getRecordingDurationMs();
+					const result = await window.electronAPI.pauseNativeWindowsRecording();
+					if (!result.success) {
+						throw new Error(result.error ?? "Failed to pause native Windows recording");
+					}
+					activeNativeWindowsRecording.paused = true;
+					accumulatedDurationMs.current = pausedAtMs;
+					segmentStartedAt.current = null;
+					setElapsedSeconds(Math.floor(accumulatedDurationMs.current / 1000));
+					setPaused(true);
+				} catch (error) {
+					console.error("Failed to toggle native Windows pause state:", error);
+					toast.error(error instanceof Error ? error.message : "Failed to toggle pause state");
+				}
+			})();
+			return;
+		}
+
+		const activeNativeMacRecording = nativeMacRecording.current;
+		if (activeNativeMacRecording && !activeNativeMacRecording.finalizing) {
+			void (async () => {
+				const activeWebcamRecorder = webcamRecorder.current?.recorder;
+				try {
+					if (activeNativeMacRecording.paused) {
+						const result = await window.electronAPI.resumeNativeMacRecording();
+						if (!result.success) {
+							throw new Error(result.error ?? "Failed to resume native macOS recording");
+						}
+						if (activeWebcamRecorder?.state === "paused") {
+							activeWebcamRecorder.resume();
+						}
+						activeNativeMacRecording.paused = false;
+						segmentStartedAt.current = Date.now();
+						setPaused(false);
+						return;
+					}
+
+					const pausedAtMs = getRecordingDurationMs();
+					const result = await window.electronAPI.pauseNativeMacRecording();
+					if (!result.success) {
+						throw new Error(result.error ?? "Failed to pause native macOS recording");
+					}
+					if (activeWebcamRecorder?.state === "recording") {
+						activeWebcamRecorder.pause();
+					}
+					activeNativeMacRecording.paused = true;
+					accumulatedDurationMs.current = pausedAtMs;
+					segmentStartedAt.current = null;
+					setElapsedSeconds(Math.floor(accumulatedDurationMs.current / 1000));
+					setPaused(true);
+				} catch (error) {
+					console.error("Failed to toggle native macOS pause state:", error);
+					toast.error(error instanceof Error ? error.message : "Failed to toggle pause state");
+				}
+			})();
+			return;
+		}
+
+		const activeNativeLinuxRecording = nativeLinuxRecording.current;
+		if (activeNativeLinuxRecording && !activeNativeLinuxRecording.finalizing) {
+			void (async () => {
+				const activeWebcamRecorder = webcamRecorder.current?.recorder;
+				try {
+					if (activeNativeLinuxRecording.paused) {
+						const result = await window.electronAPI.resumeNativeLinuxRecording();
+						if (!result.success) {
+							throw new Error(result.error ?? "Failed to resume native Linux recording");
+						}
+						if (activeWebcamRecorder?.state === "paused") {
+							activeWebcamRecorder.resume();
+						}
+						activeNativeLinuxRecording.paused = false;
+						segmentStartedAt.current = Date.now();
+						setPaused(false);
+						return;
+					}
+
+					const pausedAtMs = getRecordingDurationMs();
+					const result = await window.electronAPI.pauseNativeLinuxRecording();
+					if (!result.success) {
+						throw new Error(result.error ?? "Failed to pause native Linux recording");
+					}
+					if (activeWebcamRecorder?.state === "recording") {
+						activeWebcamRecorder.pause();
+					}
+					activeNativeLinuxRecording.paused = true;
+					accumulatedDurationMs.current = pausedAtMs;
+					segmentStartedAt.current = null;
+					setElapsedSeconds(Math.floor(accumulatedDurationMs.current / 1000));
+					setPaused(true);
+				} catch (error) {
+					console.error("Failed to toggle native Linux pause state:", error);
+					toast.error(error instanceof Error ? error.message : "Failed to toggle pause state");
+				}
+			})();
+			return;
+		}
+
+		const activeScreenRecorder = screenRecorder.current?.recorder;
+		if (!activeScreenRecorder || activeScreenRecorder.state === "inactive") {
+			return;
+		}
+
+		const activeWebcamRecorder = webcamRecorder.current?.recorder;
+
+		if (activeScreenRecorder.state === "paused") {
+			try {
+				activeScreenRecorder.resume();
+				if (activeWebcamRecorder?.state === "paused") {
+					activeWebcamRecorder.resume();
+				}
+				segmentStartedAt.current = Date.now();
+				setPaused(false);
+			} catch (error) {
+				console.error("Failed to resume recording:", error);
+			}
+			return;
+		}
+
+		if (activeScreenRecorder.state !== "recording") {
+			return;
+		}
+
+		try {
+			accumulatedDurationMs.current = getRecordingDurationMs();
+			segmentStartedAt.current = null;
+			setElapsedSeconds(Math.floor(accumulatedDurationMs.current / 1000));
+			activeScreenRecorder.pause();
+			if (activeWebcamRecorder?.state === "recording") {
+				activeWebcamRecorder.pause();
+			}
+			setPaused(true);
+		} catch (error) {
+			console.error("Failed to pause recording:", error);
+		}
+	};
+
+	const toggleRecording = () => {
+		if (recording) {
+			stopRecording.current();
+			return;
+		}
+
+		if (countdownActive) {
+			cancelCountdown();
+			return;
+		}
+
+		void startRecordCountdown();
+	};
+
+	const restartRecording = async () => {
+		if (restarting.current) return;
+
+		if (nativeWindowsRecording.current) {
+			const activeRecordingId = recordingId.current;
+			restarting.current = true;
+			discardRecordingId.current = activeRecordingId;
+			try {
+				await finalizeNativeWindowsRecording(true);
+				await startRecording();
+			} finally {
+				restarting.current = false;
+			}
+			return;
+		}
+		if (nativeMacRecording.current) {
+			const activeRecordingId = recordingId.current;
+			restarting.current = true;
+			discardRecordingId.current = activeRecordingId;
+			try {
+				await finalizeNativeMacRecording(true);
+				await startRecording();
+			} finally {
+				restarting.current = false;
+			}
+			return;
+		}
+		if (nativeLinuxRecording.current) {
+			const activeRecordingId = recordingId.current;
+			restarting.current = true;
+			discardRecordingId.current = activeRecordingId;
+			try {
+				await finalizeNativeLinuxRecording(true);
+				await startRecording();
+			} finally {
+				restarting.current = false;
+			}
+			return;
+		}
+
+		const activeScreenRecorder = screenRecorder.current;
+		if (!activeScreenRecorder || activeScreenRecorder.recorder.state === "inactive") return;
+
+		const activeWebcamRecorder = webcamRecorder.current;
+		const activeRecordingId = recordingId.current;
+
+		restarting.current = true;
+		discardRecordingId.current = activeRecordingId;
+
+		const stopPromises = [
+			new Promise<void>((resolve) => {
+				activeScreenRecorder.recorder.addEventListener("stop", () => resolve(), { once: true });
+			}),
+		];
+
+		if (
+			activeWebcamRecorder?.recorder.state === "recording" ||
+			activeWebcamRecorder?.recorder.state === "paused"
+		) {
+			stopPromises.push(
+				new Promise<void>((resolve) => {
+					activeWebcamRecorder.recorder.addEventListener("stop", () => resolve(), {
+						once: true,
+					});
+				}),
+			);
+		}
+
+		stopRecording.current();
+		await Promise.all(stopPromises);
+
+		try {
+			await startRecording();
+		} finally {
+			restarting.current = false;
+		}
+	};
+
+	useEffect(() => {
+		if (!recording) {
+			setElapsedSeconds(0);
+			return;
+		}
+
+		setElapsedSeconds(Math.floor(getRecordingDurationMs() / 1000));
+		if (paused) {
+			return;
+		}
+
+		const interval = window.setInterval(() => {
+			setElapsedSeconds(Math.floor(getRecordingDurationMs() / 1000));
+		}, 250);
+
+		return () => window.clearInterval(interval);
+	}, [getRecordingDurationMs, paused, recording]);
+
+	const cancelRecording = () => {
+		if (nativeWindowsRecording.current) {
+			const activeRecordingId = recordingId.current;
+			discardRecordingId.current = activeRecordingId;
+			allowAutoFinalize.current = false;
+			void finalizeNativeWindowsRecording(true);
+			return;
+		}
+		if (nativeMacRecording.current) {
+			const activeRecordingId = recordingId.current;
+			discardRecordingId.current = activeRecordingId;
+			allowAutoFinalize.current = false;
+			void finalizeNativeMacRecording(true);
+			return;
+		}
+		if (nativeLinuxRecording.current) {
+			const activeRecordingId = recordingId.current;
+			discardRecordingId.current = activeRecordingId;
+			allowAutoFinalize.current = false;
+			void finalizeNativeLinuxRecording(true);
+			return;
+		}
+
+		const activeScreenRecorder = screenRecorder.current;
+		if (
+			activeScreenRecorder?.recorder.state === "recording" ||
+			activeScreenRecorder?.recorder.state === "paused"
+		) {
+			const activeRecordingId = recordingId.current;
+			discardRecordingId.current = activeRecordingId;
+			allowAutoFinalize.current = false;
+
+			stopRecording.current();
+			return;
+		}
+
+		if (countdownActive) {
+			cancelCountdown();
+			return;
+		}
+	};
+
+	const dismissSoftwareEncoderFallbackNotice = (dontShowAgain = false) => {
+		if (dontShowAgain) {
+			saveUserPreferences({ hideSoftwareEncoderFallbackNotice: true });
+		}
+		setSoftwareEncoderFallbackNoticeVisible(false);
+	};
+
+	return {
+		recording,
+		paused,
+		saving,
+		elapsedSeconds,
+		toggleRecording,
+		startRecordingImmediately: () => startRecording(),
+		togglePaused,
+		canPauseRecording,
+		restartRecording,
+		cancelRecording,
+		microphoneEnabled,
+		setMicrophoneEnabled,
+		microphoneDeviceId,
+		setMicrophoneDeviceId,
+		microphoneDeviceName,
+		setMicrophoneDeviceName,
+		webcamDeviceId,
+		setWebcamDeviceId,
+		webcamDeviceName,
+		setWebcamDeviceName,
+		systemAudioEnabled,
+		setSystemAudioEnabled,
+		webcamEnabled,
+		setWebcamEnabled,
+		cursorCaptureMode,
+		setCursorCaptureMode,
+		softwareEncoderFallbackNoticeVisible,
+		dismissSoftwareEncoderFallbackNotice,
+	};
 }

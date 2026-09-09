@@ -1,73 +1,52 @@
-/**
- * Resolve a bundled asset (`wallpapers/wallpaper1.jpg`, ...) to a URL the
- * renderer can load.
- *
- * - Dev server (http/https): the asset is served from `public/`, so the
- *   web path is returned as-is.
- * - Packaged app (file://): the preload exposes `electronAPI.assetBaseUrl`,
- *   a `file://` URL of the resources directory computed once by the main
- *   process, so the answer is available synchronously and every caller does
- *   not pay an IPC round trip per asset. Bundled assets live under
- *   `<resources>/assets/` (electron-builder `extraResources`), the same
- *   directory the `get-asset-base-path` IPC hands back.
- * - Older preloads without `assetBaseUrl` fall back to that IPC.
- */
-
-const PACKAGED_ASSET_SUBDIR = 'assets/'
-
-function stripLeadingSlash(relativePath: string): string {
-  return relativePath.replace(/^\/+/, '')
+export class UnsafeAssetPathError extends Error {
+	constructor(segment: string) {
+		super(`Unsafe asset path segment: ${segment}`);
+		this.name = "UnsafeAssetPathError";
+	}
 }
 
-function readAssetBaseUrl(): string | null {
-  if (typeof window === 'undefined') return null
-  // Declared, but absent in a plain browser tab and in older preloads.
-  const api: Window['electronAPI'] | undefined = window.electronAPI
-  const base = api?.assetBaseUrl
-  return typeof base === 'string' && base.length > 0 ? base : null
+export class AssetBaseUnavailableError extends Error {
+	constructor() {
+		super("electronAPI.assetBaseUrl is not available; preload did not load correctly");
+		this.name = "AssetBaseUnavailableError";
+	}
 }
 
-/**
- * Synchronous resolution through `electronAPI.assetBaseUrl`. Returns `null`
- * when the preload does not expose the base (older preload, plain browser).
- */
-export function getAssetPathSync(relativePath: string): string | null {
-  const base = readAssetBaseUrl()
-  if (!base) return null
-  const withSlash = base.endsWith('/') ? base : `${base}/`
-  return `${withSlash}${PACKAGED_ASSET_SUBDIR}${stripLeadingSlash(relativePath)}`
+function encodeRelativeAssetPath(relativePath: string): string {
+	return relativePath
+		.replace(/^\/+/, "")
+		.split("/")
+		.filter(Boolean)
+		.map((part) => {
+			const decoded = decodeURIComponent(part);
+			if (decoded === "." || decoded === "..") {
+				throw new UnsafeAssetPathError(decoded);
+			}
+			return encodeURIComponent(decoded);
+		})
+		.join("/");
 }
 
-export async function getAssetPath(relativePath: string): Promise<string> {
-  try {
-    if (typeof window !== 'undefined') {
-      // If running in a dev server (http/https), prefer the web-served path
-      if (
-        window.location &&
-        window.location.protocol &&
-        window.location.protocol.startsWith('http')
-      ) {
-        return `/${stripLeadingSlash(relativePath)}`
-      }
-
-      const sync = getAssetPathSync(relativePath)
-      if (sync) return sync
-
-      const api: Window['electronAPI'] | undefined = window.electronAPI
-      if (typeof api?.getAssetBasePath === 'function') {
-        const base = await api.getAssetBasePath()
-        if (base) {
-          const normalized = base.replace(/\\/g, '/')
-          return `file://${normalized}/${relativePath}`
-        }
-      }
-    }
-  } catch {
-    // ignore and use fallback
-  }
-
-  // Fallback for web/dev server: public/wallpapers are served at '/wallpapers/...'
-  return `/${stripLeadingSlash(relativePath)}`
+function ensureTrailingSlash(value: string): string {
+	return value.endsWith("/") ? value : `${value}/`;
 }
 
-export default getAssetPath
+export function getAssetPath(relativePath: string): string {
+	const encoded = encodeRelativeAssetPath(relativePath);
+
+	if (typeof window === "undefined") {
+		return `/${encoded}`;
+	}
+
+	if (window.location?.protocol?.startsWith("http")) {
+		return `/${encoded}`;
+	}
+
+	const base = window.electronAPI?.assetBaseUrl;
+	if (!base) {
+		throw new AssetBaseUnavailableError();
+	}
+	return new URL(encoded, ensureTrailingSlash(base)).toString();
+}
+
+export default getAssetPath;

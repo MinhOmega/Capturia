@@ -1,76 +1,99 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from "vitest";
 import {
-  ASPECT_RATIOS,
-  formatAspectRatioForCSS,
-  getAspectRatioLabel,
-  getAspectRatioValue,
-  getNativeAspectRatioValue,
-  isAspectRatio,
-  resolveAspectRatioValue,
-} from './aspectRatioUtils'
+	getAspectRatioValue,
+	getNativeAspectRatioValue,
+	isAspectRatio,
+	parseAspectRatio,
+	toAspectRatioToken,
+} from "./aspectRatioUtils";
 
-const FALLBACK_RATIO = 16 / 9
+const FALLBACK_RATIO = 16 / 9;
 
-describe('getNativeAspectRatioValue', () => {
-  it('returns the video ratio when no crop region is provided', () => {
-    expect(getNativeAspectRatioValue(1920, 1080)).toBe(16 / 9)
-  })
+describe("parseAspectRatio", () => {
+	it("splits a well-formed token", () => {
+		expect(parseAspectRatio("16:9")).toEqual({ width: 16, height: 9 });
+		expect(parseAspectRatio(" 64 : 27 ")).toEqual({ width: 64, height: 27 });
+	});
 
-  it('applies crop width and height to the video ratio', () => {
-    expect(getNativeAspectRatioValue(1920, 1080, { x: 0, y: 0, width: 0.5, height: 1 })).toBe(8 / 9)
-  })
+	it("rejects malformed input", () => {
+		expect(parseAspectRatio("16/9")).toBeNull();
+		expect(parseAspectRatio("16:")).toBeNull();
+		expect(parseAspectRatio("0:9")).toBeNull();
+		expect(parseAspectRatio("-16:9")).toBeNull();
+		expect(parseAspectRatio("")).toBeNull();
+	});
+});
 
-  it('falls back when video metadata is zero or non-finite', () => {
-    expect(getNativeAspectRatioValue(0, 1080)).toBe(FALLBACK_RATIO)
-    expect(getNativeAspectRatioValue(1920, 0)).toBe(FALLBACK_RATIO)
-    expect(getNativeAspectRatioValue(Number.NaN, 1080)).toBe(FALLBACK_RATIO)
-    expect(getNativeAspectRatioValue(1920, Number.POSITIVE_INFINITY)).toBe(FALLBACK_RATIO)
-  })
+describe("isAspectRatio", () => {
+	it("accepts presets and free-form shapes", () => {
+		expect(isAspectRatio("16:9")).toBe(true);
+		expect(isAspectRatio("64:27")).toBe(true);
+	});
 
-  it('falls back when crop dimensions are non-positive or non-finite', () => {
-    expect(getNativeAspectRatioValue(1920, 1080, { x: 0, y: 0, width: 0, height: 1 })).toBe(
-      FALLBACK_RATIO,
-    )
-    expect(getNativeAspectRatioValue(1920, 1080, { x: 0, y: 0, width: 1, height: -1 })).toBe(
-      FALLBACK_RATIO,
-    )
-    expect(
-      getNativeAspectRatioValue(1920, 1080, {
-        x: 0,
-        y: 0,
-        width: Number.POSITIVE_INFINITY,
-        height: 1,
-      }),
-    ).toBe(FALLBACK_RATIO)
-  })
-})
+	it("rejects anything a project file could hold that isn't a ratio", () => {
+		expect(isAspectRatio("widescreen")).toBe(false);
+		expect(isAspectRatio(16 / 9)).toBe(false);
+		expect(isAspectRatio(null)).toBe(false);
+		expect(isAspectRatio(undefined)).toBe(false);
+	});
+});
 
-describe('native aspect ratio', () => {
-  it('is part of the selectable list, after the fixed ratios', () => {
-    expect(ASPECT_RATIOS[ASPECT_RATIOS.length - 1]).toBe('native')
-    expect(isAspectRatio('native')).toBe(true)
-    expect(isAspectRatio('3:2')).toBe(false)
-    expect(isAspectRatio(undefined)).toBe(false)
-  })
+describe("toAspectRatioToken", () => {
+	it("reduces pixel dims to the shape they share", () => {
+		expect(toAspectRatioToken(1920, 1080)).toBe("16:9");
+		expect(toAspectRatioToken(3840, 2160)).toBe("16:9");
+		expect(toAspectRatioToken(2160, 3840)).toBe("9:16");
+		expect(toAspectRatioToken(2560, 1080)).toBe("64:27");
+		expect(toAspectRatioToken(1080, 1080)).toBe("1:1");
+	});
 
-  it('resolves to the cropped source ratio, fixed ratios stay fixed', () => {
-    const crop = { x: 0.25, y: 0, width: 0.5, height: 1 }
-    expect(resolveAspectRatioValue('native', 1920, 1080, crop)).toBe(8 / 9)
-    expect(resolveAspectRatioValue('16:9', 1920, 1080, crop)).toBe(16 / 9)
-    expect(resolveAspectRatioValue('1:1', 1920, 1080)).toBe(1)
-  })
+	it("returns null for unusable dimensions", () => {
+		expect(toAspectRatioToken(0, 1080)).toBeNull();
+		expect(toAspectRatioToken(1920, -1)).toBeNull();
+		expect(toAspectRatioToken(Number.NaN, 1080)).toBeNull();
+	});
+});
 
-  it('uses the 16:9 fallback without source context', () => {
-    expect(getAspectRatioValue('native')).toBe(FALLBACK_RATIO)
-    expect(resolveAspectRatioValue('native', 0, 0)).toBe(FALLBACK_RATIO)
-  })
+describe("getAspectRatioValue", () => {
+	it("evaluates presets and free-form shapes alike", () => {
+		expect(getAspectRatioValue("16:9")).toBeCloseTo(16 / 9, 6);
+		expect(getAspectRatioValue("9:16")).toBeCloseTo(9 / 16, 6);
+		expect(getAspectRatioValue("64:27")).toBeCloseTo(64 / 27, 6);
+	});
+});
 
-  it('is labelled Original and formats to a numeric CSS ratio', () => {
-    expect(getAspectRatioLabel('native')).toBe('Original')
-    expect(getAspectRatioLabel('16:9')).toBe('16:9')
-    expect(formatAspectRatioForCSS('16:9')).toBe('16/9')
-    expect(formatAspectRatioForCSS('native', 1.25)).toBe('1.25')
-    expect(formatAspectRatioForCSS('native')).toBe(String(FALLBACK_RATIO))
-    expect(formatAspectRatioForCSS('native', 0)).toBe(String(FALLBACK_RATIO))
-  })
-})
+describe("getNativeAspectRatioValue", () => {
+	it("returns the video ratio when no crop region is provided", () => {
+		expect(getNativeAspectRatioValue(1920, 1080)).toBe(16 / 9);
+	});
+
+	it("applies crop width and height to the video ratio", () => {
+		expect(getNativeAspectRatioValue(1920, 1080, { x: 0, y: 0, width: 0.5, height: 1 })).toBe(
+			8 / 9,
+		);
+	});
+
+	it("falls back when video metadata is zero or non-finite", () => {
+		expect(getNativeAspectRatioValue(0, 1080)).toBe(FALLBACK_RATIO);
+		expect(getNativeAspectRatioValue(1920, 0)).toBe(FALLBACK_RATIO);
+		expect(getNativeAspectRatioValue(Number.NaN, 1080)).toBe(FALLBACK_RATIO);
+		expect(getNativeAspectRatioValue(1920, Number.POSITIVE_INFINITY)).toBe(FALLBACK_RATIO);
+	});
+
+	it("falls back when crop dimensions are non-positive or non-finite", () => {
+		expect(getNativeAspectRatioValue(1920, 1080, { x: 0, y: 0, width: 0, height: 1 })).toBe(
+			FALLBACK_RATIO,
+		);
+		expect(getNativeAspectRatioValue(1920, 1080, { x: 0, y: 0, width: 1, height: -1 })).toBe(
+			FALLBACK_RATIO,
+		);
+		expect(
+			getNativeAspectRatioValue(1920, 1080, {
+				x: 0,
+				y: 0,
+				width: Number.POSITIVE_INFINITY,
+				height: 1,
+			}),
+		).toBe(FALLBACK_RATIO);
+	});
+});

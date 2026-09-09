@@ -1,335 +1,198 @@
-import { WebDemuxer } from 'web-demuxer'
-import { MAX_CAPTION_AUDIO_SEC } from './captionConstants'
-import { mergeChunksToMonoLinear } from './extractMono16kMediabunny'
+import { WebDemuxer } from "web-demuxer";
 
-/**
- * Demux + WebCodecs audio decode through `web-demuxer` (the same wasm demuxer
- * the export streaming decoder uses). This is the first fallback when
- * `decodeAudioData` cannot handle the container (WebM/Matroska with video,
- * fragmented MP4); the mediabunny variant (`extractMono16kMediabunny.ts`) is
- * kept as the second fallback for containers this demuxer rejects.
- *
- * The output shape is shared by both demux paths so `extractMono16k.ts` can
- * chain them.
- */
-export interface DecodedMonoPcm {
-  mono: Float32Array
-  sampleRate: number
-  durationSec: number
-  /** True when `maxReadSec` cut the track short of its reported duration. */
-  capped: boolean
+import { MAX_CAPTION_AUDIO_SEC } from "./captionConstants";
+
+const DECODE_QUEUE_BACKPRESSURE = 20;
+const SOURCE_LOAD_TIMEOUT_MS = 60_000;
+const READ_END_PADDING_SEC = 0.5;
+
+function webDemuxerWasmUrl(): string {
+	return new URL("../exporter/wasm/web-demuxer.wasm", window.location.href).href;
 }
 
-/** Subset of `web-demuxer`'s stream info this module reads. */
-export interface CaptionDemuxerStream {
-  codec_type_string: string
-  codec_string?: string
-  sample_rate?: number
-  channels?: number
-  duration?: number
+/** Mixes one WebCodecs AudioData frame down to mono (averaged across channels). */
+export function audioDataFrameToMono(frame: AudioData): Float32Array {
+	const frames = frame.numberOfFrames;
+	const ch = frame.numberOfChannels;
+	const out = new Float32Array(frames);
+	const fmt = frame.format || "";
+	const planar = fmt.includes("planar");
+
+	if (planar) {
+		const plane = new Float32Array(frames);
+		for (let c = 0; c < ch; c++) {
+			frame.copyTo(plane, { planeIndex: c });
+			for (let i = 0; i < frames; i++) {
+				out[i] += plane[i];
+			}
+		}
+		for (let i = 0; i < frames; i++) {
+			out[i] /= ch;
+		}
+	} else {
+		const interleaved = new Float32Array(frames * ch);
+		frame.copyTo(interleaved, { planeIndex: 0 });
+		for (let i = 0; i < frames; i++) {
+			let sum = 0;
+			for (let c = 0; c < ch; c++) {
+				sum += interleaved[i * ch + c];
+			}
+			out[i] = sum / ch;
+		}
+	}
+	return out;
 }
 
-/** Subset of `WebDemuxer` used here; the tests provide a fake. */
-export interface CaptionDemuxer {
-  load(source: File): Promise<void>
-  getMediaInfo(): Promise<{ duration: number; streams: CaptionDemuxerStream[] }>
-  getDecoderConfig(type: 'audio'): Promise<AudioDecoderConfig>
-  read(type: 'audio', start?: number, end?: number): ReadableStream<EncodedAudioChunk>
-  destroy(): void
-}
-
-/** Subset of `AudioDecoder` used here; the tests provide a fake. */
-export interface CaptionAudioDecoder {
-  readonly decodeQueueSize: number
-  readonly state: CodecState
-  configure(config: AudioDecoderConfig): void
-  decode(chunk: EncodedAudioChunk): void
-  flush(): Promise<void>
-  close(): void
-}
-
-/** Slice of `AudioData` needed to mix a decoded buffer down to mono. */
-export interface MonoMixableAudioData {
-  readonly format: AudioSampleFormat | null
-  readonly numberOfChannels: number
-  readonly numberOfFrames: number
-  readonly sampleRate: number
-  /** Microseconds, like `AudioData.timestamp`. */
-  readonly timestamp: number
-  copyTo(destination: AllowSharedBufferSource, options: AudioDataCopyToOptions): void
-  close(): void
-}
-
-export interface WebDemuxerAudioDeps {
-  createDemuxer?: () => CaptionDemuxer
-  createDecoder?: (init: {
-    output: (data: MonoMixableAudioData) => void
-    error: (error: DOMException) => void
-  }) => CaptionAudioDecoder
-  isConfigSupported?: (config: AudioDecoderConfig) => Promise<boolean>
-}
-
-/** Encoded chunks queued in the decoder before the reader pauses. */
-const MAX_DECODE_QUEUE = 16
-
-function abortError(): DOMException {
-  return new DOMException('Aborted', 'AbortError')
-}
-
-export function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === 'AbortError'
-}
-
-function defaultCreateDemuxer(): CaptionDemuxer {
-  // Relative URL so it resolves in both dev (http) and packaged (file://) builds.
-  const wasmFilePath = new URL('./wasm/web-demuxer.wasm', globalThis.location.href).href
-  return new WebDemuxer({ wasmFilePath })
-}
-
-function defaultCreateDecoder(init: {
-  output: (data: MonoMixableAudioData) => void
-  error: (error: DOMException) => void
-}): CaptionAudioDecoder {
-  return new AudioDecoder(init)
-}
-
-async function defaultIsConfigSupported(config: AudioDecoderConfig): Promise<boolean> {
-  if (typeof AudioDecoder === 'undefined') return false
-  try {
-    const result = await AudioDecoder.isConfigSupported(config)
-    return result.supported === true
-  } catch {
-    return false
-  }
-}
-
-function nextTick(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 1))
-}
-
-/* ----------------------------------------------------------------------------
- * AudioData -> mono float
- * -------------------------------------------------------------------------- */
-
-function planeToFloat(
-  data: MonoMixableAudioData,
-  planeIndex: number,
-  format: AudioSampleFormat,
-  frames: number,
-  channels: number,
+function mergeAndConsumeDecodedAudioToMonoLinear(
+	frames: AudioData[],
+	sampleRate: number,
+	durationSec: number,
 ): Float32Array {
-  const planar = format.endsWith('-planar')
-  const count = planar ? frames : frames * channels
-  const base = format.replace('-planar', '')
-  let raw: Float32Array | Int16Array | Int32Array | Uint8Array
-  let scale = 1
-  let offset = 0
-  switch (base) {
-    case 'f32':
-      raw = new Float32Array(count)
-      break
-    case 's16':
-      raw = new Int16Array(count)
-      scale = 1 / 32768
-      break
-    case 's32':
-      raw = new Int32Array(count)
-      scale = 1 / 2147483648
-      break
-    case 'u8':
-      raw = new Uint8Array(count)
-      scale = 1 / 128
-      offset = -128
-      break
-    default:
-      throw new Error(`Unsupported audio sample format: ${format}`)
-  }
-  data.copyTo(raw, { planeIndex })
-  const out = new Float32Array(frames)
-  if (planar) {
-    for (let i = 0; i < frames; i++) out[i] = (raw[i]! + offset) * scale
-  } else {
-    for (let i = 0; i < frames; i++) out[i] = (raw[i * channels + planeIndex]! + offset) * scale
-  }
-  return out
+	const sorted = [...frames].sort((a, b) => a.timestamp - b.timestamp);
+	const totalSamples = Math.max(1, Math.ceil(durationSec * sampleRate));
+	const acc = new Float32Array(totalSamples);
+	const weight = new Float32Array(totalSamples);
+
+	for (const frame of sorted) {
+		const startSample = Math.round((frame.timestamp / 1e6) * sampleRate);
+		const slice = audioDataFrameToMono(frame);
+		for (let i = 0; i < slice.length; i++) {
+			const pos = startSample + i;
+			if (pos >= 0 && pos < totalSamples) {
+				acc[pos] += slice[i];
+				weight[pos] += 1;
+			}
+		}
+		frame.close();
+	}
+
+	for (let i = 0; i < totalSamples; i++) {
+		if (weight[i] > 0) {
+			acc[i] /= weight[i];
+		}
+	}
+	return acc;
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+	return new Promise<T>((resolve, reject) => {
+		const id = window.setTimeout(() => reject(new Error(message)), ms);
+		promise
+			.then((v) => {
+				window.clearTimeout(id);
+				resolve(v);
+			})
+			.catch((e) => {
+				window.clearTimeout(id);
+				reject(e instanceof Error ? e : new Error(String(e)));
+			});
+	});
 }
 
 /**
- * Averages every channel of a decoded `AudioData` into one Float32Array.
- * Prefers the decoder's own conversion to `f32-planar`; falls back to reading
- * the native sample format when the runtime does not convert.
- */
-export function audioDataToMono(data: MonoMixableAudioData): Float32Array {
-  const frames = data.numberOfFrames
-  const channels = data.numberOfChannels
-  const out = new Float32Array(frames)
-  if (frames === 0 || channels === 0) return out
-
-  const accumulate = (plane: Float32Array) => {
-    for (let i = 0; i < frames; i++) out[i] += plane[i]!
-  }
-
-  const format = data.format
-  let converted = false
-  if (format !== 'f32-planar') {
-    try {
-      const plane = new Float32Array(frames)
-      for (let c = 0; c < channels; c++) {
-        data.copyTo(plane, { planeIndex: c, format: 'f32-planar' })
-        accumulate(plane)
-      }
-      converted = true
-    } catch {
-      out.fill(0)
-    }
-  }
-  if (!converted) {
-    if (!format) throw new Error('Decoded audio has no sample format.')
-    for (let c = 0; c < channels; c++) {
-      if (format === 'f32-planar') {
-        const plane = new Float32Array(frames)
-        data.copyTo(plane, { planeIndex: c })
-        accumulate(plane)
-      } else {
-        accumulate(planeToFloat(data, c, format, frames, channels))
-      }
-    }
-  }
-
-  if (channels > 1) {
-    for (let i = 0; i < frames; i++) out[i] /= channels
-  }
-  return out
-}
-
-/* ----------------------------------------------------------------------------
- * Demux + decode
- * -------------------------------------------------------------------------- */
-
-/**
- * Decodes the first audio stream to mono PCM at the decoder's native sample
- * rate, placed on a linear timeline (`mergeChunksToMonoLinear`).
+ * Demux + WebCodecs audio decode (same stack as export). Use when `decodeAudioData`
+ * can't handle the container (e.g. WebM with video).
  *
- * @param maxReadSec Optional cap on how much audio to decode (decoded PCM is
- *   held in memory). `capped` reports whether the cap cut the track short.
+ * @param maxReadSec  Optional cap on how much audio to demux/decode. The decoded
+ *   frames and merge buffers are held in memory, so very long recordings must be
+ *   capped below MAX_CAPTION_AUDIO_SEC to avoid exhausting the renderer heap.
+ *   `capped` reports whether the cap actually cut the track short.
  */
 export async function extractMonoPcmViaWebDemuxer(
-  file: File,
-  signal?: AbortSignal,
-  maxReadSec?: number,
-  deps: WebDemuxerAudioDeps = {},
-): Promise<DecodedMonoPcm> {
-  const createDemuxer = deps.createDemuxer ?? defaultCreateDemuxer
-  const createDecoder = deps.createDecoder ?? defaultCreateDecoder
-  const isConfigSupported = deps.isConfigSupported ?? defaultIsConfigSupported
+	file: File,
+	signal?: AbortSignal,
+	maxReadSec?: number,
+): Promise<{ mono: Float32Array; sampleRate: number; durationSec: number; capped: boolean }> {
+	const demuxer = new WebDemuxer({ wasmFilePath: webDemuxerWasmUrl() });
+	await withTimeout(
+		demuxer.load(file),
+		SOURCE_LOAD_TIMEOUT_MS,
+		"Timed out while parsing the source video for captions.",
+	);
 
-  if (signal?.aborted) throw abortError()
-  const demuxer = createDemuxer()
-  let decoder: CaptionAudioDecoder | null = null
-  const chunks: Array<{ startSample: number; data: Float32Array }> = []
-  let sampleRate = 0
-  let maxEndSec = 0
-  let decodeError: Error | null = null
+	if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
 
-  try {
-    await demuxer.load(file)
-    if (signal?.aborted) throw abortError()
+	const mediaInfo = await withTimeout(
+		demuxer.getMediaInfo(),
+		SOURCE_LOAD_TIMEOUT_MS,
+		"Timed out while reading media info for captions.",
+	);
 
-    const mediaInfo = await demuxer.getMediaInfo()
-    const audioStream = mediaInfo.streams.find((s) => s.codec_type_string === 'audio')
-    if (!audioStream) {
-      throw new Error('No audio track found in this video.')
-    }
+	const reportedDurationSec =
+		Number.isFinite(mediaInfo.duration) && mediaInfo.duration > 0 ? mediaInfo.duration : 0;
 
-    const config = await demuxer.getDecoderConfig('audio')
-    if (!(await isConfigSupported(config))) {
-      throw new Error(
-        `Audio codec not supported for captions: ${config.codec || audioStream.codec_string || 'unknown'}`,
-      )
-    }
+	let audioConfig: AudioDecoderConfig;
+	try {
+		audioConfig = await demuxer.getDecoderConfig("audio");
+	} catch {
+		throw new Error("No audio track found in this video.");
+	}
 
-    const containerDurationSec = Number.isFinite(mediaInfo.duration) ? mediaInfo.duration : 0
-    const streamDurationSec =
-      typeof audioStream.duration === 'number' && Number.isFinite(audioStream.duration)
-        ? audioStream.duration
-        : 0
-    const reportedDurationSec = Math.max(containerDurationSec, streamDurationSec, 0)
-    const readCapSec = Math.min(maxReadSec ?? MAX_CAPTION_AUDIO_SEC, MAX_CAPTION_AUDIO_SEC)
+	const codecCheck = await AudioDecoder.isConfigSupported(audioConfig);
+	if (!codecCheck.supported) {
+		throw new Error(`Audio codec not supported for captions: ${audioConfig.codec}`);
+	}
 
-    decoder = createDecoder({
-      output: (data) => {
-        try {
-          if (sampleRate === 0) sampleRate = data.sampleRate
-          const startSec = data.timestamp / 1_000_000
-          chunks.push({
-            startSample: Math.round(startSec * sampleRate),
-            data: audioDataToMono(data),
-          })
-          maxEndSec = Math.max(maxEndSec, startSec + data.numberOfFrames / data.sampleRate)
-        } catch (error) {
-          decodeError = decodeError ?? (error instanceof Error ? error : new Error(String(error)))
-        } finally {
-          data.close()
-        }
-      },
-      error: (error) => {
-        decodeError = decodeError ?? new Error(`Audio decoder error: ${error.message}`)
-      },
-    })
-    decoder.configure(config)
+	const sampleRate = audioConfig.sampleRate || 48_000;
 
-    const reader = demuxer.read('audio', 0, readCapSec).getReader()
-    try {
-      while (true) {
-        if (signal?.aborted) throw abortError()
-        if (decodeError) throw decodeError
-        const { done, value } = await reader.read()
-        if (done || !value) break
-        while (decoder.decodeQueueSize > MAX_DECODE_QUEUE) {
-          if (signal?.aborted) throw abortError()
-          if (decodeError) throw decodeError
-          await nextTick()
-        }
-        decoder.decode(value)
-      }
-    } finally {
-      try {
-        await reader.cancel()
-      } catch {
-        // Already closed.
-      }
-    }
+	// Many WebM/Matroska files report a too-short duration, so capping read at reported time stops
+	// demux early and clips everything past that. Read to the caption-decode ceiling instead; the
+	// demuxer stops when the track ends.
+	const readCapSec = Math.min(maxReadSec ?? MAX_CAPTION_AUDIO_SEC, MAX_CAPTION_AUDIO_SEC);
+	const readEndSec = readCapSec + READ_END_PADDING_SEC;
+	const decodedFrames: AudioData[] = [];
 
-    try {
-      await decoder.flush()
-    } catch (error) {
-      if (decodeError) throw decodeError
-      throw error
-    }
-    if (decodeError) throw decodeError
-    if (signal?.aborted) throw abortError()
+	const decoder = new AudioDecoder({
+		output: (data: AudioData) => decodedFrames.push(data),
+		error: (e: DOMException) => console.error("[captioning] AudioDecoder error:", e),
+	});
+	decoder.configure(audioConfig);
 
-    if (chunks.length === 0 || sampleRate <= 0) {
-      throw new Error('Decoded zero audio frames from this video.')
-    }
+	const reader = demuxer.read("audio", 0, readEndSec).getReader();
+	try {
+		while (!signal?.aborted) {
+			const { done, value: chunk } = await reader.read();
+			if (done || !chunk) break;
+			decoder.decode(chunk);
+			while (decoder.decodeQueueSize > DECODE_QUEUE_BACKPRESSURE && !signal?.aborted) {
+				await new Promise((r) => setTimeout(r, 1));
+			}
+		}
+	} finally {
+		try {
+			await reader.cancel();
+		} catch {
+			/* already closed */
+		}
+	}
 
-    // Prefer the extent implied by decoded frames (fixes bad container durations).
-    const durationSec = maxEndSec > 0.02 ? maxEndSec : reportedDurationSec
-    const capped = reportedDurationSec > readCapSec + 0.5
-    const mono = mergeChunksToMonoLinear(chunks, sampleRate, durationSec)
-    return { mono, sampleRate, durationSec, capped }
-  } finally {
-    if (decoder && decoder.state !== 'closed') {
-      try {
-        decoder.close()
-      } catch {
-        // Already closed.
-      }
-    }
-    try {
-      demuxer.destroy()
-    } catch {
-      // Already destroyed.
-    }
-  }
+	if (decoder.state === "configured") {
+		await decoder.flush();
+		decoder.close();
+	}
+
+	if (signal?.aborted) {
+		for (const f of decodedFrames) f.close();
+		throw new DOMException("Aborted", "AbortError");
+	}
+
+	if (decodedFrames.length === 0) {
+		throw new Error("Decoded zero audio frames from this video.");
+	}
+
+	let maxEndUs = 0;
+	for (const f of decodedFrames) {
+		const end = f.timestamp + (f.duration ?? 0);
+		if (end > maxEndUs) maxEndUs = end;
+	}
+	const inferredDurationSec = maxEndUs / 1e6;
+	// Prefer extent implied by decoded frames (fixes bad container duration); fall back to reported
+	// metadata when frames lack duration.
+	const durationSec = inferredDurationSec > 0.02 ? inferredDurationSec : reportedDurationSec;
+
+	// The cap cut the track short when the reported extent exceeds what we read.
+	const capped = reportedDurationSec > readCapSec + READ_END_PADDING_SEC;
+
+	const mono = mergeAndConsumeDecodedAudioToMonoLinear(decodedFrames, sampleRate, durationSec);
+	return { mono, sampleRate, durationSec, capped };
 }

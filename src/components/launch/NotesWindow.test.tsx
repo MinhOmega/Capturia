@@ -1,448 +1,425 @@
 // @vitest-environment jsdom
-//
-// Stylesheet + legacy migration cases, plus the teleprompter mode: playback
-// timing against a stubbed animation frame, the manual-scroll hold, restart,
-// read-only locking, reading-position retention and preference persistence.
-import '@testing-library/jest-dom/vitest'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
-import { act, fireEvent, render, screen } from '@testing-library/react'
-import type { Editor } from '@tiptap/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { TELEPROMPTER_MANUAL_SCROLL_HOLD_MS } from '@/lib/notesTeleprompter'
-import { USER_PREFERENCES_STORAGE_KEY } from '@/lib/userPreferences'
-import { getInitialNotesContent, NOTES_STORAGE_KEY, NotesWindow } from './NotesWindow'
+import "@testing-library/jest-dom";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { act, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import type { Editor } from "@tiptap/react";
+import { StrictMode } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { NotesWindow } from "./NotesWindow";
+import { NOTES_TELEPROMPTER_STORAGE_KEY } from "./notesTeleprompter";
 
 const tiptapState = vi.hoisted(() => ({
-  options: null as null | {
-    content: string
-    editable?: boolean
-    onUpdate: (payload: { editor: { getHTML: () => string } }) => void
-  },
-  editor: null as Editor | null,
-}))
+	options: null as null | {
+		content: string;
+		editable: boolean;
+		onUpdate: (payload: { editor: { getHTML: () => string } }) => void;
+	},
+	editor: null as Editor | null,
+}));
 
-vi.mock('@tiptap/react', () => ({
-  useEditor: (options: typeof tiptapState.options) => {
-    tiptapState.options = options
-    return tiptapState.editor
-  },
-  EditorContent: ({
-    editor: _editor,
-    ...props
-  }: React.HTMLAttributes<HTMLDivElement> & { editor: Editor | null }) => <div {...props} />,
-}))
+vi.mock("@tiptap/react", () => ({
+	useEditor: (options: typeof tiptapState.options) => {
+		tiptapState.options = options;
+		return tiptapState.editor;
+	},
+	EditorContent: ({
+		editor: _editor,
+		...props
+	}: React.HTMLAttributes<HTMLDivElement> & { editor: Editor | null }) => <div {...props} />,
+}));
 
-vi.mock('@tiptap/starter-kit', () => ({ default: {} }))
+vi.mock("@tiptap/starter-kit", () => ({ default: {} }));
 
-vi.mock('@/components/ui/tooltip', () => ({
-  Tooltip: ({ children }: { children: React.ReactNode }) => children,
-  TooltipProvider: ({ children }: { children: React.ReactNode }) => children,
-}))
+vi.mock("@/components/ui/tooltip", () => ({
+	Tooltip: ({ children }: { children: React.ReactNode }) => children,
+}));
 
-vi.mock('@/i18n', () => ({
-  useI18n: () => ({
-    locale: 'en',
-    setLocale: vi.fn(),
-    t: (key: string, vars?: Record<string, string | number>) => {
-      const short = key.replace(/^launch\.tooltips\.notesToolbar\./, '')
-      return vars ? `${short}:${Object.values(vars).join(',')}` : short
-    },
-  }),
-}))
+vi.mock("@/contexts/I18nContext", () => ({
+	useI18n: () => ({ locale: "en" }),
+	useScopedT: () => (key: string, vars?: Record<string, string | number>) => {
+		const labels: Record<string, string> = {
+			"tooltips.notesToolbar.bold": "Bold",
+			"tooltips.notesToolbar.play": "Play",
+			"tooltips.notesToolbar.pause": "Pause",
+			"tooltips.notesToolbar.speed": "Scroll speed",
+			"tooltips.notesToolbar.decreaseSpeed": "Decrease scroll speed",
+			"tooltips.notesToolbar.increaseSpeed": "Increase scroll speed",
+			"tooltips.notesToolbar.fontSize": "Font size",
+			"tooltips.notesToolbar.decreaseFontSize": "Decrease font size",
+			"tooltips.notesToolbar.increaseFontSize": "Increase font size",
+			"tooltips.notesToolbar.mirror": "Mirror",
+			"units.pixelsPerSecond": "{{value}} px/s",
+			"units.pixels": "{{value}} px",
+		};
+		return (labels[key] ?? key).replace(/\{\{(\w+)\}\}/g, (_, name: string) =>
+			String(vars?.[name] ?? `{{${name}}}`),
+		);
+	},
+}));
 
 function createStorage(): Storage {
-  const values = new Map<string, string>()
-  return {
-    getItem: (key) => values.get(key) ?? null,
-    setItem: (key, value) => values.set(key, String(value)),
-    removeItem: (key) => values.delete(key),
-    clear: () => values.clear(),
-    key: (index) => Array.from(values.keys())[index] ?? null,
-    get length() {
-      return values.size
-    },
-  }
+	const values = new Map<string, string>();
+	return {
+		getItem: (key) => values.get(key) ?? null,
+		setItem: (key, value) => values.set(key, String(value)),
+		removeItem: (key) => values.delete(key),
+		clear: () => values.clear(),
+		key: (index) => Array.from(values.keys())[index] ?? null,
+		get length() {
+			return values.size;
+		},
+	};
 }
 
-const setEditable = vi.fn()
+const setEditable = vi.fn();
 
-function createScrollElement(scrollHeight = 200, clientHeight = 100): HTMLElement {
-  const element = document.createElement('div')
-  Object.defineProperties(element, {
-    scrollHeight: { value: scrollHeight, configurable: true },
-    clientHeight: { value: clientHeight, configurable: true },
-  })
-  element.scrollTop = 0
-  return element
+function createEditor(scrollElement: HTMLElement): Editor {
+	const chain: Record<string, ReturnType<typeof vi.fn>> = {};
+	for (const command of [
+		"focus",
+		"toggleBold",
+		"toggleItalic",
+		"toggleStrike",
+		"toggleBulletList",
+		"toggleOrderedList",
+		"toggleBlockquote",
+		"toggleCodeBlock",
+	]) {
+		chain[command] = vi.fn(() => chain);
+	}
+	chain.run = vi.fn(() => true);
+
+	return {
+		can: () => ({ chain: () => chain }),
+		chain: () => chain,
+		isActive: () => false,
+		on: vi.fn(),
+		off: vi.fn(),
+		setEditable,
+		view: { dom: scrollElement },
+	} as unknown as Editor;
 }
 
-function createEditor(scrollElement: HTMLElement = createScrollElement()): Editor {
-  const chain: Record<string, ReturnType<typeof vi.fn>> = {}
-  for (const command of [
-    'focus',
-    'toggleBold',
-    'toggleItalic',
-    'toggleStrike',
-    'toggleBulletList',
-    'toggleOrderedList',
-    'toggleBlockquote',
-    'toggleCodeBlock',
-  ]) {
-    chain[command] = vi.fn(() => chain)
-  }
-  chain.run = vi.fn(() => true)
-
-  return {
-    can: () => ({ chain: () => chain }),
-    chain: () => chain,
-    isActive: () => false,
-    on: vi.fn(),
-    off: vi.fn(),
-    setEditable,
-    view: { dom: scrollElement },
-  } as unknown as Editor
+/** Mimics an engine that stores scroll offsets as whole pixels. */
+function makeScrollTopRounding(element: HTMLElement): void {
+	let value = 0;
+	Object.defineProperty(element, "scrollTop", {
+		configurable: true,
+		get: () => value,
+		set: (next: number) => {
+			value = Math.floor(next);
+		},
+	});
 }
 
-describe('NotesWindow content', () => {
-  beforeEach(() => {
-    Object.defineProperty(globalThis, 'localStorage', {
-      value: createStorage(),
-      configurable: true,
-    })
-    tiptapState.editor = createEditor()
-    tiptapState.options = null
-  })
+describe("NotesWindow teleprompter mode", () => {
+	let scrollElement: HTMLElement;
+	let frameCallbacks: Map<number, FrameRequestCallback>;
+	let nextFrameId: number;
 
-  it('loads legacy plain-text notes as paragraphs and saves editor updates', () => {
-    localStorage.setItem(NOTES_STORAGE_KEY, 'First\nSecond')
-    render(<NotesWindow />)
+	function flushNextFrame(timestamp: number): void {
+		const entry = frameCallbacks.entries().next().value as
+			| [number, FrameRequestCallback]
+			| undefined;
+		if (!entry) {
+			throw new Error("No animation frame was scheduled");
+		}
+		frameCallbacks.delete(entry[0]);
+		act(() => entry[1](timestamp));
+	}
 
-    expect(tiptapState.options?.content).toBe('<p>First</p><p>Second</p>')
-    act(() => {
-      tiptapState.options?.onUpdate({
-        editor: { getHTML: () => '<p>Updated</p>' },
-      })
-    })
-    expect(localStorage.getItem(NOTES_STORAGE_KEY)).toBe('<p>Updated</p>')
-  })
+	beforeEach(() => {
+		Object.defineProperty(globalThis, "localStorage", {
+			value: createStorage(),
+			configurable: true,
+		});
+		setEditable.mockClear();
 
-  it('passes stored HTML through untouched and starts empty otherwise', () => {
-    expect(getInitialNotesContent({ getItem: () => null })).toBe('')
-    expect(getInitialNotesContent({ getItem: () => '<p>Kept</p>' })).toBe('<p>Kept</p>')
-    // Legacy text is escaped so angle brackets cannot turn into markup.
-    expect(getInitialNotesContent({ getItem: () => 'a < b & c' })).toBe('<p>a &lt; b &amp; c</p>')
-  })
+		scrollElement = document.createElement("div");
+		Object.defineProperties(scrollElement, {
+			scrollHeight: { value: 200, configurable: true },
+			clientHeight: { value: 100, configurable: true },
+		});
+		scrollElement.scrollTop = 0;
+		tiptapState.editor = createEditor(scrollElement);
+		tiptapState.options = null;
 
-  it('renders the formatting toolbar with the teleprompter off and editable', () => {
-    render(<NotesWindow />)
+		frameCallbacks = new Map();
+		nextFrameId = 1;
+		vi.stubGlobal(
+			"requestAnimationFrame",
+			vi.fn((callback: FrameRequestCallback) => {
+				const id = nextFrameId++;
+				frameCallbacks.set(id, callback);
+				return id;
+			}),
+		);
+		vi.stubGlobal(
+			"cancelAnimationFrame",
+			vi.fn((id: number) => {
+				frameCallbacks.delete(id);
+			}),
+		);
+	});
 
-    expect(screen.getByRole('button', { name: 'bold' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'codeBlock' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: 'teleprompter' })).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    )
-    expect(screen.queryByTestId('notes-teleprompter-controls')).not.toBeInTheDocument()
-    expect(screen.getByTestId('notes-editor')).toBeInTheDocument()
-    expect(tiptapState.options?.editable).toBe(true)
-  })
-})
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
 
-describe('NotesWindow teleprompter mode', () => {
-  let scrollElement: HTMLElement
-  let frameCallbacks: Map<number, FrameRequestCallback>
-  let nextFrameId: number
+	it("starts paused, scrolls by elapsed time, resets timing on speed changes, and pauses", async () => {
+		const user = userEvent.setup();
+		render(<NotesWindow />);
 
-  function flushNextFrame(timestamp: number): void {
-    const entry = frameCallbacks.entries().next().value as
-      | [number, FrameRequestCallback]
-      | undefined
-    if (!entry) {
-      throw new Error('No animation frame was scheduled')
-    }
-    frameCallbacks.delete(entry[0])
-    act(() => entry[1](timestamp))
-  }
+		await user.click(screen.getByRole("button", { name: "Play" }));
+		expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
 
-  function enableTeleprompter(): void {
-    fireEvent.click(screen.getByRole('button', { name: 'teleprompter' }))
-  }
+		flushNextFrame(0);
+		expect(scrollElement.scrollTop).toBe(0);
+		flushNextFrame(100);
+		expect(scrollElement.scrollTop).toBe(4);
 
-  function play(): void {
-    fireEvent.click(screen.getByRole('button', { name: 'play' }))
-  }
+		await user.click(screen.getByRole("button", { name: "Increase scroll speed" }));
+		flushNextFrame(1_000);
+		expect(scrollElement.scrollTop).toBe(4);
+		flushNextFrame(1_100);
+		expect(scrollElement.scrollTop).toBe(9);
 
-  beforeEach(() => {
-    Object.defineProperty(globalThis, 'localStorage', {
-      value: createStorage(),
-      configurable: true,
-    })
-    setEditable.mockClear()
+		await user.click(screen.getByRole("button", { name: "Pause" }));
+		expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
+		expect(frameCallbacks.size).toBe(0);
+	});
 
-    scrollElement = createScrollElement()
-    tiptapState.editor = createEditor(scrollElement)
-    tiptapState.options = null
+	it("stops automatically at the bottom", async () => {
+		const user = userEvent.setup();
+		scrollElement.scrollTop = 96;
+		render(<NotesWindow />);
 
-    frameCallbacks = new Map()
-    nextFrameId = 1
-    vi.stubGlobal(
-      'requestAnimationFrame',
-      vi.fn((callback: FrameRequestCallback) => {
-        const id = nextFrameId++
-        frameCallbacks.set(id, callback)
-        return id
-      }),
-    )
-    vi.stubGlobal(
-      'cancelAnimationFrame',
-      vi.fn((id: number) => {
-        frameCallbacks.delete(id)
-      }),
-    )
-  })
+		await user.click(screen.getByRole("button", { name: "Play" }));
+		flushNextFrame(0);
+		flushNextFrame(100);
 
-  afterEach(() => {
-    vi.unstubAllGlobals()
-    vi.restoreAllMocks()
-  })
+		expect(scrollElement.scrollTop).toBe(100);
+		expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
+		expect(frameCallbacks.size).toBe(0);
+	});
 
-  it('locks the note while on, shows the controls and unlocks when switched off', () => {
-    render(<NotesWindow />)
-    expect(setEditable).toHaveBeenLastCalledWith(true, false)
+	it("replays from the top when playback starts at the bottom", async () => {
+		const user = userEvent.setup();
+		scrollElement.scrollTop = 100;
+		render(<NotesWindow />);
 
-    enableTeleprompter()
-    expect(setEditable).toHaveBeenLastCalledWith(false, false)
-    expect(screen.getByTestId('notes-teleprompter-controls')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'bold' })).toBeDisabled()
-    expect(screen.getByTestId('notes-editor')).toHaveAttribute('data-teleprompter', 'true')
-    expect(screen.getByTestId('notes-editor')).toHaveStyle({ fontSize: '16px' })
+		await user.click(screen.getByRole("button", { name: "Play" }));
+		expect(scrollElement.scrollTop).toBe(0);
 
-    enableTeleprompter()
-    expect(setEditable).toHaveBeenLastCalledWith(true, false)
-    expect(screen.queryByTestId('notes-teleprompter-controls')).not.toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'bold' })).toBeEnabled()
-    expect(screen.getByTestId('notes-editor').style.fontSize).toBe('')
-  })
+		flushNextFrame(0);
+		flushNextFrame(100);
 
-  it('starts paused, scrolls by elapsed time, follows the speed slider and pauses', () => {
-    render(<NotesWindow />)
-    enableTeleprompter()
+		expect(scrollElement.scrollTop).toBe(4);
+		expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
+	});
 
-    play()
-    expect(screen.getByRole('button', { name: 'pause' })).toBeInTheDocument()
+	it("stays armed when the note is shorter than the window", async () => {
+		const user = userEvent.setup();
+		Object.defineProperties(scrollElement, {
+			scrollHeight: { value: 100, configurable: true },
+			clientHeight: { value: 100, configurable: true },
+		});
+		render(<NotesWindow />);
 
-    flushNextFrame(0)
-    expect(scrollElement.scrollTop).toBe(0)
-    flushNextFrame(100)
-    expect(scrollElement.scrollTop).toBe(4)
+		await user.click(screen.getByRole("button", { name: "Play" }));
+		flushNextFrame(0);
+		flushNextFrame(100);
 
-    // The slider changes the pace without restarting the loop.
-    fireEvent.change(screen.getByRole('slider', { name: 'speed' }), { target: { value: '80' } })
-    expect(screen.getByText('launch.notesTeleprompter.speedReadout:80')).toBeInTheDocument()
-    expect(frameCallbacks.size).toBe(1)
-    flushNextFrame(200)
-    expect(scrollElement.scrollTop).toBe(12)
+		// Nothing to scroll, but the control must not snap back and look broken.
+		expect(scrollElement.scrollTop).toBe(0);
+		expect(screen.getByRole("button", { name: "Pause" })).toBeInTheDocument();
+		expect(frameCallbacks.size).toBe(1);
+	});
 
-    fireEvent.click(screen.getByRole('button', { name: 'pause' }))
-    expect(screen.getByRole('button', { name: 'play' })).toBeInTheDocument()
-    expect(frameCallbacks.size).toBe(0)
-  })
+	it("keeps advancing when the engine rounds scrollTop to whole pixels", async () => {
+		const user = userEvent.setup();
+		makeScrollTopRounding(scrollElement);
+		render(<NotesWindow />);
 
-  it('stops at the bottom and replays from the top on the next play', () => {
-    scrollElement.scrollTop = 96
-    render(<NotesWindow />)
-    enableTeleprompter()
+		await user.click(screen.getByRole("button", { name: "Play" }));
 
-    play()
-    flushNextFrame(0)
-    flushNextFrame(100)
-    expect(scrollElement.scrollTop).toBe(100)
-    expect(screen.getByRole('button', { name: 'play' })).toBeInTheDocument()
-    expect(frameCallbacks.size).toBe(0)
+		// 40 px/s over 16 ms frames is 0.64 px each — every one of them rounds away on its
+		// own, so reading the position back from the DOM would stall the teleprompter.
+		let timestamp = 0;
+		for (let frame = 0; frame <= 5; frame++) {
+			flushNextFrame(timestamp);
+			timestamp += 16;
+		}
 
-    play()
-    expect(scrollElement.scrollTop).toBe(0)
-    flushNextFrame(1_000)
-    flushNextFrame(1_100)
-    expect(scrollElement.scrollTop).toBe(4)
-  })
+		expect(scrollElement.scrollTop).toBe(3);
+	});
 
-  it('waits after a wheel scroll and resumes from where the reader left it', () => {
-    vi.spyOn(performance, 'now').mockReturnValue(500)
-    render(<NotesWindow />)
-    enableTeleprompter()
+	it("makes the note read-only while playing", async () => {
+		const user = userEvent.setup();
+		render(<NotesWindow />);
+		expect(setEditable).toHaveBeenLastCalledWith(true, false);
 
-    play()
-    flushNextFrame(0)
-    flushNextFrame(100)
-    expect(scrollElement.scrollTop).toBe(4)
+		await user.click(screen.getByRole("button", { name: "Play" }));
+		expect(setEditable).toHaveBeenLastCalledWith(false, false);
+		expect(screen.getByRole("button", { name: "Bold" })).toBeDisabled();
 
-    scrollElement.scrollTop = 40
-    fireEvent.wheel(scrollElement, { deltaY: 36 })
+		await user.click(screen.getByRole("button", { name: "Pause" }));
+		expect(setEditable).toHaveBeenLastCalledWith(true, false);
+		expect(screen.getByRole("button", { name: "Bold" })).toBeEnabled();
+	});
 
-    flushNextFrame(600)
-    expect(scrollElement.scrollTop).toBe(40)
-    flushNextFrame(500 + TELEPROMPTER_MANUAL_SCROLL_HOLD_MS)
-    expect(scrollElement.scrollTop).toBe(40)
-    flushNextFrame(600 + TELEPROMPTER_MANUAL_SCROLL_HOLD_MS)
-    expect(scrollElement.scrollTop).toBe(44)
-    expect(screen.getByRole('button', { name: 'pause' })).toBeInTheDocument()
-  })
+	it("locks the note in every mirrored or playing state and unlocks only when both end", async () => {
+		const user = userEvent.setup();
+		render(<NotesWindow />);
+		const bold = () => screen.getByRole("button", { name: "Bold" });
 
-  it('treats a scrollbar drag as a manual scroll through the drift check', () => {
-    render(<NotesWindow />)
-    enableTeleprompter()
+		// Not playing, not mirrored: editable.
+		expect(setEditable).toHaveBeenLastCalledWith(true, false);
+		expect(bold()).toBeEnabled();
 
-    play()
-    flushNextFrame(0)
-    flushNextFrame(100)
+		// Not playing, mirrored: locked.
+		await user.click(screen.getByRole("button", { name: "Mirror" }));
+		expect(setEditable).toHaveBeenLastCalledWith(false, false);
+		expect(bold()).toBeDisabled();
 
-    scrollElement.scrollTop = 60
-    flushNextFrame(200)
-    expect(scrollElement.scrollTop).toBe(60)
-    flushNextFrame(200 + TELEPROMPTER_MANUAL_SCROLL_HOLD_MS)
-    flushNextFrame(300 + TELEPROMPTER_MANUAL_SCROLL_HOLD_MS)
-    expect(scrollElement.scrollTop).toBe(64)
-  })
+		// Playing, mirrored: locked.
+		await user.click(screen.getByRole("button", { name: "Play" }));
+		expect(setEditable).toHaveBeenLastCalledWith(false, false);
+		expect(bold()).toBeDisabled();
 
-  it('restarts from the top while playing and while paused', () => {
-    render(<NotesWindow />)
-    enableTeleprompter()
+		// Paused again but still mirrored: stays locked.
+		await user.click(screen.getByRole("button", { name: "Pause" }));
+		expect(setEditable).toHaveBeenLastCalledWith(false, false);
+		expect(bold()).toBeDisabled();
 
-    scrollElement.scrollTop = 50
-    fireEvent.click(screen.getByRole('button', { name: 'restart' }))
-    expect(scrollElement.scrollTop).toBe(0)
+		// The teleprompter controls stay usable while the note is locked.
+		const content = screen.getByTestId("notes-teleprompter-content");
+		await user.click(screen.getByRole("button", { name: "Increase font size" }));
+		expect(content).toHaveStyle({ fontSize: "18px" });
 
-    play()
-    flushNextFrame(0)
-    flushNextFrame(1_000)
-    expect(scrollElement.scrollTop).toBe(4)
+		// Unmirrored while paused: editable again.
+		await user.click(screen.getByRole("button", { name: "Mirror" }));
+		expect(setEditable).toHaveBeenLastCalledWith(true, false);
+		expect(bold()).toBeEnabled();
 
-    fireEvent.click(screen.getByRole('button', { name: 'restart' }))
-    expect(scrollElement.scrollTop).toBe(0)
-    flushNextFrame(1_100)
-    expect(scrollElement.scrollTop).toBe(0)
-    flushNextFrame(1_200)
-    expect(scrollElement.scrollTop).toBe(4)
-  })
+		// None of the state flips wrote note content.
+		expect(localStorage.getItem("notes")).toBeNull();
+	});
 
-  it('toggles playback with Space unless the note or a control has focus', () => {
-    render(<NotesWindow />)
+	it("locks the note from the first render when a mirrored setting is restored", () => {
+		localStorage.setItem(
+			NOTES_TELEPROMPTER_STORAGE_KEY,
+			JSON.stringify({ speed: 40, fontSize: 16, mirrored: true }),
+		);
+		render(<NotesWindow />);
 
-    // Off: Space is an ordinary key.
-    fireEvent.keyDown(document.body, { code: 'Space', key: ' ' })
-    expect(screen.queryByRole('button', { name: 'pause' })).not.toBeInTheDocument()
+		// `useEditor` is stubbed here, so this pins the option we hand Tiptap rather than what
+		// Tiptap does with it: the editor must be CREATED read-only, because an effect-only lock
+		// would leave the first painted frame editable. That the real editor honours it — and
+		// keeps honouring the effect afterwards — is covered in NotesWindow.editable.test.tsx.
+		expect(tiptapState.options?.editable).toBe(false);
+		expect(setEditable).toHaveBeenLastCalledWith(false, false);
+		expect(setEditable).not.toHaveBeenCalledWith(true, false);
+		expect(screen.getByRole("button", { name: "Bold" })).toBeDisabled();
+		// A restored mirror must not auto-start playback.
+		expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
+	});
 
-    enableTeleprompter()
-    fireEvent.keyDown(document.body, { code: 'Space', key: ' ' })
-    expect(screen.getByRole('button', { name: 'pause' })).toBeInTheDocument()
+	it("creates the editor editable when nothing locks it at mount", () => {
+		render(<NotesWindow />);
+		expect(tiptapState.options?.editable).toBe(true);
+	});
 
-    // Inside the note body the key is left to the editor.
-    document.body.appendChild(scrollElement)
-    fireEvent.keyDown(scrollElement, { code: 'Space', key: ' ' })
-    expect(screen.getByRole('button', { name: 'pause' })).toBeInTheDocument()
+	it("keeps mirroring and playback independent", async () => {
+		const user = userEvent.setup();
+		render(<NotesWindow />);
+		const content = screen.getByTestId("notes-teleprompter-content");
 
-    // A focused button already handles Space itself.
-    fireEvent.keyDown(screen.getByRole('button', { name: 'restart' }), { code: 'Space', key: ' ' })
-    expect(screen.getByRole('button', { name: 'pause' })).toBeInTheDocument()
+		// Mirroring must not start playback.
+		await user.click(screen.getByRole("button", { name: "Mirror" }));
+		expect(screen.getByRole("button", { name: "Play" })).toBeInTheDocument();
+		expect(content).toHaveAttribute("data-mirrored", "true");
 
-    fireEvent.keyDown(document.body, { code: 'Space', key: ' ' })
-    expect(screen.getByRole('button', { name: 'play' })).toBeInTheDocument()
-    scrollElement.remove()
-  })
+		// Pausing must not unmirror.
+		await user.click(screen.getByRole("button", { name: "Play" }));
+		await user.click(screen.getByRole("button", { name: "Pause" }));
+		expect(content).toHaveAttribute("data-mirrored", "true");
+	});
 
-  it('keeps the relative reading position when the font size or the mode changes', () => {
-    // Model the layout: the note grows 50 px per font step above the default 16 px,
-    // so the height the component sees follows the style it just applied.
-    Object.defineProperty(scrollElement, 'scrollHeight', {
-      configurable: true,
-      get: () => {
-        const fontSize = screen.getByTestId('notes-editor').style.fontSize
-        return 200 + (fontSize ? (Number.parseInt(fontSize, 10) - 16) * 50 : 0)
-      },
-    })
-    render(<NotesWindow />)
-    scrollElement.scrollTop = 50
-    enableTeleprompter()
-    expect(scrollElement.scrollTop).toBe(50)
+	it("applies and persists font and mirror settings without persisting playback", async () => {
+		const user = userEvent.setup();
+		render(<NotesWindow />);
+		const content = screen.getByTestId("notes-teleprompter-content");
 
-    // A larger font makes the note taller; the reader stays halfway down.
-    fireEvent.click(screen.getByRole('button', { name: 'increaseFontSize' }))
-    expect(screen.getByText('launch.notesTeleprompter.fontSizeReadout:18')).toBeInTheDocument()
-    expect(scrollElement.scrollTop).toBe(100)
+		expect(content).toHaveStyle({ fontSize: "16px" });
+		expect(content).toHaveAttribute("data-mirrored", "false");
+		// Loading defaults is not a preference — nothing is stored until a control is used.
+		expect(localStorage.getItem(NOTES_TELEPROMPTER_STORAGE_KEY)).toBeNull();
 
-    // Switching off returns to the default size at the same relative spot.
-    enableTeleprompter()
-    expect(scrollElement.scrollTop).toBe(50)
-  })
+		await user.click(screen.getByRole("button", { name: "Increase font size" }));
+		await user.click(screen.getByRole("button", { name: "Mirror" }));
+		await user.click(screen.getByRole("button", { name: "Play" }));
 
-  it('mirrors the note only while the teleprompter is on', () => {
-    render(<NotesWindow />)
-    enableTeleprompter()
+		expect(content).toHaveStyle({ fontSize: "18px" });
+		expect(content).toHaveAttribute("data-mirrored", "true");
+		await waitFor(() => {
+			expect(JSON.parse(localStorage.getItem(NOTES_TELEPROMPTER_STORAGE_KEY) ?? "")).toEqual({
+				speed: 40,
+				fontSize: 18,
+				mirrored: true,
+			});
+		});
+	});
 
-    fireEvent.click(screen.getByRole('button', { name: 'mirror' }))
-    expect(screen.getByTestId('notes-editor')).toHaveAttribute('data-mirrored', 'true')
-    enableTeleprompter()
-    expect(screen.getByTestId('notes-editor')).toHaveAttribute('data-mirrored', 'false')
-  })
+	it("still writes nothing on mount when StrictMode double-invokes effects", () => {
+		// The renderer really does mount under StrictMode (see src/main.tsx), so a
+		// "skip the first run" guard would persist defaults on the second invocation.
+		render(
+			<StrictMode>
+				<NotesWindow />
+			</StrictMode>,
+		);
 
-  it('persists speed and font size, never playback, and writes nothing on mount', () => {
-    render(<NotesWindow />)
-    expect(localStorage.getItem(USER_PREFERENCES_STORAGE_KEY)).toBeNull()
+		expect(localStorage.getItem(NOTES_TELEPROMPTER_STORAGE_KEY)).toBeNull();
+	});
 
-    enableTeleprompter()
-    play()
-    expect(localStorage.getItem(USER_PREFERENCES_STORAGE_KEY)).toBeNull()
+	it("loads legacy note content and saves editor updates", () => {
+		localStorage.setItem("notes", "First\nSecond");
+		render(<NotesWindow />);
 
-    fireEvent.change(screen.getByRole('slider', { name: 'speed' }), { target: { value: '65' } })
-    fireEvent.click(screen.getByRole('button', { name: 'decreaseFontSize' }))
-    const stored = JSON.parse(localStorage.getItem(USER_PREFERENCES_STORAGE_KEY) ?? '{}')
-    expect(stored.notesTeleprompter).toEqual({ speed: 65, fontSize: 14 })
-    expect(stored.isPlaying).toBeUndefined()
-  })
+		expect(tiptapState.options?.content).toBe("<p>First</p><p>Second</p>");
+		act(() => {
+			tiptapState.options?.onUpdate({
+				editor: { getHTML: () => "<p>Updated</p>" },
+			});
+		});
+		expect(localStorage.getItem("notes")).toBe("<p>Updated</p>");
+	});
+});
 
-  it('restores persisted speed and font size', () => {
-    localStorage.setItem(
-      USER_PREFERENCES_STORAGE_KEY,
-      JSON.stringify({ notesTeleprompter: { speed: 90, fontSize: 30 } }),
-    )
-    render(<NotesWindow />)
-    enableTeleprompter()
+describe("NotesWindow stylesheet", () => {
+	// The note body only scrolls because `.tiptap` carries `height: 100%` + `overflow-y: auto`.
+	// Those rules reach the app through a side-effect import, and a side-effect import of a
+	// *CSS module* is tree-shaken out of the production bundle — dev looked fine while the
+	// packaged app let a long note grow past its slot, scroll the whole shell out of view and
+	// take the toolbar with it. A plain `.css` import is always emitted.
+	const read = (file: string) =>
+		readFileSync(resolve(process.cwd(), "src/components/launch", file), "utf8");
 
-    expect(screen.getByRole('slider', { name: 'speed' })).toHaveValue('90')
-    expect(screen.getByTestId('notes-editor')).toHaveStyle({ fontSize: '30px' })
-  })
-})
+	it("is imported as plain CSS, never as a CSS module", () => {
+		const source = read("NotesWindow.tsx");
 
-describe('NotesWindow stylesheet', () => {
-  // The note body only scrolls because `.tiptap` carries `height: 100%` + `overflow-y: auto`.
-  // Those rules reach the app through a side-effect import, and a side-effect import of a
-  // *CSS module* is tree-shaken out of the production bundle: dev looked fine while the
-  // packaged app let a long note grow past its slot, scroll the whole shell out of view and
-  // take the toolbar with it. A plain `.css` import is always emitted.
-  const read = (file: string) =>
-    readFileSync(resolve(process.cwd(), 'src/components/launch', file), 'utf8')
+		expect(source).toContain('import "./NotesWindow.css"');
+		expect(source).not.toContain(".module.css");
+	});
 
-  it('is imported as plain CSS, never as a CSS module', () => {
-    const source = read('NotesWindow.tsx')
+	it("keeps the note body a scroll container", () => {
+		const css = read("NotesWindow.css");
+		const body = css.match(/\.tiptap\s*\{[^}]*\}/)?.[0] ?? "";
 
-    expect(source).toMatch(/^import ['"]\.\/NotesWindow\.css['"]$/m)
-    expect(source).not.toContain('.module.css')
-  })
-
-  it('keeps the note body a scroll container', () => {
-    const css = read('NotesWindow.css')
-    const body = css.match(/\.tiptap\s*\{[^}]*\}/)?.[0] ?? ''
-
-    expect(body).toMatch(/height:\s*100%/)
-    expect(body).toMatch(/overflow-y:\s*auto/)
-  })
-
-  it('mirrors and locks the note through data attributes', () => {
-    const css = read('NotesWindow.css')
-
-    expect(css).toMatch(/\.notes-content\[data-mirrored='true'\]\s*\{[^}]*scaleX\(-1\)/)
-    expect(css).toMatch(/\.notes-content\[data-teleprompter='true'\] \.tiptap\s*\{[^}]*caret-color/)
-  })
-})
+		expect(body).toMatch(/height:\s*100%/);
+		expect(body).toMatch(/overflow-y:\s*auto/);
+	});
+});

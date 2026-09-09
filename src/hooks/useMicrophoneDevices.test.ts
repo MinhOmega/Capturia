@@ -1,100 +1,59 @@
 // @vitest-environment jsdom
-import { act, renderHook, waitFor } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { useMicrophoneDevices } from './useMicrophoneDevices'
+import { renderHook, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useMicrophoneDevices } from "./useMicrophoneDevices";
 
-const mockDevices = [
-  { kind: 'audioinput', deviceId: 'mic1', label: 'Mic 1', groupId: 'group1' },
-  { kind: 'audioinput', deviceId: 'mic2', label: '', groupId: 'group1' },
-  { kind: 'videoinput', deviceId: 'cam1', label: 'Camera 1', groupId: 'group2' },
-]
+const DEVICES = [
+	{ kind: "audioinput", deviceId: "mic-a", label: "Realtek Array Microphone", groupId: "g1" },
+	{ kind: "audioinput", deviceId: "mic-b", label: "Microphone (Logitech PRO X)", groupId: "g2" },
+	{ kind: "videoinput", deviceId: "cam", label: "Webcam", groupId: "g3" },
+];
 
-const mockGetUserMedia = vi.fn()
-const mockEnumerateDevices = vi.fn().mockResolvedValue(mockDevices)
+const enumerateDevices = vi.fn(async () => DEVICES);
 
-Object.defineProperty(global.navigator, 'mediaDevices', {
-  value: {
-    enumerateDevices: mockEnumerateDevices,
-    getUserMedia: mockGetUserMedia,
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-  },
-  configurable: true,
-})
+Object.defineProperty(global.navigator, "mediaDevices", {
+	value: {
+		enumerateDevices,
+		getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: vi.fn() }] })),
+		addEventListener: vi.fn(),
+		removeEventListener: vi.fn(),
+	},
+	configurable: true,
+});
 
-describe('useMicrophoneDevices', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mockEnumerateDevices.mockResolvedValue(mockDevices)
-  })
+describe("useMicrophoneDevices", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		enumerateDevices.mockResolvedValue(DEVICES);
+	});
 
-  afterEach(() => {
-    vi.resetAllMocks()
-  })
+	it("falls back to the first input when nothing is remembered", async () => {
+		const { result } = renderHook(() => useMicrophoneDevices(true));
+		await waitFor(() => expect(result.current.selectedDeviceId).toBe("mic-a"));
+	});
 
-  it('lists audio inputs without opening a permission stream', async () => {
-    const { result } = renderHook(() => useMicrophoneDevices(true))
+	it("prefers the remembered microphone over the first input", async () => {
+		const { result } = renderHook(() => useMicrophoneDevices(true, "mic-b"));
+		await waitFor(() => expect(result.current.selectedDeviceId).toBe("mic-b"));
+	});
 
-    await waitFor(() => {
-      expect(result.current.devices).toHaveLength(2)
-    })
+	/**
+	 * Chromium's device ids are per-origin salted, so the id one window persisted
+	 * can name nothing in the next while the microphone itself is right there in
+	 * the list. Falling through to the first input would silently swap the user's
+	 * microphone — which is the bug, one layer down.
+	 */
+	it("finds the remembered microphone by label when its id no longer matches", async () => {
+		const { result } = renderHook(() =>
+			useMicrophoneDevices(true, "stale-id", "Microphone (Logitech PRO X)"),
+		);
+		await waitFor(() => expect(result.current.selectedDeviceId).toBe("mic-b"));
+	});
 
-    expect(result.current.devices[0].label).toBe('Mic 1')
-    expect(result.current.devices[1].label).toBe('Microphone mic2')
-    expect(mockGetUserMedia).not.toHaveBeenCalled()
-  })
-
-  it('defaults to the system default microphone', async () => {
-    const { result } = renderHook(() => useMicrophoneDevices(true))
-
-    await waitFor(() => {
-      expect(result.current.devices).toHaveLength(2)
-    })
-
-    expect(result.current.selectedDeviceId).toBe('')
-  })
-
-  it('keeps a persisted selection while the device is present', async () => {
-    const { result } = renderHook(() => useMicrophoneDevices(true, 'mic2'))
-
-    await waitFor(() => {
-      expect(result.current.devices).toHaveLength(2)
-    })
-
-    expect(result.current.selectedDeviceId).toBe('mic2')
-  })
-
-  it('falls back to the default when the selected microphone is unplugged', async () => {
-    const { result } = renderHook(() => useMicrophoneDevices(true, 'mic2'))
-
-    await waitFor(() => {
-      expect(result.current.devices).toHaveLength(2)
-    })
-
-    mockEnumerateDevices.mockResolvedValueOnce([mockDevices[0]])
-    const devicechangeHandler = (
-      navigator.mediaDevices.addEventListener as ReturnType<typeof vi.fn>
-    ).mock.calls[0]?.[1] as (() => void) | undefined
-
-    await act(async () => {
-      devicechangeHandler?.()
-    })
-
-    await waitFor(() => {
-      expect(result.current.selectedDeviceId).toBe('')
-    })
-  })
-
-  it('reports enumeration failures', async () => {
-    mockEnumerateDevices.mockRejectedValueOnce(new Error('Permission denied'))
-
-    const { result } = renderHook(() => useMicrophoneDevices(true))
-
-    await waitFor(() => {
-      expect(result.current.error).toBe('Permission denied')
-    })
-
-    expect(result.current.devices).toHaveLength(0)
-    expect(result.current.isLoading).toBe(false)
-  })
-})
+	it("still falls back to the first input when neither id nor label matches", async () => {
+		const { result } = renderHook(() =>
+			useMicrophoneDevices(true, "stale-id", "A microphone that left"),
+		);
+		await waitFor(() => expect(result.current.selectedDeviceId).toBe("mic-a"));
+	});
+});

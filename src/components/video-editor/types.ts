@@ -1,648 +1,477 @@
-import type { SubtitleStyle } from '@/lib/rendering/subtitleStyle'
+import {
+	effectiveZoomScale,
+	type ZoomDepth,
+	type ZoomScaleInput,
+} from "@/lib/ai-edition/timeline/zoom-scale";
+import type { WebcamLayoutPreset } from "@/lib/compositeLayout";
+import { clamp01 } from "@/utils/math";
 
-export type ZoomDepth = 1 | 2 | 3 | 4 | 5 | 6
+export type { ZoomDepth, ZoomScaleInput };
+export type ZoomFocusMode = "manual" | "auto";
+export type { WebcamLayoutPreset };
+/** Webcam size as a percentage of the canvas reference dimension (10-50). */
+export type WebcamSizePreset = number;
+
+export const DEFAULT_WEBCAM_SIZE_PRESET: WebcamSizePreset = 25;
+
+export const DEFAULT_WEBCAM_LAYOUT_PRESET: WebcamLayoutPreset = "picture-in-picture";
+
+export type WebcamMaskShape = "rectangle" | "circle" | "square" | "rounded";
+
+export const DEFAULT_WEBCAM_MASK_SHAPE: WebcamMaskShape = "rectangle";
+
+export const DEFAULT_WEBCAM_MIRRORED = false;
+
+/** Background mode for the webcam feed (none, transparent AI cutout, blurred background, custom background). */
+export const WEBCAM_BACKGROUND_MODES = ["none", "transparent", "blur", "custom"] as const;
+
+export type WebcamBackgroundMode = (typeof WEBCAM_BACKGROUND_MODES)[number];
+
+/** A `legacyEditor` envelope is user-writable JSON: anything that is not one of the four
+ *  known modes has to fall back, or `renderSegmentedWebcam` matches no branch and encodes
+ *  a blank webcam track. */
+export function isWebcamBackgroundMode(value: unknown): value is WebcamBackgroundMode {
+	return (WEBCAM_BACKGROUND_MODES as readonly unknown[]).includes(value);
+}
+
+export const DEFAULT_WEBCAM_BACKGROUND_MODE: WebcamBackgroundMode = "none";
+
+export const DEFAULT_WEBCAM_BLUR_INTENSITY = 0.5;
+
+/** When true, the picture-in-picture webcam scales inversely with zoom (shrinks as you zoom in). */
+export const DEFAULT_WEBCAM_REACTIVE_ZOOM = true;
+
+export interface WebcamPosition {
+	cx: number; // normalized horizontal center (0-1)
+	cy: number; // normalized vertical center (0-1)
+}
+
+export const DEFAULT_WEBCAM_POSITION: WebcamPosition | null = null;
 
 export interface ZoomFocus {
-  cx: number // normalized horizontal center (0-1)
-  cy: number // normalized vertical center (0-1)
+	cx: number; // normalized horizontal center (0-1)
+	cy: number; // normalized vertical center (0-1)
 }
-
-export interface ZoomRegion {
-  id: string
-  startMs: number
-  endMs: number
-  depth: ZoomDepth
-  focus: ZoomFocus
-  /** Continuous zoom scale; when set it overrides the depth preset (see getZoomScale). */
-  customScale?: number
-  /**
-   * 'auto' = placed by the auto-zoom suggestion pass and untouched since; the
-   * wand toggle removes only these. Any edit promotes the region to 'manual'.
-   * Missing (older saves / hand-placed regions) means 'manual'.
-   */
-  source?: ZoomRegionSource
-  /**
-   * 'auto' = the camera follows the recorded cursor for the whole span instead
-   * of the static `focus` (see videoPlayback/cursorFollowUtils.ts). Missing
-   * (older saves / hand-placed regions) means 'manual'.
-   */
-  focusMode?: ZoomFocusMode
-  /**
-   * 3D tilt preset applied while the region is active (see ROTATION_3D_PRESETS).
-   * Missing = flat. Ramps in/out with the region's zoom progress.
-   */
-  rotationPreset?: Rotation3DPreset
-  /**
-   * How the camera enters and leaves the region. 'animated' (the default, and
-   * what a missing value means for older saves) eases in and out and may pan
-   * to a neighbouring zoom; 'instant' is a step function — full zoom from
-   * startMs, unzoomed again after endMs, with no ease and no connected pan.
-   */
-  transition?: ZoomTransitionMode
-}
-
-export type ZoomRegionSource = 'auto' | 'manual'
-export type ZoomFocusMode = 'manual' | 'auto'
-export type ZoomTransitionMode = 'animated' | 'instant'
-
-/** Effective transition of a region (missing -> animated). */
-export function getZoomTransition(region: Pick<ZoomRegion, 'transition'>): ZoomTransitionMode {
-  return region.transition === 'instant' ? 'instant' : 'animated'
-}
-
-/**
- * Saved-project normaliser: only 'instant' survives, because it is the only
- * value that changes behaviour. 'animated', a missing field and anything
- * unrecognised all read as the animated default and are stored as absent, so
- * a project saved before this field existed loads unchanged.
- */
-export function normalizeZoomTransition(value: unknown): ZoomTransitionMode | undefined {
-  return value === 'instant' ? 'instant' : undefined
-}
-
-// --- 3D iso / tilt presets -------------------------------------------------
 
 export interface Rotation3D {
-  rotationX: number
-  rotationY: number
-  rotationZ: number
+	rotationX: number;
+	rotationY: number;
+	rotationZ: number;
 }
 
 export const DEFAULT_ROTATION_3D: Rotation3D = {
-  rotationX: 0,
-  rotationY: 0,
-  rotationZ: 0,
-}
+	rotationX: 0,
+	rotationY: 0,
+	rotationZ: 0,
+};
 
-export type Rotation3DPreset = 'iso' | 'left' | 'right'
+export type Rotation3DPreset = "iso" | "left" | "right";
 
-// Every preset rotates about all three axes on purpose. A single-axis tilt leaves
-// an edge of the projected quad exactly parallel to the frame (both vertical edges
-// for a pure Y rotation), and a perfectly vertical edge cutting through text reads
-// as `overflow: hidden` even though the whole plane is drawn — that is the
-// "recording looks truncated" report. A small X and Z component breaks the parallel.
+// Every preset carries all three components on purpose. With a single-axis rotation the projected
+// quad keeps an edge exactly parallel to the frame — both vertical edges for a pure Y rotation,
+// which is geometry rather than a setting — and a perfectly vertical edge cutting through text is
+// indistinguishable from `overflow: hidden`. That is what got reported three times as "the
+// recording is truncated" while the plane was in fact drawn whole. `regions.rs` holds the same
+// numbers and a test asserting no edge comes within 2° of an axis.
 export const ROTATION_3D_PRESETS: Record<Rotation3DPreset, Rotation3D> = {
-  iso: { rotationX: -12, rotationY: -18, rotationZ: -2 },
-  left: { rotationX: -8, rotationY: -16, rotationZ: -1 },
-  right: { rotationX: -8, rotationY: 16, rotationZ: 1 },
-}
+	iso: { rotationX: -12, rotationY: -18, rotationZ: -2 },
+	left: { rotationX: -8, rotationY: -16, rotationZ: -1 },
+	right: { rotationX: -8, rotationY: 16, rotationZ: 1 },
+};
 
-export const ROTATION_3D_PRESET_ORDER: readonly Rotation3DPreset[] = ['iso', 'left', 'right']
+export const ROTATION_3D_PRESET_ORDER: Rotation3DPreset[] = ["iso", "left", "right"];
 
-/**
- * Perspective distance in CSS px is this factor times min(viewport w, h). The
- * same factor drives the preview (CSS `perspective`) and the export (WebGL
- * fov), so the look matches at any canvas resolution. Lower = camera closer =
- * edges converge more visibly; at 2.6 the convergence was so flat that the
- * tilt stopped reading as a tilt (iso's top edge came out ~0.08° off level).
- */
-export const ROTATION_3D_PERSPECTIVE_FACTOR = 1.6
+/** Perspective distance in CSS px is this factor times min(viewport w, h). Same
+ * factor in preview and export so the look matches at any canvas resolution.
+ * Lower = camera closer = edges converge more visibly. At 2.6 the convergence was so flat that
+ * iso's top edge came out 0.08° off horizontal and the tilt stopped reading as a tilt. */
+export const ROTATION_3D_PERSPECTIVE_FACTOR = 1.6;
 
 export function rotation3DPerspective(width: number, height: number): number {
-  return Math.min(width, height) * ROTATION_3D_PERSPECTIVE_FACTOR
+	return Math.min(width, height) * ROTATION_3D_PERSPECTIVE_FACTOR;
 }
 
-/** Saved-project normaliser: only the three known presets survive; anything else reads as flat. */
-export function normalizeRotationPreset(value: unknown): Rotation3DPreset | undefined {
-  return value === 'iso' || value === 'left' || value === 'right' ? value : undefined
+/**
+ * Origin of a zoom region. "auto" marks zooms from the magic-wand suggest pass;
+ * toggling the wand off removes only these. Editing an auto zoom promotes it to
+ * "manual" so it survives. Undefined is treated as "manual" for back-compat.
+ */
+export type ZoomRegionSource = "auto" | "manual";
+
+export interface ZoomRegion {
+	id: string;
+	startMs: number;
+	endMs: number;
+	depth: ZoomDepth;
+	focus: ZoomFocus;
+	focusMode?: ZoomFocusMode;
+	rotationPreset?: Rotation3DPreset;
+	/** Custom scale overriding the preset depth (1.0-5.0, two decimal precision). */
+	customScale?: number;
+	source?: ZoomRegionSource;
 }
 
-export function getRotation3D(region: Pick<ZoomRegion, 'rotationPreset'>): Rotation3D {
-  if (!region.rotationPreset) return DEFAULT_ROTATION_3D
-  return ROTATION_3D_PRESETS[region.rotationPreset] ?? DEFAULT_ROTATION_3D
+export function getRotation3D(region: Pick<ZoomRegion, "rotationPreset">): Rotation3D {
+	if (!region.rotationPreset) return DEFAULT_ROTATION_3D;
+	return ROTATION_3D_PRESETS[region.rotationPreset];
 }
 
 export function isRotation3DIdentity(r: Rotation3D, eps = 0.01): boolean {
-  return Math.abs(r.rotationX) < eps && Math.abs(r.rotationY) < eps && Math.abs(r.rotationZ) < eps
+	return Math.abs(r.rotationX) < eps && Math.abs(r.rotationY) < eps && Math.abs(r.rotationZ) < eps;
 }
 
 export function lerpRotation3D(a: Rotation3D, b: Rotation3D, t: number): Rotation3D {
-  return {
-    rotationX: a.rotationX + (b.rotationX - a.rotationX) * t,
-    rotationY: a.rotationY + (b.rotationY - a.rotationY) * t,
-    rotationZ: a.rotationZ + (b.rotationZ - a.rotationZ) * t,
-  }
+	return {
+		rotationX: a.rotationX + (b.rotationX - a.rotationX) * t,
+		rotationY: a.rotationY + (b.rotationY - a.rotationY) * t,
+		rotationZ: a.rotationZ + (b.rotationZ - a.rotationZ) * t,
+	};
 }
 
 /**
- * Max uniform scale that, with `rot` and a perspective of `perspective` CSS px,
- * keeps the projected bounding box of a width x height element inside its
- * original rectangle. Returns 1 when no scaling is needed. Projects each
- * rotated corner (x' = x * P / (P - z)) and returns the limiting half-extent
- * ratio so the tilted recording stays inside the zoom window.
+ * Max uniform scale that, with `rot` and a perspective of `perspective` CSS px, keeps
+ * the projected bounding box of a width x height element inside its original rectangle.
+ * Returns 1 when no scaling is needed. Projects each rotated corner (x' = x*P/(P-z)) and
+ * returns the limiting half-extent ratio so the rotated recording stays inside the zoom window.
  */
 export function computeRotation3DContainScale(
-  rot: Rotation3D,
-  width: number,
-  height: number,
-  perspective: number,
+	rot: Rotation3D,
+	width: number,
+	height: number,
+	perspective: number,
 ): number {
-  const a = (rot.rotationX * Math.PI) / 180
-  const b = (rot.rotationY * Math.PI) / 180
-  const g = (rot.rotationZ * Math.PI) / 180
-  const ca = Math.cos(a)
-  const sa = Math.sin(a)
-  const cb = Math.cos(b)
-  const sb = Math.sin(b)
-  const cg = Math.cos(g)
-  const sg = Math.sin(g)
-  const halfW = width / 2
-  const halfH = height / 2
-  const corners: Array<[number, number]> = [
-    [-halfW, -halfH],
-    [halfW, -halfH],
-    [halfW, halfH],
-    [-halfW, halfH],
-  ]
+	const a = (rot.rotationX * Math.PI) / 180;
+	const b = (rot.rotationY * Math.PI) / 180;
+	const g = (rot.rotationZ * Math.PI) / 180;
+	const ca = Math.cos(a);
+	const sa = Math.sin(a);
+	const cb = Math.cos(b);
+	const sb = Math.sin(b);
+	const cg = Math.cos(g);
+	const sg = Math.sin(g);
+	const halfW = width / 2;
+	const halfH = height / 2;
+	const corners: Array<[number, number]> = [
+		[-halfW, -halfH],
+		[halfW, -halfH],
+		[halfW, halfH],
+		[-halfW, halfH],
+	];
 
-  let maxAbsX = 0
-  let maxAbsY = 0
+	let maxAbsX = 0;
+	let maxAbsY = 0;
 
-  for (const [x0, y0] of corners) {
-    // CSS "rotateX rotateY rotateZ" applies right-to-left: Z first, then Y, then X.
-    let px = x0
-    let py = y0
-    let pz = 0
+	for (const [x0, y0] of corners) {
+		// CSS "rotateX rotateY rotateZ" applies right-to-left: Z first, then Y, then X.
+		let px = x0;
+		let py = y0;
+		let pz = 0;
 
-    // rotateZ
-    const zx = px * cg - py * sg
-    const zy = px * sg + py * cg
-    px = zx
-    py = zy
+		// rotateZ
+		const zx = px * cg - py * sg;
+		const zy = px * sg + py * cg;
+		px = zx;
+		py = zy;
 
-    // rotateY
-    const yx = px * cb + pz * sb
-    const yz = -px * sb + pz * cb
-    px = yx
-    pz = yz
+		// rotateY
+		const yx = px * cb + pz * sb;
+		const yz = -px * sb + pz * cb;
+		px = yx;
+		pz = yz;
 
-    // rotateX
-    const xy = py * ca - pz * sa
-    const xz = py * sa + pz * ca
-    py = xy
-    pz = xz
+		// rotateX
+		const xy = py * ca - pz * sa;
+		const xz = py * sa + pz * ca;
+		py = xy;
+		pz = xz;
 
-    // Viewer at (0, 0, P) looking toward -z; a point at z = pz scales by P / (P - pz).
-    // perspective <= 0 means orthographic.
-    if (perspective > 0) {
-      const denom = perspective - pz
-      if (denom <= 0) return 1 // pathological, skip scaling rather than crash
-      const f = perspective / denom
-      px *= f
-      py *= f
-    }
+		// Viewer at (0, 0, P) looking toward -z; a point at z=pz scales by P/(P-pz).
+		// perspective <= 0 means orthographic.
+		if (perspective > 0) {
+			const denom = perspective - pz;
+			if (denom <= 0) return 1; // pathological, skip scaling rather than crash
+			const f = perspective / denom;
+			px *= f;
+			py *= f;
+		}
 
-    if (Math.abs(px) > maxAbsX) maxAbsX = Math.abs(px)
-    if (Math.abs(py) > maxAbsY) maxAbsY = Math.abs(py)
-  }
+		if (Math.abs(px) > maxAbsX) maxAbsX = Math.abs(px);
+		if (Math.abs(py) > maxAbsY) maxAbsY = Math.abs(py);
+	}
 
-  if (maxAbsX === 0 || maxAbsY === 0) return 1
-  const sx = halfW / maxAbsX
-  const sy = halfH / maxAbsY
-  return Math.min(sx, sy, 1)
+	if (maxAbsX === 0 || maxAbsY === 0) return 1;
+	const sx = halfW / maxAbsX;
+	const sy = halfH / maxAbsY;
+	return Math.min(sx, sy, 1);
 }
 
-/** Effective focus mode of a region (missing -> manual). */
-export function getZoomFocusMode(region: Pick<ZoomRegion, 'focusMode'>): ZoomFocusMode {
-  return region.focusMode === 'auto' ? 'auto' : 'manual'
+export interface CursorTelemetryPoint {
+	timeMs: number;
+	cx: number;
+	cy: number;
+	interactionType?: "move" | "click" | "double-click" | "right-click" | "middle-click" | "mouseup";
+	cursorType?:
+		| "arrow"
+		| "text"
+		| "pointer"
+		| "crosshair"
+		| "open-hand"
+		| "closed-hand"
+		| "resize-ew"
+		| "resize-ns"
+		| "not-allowed";
 }
+
+export interface CursorVisualSettings {
+	size: number;
+	smoothing: number;
+	motionBlur: number;
+	clickBounce: number;
+	clipToBounds: boolean;
+}
+
+export const DEFAULT_CURSOR_SIZE = 3.0;
+export const DEFAULT_CURSOR_SMOOTHING = 0.67;
+export const DEFAULT_CURSOR_MOTION_BLUR = 0.35;
+export const DEFAULT_CURSOR_CLICK_BOUNCE = 2.5;
+// false lets the cursor overflow into the background; true clips it to the canvas bounds.
+export const DEFAULT_CURSOR_CLIP_TO_BOUNDS = false;
+export const DEFAULT_ZOOM_MOTION_BLUR = 0.35;
 
 export interface TrimRegion {
-  id: string
-  startMs: number
-  endMs: number
+	id: string;
+	startMs: number;
+	endMs: number;
 }
 
-export interface VideoSegment {
-  id: string
-  startMs: number // source time
-  endMs: number // source time
-  deleted: boolean
-  speed: number // 1.0 = normal
+/**
+ * "Full Camera" / "Cut to camera" timeline region. During this span, the webcam overlay
+ * animates its size/position until it covers the entire canvas, visually hiding the
+ * desktop behind it (the desktop keeps recording underneath, it's just covered).
+ * No focus/depth/rotation needed: unlike ZoomRegion, the destination is always "fill the
+ * canvas", so the shape stays intentionally simpler.
+ */
+export interface CameraFullscreenRegion {
+	id: string;
+	startMs: number;
+	endMs: number;
 }
 
-export type AudioEditMode = 'mute' | 'duck'
-
-export interface AudioEditRegion {
-  id: string
-  startMs: number
-  endMs: number
-  mode: AudioEditMode
-  gain: number
-  source?: 'rough-cut' | 'manual'
-  reason?: 'silence' | 'filler'
-}
-
-export type AnnotationType = 'text' | 'image' | 'figure' | 'blur'
+export type AnnotationType = "text" | "image" | "figure" | "blur";
 
 export type ArrowDirection =
-  | 'up'
-  | 'down'
-  | 'left'
-  | 'right'
-  | 'up-right'
-  | 'up-left'
-  | 'down-right'
-  | 'down-left'
+	| "up"
+	| "down"
+	| "left"
+	| "right"
+	| "up-right"
+	| "up-left"
+	| "down-right"
+	| "down-left";
 
 export interface FigureData {
-  arrowDirection: ArrowDirection
-  color: string
-  strokeWidth: number
+	arrowDirection: ArrowDirection;
+	color: string;
+	strokeWidth: number;
 }
 
-export type BlurShape = 'rectangle' | 'oval'
-/** Only `mosaic` is implemented; the field is kept so another blur type can be added without a schema change. */
-export type BlurType = 'mosaic'
-export type BlurColor = 'white' | 'black'
+export type BlurShape = "rectangle" | "oval" | "freehand";
+export type BlurType = "blur" | "mosaic";
+export type BlurColor = "white" | "black";
 
-export const MIN_BLUR_INTENSITY = 2
-export const MAX_BLUR_INTENSITY = 40
-export const DEFAULT_BLUR_INTENSITY = 12
-export const MIN_BLUR_BLOCK_SIZE = 4
-export const MAX_BLUR_BLOCK_SIZE = 48
-export const DEFAULT_BLUR_BLOCK_SIZE = 12
+export const MIN_BLUR_INTENSITY = 2;
+export const MAX_BLUR_INTENSITY = 40;
+export const DEFAULT_BLUR_INTENSITY = 12;
+export const MIN_BLUR_BLOCK_SIZE = 4;
+export const MAX_BLUR_BLOCK_SIZE = 48;
+export const DEFAULT_BLUR_BLOCK_SIZE = 12;
 
-/**
- * Settings of a blur region (an annotation of type `blur`). `blockSize` is the
- * mosaic cell size in preview pixels (scaled with the output on export);
- * `intensity` drives how strongly the white/black shade tints the mosaic.
- */
 export interface BlurData {
-  type: BlurType
-  shape: BlurShape
-  color: BlurColor
-  intensity: number
-  blockSize: number
-}
-
-/**
- * One tracked or pinned position of a blur region, in source-normalised
- * coordinates (0..1 of the full source frame, before any crop or camera).
- */
-export interface BlurTrackKeyframe {
-  /** Source time of this sample. */
-  timeMs: number
-  /** Top-left, 0..1 of the source frame. */
-  x: number
-  y: number
-  /** Size, 0..1 of the source frame. */
-  w: number
-  h: number
-  /** Content not visible from here until the next non-lost keyframe. Rect = last known. */
-  lost?: true
-  /**
-   * The interval from here to the next keyframe was never observed at the
-   * source frame rate, so what the content did inside it is unknown and the
-   * renderer covers both ends instead of interpolating. Set when the decode
-   * path could not densify a fast movement; absent everywhere else, including
-   * across the long gaps simplification leaves behind, where the lerp is known
-   * to be accurate.
-   */
-  gap?: true
-  /** `'user'` = placed or dragged by the user; a pin the tracker never moves. Missing = tracked. */
-  origin?: 'user'
-}
-
-/**
- * Where a blur region is over time, in source space. Present only on regions
- * whose content has been tracked; a region without one keeps its legacy
- * stage-percent `position`/`size` geometry and renders exactly as before.
- */
-export interface BlurTrack {
-  version: 1
-  /** Always `'source'`. Present so a future stage-space track cannot be confused with this one. */
-  space: 'source'
-  /** Sorted by `timeMs`, unique `timeMs`, at least one keyframe. */
-  keyframes: BlurTrackKeyframe[]
-  /** Source dimensions the track was computed against; px-based render rules use them. */
-  sourceSize: { width: number; height: number }
-  /** Grid interval used, ms. */
-  sampleIntervalMs: number
-  /** Anchor time the user drew the box at. */
-  anchorMs: number
-  /** For the settings panel only; never read by a renderer. */
-  quality?: { meanScore: number; lostMs: number; trackedMs: number }
+	type: BlurType;
+	shape: BlurShape;
+	color: BlurColor;
+	intensity: number;
+	blockSize: number;
+	// Points are normalized (0-100) within the annotation bounds.
+	freehandPoints?: Array<{ x: number; y: number }>;
 }
 
 export interface AnnotationPosition {
-  x: number
-  y: number
+	x: number;
+	y: number;
 }
 
 export interface AnnotationSize {
-  width: number
-  height: number
+	width: number;
+	height: number;
 }
 
 export type AnnotationTextAnimation =
-  | 'none'
-  | 'fade'
-  | 'rise'
-  | 'pop'
-  | 'slide-left'
-  | 'typewriter'
-  | 'pulse'
+	| "none"
+	| "fade"
+	| "rise"
+	| "pop"
+	| "slide-left"
+	| "typewriter"
+	| "pulse";
 
 export interface AnnotationTextStyle {
-  color: string
-  backgroundColor: string
-  fontSize: number // pixels
-  fontFamily: string
-  fontWeight: 'normal' | 'bold'
-  fontStyle: 'normal' | 'italic'
-  textDecoration: 'none' | 'underline'
-  textAlign: 'left' | 'center' | 'right'
-  /** Entrance animation (see lib/annotationTextAnimation). Optional for older saves. */
-  textAnimation?: AnnotationTextAnimation
+	color: string;
+	backgroundColor: string;
+	fontSize: number; // pixels
+	fontFamily: string;
+	fontWeight: "normal" | "bold";
+	fontStyle: "normal" | "italic";
+	textDecoration: "none" | "underline";
+	textAlign: "left" | "center" | "right";
+	textAnimation?: AnnotationTextAnimation;
 }
 
 export interface AnnotationRegion {
-  id: string
-  startMs: number
-  endMs: number
-  type: AnnotationType
-  content: string // Legacy - still used for current type
-  textContent?: string // Separate storage for text
-  imageContent?: string // Separate storage for image data URL
-  position: AnnotationPosition
-  size: AnnotationSize
-  style: AnnotationTextStyle
-  zIndex: number
-  figureData?: FigureData
-  /** Present on `blur` regions only. Optional so projects saved before blur regions existed load unchanged. */
-  blurData?: BlurData
-  /**
-   * Present on tracked blur regions only. Missing = untracked: the region is a
-   * static box at `position`/`size` in stage percent, exactly as before.
-   */
-  blurTrack?: BlurTrack
+	id: string;
+	startMs: number;
+	endMs: number;
+	type: AnnotationType;
+	content: string; // Legacy - still used for current type
+	textContent?: string; // Separate storage for text
+	imageContent?: string; // Separate storage for image data URL
+	position: AnnotationPosition;
+	size: AnnotationSize;
+	style: AnnotationTextStyle;
+	zIndex: number;
+	/** When set, layout/style edits on one region can sync to all auto-caption siblings. */
+	annotationSource?: "auto-caption";
+	figureData?: FigureData;
+	blurData?: BlurData;
 }
 
 export const DEFAULT_ANNOTATION_POSITION: AnnotationPosition = {
-  x: 50,
-  y: 50,
-}
+	x: 50,
+	y: 50,
+};
 
 export const DEFAULT_ANNOTATION_SIZE: AnnotationSize = {
-  width: 30,
-  height: 20,
-}
+	width: 30,
+	height: 20,
+};
 
 export const DEFAULT_ANNOTATION_STYLE: AnnotationTextStyle = {
-  color: '#ffffff',
-  backgroundColor: 'transparent',
-  fontSize: 32,
-  fontFamily: 'Inter',
-  fontWeight: 'bold',
-  fontStyle: 'normal',
-  textDecoration: 'none',
-  textAlign: 'center',
-  textAnimation: 'none',
-}
+	color: "#ffffff",
+	backgroundColor: "transparent",
+	fontSize: 32,
+	fontFamily: "Inter",
+	fontWeight: "bold",
+	fontStyle: "normal",
+	textDecoration: "none",
+	textAlign: "center",
+	textAnimation: "none",
+};
 
 export const DEFAULT_FIGURE_DATA: FigureData = {
-  arrowDirection: 'right',
-  color: '#34B27B',
-  strokeWidth: 4,
-}
+	arrowDirection: "right",
+	color: "#34B27B",
+	strokeWidth: 4,
+};
+
+export const DEFAULT_BLUR_FREEHAND_POINTS: Array<{ x: number; y: number }> = [
+	{ x: 10, y: 30 },
+	{ x: 25, y: 10 },
+	{ x: 55, y: 8 },
+	{ x: 82, y: 20 },
+	{ x: 90, y: 45 },
+	{ x: 78, y: 72 },
+	{ x: 52, y: 90 },
+	{ x: 22, y: 84 },
+	{ x: 8, y: 58 },
+];
 
 export const DEFAULT_BLUR_DATA: BlurData = {
-  type: 'mosaic',
-  shape: 'rectangle',
-  color: 'white',
-  intensity: DEFAULT_BLUR_INTENSITY,
-  blockSize: DEFAULT_BLUR_BLOCK_SIZE,
-}
-
-/**
- * A new blur region: a mosaic rectangle in the default annotation box. It has
- * no content and carries the default text style because every annotation does
- * (the shared position/size/span handlers rely on the common shape).
- */
-export function createBlurAnnotationRegion(params: {
-  id: string
-  startMs: number
-  endMs: number
-  zIndex: number
-}): AnnotationRegion {
-  return {
-    id: params.id,
-    startMs: params.startMs,
-    endMs: params.endMs,
-    type: 'blur',
-    content: '',
-    position: { ...DEFAULT_ANNOTATION_POSITION },
-    size: { ...DEFAULT_ANNOTATION_SIZE },
-    style: { ...DEFAULT_ANNOTATION_STYLE },
-    zIndex: params.zIndex,
-    blurData: { ...DEFAULT_BLUR_DATA },
-  }
-}
-
-/**
- * A freshly created text annotation starts with no content: the properties
- * panel's textarea shows a real placeholder for the empty state, so the value
- * must be empty for it to show and for typing to replace rather than append to
- * baked-in text.
- */
-export function createTextAnnotationRegion(params: {
-  id: string
-  startMs: number
-  endMs: number
-  zIndex: number
-}): AnnotationRegion {
-  return {
-    id: params.id,
-    startMs: params.startMs,
-    endMs: params.endMs,
-    type: 'text',
-    content: '',
-    position: { ...DEFAULT_ANNOTATION_POSITION },
-    size: { ...DEFAULT_ANNOTATION_SIZE },
-    style: { ...DEFAULT_ANNOTATION_STYLE },
-    zIndex: params.zIndex,
-  }
-}
-
-/**
- * Content for a region whose type is being switched to "text" -- same
- * empty-by-default rule as a freshly created one when no prior text was stored.
- */
-export function resolveTextAnnotationContent(existingTextContent?: string): string {
-  return existingTextContent || ''
-}
+	type: "mosaic",
+	shape: "rectangle",
+	color: "white",
+	intensity: DEFAULT_BLUR_INTENSITY,
+	blockSize: DEFAULT_BLUR_BLOCK_SIZE,
+	freehandPoints: DEFAULT_BLUR_FREEHAND_POINTS,
+};
 
 export interface CropRegion {
-  x: number
-  y: number
-  width: number
-  height: number
+	x: number;
+	y: number;
+	width: number;
+	height: number;
 }
 
 export const DEFAULT_CROP_REGION: CropRegion = {
-  x: 0,
-  y: 0,
-  width: 1,
-  height: 1,
-}
+	x: 0,
+	y: 0,
+	width: 1,
+	height: 1,
+};
 
-export type PlaybackSpeed = number
+export type PlaybackSpeed = number;
 
-/** Segment speed range shared by the presets, the custom input and handleSegmentSpeedChange. */
-export const MIN_PLAYBACK_SPEED = 0.25
-export const MAX_PLAYBACK_SPEED = 40
+export const MIN_PLAYBACK_SPEED = 0.1;
+export const MAX_PLAYBACK_SPEED = 100;
+// Chromium hard-caps HTMLMediaElement.playbackRate at 16 (setting more throws
+// NotSupportedError). At or below this, preview plays natively; above it, preview
+// frame-steps by seeking and audio export uses an offline pitch-preserved stretch.
+export const MAX_NATIVE_PLAYBACK_RATE = 16;
 
 export function clampPlaybackSpeed(speed: number): PlaybackSpeed {
-  return Math.round(Math.min(MAX_PLAYBACK_SPEED, Math.max(MIN_PLAYBACK_SPEED, speed)) * 100) / 100
+	return Math.round(Math.min(MAX_PLAYBACK_SPEED, Math.max(MIN_PLAYBACK_SPEED, speed)) * 100) / 100;
 }
 
-export const ZOOM_DEPTH_SCALES: Record<ZoomDepth, number> = {
-  1: 1.25,
-  2: 1.5,
-  3: 1.8,
-  4: 2.2,
-  5: 3.5,
-  6: 5.0,
+export interface SpeedRegion {
+	id: string;
+	startMs: number;
+	endMs: number;
+	speed: PlaybackSpeed;
 }
 
-export interface ProjectState {
-  version: 1
-  savedAt: number
-  videoFilePath: string
-  segments: VideoSegment[]
-  zoomRegionsByAspect: Record<string, ZoomRegion[]>
-  annotationRegions: AnnotationRegion[]
-  audioEditRegions: AudioEditRegion[]
-  cropRegionsByAspect: Record<string, CropRegion>
-  aspectRatio: string
-  wallpaper: string
-  shadowIntensity: number
-  showBlur: boolean
-  /**
-   * Legacy toggle (pre motion-blur slider). Still written as `motionBlurAmount > 0`
-   * for one release so a downgrade reads something sensible; on load it only
-   * matters when `motionBlurAmount` is absent (see resolveProjectMotionBlurAmount).
-   */
-  motionBlurEnabled: boolean
-  /** Zoom motion blur amount 0..1 (0 = off). Missing in older saves. */
-  motionBlurAmount?: number
-  borderRadius: number
-  padding: number
-  audioEnabled: boolean
-  audioGain: number
-  audioNormalizeLoudness: boolean
-  audioTargetLufs: number
-  audioLimiterDb: number
-  exportQuality: string
-  exportFormat: string
-  seekStepSeconds: number
-  previewPlaybackRate: number
-  playheadPosition: number
-  // v1.1 additions (optional for backward compat with existing save files)
-  cursorStyle?: {
-    enabled: boolean
-    size: number
-    highlight: number
-    ripple: number
-    shadow: number
-    smoothingMs: number
-    movementStyle: string
-    autoHideStatic: boolean
-    staticHideDelayMs: number
-    staticHideFadeMs: number
-    loopCursorPosition: boolean
-    loopBlendMs: number
-    offsetX: number
-    offsetY: number
-    timeOffsetMs: number
-    // W2-d additions (optional; older projects fall back to DEFAULT_CURSOR_STYLE)
-    clipToBounds?: boolean
-    motionBlur?: number
-  }
-  subtitleCues?: Array<{
-    id: string
-    startMs: number
-    endMs: number
-    text: string
-    source: string
-    confidence?: number
-  }>
-  /**
-   * Caption look (P2-F1). Absent in every project saved before it existed and
-   * omitted again whenever the style is still the default, so an untouched
-   * project loads and re-saves byte-identical.
-   */
-  subtitleStyle?: SubtitleStyle
-  /**
-   * Caption sidecars written next to an export (P2-F3): `['srt']`, `['vtt']`,
-   * both, or absent when the user wants none.
-   */
-  captionSidecarFormats?: string[]
-  gifFrameRate?: number
-  gifLoop?: boolean
-  gifSizePreset?: string
-  exportAspectRatios?: string[]
-  timelineZoomVisibleMs?: number
-  /** W2-b: draw the audio waveform behind the AUDIO row (view setting, not edit state). */
-  showTimelineWaveform?: boolean
-  /** Auto-zoom wand state (v1.2). Missing in older saves -> treated as enabled. */
-  autoZoomEnabled?: boolean
-  /** Global "Auto-Focus all" toggle (W3-f). Missing in older saves -> off. */
-  autoFocusAll?: boolean
+export const SPEED_OPTIONS: Array<{ speed: PlaybackSpeed; label: string }> = [
+	{ speed: 0.25, label: "0.25×" },
+	{ speed: 0.5, label: "0.5×" },
+	{ speed: 0.75, label: "0.75×" },
+	{ speed: 1.25, label: "1.25×" },
+	{ speed: 1.5, label: "1.5×" },
+	{ speed: 1.75, label: "1.75×" },
+	{ speed: 2, label: "2×" },
+	{ speed: 3, label: "3×" },
+	{ speed: 4, label: "4×" },
+	{ speed: 5, label: "5×" },
+];
+
+export const DEFAULT_PLAYBACK_SPEED: PlaybackSpeed = 1.5;
+
+// The table and the clamp moved to `@/lib/ai-edition/timeline/zoom-scale` so
+// the Electron main process can import them without the `@/` alias, which its
+// build does not resolve. Re-exported here because every renderer importer
+// (focusUtils, zoomRegionUtils, sceneDescription, the inspector, the timeline)
+// reaches them through this module.
+export {
+	DEFAULT_ZOOM_DEPTH,
+	effectiveZoomScale,
+	MAX_ZOOM_SCALE,
+	MIN_ZOOM_SCALE,
+	ZOOM_DEPTH_LEGEND,
+	ZOOM_DEPTH_SCALES,
+} from "@/lib/ai-edition/timeline/zoom-scale";
+
+/** Returns the effective zoom scale for a region, preferring customScale over the preset. */
+export function getZoomScale(region: ZoomScaleInput): number {
+	return effectiveZoomScale(region);
 }
 
-export const DEFAULT_ZOOM_DEPTH: ZoomDepth = 3
-
-/** Motion blur amount a legacy `motionBlurEnabled: true` project maps to. */
-export const DEFAULT_ZOOM_MOTION_BLUR = 0.35
-
-/**
- * Motion blur amount for a saved project: `motionBlurAmount` when it is a
- * finite number (clamped to 0..1), otherwise the legacy boolean mapped to
- * DEFAULT_ZOOM_MOTION_BLUR / 0, otherwise 0.
- */
-export function resolveProjectMotionBlurAmount(
-  state: Pick<Partial<ProjectState>, 'motionBlurAmount' | 'motionBlurEnabled'>,
-): number {
-  const amount = state.motionBlurAmount
-  if (typeof amount === 'number' && Number.isFinite(amount)) {
-    return Math.min(1, Math.max(0, amount))
-  }
-  if (typeof state.motionBlurEnabled === 'boolean') {
-    return state.motionBlurEnabled ? DEFAULT_ZOOM_MOTION_BLUR : 0
-  }
-  return 0
+// An unknown focus means "centre", not "top-left" — so this one can't use the
+// shared clamp, which floors non-finite input to `min`. Same convention as
+// `finiteFraction` in useTimeline.ts.
+function focusOrCentre(value: number): number {
+	return Number.isFinite(value) ? clamp01(value) : 0.5;
 }
 
-export const MIN_ZOOM_SCALE = 1.0
-export const MAX_ZOOM_SCALE = 5.0
-
-/**
- * Effective zoom scale for a region: a finite customScale (clamped to
- * MIN/MAX_ZOOM_SCALE) wins over the depth preset; NaN falls back to the preset.
- */
-export function getZoomScale(region: ZoomRegion): number {
-  if (region.customScale != null) {
-    const clamped = Math.max(MIN_ZOOM_SCALE, Math.min(MAX_ZOOM_SCALE, region.customScale))
-    if (Number.isFinite(clamped)) return clamped
-  }
-  return ZOOM_DEPTH_SCALES[region.depth]
-}
-
-/** Clamp a focus point into the normalized 0-1 stage square (NaN -> centre). */
 export function clampFocus(focus: ZoomFocus): ZoomFocus {
-  return {
-    cx: clamp(focus.cx, 0, 1),
-    cy: clamp(focus.cy, 0, 1),
-  }
-}
-
-export function clampFocusToDepth(focus: ZoomFocus, _depth: ZoomDepth): ZoomFocus {
-  return clampFocus(focus)
-}
-
-function clamp(value: number, min: number, max: number) {
-  if (Number.isNaN(value)) return (min + max) / 2
-  return Math.min(max, Math.max(min, value))
+	return {
+		cx: focusOrCentre(focus.cx),
+		cy: focusOrCentre(focus.cy),
+	};
 }

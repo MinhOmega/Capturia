@@ -1,29 +1,37 @@
-import React from 'react'
-import ReactDOM from 'react-dom/client'
-import App from './App.tsx'
-import { I18nProvider } from './i18n'
-import './index.css'
+import React from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App.tsx";
+import { I18nProvider } from "./contexts/I18nContext";
+import { clearStaleSourceCache } from "./lib/exporter/localSourceFile";
+import "./hooks/rendererConsoleForwarder";
+import "./index.css";
 
-function mount(): void {
-  ReactDOM.createRoot(document.getElementById('root')!).render(
-    <React.StrictMode>
-      <I18nProvider>
-        <App />
-      </I18nProvider>
-    </React.StrictMode>,
-  )
+const windowType = new URLSearchParams(window.location.search).get("windowType") || "";
+
+// Reclaim multi-GB OPFS source copies left behind by a previous session (they
+// are only pruned opportunistically during the next large-file load otherwise).
+// Nothing is referenced at startup, so everything stale is safe to remove.
+if (!windowType) {
+	window.setTimeout(() => {
+		clearStaleSourceCache().catch(() => undefined);
+	}, 5_000);
+}
+const showNotes = new URLSearchParams(window.location.search).get("showNotes") === "true";
+if (
+	showNotes ||
+	windowType === "hud-overlay" ||
+	windowType === "source-selector" ||
+	windowType === "countdown-overlay"
+) {
+	document.body.style.background = "transparent";
+	document.documentElement.style.background = "transparent";
+	document.getElementById("root")?.style.setProperty("background", "transparent");
 }
 
-// Browser harness (`npm run dev:browser`): a plain Chrome tab has no preload,
-// so `window.electronAPI` is installed from `src/dev/browserBridge.ts` before
-// React mounts and reads it. Both flags are statically false in a production
-// build, so the branch — and the module behind the dynamic import — is dropped
-// from the bundle; the Electron app always takes the `else`.
-if (import.meta.env.DEV && import.meta.env.VITE_BROWSER_HARNESS === '1') {
-  void import('./dev/browserBridge').then(({ installBrowserBridge }) => {
-    installBrowserBridge()
-    mount()
-  })
-} else {
-  mount()
-}
+ReactDOM.createRoot(document.getElementById("root")!).render(
+	<React.StrictMode>
+		<I18nProvider>
+			<App />
+		</I18nProvider>
+	</React.StrictMode>,
+);

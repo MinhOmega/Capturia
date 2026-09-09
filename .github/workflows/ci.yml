@@ -1,0 +1,378 @@
+name: CI
+
+# feat/ai-edition is a long-lived integration branch that PRs land on for
+# months at a time. Without it listed here, every one of those PRs merged with
+# no lint, no typecheck, no tests and no PR-title check.
+#
+# release/** is here for the same reason and it cost more: PRs #167, #168 and
+# #169 — 30k+ lines of deletion and refactor — merged into release/1.8.0 with
+# every one of those jobs skipped, because a release branch matched neither
+# pattern. A release branch is the LAST place to run a build unguarded.
+on:
+  pull_request:
+    branches: [main, feat/ai-edition, "release/**"]
+  push:
+    branches: [main, feat/ai-edition, "release/**"]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - run: npm run lint
+
+  typecheck:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - run: npx tsc --noEmit
+
+  typecheck-tests:
+    name: Typecheck (tests)
+    runs-on: ubuntu-latest
+    # A GATE now, and the baseline logic is gone — as its own comment instructed
+    # ("delete this job's baseline logic at zero"). The history: tsconfig.json
+    # includes only src + electron and excludes **/*.test.ts, and vitest
+    # transpiles without checking, so no test file had ever been typechecked and
+    # fixture types had drifted from the schemas they claim to build for years.
+    # Failing on that whole backlog at once would have put a red X on every PR
+    # that nobody could fix, so the job shipped as a ratchet (fail only if the
+    # count GROWS), walked down 80 -> 74 -> 71 -> 66. The backlog is now cleared:
+    # every fixture carries the fields its schema actually requires, which is
+    # the point — a fixture missing `cameraTrack` or `reason` was not testing
+    # the shape it claimed to. Keep it at zero. If a genuine error is not worth
+    # fixing on the spot, fix the fixture anyway: re-introducing a baseline
+    # re-opens the drift this closed.
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - name: Typecheck tests
+        run: npx tsc -p tsconfig.test.json --noEmit
+
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # No ./.github/actions/setup: check-docs.mjs imports only node builtins,
+      # so npm ci would be a minute of install for nothing. Node 22 is here for
+      # import.meta.dirname (needs >= 20.11).
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: npm run docs:check
+
+  appstream:
+    name: AppStream metadata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # `appstream` is not on the runner image, and it is the only thing this job
+      # needs — no Node, no npm ci. Same reasoning as the Docs job above.
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq appstream
+      # This gate exists because nothing else reads the file. It is upstream
+      # metadata with no consumer in this repository yet, so without validation
+      # here the first thing to discover a broken edit would be a Flathub
+      # reviewer, weeks later, on a submission that then has to be redone.
+      #
+      # --no-net deliberately: with network validation on, this job also fetches
+      # every screenshot, and an unreachable raw.githubusercontent.com would turn
+      # a metadata check into a flaky one on unrelated PRs. Dead screenshot URLs
+      # are caught by Flathub at submission time, which is the only place the
+      # answer actually matters.
+      - run: appstreamcli validate --no-net --explain build/com.getopenscreen.OpenScreen.metainfo.xml
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - run: npm run test
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+      - run: npx vite build
+
+  # PR #189 — port macOS du compositor (Metal + VideoToolbox).
+  #
+  # Compile check on a `macos-14` runner (Apple Silicon). Verifies that the
+  # scaffold + engine-layer code added by #189 actually compiles for
+  # `aarch64-apple-darwin` — bindgen + cc on macOS produce the ffmpeg FFI
+  # bindings + the VideoToolbox context that the Rust crate statically
+  # references, and the `metal`/`objc`/`block`/`core-foundation` crates need
+  # their macOS system frameworks (Metal/CoreVideo/CoreMedia) linked.
+  #
+  # ffmpeg via Homebrew: this job installs `ffmpeg` from homebrew-core on the
+  # runner to satisfy bindgen + the cargo:rustc-link-lib lines for avformat/
+  # avcodec/avutil/swscale/swresample. NB: homebrew's `ffmpeg` is GPL-3.0 (it
+  # bundles x264/x265/svt-av1 etc.) — that is fine for a CI compile-check, but
+  # the dev/runtime story is different: `scripts/fetch-ffmpeg.mjs` documents
+  # that BtbN publishes no macOS build, so a pinned LGPL macOS dylib has to
+  # land separately before we can ship. The vendored `electron/native/bin/
+  # darwin-*/` directory is the runtime pin and is empty today.
+  #
+  # Why this job runs at all today: every commit on #189 that touches
+  # compositor_macos.rs / pipeline_macos.rs / mac_frames.rs / shaders.metal /
+  # d3d_macos.rs / text_macos.rs is unverifiable from Windows (cross-compile
+  # requires the macOS SDK + headers, which we don't have). This job is the
+  # only signal that the macOS-side Rust still type-checks.
+  #
+  # `cargo test`, NOT just `cargo check` — and that difference is the whole point.
+  # Three of the bugs that kept the first macOS run from rendering anything are
+  # invisible to a type-check and are each pinned by a test now:
+  #   * `shaders.metal` is compiled AT RUNTIME by `new_library_with_source`, so a
+  #     whole file of invalid MSL (HLSL's global `cbuffer`/`Texture2D` have no MSL
+  #     equivalent) type-checks perfectly — `every_shader_entry_point_compiles`
+  #     catches it. macos-14 runners have a real Metal device, so it runs for real.
+  #   * `AVERROR(EAGAIN)` is -11 on Windows/Linux and -35 on macOS. A hardcoded -11
+  #     compiles anywhere and silently decodes zero frames —
+  #     `averror_constants_match_the_ffmpeg_macros` confronts it with shim.c.
+  #   * pipeline-state creation rejects shader/attachment mismatches only at
+  #     `newRenderPipelineState` time — `the_compositor_builds_on_the_system_device`.
+  rust-macos-compositor-check:
+    name: Rust test (macOS compositor)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Rust toolchain
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable --target aarch64-apple-darwin
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: Install ffmpeg (homebrew-core) and verify headers/libs
+        run: |
+          brew update
+          brew install ffmpeg
+          ls /opt/homebrew/opt/ffmpeg/include | head -5
+          ls /opt/homebrew/opt/ffmpeg/lib | head -5
+          /opt/homebrew/opt/ffmpeg/bin/ffmpeg -hide_banner -version | head -1
+      # MAC_FFMPEG_DIR only reaches build.rs because it now takes precedence over
+      # FFMPEG_DIR on macOS. crates/.cargo/config.toml sets FFMPEG_DIR in a GLOBAL
+      # [env] block (cargo has no [target.<cfg>.env] — the macOS section in that file
+      # is inert and cargo warns "unused key"), so before that change this job pointed
+      # bindgen at the win64 tree and could never have gone green.
+      #
+      # Without a library on ORT_DYLIB_PATH, `runtime_available()` is false and every
+      # segmentation test returns early — the suite goes green having exercised no
+      # inference at all, which is exactly how the `ort`-panics-when-absent bug got
+      # in. Staging it here is what makes `the_whole_loop_produces_a_mask_from_
+      # compose_frame_alone` a real test on this runner instead of a skipped one.
+      # ~30 MB, next to nothing beside `brew install ffmpeg` above.
+      - name: Stage ONNX Runtime
+        run: node scripts/fetch-onnxruntime.mjs
+      - name: cargo test (compositor, aarch64-apple-darwin)
+        env:
+          MAC_FFMPEG_DIR: /opt/homebrew/opt/ffmpeg
+          ORT_DYLIB_PATH: ${{ github.workspace }}/electron/native/bin/darwin-arm64/libonnxruntime.dylib
+        run: |
+          cd crates
+          cargo test -p openscreen-compositor --lib --tests
+      - name: cargo build (napi addon)
+        env:
+          MAC_FFMPEG_DIR: /opt/homebrew/opt/ffmpeg
+        run: |
+          cd crates
+          cargo build -p compositor-view-napi --release
+
+  # The Windows half of the compositor had NO type-check on any pull request.
+  # `ci.yml`'s only Rust job is the macOS one above; `compositor_windows.rs` — the
+  # 3654-line D3D11 engine that every Windows user actually runs — is compiled
+  # exclusively by `build.yml`'s `build-windows` step (`npm run build:win`), and
+  # build.yml triggers only on `push: tags: v*` or `workflow_dispatch`. A typo in
+  # that file therefore surfaced when someone cut a release, not when they pushed it.
+  #
+  # That gap is what makes any cross-platform refactor of the compositor a blind
+  # edit, so it gets closed before the refactor rather than after.
+  #
+  # `cargo check`, not `build`: the point is "does the Windows engine still compile",
+  # and check is roughly half the wall-time of a full build on a windows runner.
+  rust-windows-compositor-check:
+    name: Rust check (Windows compositor)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      # bindgen needs libclang. `crates/.cargo/config.toml` pins LIBCLANG_PATH to
+      # C:\Program Files\LLVM\bin, which is where the windows-latest image already
+      # has LLVM — so the pin resolves with no extra install.
+      - name: Check LLVM is where the cargo config expects it
+        shell: bash
+        run: ls "/c/Program Files/LLVM/bin/libclang.dll"
+      # Vendors the pinned BtbN LGPL-shared build into
+      # crates/thirdparty/ffmpeg-n8.1.2-win64-lgpl-shared — the exact directory
+      # FFMPEG_DIR points at (crates/.cargo/config.toml). build.rs reads the headers
+      # from there and links the import libs.
+      - name: Vendor the pinned ffmpeg
+        run: npm run fetch:ffmpeg
+      - name: cargo check (compositor + napi addon)
+        shell: bash
+        run: |
+          cd crates
+          cargo check -p openscreen-compositor -p compositor-view-napi --all-targets
+
+  # Le troisieme cote, et le dernier angle mort : le Rust Linux n'etait compile
+  # NULLE PART en CI. Les deux jobs ci-dessus couvrent macOS (test) et Windows
+  # (check) ; `compositor_linux.rs`, `pipeline_linux.rs`, `d3d_linux.rs` et les
+  # 2154 lignes du moteur wgpu ne passaient que par le poste des contributeurs.
+  #
+  # Ce que le trou cachait, trouve en ouvrant ce job : `export_timing.rs` et
+  # `output_geometry_golden.rs` ne compilaient pas sous Linux — ils appellent
+  # `probe_frame_count` / `readback_resized`, qui n'existent que cote Windows et
+  # macOS. Les fichiers de `tests/` etant compiles quelle que soit la plateforme,
+  # le crate entier etait incompilable en `--tests` sur Linux, en silence.
+  #
+  # `cargo test` et pas `check` : `mesa-vulkan-drivers` donne au runner un ICD
+  # Vulkan logiciel (lavapipe), donc `cpu_backend_linux.rs` exerce POUR DE VRAI le
+  # backend CPU, qui est la propriete que cette PR ajoute. Un runner GitHub n'ayant
+  # pas de GPU, c'est meme le seul endroit ou ce chemin est teste sans forcage.
+  rust-linux-compositor-check:
+    name: Rust test (Linux compositor)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Pas de ./.github/actions/setup : `fetch-ffmpeg.mjs` n'importe que des
+      # builtins node, donc `npm ci` serait une minute d'installation pour rien.
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+      # libclang-dev, pas libclang1 : bindgen a besoin de libclang pour lire les
+      #   headers ffmpeg, et c'est le paquet -dev qui apporte AUSSI les headers
+      #   built-in de clang. Sans eux bindgen echoue sur `stddef.h file not found`.
+      # mesa-vulkan-drivers : l'ICD lavapipe. Sans lui le runner n'a aucun
+      #   adaptateur Vulkan et le backend CPU serait intestable. C'est le meme
+      #   paquet que le .deb declare desormais en dependance (electron-builder.json5).
+      - name: Install libclang and the Mesa Vulkan drivers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libclang-dev mesa-vulkan-drivers
+      - name: Vendor the pinned ffmpeg SDK
+        run: npm run fetch:ffmpeg:sdk
+      # `crates/.cargo/config.toml` pose FFMPEG_DIR (arbre win64) et LIBCLANG_PATH
+      # (chemin Windows) dans un `[env]` GLOBAL — cargo n'a pas de
+      # `[target.<cfg>.env]`. Les deux valeurs sont donc TOUJOURS renseignees et
+      # fausses ici ; il faut les surcharger par de vraies variables
+      # d'environnement, qui gagnent (`force = false` par defaut).
+      - name: Resolve the toolchain paths
+        run: |
+          echo "FFMPEG_DIR=$GITHUB_WORKSPACE/crates/thirdparty/ffmpeg-linux64-lgpl-shared" >> "$GITHUB_ENV"
+          # `sort -V | tail -1` et pas `find | head -1` : l'image du runner embarque
+          # plusieurs LLVM, et l'ordre de parcours du systeme de fichiers n'est pas
+          # trie -- on pouvait donc tomber sur une version differente de celle
+          # qu'apt vient d'installer. Les headers built-in de clang etant lies a la
+          # version de libclang, le symptome aurait ete `stddef.h file not found`,
+          # qui ne designe pas sa cause. On prend la plus recente, deterministe.
+          libclang=$(ls -1 /usr/lib/llvm-*/lib/libclang.so 2>/dev/null | sort -V | tail -1)
+          # Echouer ici plutot que de laisser bindgen partir sur le chemin Windows
+          # et rendre une erreur qui ne designe pas la cause non plus.
+          test -n "$libclang" || { echo "libclang introuvable apres l'installation"; exit 1; }
+          echo "LIBCLANG_PATH=$(dirname "$libclang")" >> "$GITHUB_ENV"
+      # Meme raison que sur le job macOS : sans bibliotheque sur ORT_DYLIB_PATH,
+      # `runtime_available()` est faux et chaque test de segmentation rend la main
+      # tout de suite — la suite passe au vert sans avoir exerce la moindre
+      # inference, ce qui est exactement par ou le bug « ort panique quand elle
+      # manque » est entre. C'est ce qui fait de
+      # `the_whole_loop_produces_a_mask_from_compose_frame_alone` un vrai test ici
+      # plutot qu'un test saute. Builtins node uniquement, comme fetch:ffmpeg:sdk.
+      - name: Stage ONNX Runtime
+        run: node scripts/fetch-onnxruntime.mjs
+      - name: cargo test (compositor)
+        env:
+          # Les .so ffmpeg vendorises ne sont dans aucun chemin systeme : sans ca
+          # le binaire de test se lance puis meurt sur `libavformat.so.62`.
+          LD_LIBRARY_PATH: ${{ github.workspace }}/crates/thirdparty/ffmpeg-linux64-lgpl-shared/lib
+          ORT_DYLIB_PATH: ${{ github.workspace }}/electron/native/bin/linux-x64/libonnxruntime.so
+          # Fait ECHOUER `cpu_backend_linux.rs` s'il n'obtient pas le backend CPU,
+          # au lieu de le sauter en silence comme sur un poste sans lavapipe.
+          OPENSCREEN_REQUIRE_CPU_BACKEND: "1"
+        run: |
+          cd crates
+          cargo test -p openscreen-compositor --lib --tests
+      - name: cargo build (napi addon)
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/crates/thirdparty/ffmpeg-linux64-lgpl-shared/lib
+        run: |
+          cd crates
+          cargo build -p compositor-view-napi --release
+
+  # The macOS capture helper had NO job on any pull request — not a build, not a test.
+  # `build.yml` compiles it, and build.yml triggers only on `push: tags: v*` or
+  # workflow_dispatch, so a Swift file that did not compile surfaced when someone cut a
+  # release rather than when they pushed it. That is the same gap `rust-windows-compositor-
+  # check` above was added to close for the Windows compositor.
+  #
+  # `swift test`, not just `swift build`, and the difference is the reason this job exists
+  # at all. PR #343 changed how audio is placed on the recording timeline and shipped 301
+  # lines of Swift tests beside the change; not one of them ever ran, because no workflow
+  # invoked `swift test` and nothing under `electron/native/screencapturekit/Tests` was
+  # executed on any pull request. A change to recording timing that no measurement can
+  # contradict is not one to merge into a shipped capture path, so the measurement runs here.
+  #
+  # `AudioTrackMixerTests` needs no screen, no display server and no TCC grant: the mixer
+  # takes its sink and its clock as parameters, so the tests drive it with a collecting sink
+  # and a hand-moved clock. That is what makes "does a sound land where it happened"
+  # answerable on a headless runner. The other half of that question — the one that needs a
+  # real display, a real tap and a real speaker — is `npm run test:sck-audio-timeline:mac`,
+  # which cannot run here and is run by hand.
+  #
+  # `macos-latest`, matching `build.yml`'s arm64 leg — NOT `macos-14` like the compositor job
+  # above, and the difference is load bearing. A gate has to compile with the toolchain that
+  # actually ships the binary, or it fails on code that is fine and passes on code that is not.
+  # This job was written as `macos-14` by copying the job above and failed immediately:
+  # `ScreenCaptureRecorder.swift` has carried a trailing comma in an argument list since long
+  # before this change, which is Swift 6.1 syntax (SE-0439), and the macos-14 image is on Swift
+  # 5.10. Nothing was wrong with the file — every release builds it — the gate was just pointed
+  # at an older compiler than the one that builds releases. `swift --version` is printed for
+  # exactly that reason: when this job disagrees with `build.yml`, the toolchain is the first
+  # thing to check.
+  #
+  # NB the package still declares `swift-tools-version: 5.9`, which that trailing comma now
+  # contradicts. Left alone here rather than fixed in passing: it is pre-existing, unrelated to
+  # the audio timeline, and "which Swift does the helper actually require" deserves its own
+  # decision rather than being settled as a side effect of adding CI.
+  #
+  # The release build runs too, because the executable targets are not covered by the test
+  # target and `-c release` is what `build:native:mac` actually produces.
+  swift-macos-helper:
+    name: Swift test (macOS capture helper)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Show toolchain
+        run: swift --version
+      - name: swift test (capture core)
+        run: swift test --package-path electron/native/screencapturekit
+      - name: swift build (release, both helpers)
+        run: swift build -c release --package-path electron/native/screencapturekit
+
+  semantic-pr:
+    name: Validate PR title (semantic)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: amannn/action-semantic-pull-request@v6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            chore
+            refactor
+            perf
+            docs
+            test
+            build
+            ci
+            style
+            revert
+          requireScope: false

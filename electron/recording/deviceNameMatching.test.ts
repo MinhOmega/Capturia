@@ -1,146 +1,90 @@
-import { describe, expect, it } from 'vitest'
-import {
-  DEVICE_NAME_MATCH_EXACT,
-  DEVICE_NAME_MATCH_EXACT_WITHOUT_USB_IDS,
-  DEVICE_NAME_MATCH_IDENTIFIER,
-  DEVICE_NAME_MATCH_WORDS,
-  DEVICE_NAME_NO_MATCH,
-  containsAsWords,
-  normalizeDeviceName,
-  pickDeviceByName,
-  scoreDeviceNameMatch,
-  stripUsbIdSuffix,
-} from './deviceNameMatching'
+import { describe, expect, it } from "vitest";
+import { normalizeDeviceName, scoreDeviceNameMatch } from "./deviceNameMatching";
 
-describe('normalizeDeviceName', () => {
-  it('reduces punctuation and case to single-spaced lowercase', () => {
-    expect(normalizeDeviceName('Camera (NVIDIA Broadcast)')).toBe('camera nvidia broadcast')
-    expect(normalizeDeviceName('Logitech StreamCam (046d:0893)')).toBe(
-      'logitech streamcam 046d 0893',
-    )
-    expect(normalizeDeviceName('  MacBook Pro Microphone ')).toBe('macbook pro microphone')
-  })
+describe("normalizeDeviceName", () => {
+	it("reduces punctuation and case to single-spaced lowercase", () => {
+		expect(normalizeDeviceName("Camera (NVIDIA Broadcast)")).toBe("camera nvidia broadcast");
+		expect(normalizeDeviceName("Logitech StreamCam (046d:0893)")).toBe(
+			"logitech streamcam 046d 0893",
+		);
+	});
+});
 
-  it('keeps non-Latin letters and combining marks', () => {
-    expect(normalizeDeviceName('カメラ A')).toBe('カメラ a')
-    expect(normalizeDeviceName('Micro (Việt Nam)')).toBe('micro việt nam')
-    // Decomposed form: the combining mark must not become a word boundary.
-    expect(normalizeDeviceName('Việt')).toBe('việt')
-  })
-})
+describe("scoreDeviceNameMatch", () => {
+	it("scores an exact name highest", () => {
+		expect(
+			scoreDeviceNameMatch("Camera (NVIDIA Broadcast)", "{clsid}", "Camera (NVIDIA Broadcast)"),
+		).toBe(1000);
+	});
 
-describe('stripUsbIdSuffix', () => {
-  it('drops the Chromium vendor:product pair only', () => {
-    expect(stripUsbIdSuffix('Logitech StreamCam (046d:0893)')).toBe('Logitech StreamCam')
-    expect(stripUsbIdSuffix('Logitech StreamCam (046D:0893) ')).toBe('Logitech StreamCam')
-    expect(stripUsbIdSuffix('FaceTime HD Camera (Built-in)')).toBe('FaceTime HD Camera (Built-in)')
-  })
-})
+	// What Chromium hands over is the driver's name plus USB ids, so one side
+	// being the other with decoration is the ordinary case, not a near miss.
+	it("matches through the USB ids Chromium appends", () => {
+		expect(
+			scoreDeviceNameMatch("Logitech StreamCam", "{clsid}", "Logitech StreamCam (046d:0893)"),
+		).toBe(900);
+	});
 
-describe('containsAsWords', () => {
-  it('only accepts matches on word boundaries', () => {
-    expect(containsAsWords('logitech streamcam 046d 0893', 'logitech streamcam')).toBe(true)
-    expect(containsAsWords('logitech streamcam', 'logi')).toBe(false)
-    expect(containsAsWords('microphone logitech pro x', 'micro')).toBe(false)
-    expect(containsAsWords('', 'x')).toBe(false)
-    expect(containsAsWords('x', '')).toBe(false)
-  })
-})
+	it("matches when the platform name is the longer of the two", () => {
+		expect(
+			scoreDeviceNameMatch("Logitech HD Pro Webcam C920", "{clsid}", "HD Pro Webcam C920"),
+		).toBe(900);
+	});
 
-describe('scoreDeviceNameMatch', () => {
-  it('scores an exact name highest', () => {
-    expect(
-      scoreDeviceNameMatch('Camera (NVIDIA Broadcast)', '{clsid}', 'Camera (NVIDIA Broadcast)'),
-    ).toBe(DEVICE_NAME_MATCH_EXACT)
-  })
+	/**
+	 * The bug this module exists to end. "Logi Capture" and "Logitech StreamCam"
+	 * are two different real devices sharing no word — but "logi" is inside
+	 * "logitech", and the word-scoring tier took that for a match, opening the
+	 * wrong camera instead of letting the caller fall through to the provider
+	 * that had the right one.
+	 */
+	it("refuses a word that is merely inside another word", () => {
+		expect(scoreDeviceNameMatch("Logitech StreamCam", "{clsid}", "Logi Capture")).toBe(0);
+	});
 
-  it('prefers the exact name once the USB ids are stripped over a word match', () => {
-    expect(
-      scoreDeviceNameMatch('Logitech StreamCam', 'uid', 'Logitech StreamCam (046d:0893)'),
-    ).toBe(DEVICE_NAME_MATCH_EXACT_WITHOUT_USB_IDS)
-  })
+	it("refuses the microphone form of the same mistake", () => {
+		expect(scoreDeviceNameMatch("Microphone (Logitech PRO X)", "{id}", "Micro Studio")).toBe(0);
+	});
 
-  it('matches when either name is the other plus decoration, as whole words', () => {
-    expect(scoreDeviceNameMatch('Logitech HD Pro Webcam C920', 'uid', 'HD Pro Webcam C920')).toBe(
-      DEVICE_NAME_MATCH_WORDS,
-    )
-    expect(
-      scoreDeviceNameMatch('MacBook Pro Microphone', 'uid', 'MacBook Pro Microphone (Built-in)'),
-    ).toBe(DEVICE_NAME_MATCH_WORDS)
-  })
+	/**
+	 * Sharing one distinctive word is no longer enough on its own. Two Logitech
+	 * devices are still two devices, and answering "some Logitech thing" is how
+	 * the wrong one got opened.
+	 */
+	it("refuses a partial match on a shared brand", () => {
+		expect(scoreDeviceNameMatch("Logitech StreamCam", "{clsid}", "Logitech BRIO")).toBe(0);
+	});
 
-  it('refuses a word that is merely inside another word', () => {
-    expect(scoreDeviceNameMatch('Logitech StreamCam', 'uid', 'Logi Capture')).toBe(
-      DEVICE_NAME_NO_MATCH,
-    )
-    expect(scoreDeviceNameMatch('Microphone (Logitech PRO X)', 'uid', 'Micro Studio')).toBe(
-      DEVICE_NAME_NO_MATCH,
-    )
-    expect(scoreDeviceNameMatch('Microphone (Logitech StreamCam)', 'uid', 'Micro')).toBe(
-      DEVICE_NAME_NO_MATCH,
-    )
-    expect(scoreDeviceNameMatch('Logitech StreamCam', 'uid', 'Logi')).toBe(DEVICE_NAME_NO_MATCH)
-  })
+	it("scores nothing when no name was requested", () => {
+		expect(scoreDeviceNameMatch("Logitech StreamCam", "{clsid}", undefined)).toBe(0);
+		expect(scoreDeviceNameMatch("Logitech StreamCam", "{clsid}", "   ")).toBe(0);
+	});
 
-  it('refuses a partial match on a shared brand', () => {
-    expect(scoreDeviceNameMatch('Logitech StreamCam', 'uid', 'Logitech BRIO')).toBe(
-      DEVICE_NAME_NO_MATCH,
-    )
-  })
+	/**
+	 * "Micro" is inside "Microphone", "Logi" inside "Logitech" — spelled there,
+	 * but not as a word. Containment used to take either for a match and resolve
+	 * a device nobody asked for.
+	 */
+	it("refuses a request merely spelled inside a longer word", () => {
+		expect(scoreDeviceNameMatch("Microphone (Logitech StreamCam)", "{id}", "Micro")).toBe(0);
+		expect(scoreDeviceNameMatch("Logitech StreamCam", "{clsid}", "Logi")).toBe(0);
+	});
 
-  it('scores nothing when no name was requested', () => {
-    expect(scoreDeviceNameMatch('Logitech StreamCam', 'uid', undefined)).toBe(DEVICE_NAME_NO_MATCH)
-    expect(scoreDeviceNameMatch('Logitech StreamCam', 'uid', null)).toBe(DEVICE_NAME_NO_MATCH)
-    expect(scoreDeviceNameMatch('Logitech StreamCam', 'uid', '   ')).toBe(DEVICE_NAME_NO_MATCH)
-  })
+	/**
+	 * `[^a-z0-9]` stripped every non-Latin letter, so two different Japanese
+	 * cameras both normalized to "a" and matched each other at 1000.
+	 */
+	it("keeps non-Latin names apart", () => {
+		expect(scoreDeviceNameMatch("カメラ A", "{clsid}", "ウェブカメラ A")).toBe(0);
+		expect(scoreDeviceNameMatch("Веб-камера 1", "{clsid}", "Веб-камера 2")).toBe(0);
+	});
 
-  it('keeps non-Latin names apart', () => {
-    expect(scoreDeviceNameMatch('カメラ A', 'uid', 'ウェブカメラ A')).toBe(DEVICE_NAME_NO_MATCH)
-    expect(scoreDeviceNameMatch('Веб-камера 1', 'uid', 'Веб-камера 2')).toBe(DEVICE_NAME_NO_MATCH)
-  })
+	it("still matches identical non-Latin names", () => {
+		expect(scoreDeviceNameMatch("カメラ A", "{clsid}", "カメラ A")).toBe(1000);
+		expect(scoreDeviceNameMatch("摄像头（罗技）", "{clsid}", "摄像头（罗技）")).toBe(1000);
+	});
 
-  it('still matches identical non-Latin names', () => {
-    expect(scoreDeviceNameMatch('カメラ A', 'uid', 'カメラ A')).toBe(DEVICE_NAME_MATCH_EXACT)
-    expect(scoreDeviceNameMatch('摄像头（罗技）', 'uid', '摄像头（罗技）')).toBe(
-      DEVICE_NAME_MATCH_EXACT,
-    )
-  })
-
-  it('falls back to the identifier when the friendly name says nothing', () => {
-    expect(scoreDeviceNameMatch('', 'usb elgato facecam 0fd9', 'Elgato Facecam')).toBe(
-      DEVICE_NAME_MATCH_IDENTIFIER,
-    )
-  })
-})
-
-describe('pickDeviceByName', () => {
-  const devices = [
-    { name: 'MacBook Pro Microphone', id: 'BuiltInMicrophoneDevice' },
-    { name: 'Logitech StreamCam', id: '0x14100000046d0893' },
-    { name: 'Logitech BRIO', id: '0x14200000046d085e' },
-  ]
-
-  it('returns the best-scoring candidate', () => {
-    expect(pickDeviceByName(devices, 'Logitech StreamCam (046d:0893)')?.id).toBe(
-      '0x14100000046d0893',
-    )
-    expect(pickDeviceByName(devices, 'MacBook Pro Microphone (Built-in)')?.id).toBe(
-      'BuiltInMicrophoneDevice',
-    )
-  })
-
-  it('returns undefined instead of a weak match', () => {
-    expect(pickDeviceByName(devices, 'Logi Capture')).toBeUndefined()
-    expect(pickDeviceByName(devices, 'Logitech C920')).toBeUndefined()
-    expect(pickDeviceByName(devices, undefined)).toBeUndefined()
-    expect(pickDeviceByName([], 'Logitech StreamCam')).toBeUndefined()
-  })
-
-  it('keeps platform order on ties', () => {
-    const twins = [
-      { name: 'USB Audio', id: 'a' },
-      { name: 'USB Audio', id: 'b' },
-    ]
-    expect(pickDeviceByName(twins, 'USB Audio')?.id).toBe('a')
-  })
-})
+	it("falls back to the identifier when the friendly name says nothing", () => {
+		expect(scoreDeviceNameMatch("", "usb elgato facecam 0fd9", "Elgato Facecam")).toBe(800);
+	});
+});
