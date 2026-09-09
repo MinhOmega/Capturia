@@ -59,6 +59,7 @@ import {
 	registerIpcHandlers,
 } from "./ipc/handlers";
 import { installMainProcessErrorGuards } from "./main-process-errors";
+import { normalizeExternalUrl } from "./navigationPolicy";
 import { installNavigationPolicy, installPermissionPolicy } from "./securityPolicy";
 import { registerSttIpc, shutdownStt } from "./stt";
 import { checkLatestRelease } from "./update-checker";
@@ -819,7 +820,11 @@ async function checkForUpdates(onVerdict?: () => void) {
 		});
 		if (choice.response !== 0) return;
 		if (!canSelfUpdate) {
-			await shell.openExternal(result.releaseUrl);
+			// The release URL arrives from the update feed, so it is not ours to
+			// trust blindly: `shell.openExternal` hands anything else to the OS.
+			const releaseUrl = normalizeExternalUrl(result.releaseUrl);
+			if (releaseUrl) await shell.openExternal(releaseUrl);
+			else console.warn("Refused to open a release URL from the feed:", result.releaseUrl);
 			return;
 		}
 		await downloadAndInstall(result.latestVersion);
