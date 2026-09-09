@@ -30,6 +30,30 @@ export type SubtitleSidecarFormat = (typeof SUBTITLE_SIDECAR_FORMATS)[number];
  *  or a line that the cut it sat in has left with nothing to cover. */
 const MIN_EXPORTED_CUE_MS = 1;
 
+/** The containers `ApprovedExportPaths.approve` will accept as a destination. */
+const VIDEO_EXTENSION = /\.(mp4|gif)$/i;
+
+/**
+ * Where the sidecar for `videoPath` goes.
+ *
+ * This has to agree BYTE FOR BYTE with the siblings `ApprovedExportPaths.approve` registers
+ * (`electron/exportPolicy.ts`), because the write is refused otherwise — and refused
+ * quietly, which would look like "subtitles just don't appear" rather than like an error.
+ * The policy strips exactly the `path.extname` it validated and appends the sidecar
+ * extension; stripping a trailing `.mp4`/`.gif` is the same operation over every path that
+ * policy approves, including one whose NAME contains dots (`demo.v1.mp4` keeps the `.v1`)
+ * and one with an upper-case extension.
+ *
+ * `path.parse().name` is what NOT to use here: it would turn `demo.v1.mp4` into `demo`,
+ * derive `demo.srt`, and land outside the approved set.
+ *
+ * `subtitles.test.ts` pins this against the real `ApprovedExportPaths` on both platform
+ * path flavours, so a change to either side fails rather than silently dropping subtitles.
+ */
+export function subtitleSidecarPath(videoPath: string, format: SubtitleSidecarFormat): string {
+	return `${videoPath.replace(VIDEO_EXTENSION, "")}.${format}`;
+}
+
 function pad(value: number, length: number): string {
 	return String(Math.max(0, Math.floor(value))).padStart(length, "0");
 }
