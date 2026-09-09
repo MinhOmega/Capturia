@@ -24,6 +24,7 @@
 		"zoom": "تكبير",
 		"trim": "قص",
 		"speed": "سرعة",
+		"markerAt": "علامة عند {{time}} — انقر للانتقال إلى هنا",
 		"zoomItem": "تكبير {{index}}",
 		"trimItem": "قص {{index}}",
 		"speedItem": "سرعة {{index}}",

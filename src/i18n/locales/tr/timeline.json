@@ -24,6 +24,7 @@
 		"zoom": "Yakınlaştır",
 		"trim": "Kırp",
 		"speed": "Hız",
+		"markerAt": "{{time}} konumunda işaret — buraya atlamak için tıklayın",
 		"zoomItem": "Yakınlaştırma {{index}}",
 		"trimItem": "Kırpma {{index}}",
 		"speedItem": "Hız {{index}}",

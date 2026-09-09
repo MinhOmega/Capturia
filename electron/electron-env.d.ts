@@ -278,10 +278,16 @@ interface Window {
 		/**
 		 * A capture helper's process is gone. Fires on EVERY exit, the clean one
 		 * after a stop included — the subscriber decides, because only it knows
-		 * whether it asked for that stop.
+		 * whether it asked for that stop. `recordingId` says which take the dead
+		 * helper was capturing, so an exit belonging to a take that has already
+		 * been replaced (a restart) is not mistaken for a crash of the live one.
 		 */
 		onNativeCaptureHelperExited: (
-			callback: (payload: { platform: string; detail: string }) => void,
+			callback: (payload: {
+				platform: string;
+				recordingId: number | null;
+				detail: string;
+			}) => void,
 		) => () => void;
 		openExternalUrl: (url: string) => Promise<{ success: boolean; error?: string }>;
 		pickExportSavePath: (

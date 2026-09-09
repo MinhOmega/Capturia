@@ -24,6 +24,7 @@
 		"zoom": "ズーム",
 		"trim": "トリム",
 		"speed": "再生速度",
+		"markerAt": "{{time}} のマーカー — クリックしてここへ移動",
 		"zoomItem": "ズーム {{index}}",
 		"trimItem": "トリム {{index}}",
 		"speedItem": "再生速度 {{index}}",

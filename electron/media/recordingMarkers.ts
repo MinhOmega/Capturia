@@ -42,17 +42,22 @@ export function markersPathFor(videoPath: string): string {
  * Whole-millisecond, ascending, unique, capped.
  *
  * Rounded before deduplication so two flags in the same millisecond collapse to
- * one tick rather than two the editor draws on top of each other. Anything that
- * is not a usable time is dropped: a marker whose position cannot be trusted is
- * worse than no marker, because it sends the user to the wrong frame.
+ * one tick rather than two the editor draws on top of each other.
+ *
+ * This is a trust boundary: the input is either an IPC payload or a JSON file a
+ * user can hand-edit. Anything that is not already a number is REJECTED, never
+ * coerced and never clamped. `Number()` would happily turn `null`, `""`, `[]`
+ * and `false` into 0 — a perfectly valid-looking flag on the recording's first
+ * frame, invented out of corrupt input. A marker whose position cannot be
+ * trusted is worse than no marker, because it sends the user to the wrong frame
+ * and nothing about it looks wrong.
  */
 export function sanitizeRecordingMarkers(input: unknown): number[] {
 	if (!Array.isArray(input)) return [];
 	const seen = new Set<number>();
 	for (const value of input) {
-		const ms = Number(value);
-		if (!Number.isFinite(ms) || ms < 0) continue;
-		seen.add(Math.round(ms));
+		if (typeof value !== "number" || !Number.isFinite(value) || value < 0) continue;
+		seen.add(Math.round(value));
 		if (seen.size >= MAX_RECORDING_MARKERS) break;
 	}
 	return [...seen].sort((a, b) => a - b);

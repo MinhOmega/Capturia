@@ -1067,18 +1067,32 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			});
 		}
 
-		// A capture helper that died on its own. Main pushes this on every helper
-		// exit and leaves the judgement here, because the `finalizing` flags below
-		// are the only record of whether this app asked for that exit. Nothing
-		// unfinalized means the stop is already under way (or the recording is long
-		// over) and the exit is the expected one.
+		// A capture helper that died on its own. Main pushes this on EVERY helper
+		// exit and leaves the judgement here, because this side is the only one
+		// that knows whether the app asked for it.
+		//
+		// Three exits are expected and must stay silent, or the alert cries wolf on
+		// every normal stop, users mute it, and the real crash then goes unseen:
+		//
+		//   - nothing is recording (a prepared Linux portal session cancelled
+		//     before it was ever armed, or an exit arriving long after the take),
+		//   - the take is already finalizing, i.e. this app asked for the stop,
+		//   - the exit belongs to a DIFFERENT take. `restartRecording` finalizes
+		//     the old helper and starts a new one immediately, so the old exit
+		//     routinely lands while a fresh, healthy recording is running. Matching
+		//     on "is something recording?" alone would stop that new take.
+		//
+		// The id is what separates the third case from a genuine crash, which is
+		// why main binds it at spawn rather than reading it back at exit time.
 		const unsubscribeHelperExit = window.electronAPI?.onNativeCaptureHelperExited?.(
-			({ detail }) => {
-				const died =
-					(nativeWindowsRecording.current && !nativeWindowsRecording.current.finalizing) ||
-					(nativeMacRecording.current && !nativeMacRecording.current.finalizing) ||
-					(nativeLinuxRecording.current && !nativeLinuxRecording.current.finalizing);
-				if (!died) return;
+			// Not destructured as `recordingId`: that would shadow the ref of the
+			// same name, and the two mean different things here.
+			({ recordingId: exitedRecordingId, detail }) => {
+				const active =
+					nativeWindowsRecording.current ??
+					nativeMacRecording.current ??
+					nativeLinuxRecording.current;
+				if (!active || active.finalizing || active.recordingId !== exitedRecordingId) return;
 
 				console.error("Native capture helper exited mid-recording:", detail);
 				toast.error(tRef.current("recording.helperExited"));

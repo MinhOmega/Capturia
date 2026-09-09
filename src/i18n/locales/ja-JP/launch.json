@@ -4,6 +4,7 @@
 		"closeApp": "アプリを閉じる",
 		"restartRecording": "録画を再開",
 		"cancelRecording": "録画をキャンセル",
+		"addMarker": "この瞬間にマーカーを追加",
 		"pauseRecording": "録画を一時停止",
 		"resumeRecording": "録画を再開",
 		"useVerticalTray": "縦型トレイを使用",

@@ -22,6 +22,15 @@ describe("sanitizeRecordingMarkers", () => {
 		expect(sanitizeRecordingMarkers(undefined)).toEqual([]);
 	});
 
+	it("rejects rather than coerces the values that look like zero", () => {
+		// `Number()` turns every one of these into 0, which is a valid-looking flag
+		// on the recording's first frame invented out of corrupt input. This is a
+		// hand-editable file on disk, so the strict check is the whole guard.
+		expect(sanitizeRecordingMarkers([null, "", [], false, "0", "500"])).toEqual([]);
+		// And a real zero still means the very start of the take.
+		expect(sanitizeRecordingMarkers([0])).toEqual([0]);
+	});
+
 	it("caps a runaway shortcut", () => {
 		const many = Array.from({ length: MAX_RECORDING_MARKERS + 50 }, (_, i) => i);
 		expect(sanitizeRecordingMarkers(many)).toHaveLength(MAX_RECORDING_MARKERS);

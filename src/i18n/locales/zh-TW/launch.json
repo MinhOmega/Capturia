@@ -4,6 +4,7 @@
 		"closeApp": "關閉應用程式",
 		"restartRecording": "重新開始錄製",
 		"cancelRecording": "取消錄製",
+		"addMarker": "標記此刻",
 		"pauseRecording": "暫停錄製",
 		"resumeRecording": "繼續錄製",
 		"useVerticalTray": "使用直向托盤",
