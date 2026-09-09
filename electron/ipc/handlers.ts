@@ -77,6 +77,7 @@ import {
 import { findPipeWireCursorHelperPath } from "../native-bridge/cursor/recording/pipeWireCursorRecordingSession";
 import type { CursorRecordingSession } from "../native-bridge/cursor/recording/session";
 import { toHelperRect } from "../native-bridge/helperCoordinates";
+import { normalizeExternalUrl } from "../navigationPolicy";
 import { scoreDeviceNameMatch } from "../recording/deviceNameMatching";
 import {
 	isSalvageableFragmentedCapture,
@@ -89,6 +90,7 @@ import {
 } from "../recording/nativeWindowsCaptureStop";
 import { patchWebmDurationOnDisk } from "../recording/webm-duration";
 import { reindexRecordingOnDisk } from "../recording/webm-seek-index";
+import { settingsPaneUrl } from "../windowPermissions";
 import { registerNativeBridgeHandlers } from "./nativeBridge";
 import { RecordingStreamRegistry, registerRecordingStreamHandlers } from "./recordingStream";
 
@@ -2034,9 +2036,9 @@ export function registerIpcHandlers(
 					? await dialog.showMessageBox(mainWin, messageOptions)
 					: await dialog.showMessageBox(messageOptions);
 			if (result.response === 0) {
-				await shell.openExternal(
-					"x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
-				);
+				const pane = settingsPaneUrl("accessibility");
+				// Built from a fixed table, never from renderer input — see windowPermissions.ts.
+				if (pane) await shell.openExternal(pane);
 			}
 		}
 
@@ -2075,9 +2077,8 @@ export function registerIpcHandlers(
 						? await dialog.showMessageBox(mainWin, messageOptions)
 						: await dialog.showMessageBox(messageOptions);
 				if (result.response === 0) {
-					await shell.openExternal(
-						"x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
-					);
+					const pane = settingsPaneUrl("screen-capture");
+					if (pane) await shell.openExternal(pane);
 				}
 			}
 			return {
@@ -3565,21 +3566,16 @@ export function registerIpcHandlers(
 		return readCursorTelemetryFile(targetVideoPath);
 	});
 
-	// Protocol allowlist. `shell.openExternal` hands the string to the OS handler,
-	// so `file:`, `ms-msdt:`, a UNC path, or any registered custom scheme is a
-	// launch primitive — the renderer runs with webSecurity:false and now renders
-	// model-generated content, so "the renderer is trusted" is not a strong enough
-	// premise to skip this. http/https/mailto is everything the app actually opens.
-	const EXTERNAL_URL_PROTOCOLS = new Set(["http:", "https:", "mailto:"]);
-
+	// Protocol allowlist, shared with the navigation policy so a URL the renderer
+	// cannot navigate to is also a URL it cannot ask the OS to open.
 	ipcMain.handle("open-external-url", async (_, url: string) => {
+		const normalized = normalizeExternalUrl(url);
+		if (!normalized) {
+			console.warn("Refused to open external URL:", url);
+			return { success: false, error: "Unsupported URL protocol" };
+		}
 		try {
-			const parsed = new URL(url);
-			if (!EXTERNAL_URL_PROTOCOLS.has(parsed.protocol)) {
-				console.warn(`Refused to open external URL with protocol ${parsed.protocol}`);
-				return { success: false, error: `Unsupported URL protocol: ${parsed.protocol}` };
-			}
-			await shell.openExternal(parsed.toString());
+			await shell.openExternal(normalized);
 			return { success: true };
 		} catch (error) {
 			console.error("Failed to open URL:", error);
