@@ -16,6 +16,11 @@ import {
 	type NativeWindowsRecordingRequest,
 	parseWindowHandleFromSourceId,
 } from "@/lib/nativeWindowsRecording";
+import {
+	assessRecordingDiskSpace,
+	formatAvailableSpace,
+	type RecordingDiskSpaceSnapshot,
+} from "@/lib/recordingDiskSpace";
 import type { CursorCaptureMode, RecordedVideoAssetInput } from "@/lib/recordingSession";
 import { requestCameraAccess } from "@/lib/requestCameraAccess";
 import { loadUserPreferences, saveUserPreferences } from "@/lib/userPreferences";
@@ -108,6 +113,10 @@ type UseScreenRecorderReturn = {
 	setCursorCaptureMode: (mode: CursorCaptureMode) => void;
 	softwareEncoderFallbackNoticeVisible: boolean;
 	dismissSoftwareEncoderFallbackNotice: (dontShowAgain?: boolean) => void;
+	/** Flags this instant in the running capture. A no-op while paused or idle. */
+	addRecordingMarker: () => void;
+	/** How many moments have been flagged in the running capture. */
+	markerCount: number;
 };
 
 type NativeWindowsRecordingHandle = {
@@ -313,6 +322,48 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		const segmentDuration =
 			segmentStartedAt.current === null ? 0 : Date.now() - segmentStartedAt.current;
 		return accumulatedDurationMs.current + segmentDuration;
+	}, []);
+
+	/**
+	 * Moments flagged during the running capture, in SOURCE ms.
+	 *
+	 * `getRecordingDurationMs` is already the recorded file's own clock —
+	 * accumulated segments, paused stretches excluded — so a marker taken from it
+	 * needs no conversion to land on the right frame. Doing this in the renderer
+	 * is why main keeps no marker state: it would otherwise need a second copy of
+	 * the pause bookkeeping in each of the three native paths.
+	 */
+	const recordingMarkers = useRef<number[]>([]);
+	const [markerCount, setMarkerCount] = useState(0);
+
+	/**
+	 * Flags this instant. Refused while paused: the frame the user is looking at
+	 * is not in the recording, so the marker would point at a moment the file
+	 * does not contain.
+	 */
+	const addRecordingMarker = useCallback(() => {
+		if (!recording || paused || saving) return;
+		recordingMarkers.current.push(Math.max(0, Math.round(getRecordingDurationMs())));
+		setMarkerCount(recordingMarkers.current.length);
+	}, [getRecordingDurationMs, paused, recording, saving]);
+
+	/**
+	 * Parks the flags beside the recording that just landed.
+	 *
+	 * Best-effort and never awaited into the failure path: the take is already
+	 * safe on disk by this point, and losing the flags is not worth failing the
+	 * hand-off to the editor over.
+	 */
+	const persistRecordingMarkers = useCallback(async (screenVideoPath?: string) => {
+		const markers = recordingMarkers.current;
+		recordingMarkers.current = [];
+		setMarkerCount(0);
+		if (!screenVideoPath || markers.length === 0) return;
+		try {
+			await window.electronAPI?.writeRecordingMarkers?.(screenVideoPath, markers);
+		} catch (error) {
+			console.warn("Failed to write recording markers:", error);
+		}
 	}, []);
 
 	const selectMimeType = () => {
@@ -596,6 +647,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					storeSucceeded = true;
 
 					if (result.session) {
+						await persistRecordingMarkers(result.session.screenVideoPath);
 						await window.electronAPI.setCurrentRecordingSession(result.session);
 					} else if (result.path) {
 						await window.electronAPI.setCurrentVideoPath(result.path);
@@ -624,7 +676,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				}
 			})();
 		},
-		[cursorCaptureMode, teardownMedia],
+		[cursorCaptureMode, persistRecordingMarkers, teardownMedia],
 	);
 
 	const finalizeNativeWindowsRecording = useCallback(async (discard = false) => {
@@ -680,6 +732,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				toast.error(tRef.current("recording.cameraCaptureUnavailable"));
 			}
 			if (result.session) {
+				await persistRecordingMarkers(result.session.screenVideoPath);
 				await window.electronAPI.setCurrentRecordingSession(result.session);
 			} else if (result.path) {
 				await window.electronAPI.setCurrentVideoPath(result.path);
@@ -700,7 +753,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			}
 			setSaving(false);
 		}
-	}, []);
+	}, [persistRecordingMarkers]);
 
 	const finalizeNativeMacRecording = useCallback(
 		async (discard = false) => {
@@ -790,6 +843,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
 				clearNativeRecordingState();
 				if (result.session) {
+					await persistRecordingMarkers(result.session.screenVideoPath);
 					await window.electronAPI.setCurrentRecordingSession(result.session);
 				} else if (result.path) {
 					await window.electronAPI.setCurrentVideoPath(result.path);
@@ -817,7 +871,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				setSaving(false);
 			}
 		},
-		[cursorCaptureMode, getRecordingDurationMs],
+		[cursorCaptureMode, getRecordingDurationMs, persistRecordingMarkers],
 	);
 
 	/**
@@ -908,6 +962,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
 				clearNativeRecordingState();
 				if (result.session) {
+					await persistRecordingMarkers(result.session.screenVideoPath);
 					await window.electronAPI.setCurrentRecordingSession(result.session);
 				} else if (result.path) {
 					await window.electronAPI.setCurrentVideoPath(result.path);
@@ -935,7 +990,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				setSaving(false);
 			}
 		},
-		[cursorCaptureMode, getRecordingDurationMs],
+		[cursorCaptureMode, getRecordingDurationMs, persistRecordingMarkers],
 	);
 
 	const stopRecording = useRef(() => {
@@ -1009,7 +1064,30 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			});
 		}
 
+		// A capture helper that died on its own. Main pushes this on every helper
+		// exit and leaves the judgement here, because the `finalizing` flags below
+		// are the only record of whether this app asked for that exit. Nothing
+		// unfinalized means the stop is already under way (or the recording is long
+		// over) and the exit is the expected one.
+		const unsubscribeHelperExit = window.electronAPI?.onNativeCaptureHelperExited?.(
+			({ detail }) => {
+				const died =
+					(nativeWindowsRecording.current && !nativeWindowsRecording.current.finalizing) ||
+					(nativeMacRecording.current && !nativeMacRecording.current.finalizing) ||
+					(nativeLinuxRecording.current && !nativeLinuxRecording.current.finalizing);
+				if (!died) return;
+
+				console.error("Native capture helper exited mid-recording:", detail);
+				toast.error(tRef.current("recording.helperExited"));
+				// Through the normal stop, not a bare state reset: it is what salvages
+				// a fragmented MP4 the dead helper already wrote, and it is the only
+				// path that returns the HUD to idle without stranding main's handles.
+				stopRecording.current();
+			},
+		);
+
 		return () => {
+			unsubscribeHelperExit?.();
 			const activeRunId = countdownRunId.current;
 			if (cleanup) cleanup();
 			countdownRunId.current += 1;
@@ -1697,6 +1775,37 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		}
 	};
 
+	/**
+	 * False when the recordings volume is too full to be worth starting on.
+	 *
+	 * A capture streams straight to disk with nothing watching for ENOSPC, so a
+	 * volume that fills mid-take truncates the file where the writer happened to
+	 * be — on the native path an MP4 with no `moov` box, which opens nowhere. A
+	 * check that could not run (old preload, a volume `statfs` cannot describe)
+	 * answers true: it must never stop a recording that would have been fine.
+	 */
+	const hasRoomToRecord = async (): Promise<boolean> => {
+		let snapshot: RecordingDiskSpaceSnapshot | undefined;
+		try {
+			snapshot = await window.electronAPI?.getRecordingsDiskSpace?.();
+		} catch (error) {
+			console.warn("Failed to read free disk space before recording:", error);
+		}
+
+		const verdict = assessRecordingDiskSpace(snapshot);
+		if (verdict.level === "ok") {
+			return true;
+		}
+
+		const available = formatAvailableSpace(verdict.availableBytes);
+		if (verdict.level === "blocked") {
+			toast.error(t("recording.diskSpaceBlocked", { available }));
+			return false;
+		}
+		toast.warning(t("recording.diskSpaceLow", { available }));
+		return true;
+	};
+
 	const startRecording = async (
 		countdownRunToken?: number,
 		preparedRecordingId?: number | null,
@@ -1709,6 +1818,19 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				teardownMedia();
 				return;
 			}
+
+			// The one choke point every start path funnels through — the countdown,
+			// the tray, the CLI runner and `restartRecording` all land here — so the
+			// disk gate lives here rather than in `startRecordCountdown`.
+			if (!(await hasRoomToRecord())) {
+				teardownMedia();
+				return;
+			}
+
+			// Discard, cancel and restart never reach `persistRecordingMarkers`, so
+			// this is what stops one take's flags from landing on the next.
+			recordingMarkers.current = [];
+			setMarkerCount(0);
 
 			// BEFORE THE SOURCE GATE, on purpose. On Wayland the portal raises its
 			// own picker and is the only thing that can choose a source, so there
@@ -2349,5 +2471,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		setCursorCaptureMode,
 		softwareEncoderFallbackNoticeVisible,
 		dismissSoftwareEncoderFallbackNotice,
+		addRecordingMarker,
+		markerCount,
 	};
 }

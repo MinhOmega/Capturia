@@ -1,4 +1,4 @@
-import { Loader2 } from "lucide-react";
+import { Flag, Loader2 } from "lucide-react";
 import { BsPauseCircle, BsPlayCircle } from "react-icons/bs";
 import { FaFolderOpen } from "react-icons/fa6";
 import { FiMinus, FiX } from "react-icons/fi";
@@ -18,6 +18,7 @@ const ICON_CONFIG = {
 	minimize: { icon: FiMinus, size: ICON_SIZE },
 	close: { icon: FiX, size: ICON_SIZE },
 	spinner: { icon: Loader2, size: ICON_SIZE },
+	marker: { icon: Flag, size: ICON_SIZE },
 } as const;
 
 export type IconName = keyof typeof ICON_CONFIG;

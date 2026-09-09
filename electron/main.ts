@@ -59,6 +59,7 @@ import {
 	registerIpcHandlers,
 } from "./ipc/handlers";
 import { installMainProcessErrorGuards } from "./main-process-errors";
+import { scheduleRecordingsCleanup } from "./recordingsCleanup";
 import { registerSttIpc, shutdownStt } from "./stt";
 import { checkLatestRelease } from "./update-checker";
 import { loadUpdateMode, saveUpdateMode } from "./update-settings";
@@ -1274,6 +1275,16 @@ appReady?.then(async () => {
 	configureAboutPanel();
 	setupApplicationMenu();
 	await ensureRecordingsDir();
+	// Nothing else ever sweeps this directory, so without one pass per launch it
+	// only grows: discarded takes, dead helpers' half-files, orphaned sidecars and
+	// repair scratch all accumulate until the disk is full — and a full disk is
+	// how a recording is lost. Deliberately not awaited: startup must not wait on
+	// a stat of every file in the folder, and a sweep that fails changes nothing.
+	scheduleRecordingsCleanup({
+		recordingsDir: RECORDINGS_DIR,
+		userDataDir: app.getPath("userData"),
+		reason: "startup",
+	});
 
 	function switchToHudWrapper() {
 		if (mainWindow) {

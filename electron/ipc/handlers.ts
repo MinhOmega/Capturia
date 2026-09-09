@@ -65,6 +65,7 @@ import {
 } from "../media/cursorSidecar";
 import { findMediaLinksByFingerprint, registerMediaLinks } from "../media/mediaLinksRegistry";
 import { relinkProjectMedia } from "../media/projectMediaRelinker";
+import { readRecordingMarkers, writeRecordingMarkers } from "../media/recordingMarkers";
 import {
 	type LinuxCaptureSourceKind,
 	LinuxNativeCaptureSession,
@@ -678,6 +679,36 @@ let nativeWindowsIsPaused = false;
 let nativeWindowsCaptureContainer: string | null = null;
 /** Cuts a surviving helper's output loose so it cannot pollute the next recording. */
 let nativeWindowsCaptureDrainCleanup: (() => void) | null = null;
+
+/**
+ * Tells every renderer that a capture helper's process is gone.
+ *
+ * Sent on EVERY helper exit, including the normal one after a stop — main
+ * deliberately keeps no "was a stop requested?" state for this. The renderer
+ * already holds that answer (`nativeXRecording.current.finalizing`, set before
+ * it invokes the stop), so putting the guard here would mean maintaining a
+ * second copy of it across three platforms and every discard/cancel/restart
+ * path, and getting one of them wrong means the HUD sits there looking like it
+ * is still recording — the exact failure this exists to prevent.
+ *
+ * Before this, a helper that died mid-take was invisible: Windows and macOS
+ * swallow the process's `error`/`close` into a `console.warn` and a listener
+ * detach, and Linux's `exit` handler only reaches promises that happen to be
+ * pending. Nothing reached the HUD, whose elapsed counter kept climbing.
+ */
+function notifyNativeCaptureHelperExit(platform: NodeJS.Platform, detail: string) {
+	console.warn(`[native-capture] ${platform} helper exited: ${detail}`);
+	for (const win of BrowserWindow.getAllWindows()) {
+		if (win.isDestroyed()) {
+			continue;
+		}
+		try {
+			win.webContents.send("native-capture-helper-exited", { platform, detail });
+		} catch {
+			// webContents already gone; nothing to tell.
+		}
+	}
+}
 
 function detachNativeWindowsCaptureOutputDrain() {
 	nativeWindowsCaptureDrainCleanup?.();
@@ -1397,6 +1428,9 @@ function attachNativeWindowsCaptureOutputDrain(proc: ChildProcessWithoutNullStre
 	proc.on("error", (error) => {
 		console.warn("[native-wgc] helper process error:", error);
 	});
+	proc.once("exit", (code, signal) => {
+		notifyNativeCaptureHelperExit("win32", `code=${code ?? "null"} signal=${signal ?? "null"}`);
+	});
 
 	// Returned so an abandoned helper can be cut loose. A process that survived
 	// both kill attempts keeps writing, and `nativeWindowsCaptureOutput` is
@@ -1504,6 +1538,9 @@ function attachNativeMacCaptureOutputDrain(proc: ChildProcessWithoutNullStreams)
 	proc.stderr.on("data", drain);
 	proc.once("close", cleanup);
 	proc.once("error", cleanup);
+	proc.once("exit", (code, signal) => {
+		notifyNativeCaptureHelperExit("darwin", `code=${code ?? "null"} signal=${signal ?? "null"}`);
+	});
 }
 
 function waitForNativeMacCaptureStart(proc: ChildProcessWithoutNullStreams) {
@@ -2258,6 +2295,7 @@ export function registerIpcHandlers(
 					},
 					maxCursorSamples: MAX_CURSOR_SAMPLES,
 					deferStart: true,
+					onExit: (reason) => notifyNativeCaptureHelperExit("linux", reason),
 				});
 
 				await session.start();
@@ -2341,6 +2379,7 @@ export function registerIpcHandlers(
 							},
 						},
 						maxCursorSamples: MAX_CURSOR_SAMPLES,
+						onExit: (reason) => notifyNativeCaptureHelperExit("linux", reason),
 					});
 
 				console.info("[native-linux] starting capture", {
@@ -3533,6 +3572,66 @@ export function registerIpcHandlers(
 		} catch (error) {
 			console.error("Failed to get video path:", error);
 			return { success: false, message: "Failed to get video path", error: String(error) };
+		}
+	});
+
+	// The moments the user flagged during the capture that just ended, parked
+	// beside the video as `<videoPath>.markers.json`.
+	//
+	// The renderer owns the clock and hands over finished source milliseconds:
+	// `getRecordingDurationMs` is already accumulated-minus-paused, so main would
+	// otherwise need a second copy of the pause bookkeeping in each of the three
+	// native paths, and a marker that disagreed with the file's own clock would
+	// send the user to the wrong frame.
+	ipcMain.handle("write-recording-markers", async (_, videoPath: unknown, markers: unknown) => {
+		if (typeof videoPath !== "string" || !isPathWithinDir(videoPath, RECORDINGS_DIR)) {
+			return { success: false, error: "Refusing to write markers outside the recordings dir." };
+		}
+		try {
+			const count = await writeRecordingMarkers(videoPath, markers);
+			return { success: true, count };
+		} catch (error) {
+			// Never fails the recording: the take is already safe on disk, and
+			// losing the flags is not worth losing the take over.
+			console.warn("[recording-markers] failed to write the sidecar:", error);
+			return { success: false, error: String(error) };
+		}
+	});
+
+	ipcMain.handle("get-recording-markers", async (_, videoPath: unknown) => {
+		if (typeof videoPath !== "string") {
+			return { success: false, markers: [] };
+		}
+		const approved = await approveReadableVideoPath(videoPath);
+		if (!approved) {
+			return { success: false, markers: [] };
+		}
+		return { success: true, markers: await readRecordingMarkers(approved) };
+	});
+
+	// Free space on the recordings volume, asked for right before a recording
+	// starts. None of the three capture helpers watches for a full disk: they
+	// hand frames to their muxer and never inspect a write error, so a volume
+	// that fills mid-take leaves a file truncated wherever the writer was — on
+	// the native path an MP4 with no `moov` box, which opens nowhere. The HUD
+	// warns early and refuses outright when there is not even a usable capture
+	// left to make (`src/lib/recordingDiskSpace.ts` holds the thresholds).
+	ipcMain.handle("get-recordings-disk-space", async () => {
+		try {
+			const stats = await fs.statfs(RECORDINGS_DIR);
+			const blockSize = Number(stats.bsize);
+			// `bavail` is what an unprivileged process may use, which is what
+			// matters here: `bfree` includes the root reserve the recorder can
+			// never touch.
+			const availableBytes = Number(stats.bavail) * blockSize;
+			const totalBytes = Number(stats.blocks) * blockSize;
+			if (!Number.isFinite(availableBytes) || availableBytes < 0) {
+				return { success: false, message: "Filesystem reported no usable free space figure." };
+			}
+			return { success: true, availableBytes, totalBytes };
+		} catch (error) {
+			// Never a recording-blocking failure: the caller reads it as "unknown".
+			return { success: false, message: error instanceof Error ? error.message : String(error) };
 		}
 	});
 

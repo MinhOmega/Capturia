@@ -119,6 +119,22 @@ interface Window {
 			message?: string;
 			error?: string;
 		}>;
+		/**
+		 * Parks the moments flagged during a capture beside the recording. Times
+		 * are SOURCE ms into the file (paused stretches already collapsed out) —
+		 * the renderer's `getRecordingDurationMs` clock.
+		 */
+		writeRecordingMarkers: (
+			videoPath: string,
+			markers: number[],
+		) => Promise<{ success: boolean; count?: number; error?: string }>;
+		getRecordingMarkers: (
+			videoPath: string,
+		) => Promise<{ success: boolean; markers: number[] }>;
+		/** Free space on the recordings volume; see `src/lib/recordingDiskSpace.ts`. */
+		getRecordingsDiskSpace: () => Promise<
+			import("../src/lib/recordingDiskSpace").RecordingDiskSpaceSnapshot
+		>;
 		setRecordingState: (
 			recording: boolean,
 			recordingId?: number,
@@ -261,6 +277,14 @@ interface Window {
 			error?: string;
 		}>;
 		onStopRecordingFromTray: (callback: () => void) => () => void;
+		/**
+		 * A capture helper's process is gone. Fires on EVERY exit, the clean one
+		 * after a stop included — the subscriber decides, because only it knows
+		 * whether it asked for that stop.
+		 */
+		onNativeCaptureHelperExited: (
+			callback: (payload: { platform: string; detail: string }) => void,
+		) => () => void;
 		openExternalUrl: (url: string) => Promise<{ success: boolean; error?: string }>;
 		pickExportSavePath: (
 			fileName: string,

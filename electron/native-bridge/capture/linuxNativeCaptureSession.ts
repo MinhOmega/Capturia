@@ -51,6 +51,16 @@ export interface LinuxCaptureConfig {
 	 * dialog they have not been shown yet.
 	 */
 	deferStart?: boolean;
+	/**
+	 * Called when the helper process is gone, whatever the reason.
+	 *
+	 * The `exit` handler below already builds the reason string, but it can only
+	 * hand it to promises that happen to be pending — and between "capturing"
+	 * and "stop requested" there are none, which is precisely when a helper
+	 * killed by the compositor, an OOM or a portal revoke goes unnoticed and the
+	 * HUD keeps counting against nothing. This is the push the owner needs.
+	 */
+	onExit?: (reason: string) => void;
 }
 
 /** What the portal handed over. `undefined` means the backend did not say. */
@@ -163,6 +173,7 @@ export class LinuxNativeCaptureSession {
 			}
 			this.stoppedResolve = null;
 			this.stoppedReject = null;
+			this.config.onExit?.(reason);
 		});
 		child.once("error", (error) => {
 			this.process = null;

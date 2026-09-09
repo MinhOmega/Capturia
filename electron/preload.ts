@@ -175,6 +175,15 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	getRecordedVideoPath: () => {
 		return ipcRenderer.invoke("get-recorded-video-path");
 	},
+	getRecordingsDiskSpace: () => {
+		return ipcRenderer.invoke("get-recordings-disk-space");
+	},
+	writeRecordingMarkers: (videoPath: string, markers: number[]) => {
+		return ipcRenderer.invoke("write-recording-markers", videoPath, markers);
+	},
+	getRecordingMarkers: (videoPath: string) => {
+		return ipcRenderer.invoke("get-recording-markers", videoPath);
+	},
 	setRecordingState: (
 		recording: boolean,
 		recordingId?: number,
@@ -263,6 +272,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		const listener = () => callback();
 		ipcRenderer.on("stop-recording-from-tray", listener);
 		return () => ipcRenderer.removeListener("stop-recording-from-tray", listener);
+	},
+	onNativeCaptureHelperExited: (
+		callback: (payload: { platform: string; detail: string }) => void,
+	) => {
+		const listener = (_: unknown, payload: { platform: string; detail: string }) =>
+			callback(payload);
+		ipcRenderer.on("native-capture-helper-exited", listener);
+		return () => ipcRenderer.removeListener("native-capture-helper-exited", listener);
 	},
 	openExternalUrl: (url: string) => {
 		return ipcRenderer.invoke("open-external-url", url);

@@ -52,6 +52,7 @@ import { useTimelineTranscriptGate } from "@/lib/ai-edition/store/transcriptionS
 import { useChatPromptBus } from "@/lib/ai-edition/store/useChatPromptBus";
 import { useEditorSettings } from "@/lib/ai-edition/store/useEditorSettings";
 import type { useTimeline } from "@/lib/ai-edition/store/useTimeline";
+import { useRecordingMarkers } from "@/lib/ai-edition/store/useRecordingMarkers";
 import { hasAnyClipWithCamera } from "@/lib/ai-edition/timeline/camera";
 import { formatSec } from "@/lib/ai-edition/timeline/format";
 import {
@@ -747,6 +748,11 @@ export function V4Timeline({
 		}
 		return { step, ticks };
 	}, [total, nav.start, nav.end, pxPerSec]);
+
+	// Moments the user flagged while recording. Positions are derived from source
+	// time on every render of the document, so a marker follows the clip that
+	// carries it through cuts, reorders and retimes instead of going stale.
+	const recordingMarkers = useRecordingMarkers();
 
 	// Live scrub position. The store write behind it is rAF-throttled (see
 	// seekToClientX), so this keeps the playhead and the timecode pinned to the
@@ -2024,6 +2030,19 @@ export function V4Timeline({
 										<span className={styles.tlTickLabel}>{fmtTick(tick.sec, rulerTicks.step)}</span>
 									) : null}
 								</div>
+							))}
+							{recordingMarkers.map((marker) => (
+								<button
+									key={marker.sourceSec}
+									type="button"
+									className={`${styles.tlMarker}${marker.removed ? ` ${styles.tlMarkerRemoved}` : ""}`}
+									style={{ left: `${pctAt(marker.rulerSec)}%` }}
+									title={t("labels.markerAt", { time: formatSec(marker.rulerSec) })}
+									aria-label={t("labels.markerAt", { time: formatSec(marker.rulerSec) })}
+									// Stops the ruler's scrub from starting; a marker is a jump, not a drag.
+									onPointerDown={(event) => event.stopPropagation()}
+									onClick={() => setCurrentTime(marker.rulerSec)}
+								/>
 							))}
 						</div>
 					</div>

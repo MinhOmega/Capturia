@@ -1571,6 +1571,35 @@
 	white-space: nowrap;
 	pointer-events: none;
 }
+/* A moment the user flagged while recording (`<recording>.markers.json`).
+   Anchored to the BOTTOM of the ruler band so it reads as a separate row from
+   the time ticks hanging off the top, and sits above the lanes it points into.
+   A marker whose moment a trim has since cut out is dimmed rather than removed:
+   the flag is still the user's, and hiding it silently would read as a bug. */
+.tlMarker {
+	position: absolute;
+	bottom: 0;
+	width: 2px;
+	height: 12px;
+	margin-left: -1px;
+	border: 0;
+	padding: 0;
+	background: var(--accent, #10b981);
+	cursor: pointer;
+}
+.tlMarker::after {
+	content: "";
+	position: absolute;
+	left: -4px;
+	top: -3px;
+	width: 10px;
+	height: 10px;
+	border-radius: 9999px;
+	background: transparent;
+}
+.tlMarkerRemoved {
+	opacity: 0.35;
+}
 .tlLane {
 	position: relative;
 	height: 24px;

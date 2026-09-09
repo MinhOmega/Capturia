@@ -107,6 +107,8 @@ export function LaunchWindow() {
 		setCursorCaptureMode,
 		softwareEncoderFallbackNoticeVisible,
 		dismissSoftwareEncoderFallbackNotice,
+		addRecordingMarker,
+		markerCount,
 	} = useScreenRecorder();
 
 	// Choosing a device and switching one on are deliberately separate concerns.
@@ -1051,6 +1053,9 @@ export function LaunchWindow() {
 							pauseLabel={paused ? t("tooltips.resumeRecording") : t("tooltips.pauseRecording")}
 							restartLabel={t("tooltips.restartRecording")}
 							cancelLabel={t("tooltips.cancelRecording")}
+							markerLabel={t("tooltips.addMarker")}
+							markerCount={markerCount}
+							onAddMarker={addRecordingMarker}
 							onTogglePause={togglePaused}
 							onRestart={restartRecording}
 							onCancel={cancelRecording}
