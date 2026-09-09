@@ -10,13 +10,26 @@
  * Capture is not one window's job here, so the policy is per media kind rather
  * than per window:
  *
- *  - screen and camera belong to the recorder surfaces — the HUD overlay and the
- *    CLI record runner;
- *  - the microphone additionally belongs to the editor, which records voiceover
- *    audio layers (`AddAudioLayerDialog`), and to the CLI sources runner, which
- *    needs a short-lived grant to read device labels;
+ *  - screen capture belongs to the recorder surfaces alone — the HUD overlay and
+ *    the CLI record runner. It is the grant with the largest blast radius, and
+ *    nothing else asks for a display: the editor's Rec stage is a pre-flight
+ *    that hands the actual recording to the HUD (`electronAPI.startNewRecording`);
+ *  - the camera belongs to those two and to the editor, whose Rec stage shows a
+ *    live webcam preview (`RecStage` -> `useCameraPreviewStream`);
+ *  - the microphone belongs to those three — the editor both records voiceover
+ *    audio layers (`AddAudioLayerDialog`) and meters the mic in the Rec stage —
+ *    and to the CLI sources runner, which needs a short-lived grant to read
+ *    device labels;
  *  - the source selector, the countdown overlay, the notes window and the bench
- *    window never capture anything.
+ *    window never capture anything. The bench renders App's default placeholder,
+ *    not the editor shell.
+ *
+ * Refusing a kind a window does use is not a quiet failure: `getUserMedia`
+ * rejects with `NotAllowedError`, and because device LABELS require a grant,
+ * `enumerateDevices` also starts returning unlabeled entries, so a device picker
+ * degrades to raw device-ID hashes for a user who never opened a preview. The
+ * table in `windowPermissions.test.ts` pins each window against the call sites
+ * that justify it; change one only with the other.
  *
  * A window's identity comes from the FIRST document the main process commits
  * (`did-navigate`), not from `webContents.getURL()` read at request time: a
@@ -38,7 +51,12 @@ export type OpenScreenWindowType =
 	| "cli-sources"
 	| "cli-captions";
 
-const WINDOW_TYPES: ReadonlySet<string> = new Set<OpenScreenWindowType>([
+/**
+ * Every window the main process builds. Exported so the test can assert its
+ * call-site mapping covers all of them: a new window type added here without an
+ * entry there fails the suite rather than silently inheriting "no capture".
+ */
+export const WINDOW_TYPES: ReadonlySet<string> = new Set<OpenScreenWindowType>([
 	"hud-overlay",
 	"editor",
 	"bench",
@@ -70,12 +88,19 @@ const PERMISSION_KINDS: ReadonlyMap<string, CaptureKind> = new Map<string, Captu
 
 /** Windows allowed to hold each capture kind. */
 const CAPTURE_WINDOWS: ReadonlyMap<CaptureKind, ReadonlySet<OpenScreenWindowType>> = new Map([
+	// Nothing outside the two recorder surfaces ever asks for a display.
 	["screen", new Set<OpenScreenWindowType>(["hud-overlay", "cli-record"])],
-	["camera", new Set<OpenScreenWindowType>(["hud-overlay", "cli-record"])],
+	[
+		"camera",
+		// The editor's Rec stage previews the selected webcam before handing the
+		// recording to the HUD, and its camera picker needs the grant for labels.
+		new Set<OpenScreenWindowType>(["hud-overlay", "cli-record", "editor"]),
+	],
 	[
 		"microphone",
-		// The editor records voiceover audio layers; the CLI sources runner needs a
-		// grant before `enumerateDevices` will report device labels.
+		// The editor meters the mic in the Rec stage and records voiceover audio
+		// layers; the CLI sources runner needs a grant before `enumerateDevices`
+		// will report device labels.
 		new Set<OpenScreenWindowType>(["hud-overlay", "cli-record", "cli-sources", "editor"]),
 	],
 ]);
