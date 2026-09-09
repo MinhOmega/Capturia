@@ -2,11 +2,30 @@
 //
 // Ported from main's `src/components/video-editor/timeline/zoomSuggestionUtils.ts`
 // (the legacy editor's "magic wand" auto-zoom) into the ai-edition timeline
-// module. This is NOT an AI feature — it's a deterministic dwell-detector over
-// recorded cursor movement: stretches where the cursor sits still become
-// zoom-in candidates, focused on the average cursor position during the dwell.
+// module. This is NOT an AI feature — it is a deterministic detector over
+// recorded cursor telemetry.
+//
+// It reads TWO kinds of signal, and the distinction is the whole design:
+//
+//   INTERACTIONS (click, drag) are ground truth. The recorder tags the sample
+//   coinciding with a real button press `interactionType: "click"` on every
+//   platform we support — macOS and Windows from their native helpers, Linux
+//   from evdev (see `lib/cursor/cursorCapabilities.ts`). Where the user clicked
+//   is not a guess about where they were looking; it is where they acted.
+//
+//   DWELL is a proxy. Stretches where the cursor sits still become candidates
+//   focused on the average position during the run. It is the only signal
+//   available when telemetry carries positions alone, and it is measurably
+//   noisy: on a real 66s screencast the detector reported 6 of 6 annotated
+//   interest zones but 8 false positives out of 16.
+//
+// So interactions outrank dwell in the ranking, rather than the two competing on
+// an equal footing — a click beats a pause over the same stretch of ruler. When
+// the samples carry no `interactionType` at all (the position-only projection in
+// `readCursorTelemetryFile`), the interaction detectors yield nothing and this
+// degrades exactly to the dwell-only detector it grew from.
 
-import type { CursorTelemetryPoint, ZoomFocus } from "@/components/video-editor/types";
+import type { ZoomDepth, ZoomFocus } from "@/components/video-editor/types";
 import type { AxcutClip } from "../schema";
 
 export const MIN_DWELL_DURATION_MS = 450;
@@ -15,27 +34,89 @@ export const DWELL_MOVE_THRESHOLD = 0.02;
 /** Minimum spacing between two accepted suggestion centres. */
 export const SUGGESTION_SPACING_MS = 1800;
 
+// Holds are tuned for the zoom camera curve (`lib/zoomMath/zoomRegionUtils.ts`):
+// the zoom-in ease starts ~1s before startMs and reaches full magnification
+// shortly after it, and the zoom-out takes ~1s after endMs. A region therefore
+// needs roughly 1.2s to be seen at full zoom at all.
+const CLICK_PRE_ROLL_MS = 220;
+const CLICK_HOLD_MS = 1_600;
+/** Two clicks closer than this are one gesture (a double-click), not two zooms. */
+const CLICK_MIN_GAP_MS = 260;
+
+const DRAG_PRE_ROLL_MS = 120;
+const DRAG_BASE_HOLD_MS = 1_550;
+const DRAG_MAX_EXTRA_HOLD_MS = 2_200;
+const DRAG_DURATION_HOLD_FACTOR = 0.9;
+const DRAG_SPAN_HOLD_FACTOR = 2_000;
+/** Below this the press-drag-release travelled nothing: a click, not a selection. */
+const DRAG_MIN_DIMENSION = 0.008;
+const DRAG_MIN_DURATION_MS = 120;
+
+const MOVEMENT_PRE_ROLL_MS = 120;
+const MOVEMENT_HOLD_MS = 1_200;
+const MOVEMENT_MIN_GAP_MS = 680;
+const MOVEMENT_MIN_DISTANCE = 0.018;
+const MOVEMENT_BASE_SPEED = 0.42;
+const MOVEMENT_PERCENTILE = 0.86;
+/** A movement candidate this close to a real interaction is that interaction's
+ *  own approach stroke — the pointer travelling to the thing it clicked. */
+const MOVEMENT_INTERACTION_GUARD_MS = 360;
+
+/** 500ms of zoom-in overlap plus ~700ms visibly held at full magnification. */
+export const MIN_REGION_DURATION_MS = 1_200;
+
+/** What produced a candidate. Interactions are observations; `dwell` is a guess. */
+export type ZoomCandidateReason = "click" | "selection" | "movement" | "dwell";
+
 export interface ZoomDwellCandidate {
 	centerTimeMs: number;
 	focus: ZoomFocus;
 	strength: number;
 }
 
-function normalizeTelemetrySample(
-	sample: CursorTelemetryPoint,
-	totalMs: number,
-): CursorTelemetryPoint {
+export interface ZoomCandidate extends ZoomDwellCandidate {
+	reason: ZoomCandidateReason;
+	depth: ZoomDepth;
+	/** Set when the signal knows its own extent — a click's hold, a drag's
+	 *  duration. Absent for dwell, which takes `defaultDurationMs`. */
+	spanMs?: { start: number; end: number };
+}
+
+/**
+ * Anything shaped like a recorded cursor sample. `CursorTelemetryPoint` (positions
+ * only) and `CursorRecordingSample` (positions plus interaction type) are both
+ * assignable, which is what lets one detector serve both readers.
+ */
+export interface ZoomSuggestionSample {
+	timeMs: number;
+	cx: number;
+	cy: number;
+	interactionType?: string | null;
+	visible?: boolean;
+}
+
+function clamp01(value: number): number {
+	if (!Number.isFinite(value)) return 0;
+	return Math.max(0, Math.min(1, value));
+}
+
+function isVisible(sample: ZoomSuggestionSample): boolean {
+	return sample.visible !== false;
+}
+
+function normalizeTelemetrySample<T extends ZoomSuggestionSample>(sample: T, totalMs: number): T {
 	return {
+		...sample,
 		timeMs: Math.max(0, Math.min(sample.timeMs, totalMs)),
-		cx: Math.max(0, Math.min(sample.cx, 1)),
-		cy: Math.max(0, Math.min(sample.cy, 1)),
+		cx: clamp01(sample.cx),
+		cy: clamp01(sample.cy),
 	};
 }
 
-export function normalizeCursorTelemetry(
-	telemetry: CursorTelemetryPoint[],
+export function normalizeCursorTelemetry<T extends ZoomSuggestionSample>(
+	telemetry: T[],
 	totalMs: number,
-): CursorTelemetryPoint[] {
+): T[] {
 	return [...telemetry]
 		.filter(
 			(sample) =>
@@ -54,10 +135,10 @@ export function normalizeCursorTelemetry(
  * candidate at all. That is a defensible auto-zoom policy — a nine-second zoom
  * is not a zoom — and an indefensible reporting policy: the moments it drops are
  * precisely the ones a human would name first if asked "where did the pointer
- * sit?". The digest passes `Infinity`; nothing else does.
+ * sit?".
  */
 export function detectZoomDwellCandidates(
-	samples: CursorTelemetryPoint[],
+	samples: ZoomSuggestionSample[],
 	maxDwellDurationMs: number = MAX_DWELL_DURATION_MS,
 ): ZoomDwellCandidate[] {
 	if (samples.length < 2) {
@@ -105,18 +186,231 @@ export function detectZoomDwellCandidates(
 	return dwellCandidates;
 }
 
-export interface AutoZoomSuggestion {
-	span: { start: number; end: number };
-	focus: ZoomFocus;
+function quantile(sortedValues: number[], ratio: number): number {
+	if (sortedValues.length === 0) return 0;
+	const index = Math.floor((sortedValues.length - 1) * clamp01(ratio));
+	return sortedValues[Math.max(0, Math.min(index, sortedValues.length - 1))];
 }
 
 /**
- * Build non-overlapping zoom suggestions from cursor telemetry: detect dwell moments,
- * rank by duration, space by SUGGESTION_SPACING_MS, drop any overlapping an existing
+ * Speed above which a move is "the pointer went somewhere on purpose", in frame
+ * fractions per second. Adaptive rather than fixed: a 4K capture and a laptop
+ * screen produce very different absolute speeds for the same gesture, so the
+ * threshold is the recording's own 86th percentile — floored at a constant so a
+ * recording where the pointer barely moved does not promote its own jitter.
+ */
+function resolveMovementSpeedThreshold(samples: ZoomSuggestionSample[]): number {
+	const speeds: number[] = [];
+	for (let index = 1; index < samples.length; index += 1) {
+		const previous = samples[index - 1];
+		const current = samples[index];
+		if (!isVisible(previous) || !isVisible(current)) continue;
+		const dt = current.timeMs - previous.timeMs;
+		if (dt < 6 || dt > 320) continue;
+		const distance = Math.hypot(current.cx - previous.cx, current.cy - previous.cy);
+		if (distance < 0.0008) continue;
+		speeds.push(distance / (dt / 1_000));
+	}
+
+	if (speeds.length === 0) return MOVEMENT_BASE_SPEED;
+	speeds.sort((left, right) => left - right);
+	return Math.max(MOVEMENT_BASE_SPEED, quantile(speeds, MOVEMENT_PERCENTILE));
+}
+
+function isNearAnyTime(sortedTimes: number[], timeMs: number, windowMs: number): boolean {
+	if (sortedTimes.length === 0) return false;
+	let low = 0;
+	let high = sortedTimes.length;
+	while (low < high) {
+		const mid = (low + high) >> 1;
+		if (sortedTimes[mid] < timeMs) low = mid + 1;
+		else high = mid;
+	}
+	const left = low - 1;
+	if (left >= 0 && Math.abs(sortedTimes[left] - timeMs) < windowMs) return true;
+	if (low < sortedTimes.length && Math.abs(sortedTimes[low] - timeMs) < windowMs) return true;
+	return false;
+}
+
+function spanWithHold(
+	startAnchorMs: number,
+	endAnchorMs: number,
+	preRollMs: number,
+	holdMs: number,
+): { start: number; end: number } {
+	const start = Math.max(0, Math.round(startAnchorMs - preRollMs));
+	const end = Math.max(start + MIN_REGION_DURATION_MS, Math.round(endAnchorMs + holdMs));
+	return { start, end };
+}
+
+/**
+ * Candidates from what the user DID: presses, and press-drag-release selections.
+ *
+ * A drag is derived rather than recorded: the recorder tags the press `click` and
+ * the release `mouseup`, so a selection is the pair plus the path between them.
+ * A pair that travelled less than `DRAG_MIN_DIMENSION` and lasted under
+ * `DRAG_MIN_DURATION_MS` is a plain click that happened to report its release.
+ *
+ * Returns an empty list for position-only telemetry, which is the whole reason
+ * this can sit in front of the dwell detector without changing its behaviour.
+ */
+export function detectInteractionCandidates(samples: ZoomSuggestionSample[]): ZoomCandidate[] {
+	const candidates: ZoomCandidate[] = [];
+	let lastAcceptedAt = Number.NEGATIVE_INFINITY;
+
+	for (let index = 0; index < samples.length; index += 1) {
+		const press = samples[index];
+		if (press.interactionType !== "click" || !isVisible(press)) continue;
+		if (press.timeMs - lastAcceptedAt < CLICK_MIN_GAP_MS) continue;
+
+		// Walk to the matching release, tracking the bounding box of the path. A
+		// press with no release at all (the recording ended mid-drag, or the
+		// platform reports presses only) falls through as a click.
+		let release: ZoomSuggestionSample | null = null;
+		let minX = press.cx;
+		let maxX = press.cx;
+		let minY = press.cy;
+		let maxY = press.cy;
+		for (let scan = index + 1; scan < samples.length; scan += 1) {
+			const sample = samples[scan];
+			if (sample.interactionType === "click") break;
+			minX = Math.min(minX, sample.cx);
+			maxX = Math.max(maxX, sample.cx);
+			minY = Math.min(minY, sample.cy);
+			maxY = Math.max(maxY, sample.cy);
+			if (sample.interactionType === "mouseup") {
+				release = sample;
+				break;
+			}
+		}
+
+		const dragDurationMs = release ? release.timeMs - press.timeMs : 0;
+		const dragSpan = release ? Math.max(maxX - minX, maxY - minY) : 0;
+		const isDrag =
+			release !== null &&
+			(dragSpan >= DRAG_MIN_DIMENSION || dragDurationMs >= DRAG_MIN_DURATION_MS);
+
+		if (isDrag && release) {
+			// Frame the whole selection, not just where the button came up.
+			const focus = { cx: clamp01((minX + maxX) / 2), cy: clamp01((minY + maxY) / 2) };
+			const holdMs = Math.min(
+				DRAG_BASE_HOLD_MS + DRAG_MAX_EXTRA_HOLD_MS,
+				DRAG_BASE_HOLD_MS +
+					dragDurationMs * DRAG_DURATION_HOLD_FACTOR +
+					dragSpan * DRAG_SPAN_HOLD_FACTOR,
+			);
+			candidates.push({
+				centerTimeMs: Math.round((press.timeMs + release.timeMs) / 2),
+				focus,
+				strength: 3.8 + Math.min(1.6, dragSpan * 8),
+				reason: "selection",
+				depth: 3,
+				spanMs: spanWithHold(press.timeMs, release.timeMs, DRAG_PRE_ROLL_MS, holdMs),
+			});
+			lastAcceptedAt = release.timeMs;
+			continue;
+		}
+
+		candidates.push({
+			centerTimeMs: press.timeMs,
+			focus: { cx: clamp01(press.cx), cy: clamp01(press.cy) },
+			strength: 3.2,
+			reason: "click",
+			depth: 3,
+			spanMs: spanWithHold(press.timeMs, press.timeMs, CLICK_PRE_ROLL_MS, CLICK_HOLD_MS),
+		});
+		lastAcceptedAt = press.timeMs;
+	}
+
+	return candidates;
+}
+
+/** Candidates from a deliberate, fast traverse — the pointer being taken somewhere. */
+function detectMovementCandidates(
+	samples: ZoomSuggestionSample[],
+	interactionTimes: number[],
+): ZoomCandidate[] {
+	const threshold = resolveMovementSpeedThreshold(samples);
+	const candidates: ZoomCandidate[] = [];
+	let lastAt = Number.NEGATIVE_INFINITY;
+
+	for (let index = 1; index < samples.length; index += 1) {
+		const previous = samples[index - 1];
+		const current = samples[index];
+		if (!isVisible(previous) || !isVisible(current)) continue;
+
+		const dt = current.timeMs - previous.timeMs;
+		if (dt < 6 || dt > 320) continue;
+
+		const distance = Math.hypot(current.cx - previous.cx, current.cy - previous.cy);
+		if (distance < MOVEMENT_MIN_DISTANCE) continue;
+
+		const speed = distance / (dt / 1_000);
+		if (speed < threshold) continue;
+		if (current.timeMs - lastAt < MOVEMENT_MIN_GAP_MS) continue;
+		if (isNearAnyTime(interactionTimes, current.timeMs, MOVEMENT_INTERACTION_GUARD_MS)) continue;
+
+		candidates.push({
+			centerTimeMs: current.timeMs,
+			focus: { cx: clamp01(current.cx), cy: clamp01(current.cy) },
+			strength: speed,
+			reason: "movement",
+			depth: 2,
+			spanMs: spanWithHold(current.timeMs, current.timeMs, MOVEMENT_PRE_ROLL_MS, MOVEMENT_HOLD_MS),
+		});
+		lastAt = current.timeMs;
+	}
+
+	return candidates;
+}
+
+/**
+ * Every signal, on one comparable scale, ranked highest first.
+ *
+ * The scale matters more than any single detector. Dwell's native strength is a
+ * DURATION in milliseconds (450–2600), so ranking it raw against a click's 3.2
+ * would let any pause outrank every click ever recorded. It is remapped to
+ * 1.0–2.0 — monotonic in run length, so dwells keep their order among themselves,
+ * but strictly below a click (3.2) and a selection (3.8+). That is the intended
+ * policy, not a scaling convenience: an observed interaction should win a
+ * contested stretch of ruler against a guess about where the user was looking.
+ */
+export function detectZoomCandidates(samples: ZoomSuggestionSample[]): ZoomCandidate[] {
+	const interactions = detectInteractionCandidates(samples);
+	const interactionTimes = interactions.map((c) => c.centerTimeMs).sort((a, b) => a - b);
+	const movement = detectMovementCandidates(samples, interactionTimes);
+	const dwell = detectZoomDwellCandidates(samples).map(
+		(candidate): ZoomCandidate => ({
+			...candidate,
+			strength: 1 + Math.min(1, candidate.strength / MAX_DWELL_DURATION_MS),
+			reason: "dwell",
+			depth: 3,
+		}),
+	);
+
+	return [...interactions, ...movement, ...dwell].sort((a, b) => b.strength - a.strength);
+}
+
+export interface AutoZoomSuggestion {
+	span: { start: number; end: number };
+	focus: ZoomFocus;
+	/** Absent for callers that predate per-signal depth; they get the default. */
+	depth?: ZoomDepth;
+	reason?: ZoomCandidateReason;
+}
+
+/**
+ * Build non-overlapping zoom suggestions from cursor telemetry: detect candidates,
+ * rank by strength, space by SUGGESTION_SPACING_MS, drop any overlapping an existing
  * region. Pure, shared by the magic-wand toggle and the on-load auto-suggest pass.
+ *
+ * `existingRegions` is the avoid-list: a candidate landing on one is dropped rather
+ * than carved, because a zoom sliced down to whatever the user left free is no longer
+ * the zoom the signal asked for. Accepted suggestions join the list, so they never
+ * overlap each other either.
  */
 export function buildAutoZoomSuggestions(options: {
-	cursorTelemetry: CursorTelemetryPoint[];
+	cursorTelemetry: ZoomSuggestionSample[];
 	totalMs: number;
 	existingRegions: { startMs: number; endMs: number }[];
 	defaultDurationMs: number;
@@ -136,8 +430,8 @@ export function buildAutoZoomSuggestions(options: {
 		return [];
 	}
 
-	const dwellCandidates = detectZoomDwellCandidates(normalizedSamples);
-	if (dwellCandidates.length === 0) {
+	const sortedCandidates = detectZoomCandidates(normalizedSamples);
+	if (sortedCandidates.length === 0) {
 		return [];
 	}
 
@@ -145,7 +439,6 @@ export function buildAutoZoomSuggestions(options: {
 		.map((region) => ({ start: region.startMs, end: region.endMs }))
 		.sort((a, b) => a.start - b.start);
 
-	const sortedCandidates = [...dwellCandidates].sort((a, b) => b.strength - a.strength);
 	const acceptedCenters: number[] = [];
 	const suggestions: AutoZoomSuggestion[] = [];
 
@@ -157,9 +450,20 @@ export function buildAutoZoomSuggestions(options: {
 			continue;
 		}
 
-		const centeredStart = Math.round(candidate.centerTimeMs - defaultDuration / 2);
-		const candidateStart = Math.max(0, Math.min(centeredStart, totalMs - defaultDuration));
-		const candidateEnd = candidateStart + defaultDuration;
+		// A signal that knows its own extent keeps it — a click's hold and a drag's
+		// duration are the point. Only dwell falls back to the caller's default.
+		const width = candidate.spanMs
+			? Math.min(candidate.spanMs.end - candidate.spanMs.start, totalMs)
+			: defaultDuration;
+		const preferredStart = candidate.spanMs
+			? candidate.spanMs.start
+			: Math.round(candidate.centerTimeMs - width / 2);
+		const candidateStart = Math.max(0, Math.min(preferredStart, totalMs - width));
+		const candidateEnd = candidateStart + width;
+		if (candidateEnd - candidateStart < MIN_REGION_DURATION_MS) {
+			continue;
+		}
+
 		const hasOverlap = reservedSpans.some(
 			(span) => candidateEnd > span.start && candidateStart < span.end,
 		);
@@ -172,6 +476,8 @@ export function buildAutoZoomSuggestions(options: {
 		suggestions.push({
 			span: { start: candidateStart, end: candidateEnd },
 			focus: candidate.focus,
+			depth: candidate.depth,
+			reason: candidate.reason,
 		});
 	}
 
@@ -203,13 +509,21 @@ export function buildAutoZoomSuggestions(options: {
  * user is watching. `existingRegions` is in RAW TIMELINE ms (what the store holds), so it
  * reserves the right stretch of ruler on every clip instead of only on the first.
  *
+ * RAW ms is also what makes the output survive SPEED regions. Speed is a modifier over
+ * the ruler, not geometry baked into it — a raw clip's timeline length equals its source
+ * length whatever speed plays over it (timelineMap.ts) — so a suggestion emitted here
+ * lands on the same frame whether or not the user later speeds that stretch up. Emitting
+ * playback-time (`compressed`) offsets instead would slip every suggestion after the
+ * first speed region, which is the same class of bug the raw/compressed split exists to
+ * prevent. There is one clock convention here, and it is upstream's.
+ *
  * Clips of other assets are skipped, as are clips with no probed source window.
  * `buildAutoZoomSuggestions` is reused verbatim per clip — spacing, ranking and the
  * reserve rule keep their single definition.
  */
 export function buildAutoZoomSuggestionsForClips(options: {
 	/** Samples in the asset's own SOURCE time. */
-	cursorTelemetry: CursorTelemetryPoint[];
+	cursorTelemetry: ZoomSuggestionSample[];
 	assetId: string;
 	clips: AxcutClip[];
 	/** Already-placed zoom spans, in RAW TIMELINE ms. */
@@ -241,7 +555,7 @@ export function buildAutoZoomSuggestionsForClips(options: {
 		});
 		suggestions.push(
 			...clipSuggestions.map((suggestion) => ({
-				focus: suggestion.focus,
+				...suggestion,
 				span: {
 					start: suggestion.span.start + timelineOffsetMs,
 					end: suggestion.span.end + timelineOffsetMs,
