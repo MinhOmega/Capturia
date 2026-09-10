@@ -2,7 +2,12 @@ import { info, warning } from "@actions/core";
 import { context, getOctokit } from "@actions/github";
 
 const ROADMAP_PATTERN = /(^|\/)ROADMAP\.md$|(^|\/)docs\/roadmap\.md$/i;
-const ROADMAP_EMBED_TITLE = "🗺️ OpenScreen Roadmap";
+const ROADMAP_EMBED_TITLE = "🗺️ Capturia Roadmap";
+// The pinned message predates the rename, so a lookup that only matched the
+// current title would miss it and POST a duplicate beside the one already
+// pinned. Matching the old spelling too lets the existing message be found and
+// PATCHed in place; the entry can go once the pin has been retitled by a run.
+const ROADMAP_EMBED_TITLES = [ROADMAP_EMBED_TITLE, "🗺️ OpenScreen Roadmap"];
 
 const botToken = (process.env.DISCORD_BOT_TOKEN || "").trim();
 const channelId = (process.env.DISCORD_ROADMAP_CHANNEL_ID || "").trim();
@@ -31,7 +36,7 @@ async function main() {
 				if (pinRes.ok) {
 					const data = await pinRes.json();
 					const pins = (data.items || []).map((item) => item.message).filter(Boolean);
-					const existing = pins.find((m) => m.embeds?.[0]?.title === ROADMAP_EMBED_TITLE);
+					const existing = pins.find((m) => ROADMAP_EMBED_TITLES.includes(m.embeds?.[0]?.title));
 					if (existing) {
 						existingMessageId = existing.id;
 						info(`Found existing pinned roadmap message ${existingMessageId}.`);
@@ -106,7 +111,13 @@ async function main() {
 
 		// 3. Truncate if it exceeds Discord's embed description limit
 		const rawUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/blob/main/ROADMAP.md`;
-		const truncationNote = `\n\n… *(truncated, see [full file on GitHub](${rawUrl}))*`;
+		// The roadmap is ~3x Discord's 4096-char description limit, so this note is
+		// always shown. It points at the rendered page rather than the raw file:
+		// same content, readable, and it is what the navbar links to as well.
+		// Kept in step with `website/docusaurus.config.ts` by hand — one constant,
+		// and the only thing that moves it is the custom-domain roadmap item.
+		const siteUrl = "https://minhvo.is-a.dev/Capturia/roadmap";
+		const truncationNote = `\n\n… *(truncated, [read the full roadmap](${siteUrl}))*`;
 		const maxContentLength = 4096 - truncationNote.length;
 		let description = content;
 		let truncated = false;
@@ -133,7 +144,7 @@ async function main() {
 			allowed_mentions: { parse: [] },
 		};
 		if (truncated) {
-			payload.content = `⚠️ Roadmap exceeds Discord embed limit; truncated. See the [full file on GitHub](${rawUrl}) for the complete version.`;
+			payload.content = `⚠️ Roadmap exceeds Discord embed limit; truncated. Read the [full roadmap](${siteUrl}) for the complete version.`;
 		}
 
 		// 5. PATCH the existing message, or POST a new one

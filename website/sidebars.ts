@@ -27,7 +27,7 @@ const sidebars: SidebarsConfig = {
 				{
 					type: "link",
 					label: "Roadmap",
-					href: "https://github.com/MinhOmega/Capturia/blob/main/ROADMAP.md",
+					href: "/roadmap",
 				},
 			],
 		},

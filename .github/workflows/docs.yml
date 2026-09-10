@@ -6,11 +6,19 @@ on:
     paths:
       - "website/**"
       - ".github/workflows/docs.yml"
+      # /roadmap imports the repo-root ROADMAP.md at build time. Without this
+      # path the site keeps serving the roadmap as of the last website/** change
+      # and a merge that edits the roadmap alone never reaches the deploy.
+      - "ROADMAP.md"
   push:
     branches: [main]
     paths:
       - "website/**"
       - ".github/workflows/docs.yml"
+      # /roadmap imports the repo-root ROADMAP.md at build time. Without this
+      # path the site keeps serving the roadmap as of the last website/** change
+      # and a merge that edits the roadmap alone never reaches the deploy.
+      - "ROADMAP.md"
   # The /download page resolves the current release's assets at build time so it
   # can link each platform to its actual file. Without a post-release rebuild that
   # data would freeze at whatever the last website/** change saw, and the page
