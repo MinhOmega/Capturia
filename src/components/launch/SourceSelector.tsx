@@ -1,373 +1,200 @@
-import { useState, useEffect, useCallback } from 'react'
-import { Button } from '../ui/button'
-import { MdCheck } from 'react-icons/md'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs'
-import { Card } from '../ui/card'
-import styles from './SourceSelector.module.css'
-import { useI18n } from '@/i18n'
-import { reportUserActionError } from '@/lib/userErrorFeedback'
-import {
-  isScreenCaptureAccessBlocked,
-  type ScreenCaptureAccessStatus,
-} from '@/lib/screenCaptureAccess'
+import { useCallback, useEffect, useState } from "react";
+import { useScopedT } from "@/contexts/I18nContext";
+import { Button } from "../ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
+import styles from "./SourceSelector.module.css";
 
 interface DesktopSource {
-  id: string
-  name: string
-  thumbnail: string | null
-  display_id: string
-  width?: number
-  height?: number
-  appIcon: string | null
+	id: string;
+	name: string;
+	thumbnail: string | null;
+	display_id: string;
+	appIcon: string | null;
 }
 
 export function SourceSelector() {
-  const { t } = useI18n()
-  const [sources, setSources] = useState<DesktopSource[]>([])
-  const [selectedSource, setSelectedSource] = useState<DesktopSource | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [loadFailed, setLoadFailed] = useState(false)
-  const [loadErrorDetail, setLoadErrorDetail] = useState<string>('')
-  const [screenCaptureAccessStatus, setScreenCaptureAccessStatus] =
-    useState<ScreenCaptureAccessStatus>('unknown')
-  const [canOpenSystemSettings, setCanOpenSystemSettings] = useState(false)
+	const t = useScopedT("launch");
+	const tc = useScopedT("common");
+	const [sources, setSources] = useState<DesktopSource[]>([]);
+	const [selectedSource, setSelectedSource] = useState<DesktopSource | null>(null);
+	const [loading, setLoading] = useState(true);
+	const [loadFailed, setLoadFailed] = useState(false);
 
-  const fetchSources = useCallback(async () => {
-    setLoading(true)
-    setLoadFailed(false)
-    setLoadErrorDetail('')
-    let accessStatus: ScreenCaptureAccessStatus = 'unknown'
-    try {
-      try {
-        const statusResult = await window.electronAPI.getScreenCaptureAccessStatus()
-        accessStatus = statusResult.status
-        setScreenCaptureAccessStatus(statusResult.status)
-        setCanOpenSystemSettings(Boolean(statusResult.canOpenSystemSettings))
-      } catch {
-        setScreenCaptureAccessStatus('unknown')
-        setCanOpenSystemSettings(false)
-      }
+	const fetchSources = useCallback(async () => {
+		setLoading(true);
+		setLoadFailed(false);
+		try {
+			const rawSources = await window.electronAPI.getSources({
+				types: ["screen", "window"],
+				thumbnailSize: { width: 320, height: 180 },
+				fetchWindowIcons: true,
+			});
+			setSources(
+				rawSources.map((source) => ({
+					id: source.id,
+					name:
+						source.id.startsWith("window:") && source.name.includes(" — ")
+							? source.name.split(" — ")[1] || source.name
+							: source.name,
+					thumbnail: source.thumbnail,
+					display_id: source.display_id,
+					appIcon: source.appIcon,
+				})),
+			);
+			setSelectedSource((current) =>
+				current && rawSources.some((source) => source.id === current.id) ? current : null,
+			);
+		} catch (error) {
+			console.error("Error loading sources:", error);
+			setSources([]);
+			setSelectedSource(null);
+			setLoadFailed(true);
+		} finally {
+			setLoading(false);
+		}
+	}, []);
 
-      if (isScreenCaptureAccessBlocked(accessStatus)) {
-        setLoadFailed(true)
-        setLoadErrorDetail(t('launch.source.screenPermissionHint'))
-        return
-      }
+	useEffect(() => {
+		void fetchSources();
+	}, [fetchSources]);
 
-      const rawSources = await window.electronAPI.getSources({
-        types: ['screen', 'window'],
-        thumbnailSize: { width: 320, height: 180 },
-        fetchWindowIcons: true,
-      })
-      setSources(
-        rawSources.map((source) => ({
-          id: source.id,
-          name:
-            source.id.startsWith('window:') && source.name.includes(' — ')
-              ? source.name.split(' — ')[1] || source.name
-              : source.name,
-          thumbnail: source.thumbnail,
-          display_id: source.display_id,
-          width: source.width,
-          height: source.height,
-          appIcon: source.appIcon,
-        })),
-      )
-      // Drop a selection that no longer exists after a reload (window closed).
-      setSelectedSource((current) =>
-        current && rawSources.some((source) => source.id === current.id) ? current : null,
-      )
-    } catch (error) {
-      setSources([])
-      setSelectedSource(null)
-      setLoadFailed(true)
-      const fallbackDetail = isScreenCaptureAccessBlocked(accessStatus)
-        ? t('launch.source.screenPermissionHint')
-        : ''
-      const errorDetail = error instanceof Error ? error.message : String(error)
-      setLoadErrorDetail(errorDetail)
-      if (fallbackDetail) {
-        setLoadErrorDetail(errorDetail || fallbackDetail)
-      }
-      if (!isScreenCaptureAccessBlocked(accessStatus)) {
-        reportUserActionError({
-          t,
-          userMessage: t('launch.source.loadFailed'),
-          error,
-          context: 'source-selector.fetch-sources',
-          dedupeKey: 'source-selector.fetch-sources',
-        })
-      }
-    } finally {
-      setLoading(false)
-    }
-  }, [t])
+	const screenSources = sources.filter((s) => s.id.startsWith("screen:"));
+	const windowSources = sources.filter((s) => s.id.startsWith("window:"));
+	const hasNoSources = !loading && sources.length === 0;
 
-  useEffect(() => {
-    void fetchSources()
-  }, [fetchSources])
+	const handleSourceSelect = (source: DesktopSource) => setSelectedSource(source);
+	const handleShare = async () => {
+		if (selectedSource) await window.electronAPI.selectSource(selectedSource);
+	};
 
-  const screenSources = sources.filter((s) => s.id.startsWith('screen:'))
-  const windowSources = sources.filter((s) => s.id.startsWith('window:'))
-  // Enumeration succeeded but returned nothing: typically right after granting
-  // screen recording on macOS, or a display/window race. Distinct from
-  // `loadFailed`, which keeps Capturia's permission UI.
-  const hasNoSources = !loading && !loadFailed && sources.length === 0
+	if (loading) {
+		return (
+			<div
+				className={`h-full flex items-center justify-center ${styles.glassContainer}`}
+				style={{ minHeight: "100vh" }}
+			>
+				<div className="text-center">
+					<div className="animate-spin duration-500 rounded-[50%] h-6 w-6 border-2 border-b-transparent border-[#10b981] mx-auto mb-2" />
+					<p className="text-xs text-[#828c99]">{t("sourceSelector.loading")}</p>
+				</div>
+			</div>
+		);
+	}
 
-  const handleSourceSelect = (source: DesktopSource) => setSelectedSource(source)
-  const handleOpenSystemSettings = async () => {
-    try {
-      const result = await window.electronAPI.openScreenCaptureSettings()
-      if (!result.success) {
-        reportUserActionError({
-          t,
-          userMessage: t('launch.source.openSystemSettingsFailed'),
-          error: result.message || 'openScreenCaptureSettings returned unsuccessful result',
-          context: 'source-selector.open-system-settings',
-          dedupeKey: 'source-selector.open-system-settings',
-        })
-      }
-    } catch (error) {
-      reportUserActionError({
-        t,
-        userMessage: t('launch.source.openSystemSettingsFailed'),
-        error,
-        context: 'source-selector.open-system-settings',
-        dedupeKey: 'source-selector.open-system-settings',
-      })
-    }
-  }
-  const handleOpenPermissionChecker = async () => {
-    try {
-      await window.electronAPI.openPermissionChecker()
-    } catch (error) {
-      reportUserActionError({
-        t,
-        userMessage: t('launch.permission.openSettingsFailed'),
-        error,
-        context: 'source-selector.open-permission-checker',
-        dedupeKey: 'source-selector.open-permission-checker',
-      })
-    }
-  }
-  const handleShare = async () => {
-    if (!selectedSource) {
-      return
-    }
+	if (hasNoSources) {
+		return (
+			<div
+				className={`h-full flex items-center justify-center ${styles.glassContainer}`}
+				style={{ minHeight: "100vh" }}
+			>
+				<div className="max-w-[320px] px-6 text-center">
+					<h2 className="text-sm font-semibold text-[#ffffff]">{t("sourceSelector.emptyTitle")}</h2>
+					<p className="mt-2 text-xs leading-5 text-[#828c99]">
+						{loadFailed
+							? t("sourceSelector.loadFailedDescription")
+							: t("sourceSelector.emptyDescription")}
+					</p>
+					<Button
+						onClick={() => void fetchSources()}
+						className="mt-4 h-8 rounded-[9px] bg-[#10b981] px-5 text-[11px] font-semibold text-[#08090d] transition-transform duration-150 hover:bg-[#10b981]/85 active:scale-95"
+					>
+						{tc("actions.reload")}
+					</Button>
+				</div>
+			</div>
+		);
+	}
 
-    try {
-      await window.electronAPI.selectSource(selectedSource)
-    } catch (error) {
-      reportUserActionError({
-        t,
-        userMessage: t('launch.source.shareFailed'),
-        error,
-        context: 'source-selector.share',
-        details: {
-          sourceId: selectedSource.id,
-          sourceName: selectedSource.name,
-        },
-        dedupeKey: `source-selector.share:${selectedSource.id}`,
-      })
-    }
-  }
+	const renderSourceCard = (source: DesktopSource) => {
+		const isSelected = selectedSource?.id === source.id;
+		const sourceKind = source.id.startsWith("screen:") ? "screen" : "window";
+		return (
+			<button
+				key={source.id}
+				type="button"
+				data-testid="source-selector-card"
+				data-source-kind={sourceKind}
+				className={`${styles.sourceCard} ${isSelected ? styles.selected : ""} flex flex-col text-left`}
+				onClick={() => handleSourceSelect(source)}
+			>
+				<div className={styles.thumb}>
+					<img
+						src={source.thumbnail || ""}
+						alt={source.name}
+						className="w-full h-full object-cover"
+					/>
+				</div>
+				<div className="flex items-center gap-[7px] px-[11px] py-[9px]">
+					{source.appIcon ? (
+						<img src={source.appIcon} alt="" className={styles.icon} />
+					) : (
+						<span className={styles.iconFallback}>
+							<svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor">
+								<circle cx="12" cy="12" r="10" />
+							</svg>
+						</span>
+					)}
+					<div className={`${styles.name} truncate`}>{source.name}</div>
+				</div>
+			</button>
+		);
+	};
 
-  if (loading) {
-    return (
-      <div
-        className={`h-full flex items-center justify-center ${styles.glassContainer}`}
-        style={{ minHeight: '100vh' }}
-      >
-        <div className="text-center">
-          <div
-            data-testid="source-selector-spinner"
-            className="animate-spin duration-500 rounded-[50%] h-6 w-6 border-2 border-b-transparent border-[#34B27B] mx-auto mb-2"
-          />
-          <p className="text-xs text-zinc-400">{t('launch.source.loading')}</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (loadFailed) {
-    const showSystemSettingsAction =
-      canOpenSystemSettings && isScreenCaptureAccessBlocked(screenCaptureAccessStatus)
-    return (
-      <div
-        className={`h-full flex items-center justify-center ${styles.glassContainer}`}
-        style={{ minHeight: '100vh' }}
-      >
-        <div className="text-center px-6">
-          <p className="text-sm text-zinc-100 mb-3">{t('launch.source.loadFailed')}</p>
-          {loadErrorDetail ? (
-            <p className="text-xs text-zinc-400 mb-3 whitespace-pre-wrap break-all max-w-[560px]">
-              {loadErrorDetail}
-            </p>
-          ) : null}
-          <div className="flex items-center justify-center gap-2">
-            {showSystemSettingsAction ? (
-              <Button
-                onClick={() => void handleOpenSystemSettings()}
-                className="bg-zinc-700 text-white hover:bg-zinc-600"
-              >
-                {t('launch.source.openSystemSettings')}
-              </Button>
-            ) : null}
-            <Button
-              onClick={() => void handleOpenPermissionChecker()}
-              className="bg-zinc-700 text-white hover:bg-zinc-600"
-            >
-              {t('launch.source.checkPermissions')}
-            </Button>
-            <Button
-              onClick={() => void fetchSources()}
-              className="bg-[#34B27B] text-white hover:bg-[#34B27B]/85"
-            >
-              {t('launch.source.retry')}
-            </Button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  if (hasNoSources) {
-    return (
-      <div
-        className={`h-full flex items-center justify-center ${styles.glassContainer}`}
-        style={{ minHeight: '100vh' }}
-      >
-        <div className="max-w-[320px] px-6 text-center">
-          <h2 className="text-sm font-semibold text-white">{t('launch.source.emptyTitle')}</h2>
-          <p className="mt-2 text-xs leading-5 text-zinc-400">
-            {t('launch.source.emptyDescription')}
-          </p>
-          <div className="mt-4 flex items-center justify-center gap-2">
-            <Button
-              onClick={() => void handleOpenPermissionChecker()}
-              className="h-8 rounded-lg bg-zinc-700 px-4 text-[11px] text-white hover:bg-zinc-600"
-            >
-              {t('launch.source.checkPermissions')}
-            </Button>
-            <Button
-              data-testid="source-selector-reload-button"
-              onClick={() => void fetchSources()}
-              className="h-8 rounded-lg bg-[#34B27B] px-5 text-[11px] font-semibold text-white transition-transform duration-150 hover:bg-[#34B27B]/85 active:scale-95"
-            >
-              {t('launch.source.reload')}
-            </Button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  const renderSourceCard = (source: DesktopSource) => {
-    const isSelected = selectedSource?.id === source.id
-    const sourceKind = source.id.startsWith('screen:') ? 'screen' : 'window'
-    return (
-      <Card
-        key={source.id}
-        data-testid="source-selector-card"
-        data-source-kind={sourceKind}
-        className={`${styles.sourceCard} ${isSelected ? styles.selected : ''} cursor-pointer h-fit p-2 scale-95`}
-        style={{ margin: 8, width: '90%', maxWidth: 220 }}
-        onClick={() => handleSourceSelect(source)}
-      >
-        <div className="p-1">
-          <div className="relative mb-1 overflow-hidden rounded-lg border border-white/[0.06] bg-black/30">
-            <img
-              src={source.thumbnail || ''}
-              alt={source.name}
-              className="w-full aspect-video object-cover"
-            />
-            {isSelected && (
-              <div className="absolute right-1.5 top-1.5">
-                <div className={styles.checkBadge}>
-                  <MdCheck size={11} className="text-white" />
-                </div>
-              </div>
-            )}
-          </div>
-          <div className="flex items-center gap-1">
-            {source.appIcon && (
-              <img
-                src={source.appIcon}
-                alt={t('launch.source.appIcon')}
-                className={styles.icon + ' flex-shrink-0'}
-              />
-            )}
-            <div className={styles.name + ' truncate'}>{source.name}</div>
-          </div>
-        </div>
-      </Card>
-    )
-  }
-
-  const tabTriggerClassName =
-    'data-[state=active]:bg-[#34B27B] data-[state=active]:text-white text-zinc-200 rounded-full text-xs py-1'
-
-  return (
-    <div
-      className={`min-h-screen flex flex-col items-center justify-center ${styles.glassContainer}`}
-    >
-      <div className="flex-1 flex flex-col w-full max-w-xl" style={{ padding: 0 }}>
-        {/* A window-only enumeration (no screen sources) lands on the Windows tab. */}
-        <Tabs defaultValue={screenSources.length === 0 ? 'windows' : 'screens'}>
-          <TabsList className="grid grid-cols-2 mb-3 bg-zinc-900/40 rounded-full">
-            <TabsTrigger
-              value="screens"
-              data-testid="source-selector-screens-tab"
-              className={tabTriggerClassName}
-            >
-              {t('launch.source.screensCount', { count: screenSources.length })}
-            </TabsTrigger>
-            <TabsTrigger
-              value="windows"
-              data-testid="source-selector-windows-tab"
-              className={tabTriggerClassName}
-            >
-              {t('launch.source.windowsCount', { count: windowSources.length })}
-            </TabsTrigger>
-          </TabsList>
-          <div className="h-72 flex flex-col justify-stretch">
-            <TabsContent value="screens" className="h-full">
-              <div
-                className={`grid grid-cols-2 gap-2 h-full overflow-y-auto pr-1 relative ${styles.sourceGridScroll}`}
-              >
-                {screenSources.map(renderSourceCard)}
-              </div>
-            </TabsContent>
-            <TabsContent value="windows" className="h-full">
-              <div
-                className={`grid grid-cols-2 gap-2 h-full overflow-y-auto pr-1 relative ${styles.sourceGridScroll}`}
-              >
-                {windowSources.map(renderSourceCard)}
-              </div>
-            </TabsContent>
-          </div>
-        </Tabs>
-      </div>
-      <div className="border-t border-zinc-800 p-2 w-full max-w-xl">
-        <div className="flex justify-center gap-2">
-          <Button
-            data-testid="source-selector-cancel-button"
-            variant="outline"
-            onClick={() => window.close()}
-            className="px-4 py-1 text-xs bg-zinc-800 border-zinc-700 text-zinc-200 hover:bg-zinc-700"
-          >
-            {t('launch.source.cancel')}
-          </Button>
-          <Button
-            data-testid="source-selector-share-button"
-            onClick={handleShare}
-            disabled={!selectedSource}
-            className="px-4 py-1 text-xs bg-[#34B27B] text-white hover:bg-[#34B27B]/80 disabled:opacity-50 disabled:bg-zinc-700"
-          >
-            {t('launch.source.share')}
-          </Button>
-        </div>
-      </div>
-    </div>
-  )
+	return (
+		<div className={`h-screen flex flex-col ${styles.glassContainer}`}>
+			<Tabs
+				defaultValue={screenSources.length === 0 ? "windows" : "screens"}
+				className="flex-1 flex flex-col min-h-0"
+			>
+				<TabsList className="flex items-center gap-1.5 h-auto p-3.5 rounded-none bg-transparent border-b border-[#191d24] flex-shrink-0">
+					<TabsTrigger
+						value="screens"
+						className="flex-1 h-10 rounded-[11px] text-[13.5px] font-medium text-[#828c99] border border-transparent transition-all data-[state=active]:bg-[#232830] data-[state=active]:border-[#333a45] data-[state=active]:text-[#ffffff] data-[state=active]:font-semibold data-[state=active]:shadow-none"
+					>
+						{t("sourceSelector.screens", { count: String(screenSources.length) })}
+					</TabsTrigger>
+					<TabsTrigger
+						value="windows"
+						className="flex-1 h-10 rounded-[11px] text-[13.5px] font-medium text-[#828c99] border border-transparent transition-all data-[state=active]:bg-[#232830] data-[state=active]:border-[#333a45] data-[state=active]:text-[#ffffff] data-[state=active]:font-semibold data-[state=active]:shadow-none"
+					>
+						{t("sourceSelector.windows", { count: String(windowSources.length) })}
+					</TabsTrigger>
+				</TabsList>
+				<div className="flex-1 min-h-0 px-[18px] pt-[18px] pb-1.5">
+					<TabsContent value="screens" className="h-full mt-0">
+						<div
+							className={`grid h-full auto-rows-min grid-cols-2 gap-3.5 overflow-y-auto pr-1.5 ${styles.sourceGridScroll}`}
+						>
+							{screenSources.map(renderSourceCard)}
+						</div>
+					</TabsContent>
+					<TabsContent value="windows" className="h-full mt-0">
+						<div
+							className={`grid h-full auto-rows-min grid-cols-2 gap-3.5 overflow-y-auto pr-1.5 ${styles.sourceGridScroll}`}
+						>
+							{windowSources.map(renderSourceCard)}
+						</div>
+					</TabsContent>
+				</div>
+			</Tabs>
+			<div className="flex justify-end gap-2.5 border-t border-[#191d24] px-[18px] py-4">
+				<Button
+					data-testid="source-selector-cancel-button"
+					variant="ghost"
+					onClick={() => window.close()}
+					className="h-9 rounded-[9px] border border-[#333a45] px-4 text-[13px] font-medium text-[#f5f7fa] transition-colors duration-150 hover:bg-[#1a1e25] hover:text-[#f5f7fa]"
+				>
+					{tc("actions.cancel")}
+				</Button>
+				<Button
+					data-testid="source-selector-share-button"
+					onClick={handleShare}
+					disabled={!selectedSource}
+					className="h-9 rounded-[9px] bg-[#10b981] px-5 text-[13px] font-semibold text-[#08090d] transition-transform duration-150 hover:bg-[#10b981]/85 active:scale-95 disabled:bg-[#232830] disabled:border disabled:border-[#242932] disabled:text-[#565f6b] disabled:opacity-100"
+				>
+					{tc("actions.share")}
+				</Button>
+			</div>
+		</div>
+	);
 }

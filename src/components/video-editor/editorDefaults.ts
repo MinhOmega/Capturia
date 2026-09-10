@@ -1,91 +1,99 @@
-import type { ExportFormat, ExportQuality, GifFrameRate, GifSizePreset } from '@/lib/exporter/types'
-import type { AspectRatio } from '@/utils/aspectRatioUtils'
-import { DEFAULT_CROP_REGION, type CropRegion } from './types'
-
-/**
- * Single source of truth for the editor's initial values (the `useState`
- * initialisers in VideoEditor, project-file fallbacks and user preferences
- * should all read from here). Slimmed to Capturia's ProjectState fields.
- */
+import { DEFAULT_CURSOR_THEME_ID } from "@/lib/cursor/cursorThemes";
+import type { ExportFormat, ExportQuality, GifFrameRate, GifSizePreset } from "@/lib/exporter";
+import { DEFAULT_WALLPAPER } from "@/lib/wallpaper";
+import type { AspectRatio } from "@/utils/aspectRatioUtils";
+import {
+	type CursorVisualSettings,
+	DEFAULT_CROP_REGION,
+	DEFAULT_CURSOR_CLICK_BOUNCE,
+	DEFAULT_CURSOR_CLIP_TO_BOUNDS,
+	DEFAULT_CURSOR_MOTION_BLUR,
+	DEFAULT_CURSOR_SIZE,
+	DEFAULT_CURSOR_SMOOTHING,
+	DEFAULT_WEBCAM_LAYOUT_PRESET,
+	DEFAULT_WEBCAM_MASK_SHAPE,
+	DEFAULT_WEBCAM_POSITION,
+	DEFAULT_WEBCAM_SIZE_PRESET,
+	type WebcamLayoutPreset,
+	type WebcamMaskShape,
+	type WebcamPosition,
+	type WebcamSizePreset,
+} from "./types";
 
 export const DEFAULT_SOURCE_DIMENSIONS = {
-  width: 1920,
-  height: 1080,
-} as const
+	width: 1920,
+	height: 1080,
+} as const;
 
-export const WALLPAPER_COUNT = 18
-
-/** Canonical (unresolved) wallpaper path; resolved via getAssetPath at render time. */
-export const DEFAULT_WALLPAPER = '/wallpapers/wallpaper1.jpg'
+export const DEFAULT_GIF_OUTPUT_DIMENSIONS = {
+	width: 1280,
+	height: 720,
+} as const;
 
 export const DEFAULT_EDITOR_APPEARANCE_SETTINGS: {
-  shadowIntensity: number
-  showBlur: boolean
-  /** Zoom motion blur amount 0..1; 0 = off. */
-  motionBlurAmount: number
-  borderRadius: number
+	shadowIntensity: number;
+	showBlur: boolean;
+	motionBlurAmount: number;
+	borderRadius: number;
 } = {
-  shadowIntensity: 0,
-  showBlur: false,
-  motionBlurAmount: 0,
-  borderRadius: 0,
-}
+	// Keep in sync with `DEFAULT_EDITOR_SETTINGS` (lib/ai-edition/store/editorSettings.ts),
+	// which is what the mounted v4 shell reads — see the rationale there.
+	shadowIntensity: 0.2,
+	showBlur: false,
+	motionBlurAmount: 0.2,
+	borderRadius: 40,
+};
 
 export const DEFAULT_EDITOR_LAYOUT_SETTINGS: {
-  padding: number
-  aspectRatio: AspectRatio
-  cropRegion: CropRegion
-  wallpaper: string
+	padding: number;
+	aspectRatio: AspectRatio;
+	cropRegion: typeof DEFAULT_CROP_REGION;
+	wallpaper: string;
 } = {
-  padding: 50,
-  aspectRatio: '16:9',
-  cropRegion: DEFAULT_CROP_REGION,
-  wallpaper: DEFAULT_WALLPAPER,
-}
+	padding: 50,
+	aspectRatio: "16:9",
+	cropRegion: DEFAULT_CROP_REGION,
+	wallpaper: DEFAULT_WALLPAPER,
+};
+
+export const DEFAULT_WEBCAM_SETTINGS = {
+	layoutPreset: DEFAULT_WEBCAM_LAYOUT_PRESET,
+	maskShape: DEFAULT_WEBCAM_MASK_SHAPE,
+	sizePreset: DEFAULT_WEBCAM_SIZE_PRESET,
+	position: DEFAULT_WEBCAM_POSITION,
+} as const satisfies {
+	layoutPreset: WebcamLayoutPreset;
+	maskShape: WebcamMaskShape;
+	sizePreset: WebcamSizePreset;
+	position: WebcamPosition | null;
+};
+
+export const DEFAULT_CURSOR_SETTINGS: CursorVisualSettings & { show: boolean; theme: string } = {
+	show: true,
+	size: DEFAULT_CURSOR_SIZE,
+	smoothing: DEFAULT_CURSOR_SMOOTHING,
+	motionBlur: DEFAULT_CURSOR_MOTION_BLUR,
+	clickBounce: DEFAULT_CURSOR_CLICK_BOUNCE,
+	clipToBounds: DEFAULT_CURSOR_CLIP_TO_BOUNDS,
+	theme: DEFAULT_CURSOR_THEME_ID,
+};
 
 export const DEFAULT_EXPORT_SETTINGS: {
-  quality: ExportQuality
-  format: ExportFormat
+	quality: ExportQuality;
+	format: ExportFormat;
 } = {
-  quality: 'source',
-  format: 'mp4',
-}
+	quality: "good",
+	format: "mp4",
+};
 
 export const DEFAULT_GIF_SETTINGS: {
-  frameRate: GifFrameRate
-  loop: boolean
-  sizePreset: GifSizePreset
+	frameRate: GifFrameRate;
+	loop: boolean;
+	sizePreset: GifSizePreset;
+	outputDimensions: typeof DEFAULT_GIF_OUTPUT_DIMENSIONS;
 } = {
-  frameRate: 15,
-  loop: true,
-  sizePreset: 'medium',
-}
-
-export const DEFAULT_AUDIO_SETTINGS: {
-  enabled: boolean
-  gain: number
-  normalizeLoudness: boolean
-  targetLufs: number
-  limiterDb: number
-} = {
-  enabled: true,
-  gain: 1,
-  normalizeLoudness: true,
-  targetLufs: -16,
-  limiterDb: -1,
-}
-
-export const DEFAULT_TIMELINE_SETTINGS: {
-  /** Waveform decoding costs a full audio decode; off until the user opts in. */
-  showWaveform: boolean
-} = {
-  showWaveform: false,
-}
-
-export const DEFAULT_PLAYBACK_SETTINGS: {
-  seekStepSeconds: number
-  previewPlaybackRate: number
-} = {
-  seekStepSeconds: 5,
-  previewPlaybackRate: 1,
-}
+	frameRate: 15,
+	loop: true,
+	sizePreset: "medium",
+	outputDimensions: DEFAULT_GIF_OUTPUT_DIMENSIONS,
+};

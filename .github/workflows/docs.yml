@@ -1,0 +1,106 @@
+name: Docs
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "website/**"
+      - ".github/workflows/docs.yml"
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+      - ".github/workflows/docs.yml"
+  # The /download page resolves the current release's assets at build time so it
+  # can link each platform to its actual file. Without a post-release rebuild that
+  # data would freeze at whatever the last website/** change saw, and the page
+  # would keep serving the previous version's binaries after every release.
+  #
+  # That rebuild is a `workflow_dispatch` fired by build.yml once the release is
+  # published, NOT an `on: release` trigger. A release event runs with
+  # github.ref = refs/tags/vX.Y.Z, and the github-pages environment only allows
+  # `main` to deploy, so the deploy job failed on every stable release (it never
+  # surfaced earlier because pre-releases skipped the build entirely). Dispatching
+  # against main both satisfies that policy and publishes main's docs rather than
+  # the release branch's older snapshot.
+  workflow_dispatch:
+
+# Cancel in-flight runs on the same ref so fast follow-up pushes
+# don't queue stale builds.
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - name: Install dependencies
+        working-directory: website
+        run: npm ci
+      - name: Type-check
+        working-directory: website
+        run: npm run typecheck
+      # The walkthrough's clips and stills are committed to this repo, which has
+      # no LFS filter — their size is permanent, so a budget that lives only in a
+      # design note drifts on the first re-cut. This also fails any clip encoded
+      # with an audio track, which iOS Safari refuses to autoplay without a
+      # gesture even when the element is muted.
+      - name: Check media budget
+        working-directory: website
+        run: npm run check:media
+      # The recreation's data is generated from the app's own source and a
+      # vendored project document. It is committed, so it can go stale in either
+      # direction — a locale key moves, a timeline constant changes — and the
+      # page would then be showing numbers the application no longer produces.
+      # The generator compares its own output byte for byte, which is why the
+      # formatter is told to leave that one file alone (biome.json).
+      - name: Check recreation data
+        working-directory: website
+        run: npm run check:recreation
+      - name: Build
+        working-directory: website
+        run: npm run build
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: website/build
+          # v4 stopped bundling dotfiles by default. Nothing in website/build
+          # is hidden today — the deployed artifact from 7c4827b9 was checked
+          # and contains no dot-entries at all, so this changes nothing now
+          # (Docusaurus only writes a `.nojekyll` on its own `deploy` command,
+          # not in a plain `build`). It is set so that stays true by accident
+          # rather than by omission: a `.well-known/` for domain verification
+          # or security.txt is the realistic case, and under the v4+ default it
+          # would vanish from the deploy silently. `.git` and `.github` are
+          # excluded regardless of this flag.
+          include-hidden-files: true
+
+  deploy:
+    name: Deploy to GitHub Pages
+    runs-on: ubuntu-latest
+    needs: build
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0

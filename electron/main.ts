@@ -1,120 +1,120 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
-  app,
-  BrowserWindow,
-  Tray,
-  Menu,
-  nativeImage,
-  session,
-  desktopCapturer,
-  globalShortcut,
-  ipcMain,
-  dialog,
-  shell,
-  protocol,
-  clipboard,
-  net,
-} from 'electron'
-import { fileURLToPath } from 'node:url'
-import path from 'node:path'
-import os from 'node:os'
-import fs from 'node:fs/promises'
-import { readFileSync, statSync, openSync, readSync, closeSync } from 'node:fs'
+	app,
+	BrowserWindow,
+	clipboard,
+	dialog,
+	ipcMain,
+	Menu,
+	nativeImage,
+	net,
+	session,
+	shell,
+	systemPreferences,
+	Tray,
+} from "electron";
+import { ShortcutBinding } from "../src/lib/shortcuts";
 import {
-  createHudOverlayWindow,
-  createEditorWindow,
-  createSourceSelectorWindow,
-  createPermissionCheckerWindow,
-  getPermissionCheckerWindow,
-  createCountdownOverlayWindow,
-  createNotesWindow,
-  getHudOverlayWindow,
-  HEADLESS,
-} from './windows'
-import { registerIpcHandlers } from './ipc/handlers'
-import { getRecordingsDir } from './paths'
+	type AboutFacts,
+	COPYRIGHT,
+	formatAboutDetail,
+	PRODUCT_NAME,
+	usesNativeAboutPanel,
+} from "./about";
 import {
-  approveFilePath,
-  isReadablePathAllowed,
-  localMediaUrlToPath,
-  normalizeExternalUrl,
-} from './ipc/paths'
-import { shouldSwallowMainProcessError } from './main-process-errors'
-import { checkLatestRelease } from './update-checker'
+	blockedFromInstalling,
+	checkForSelfUpdate,
+	downloadSelfUpdate,
+	installSelfUpdate,
+	type UpdateOutcome,
+} from "./auto-updater";
 import {
-  type AutoUpdaterController,
-  availableDialogAction,
-  createAutoUpdater,
-  downloadedDialogAction,
-  getUpdaterEligibility,
-  parseUpdatePreferences,
-  serializeUpdatePreferences,
-  shouldRunLaunchCheck,
-  UPDATE_PREFERENCES_FILE_NAME,
-  type UpdateErrorKind,
-  type UpdateProgressEvent,
-} from './auto-updater'
-import { scheduleRecordingsCleanup } from './recordingsCleanup'
-import { buildIssueReportUrl, GITHUB_ISSUES_URL } from '../src/lib/supportLinks'
-import { getMainLocale, mainT, setMainLocale } from './i18n'
-import { mainLogBuffer } from './diagnostics/main-log-buffer'
-import { getInstallChannel, offersUpdateCheck } from './install-channel'
-import { buildTrayMenuTemplate } from './tray-menu'
+	BACKGROUND_UPDATE_INTERVAL_MS,
+	planBackgroundUpdate,
+	runUnblockedDownloadAndInstall,
+	shouldStartBackgroundUpdateTimer,
+	type UpdateMode,
+} from "./background-update";
+import { parseCliArgs } from "./cli/args";
+import { runCli } from "./cli/cliMain";
+import { isDiagnosticModeEnabled, mainLogBuffer } from "./diagnostics/main-log-buffer";
+import { buildEditMenuSubmenu, type EditorUndoRedoChannel, routeEditorUndoRedo } from "./edit-menu";
 import {
-  type AboutFacts,
-  COPYRIGHT,
-  formatAboutDetail,
-  PRODUCT_NAME,
-  usesNativeAboutPanel,
-} from './about'
-import { buildEditMenuSubmenu, type EditorUndoRedoChannel, routeEditorUndoRedo } from './edit-menu'
+	loadAndRegisterGlobalShortcut,
+	registerOpenAppShortcut,
+	unregisterAllGlobalShortcuts,
+} from "./globalShortcut";
+import { mainT, setMainLocale } from "./i18n";
 import {
-  acceleratorToBinding,
-  GLOBAL_SHORTCUT_ACTIONS,
-  type GlobalShortcutAction,
-  GlobalShortcutManager,
-  isGlobalBindingAllowed,
-  persistStoredGlobalBinding,
-  readStoredGlobalBindings,
-  SHORTCUTS_FILE_NAME,
-} from './globalShortcut'
-import type { ShortcutBinding } from '../src/lib/shortcuts'
+	getInstallChannel,
+	offersUpdateCheck,
+	ownsItsUpdates,
+	platformOwnsUpdates,
+} from "./install-channel";
+import {
+	exportDiagnosticFile,
+	getSelectedDesktopSource,
+	registerIpcHandlers,
+} from "./ipc/handlers";
+import { installMainProcessErrorGuards } from "./main-process-errors";
+import { normalizeExternalUrl } from "./navigationPolicy";
+import { scheduleRecordingsCleanup } from "./recordingsCleanup";
+import { installNavigationPolicy, installPermissionPolicy } from "./securityPolicy";
+import { registerSttIpc, shutdownStt } from "./stt";
+import { checkLatestRelease } from "./update-checker";
+import { loadUpdateMode, saveUpdateMode } from "./update-settings";
+import {
+	createCountdownOverlayWindow,
+	createEditorWindow,
+	createHudOverlayWindow,
+	createNotesWindow,
+	createSourceSelectorWindow,
+} from "./windows";
 
-// Capture main-process console output from the very first line so a runtime
-// error dialog / "Save diagnostics" report can include what led up to it.
-mainLogBuffer.install()
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const LINUX_SESSION_TYPE = (process.env['XDG_SESSION_TYPE'] || '').toLowerCase()
-const IS_LINUX_WAYLAND = process.platform === 'linux' && LINUX_SESSION_TYPE === 'wayland'
+// CLI mode: `openscreen export|record|info|help ...` runs headless without
+// HUD/tray/menu. Parsed before any GUI side effects; see electron/cli/.
+const cliCommand = parseCliArgs(process.argv, app.isPackaged ? 1 : 2);
 
-if (IS_LINUX_WAYLAND) {
-  // Electron 39 can hard-crash on some Ubuntu Wayland GPU stacks during
-  // startup. Use software rendering so the app launches reliably.
-  app.disableHardwareAcceleration()
-  app.commandLine.appendSwitch('disable-gpu')
-  app.commandLine.appendSwitch('disable-gpu-compositing')
+// Use Screen & System Audio Recording permissions instead of the CoreAudio Tap API on macOS.
+// Tap needs NSAudioCaptureUsageDescription in the parent app's Info.plist, which breaks when
+// running from a terminal/IDE during dev.
+if (process.platform === "darwin") {
+	app.commandLine.appendSwitch("disable-features", "MacCatapLoopbackAudioForScreenShare");
 }
 
-if (process.platform === 'darwin') {
-  // A `getDisplayMedia({ audio: true })` request on macOS otherwise goes through the
-  // CoreAudio tap API, which needs an audio-capture usage string in the *host*
-  // process's Info.plist: absent when running from a terminal or IDE in dev, the
-  // renderer crashes. Route the request through the Screen & System Audio
-  // Recording permission instead (system audio on macOS is the native helper's job).
-  app.commandLine.appendSwitch('disable-features', 'MacCatapLoopbackAudioForScreenShare')
+// Wayland support for screen capture and window management on Wayland compositors.
+if (process.platform === "linux") {
+	const isWayland =
+		process.env.XDG_SESSION_TYPE === "wayland" || process.env.WAYLAND_DISPLAY !== undefined;
+	if (isWayland) {
+		app.commandLine.appendSwitch("ozone-platform", "wayland");
+		// Enable WebRTCPipeWireCapturer for screen capture on Wayland
+		app.commandLine.appendSwitch("enable-features", "WaylandWindowDrag,WebRTCPipeWireCapturer");
+		// Chromium's Wayland Ozone backend can't use Vulkan. When it tries, the WebRTC
+		// PipeWire capturer fails to import DMA-BUF frames into EGL (EGL_BAD_MATCH), the
+		// stream renegotiates, and screen recording yields no usable frames. Force the
+		// GL/EGL path so DMA-BUF import works. (Chromium itself logs this suggestion:
+		// "'--ozone-platform=wayland' is not compatible with Vulkan ... disabling Vulkan".)
+		app.commandLine.appendSwitch("disable-features", "Vulkan");
+	}
 }
 
-// Resolved once at startup; `electron/paths.ts` owns the layout (lazy, testable).
-const RECORDINGS_DIR = getRecordingsDir()
+installMainProcessErrorGuards();
+
+export const RECORDINGS_DIR = path.join(app.getPath("userData"), "recordings");
 
 async function ensureRecordingsDir() {
-  try {
-    await fs.mkdir(RECORDINGS_DIR, { recursive: true })
-    console.log('RECORDINGS_DIR:', RECORDINGS_DIR)
-    console.log('User Data Path:', app.getPath('userData'))
-  } catch (error) {
-    console.error('Failed to create recordings directory:', error)
-  }
+	try {
+		await fs.mkdir(RECORDINGS_DIR, { recursive: true });
+		console.log("RECORDINGS_DIR:", RECORDINGS_DIR);
+		console.log("User Data Path:", app.getPath("userData"));
+	} catch (error) {
+		console.error("Failed to create recordings directory:", error);
+	}
 }
 
 // The built directory structure
@@ -126,1532 +126,1208 @@ async function ensureRecordingsDir() {
 // │ │ ├── main.js
 // │ │ └── preload.mjs
 // │
-process.env.APP_ROOT = path.join(__dirname, '..')
+process.env.APP_ROOT = path.join(__dirname, "..");
 
 // Use ['ENV_NAME'] avoid vite:define plugin - Vite@2.x
-export const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL']
-export const MAIN_DIST = path.join(process.env.APP_ROOT, 'dist-electron')
-export const RENDERER_DIST = path.join(process.env.APP_ROOT, 'dist')
+export const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
+export const MAIN_DIST = path.join(process.env.APP_ROOT, "dist-electron");
+export const RENDERER_DIST = path.join(process.env.APP_ROOT, "dist");
 
 process.env.VITE_PUBLIC = VITE_DEV_SERVER_URL
-  ? path.join(process.env.APP_ROOT, 'public')
-  : RENDERER_DIST
+	? path.join(process.env.APP_ROOT, "public")
+	: RENDERER_DIST;
 
 // Window references
-let mainWindow: BrowserWindow | null = null
-let sourceSelectorWindow: BrowserWindow | null = null
-let permissionCheckerWindow: BrowserWindow | null = null
-let countdownOverlayWindow: BrowserWindow | null = null
-let notesWindow: BrowserWindow | null = null
-let tray: Tray | null = null
-let selectedSourceName = ''
-let selectedDesktopSourceId: string | null = null
-let recordingActive = false
-let shutdownInProgress = false
-let shutdownFinished = false
-let ipcRuntime: { shutdown: () => Promise<void> } | null = null
-let runtimeErrorDialogOpen = false
-
-// Register custom protocol for serving local media files to the renderer.
-// In dev mode the renderer runs on http://localhost, which makes file:// URLs
-// cross-origin. Electron 39 blocks cross-origin media loads even with
-// webSecurity: false, so we serve files through a custom scheme instead.
-protocol.registerSchemesAsPrivileged([
-  {
-    scheme: 'local-media',
-    privileges: {
-      stream: true,
-      bypassCSP: true,
-      supportFetchAPI: true,
-      standard: true,
-      secure: true,
-      // The exporter's decoder loads a recording in CORS mode so the frames it
-      // reads are not tainted; without this the scheme refuses such a request
-      // outright and the media element reports a format error.
-      corsEnabled: true,
-    },
-  },
-])
-
-const isMac = process.platform === 'darwin'
-// macOS menu bar icons are 16pt; other trays expect 24px.
-const trayIconSize = isMac ? 16 : 24
+let mainWindow: BrowserWindow | null = null;
+let sourceSelectorWindow: BrowserWindow | null = null;
+let countdownOverlayWindow: BrowserWindow | null = null;
+let notesWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
+let selectedSourceName = "";
+const isMac = process.platform === "darwin";
+const trayIconSize = isMac ? 16 : 24;
 
 // Tray Icons
-const defaultTrayIcon = getTrayIcon('capturia.png', trayIconSize)
-const recordingTrayIcon = getTrayIcon('rec-button.png', trayIconSize)
+const defaultTrayIcon = getTrayIcon("openscreen.png", trayIconSize);
+const recordingTrayIcon = getTrayIcon("rec-button.png", trayIconSize);
 
 function createWindow() {
-  // Guard against duplicate HUDs (activate + tray + second-instance can race).
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    return
-  }
-  mainWindow = createHudOverlayWindow()
+	if (mainWindow && !mainWindow.isDestroyed()) {
+		return;
+	}
+
+	mainWindow = createHudOverlayWindow();
+}
+
+function showMainWindow() {
+	if (mainWindow && !mainWindow.isDestroyed()) {
+		if (mainWindow.isMinimized()) {
+			mainWindow.restore();
+		}
+		mainWindow.show();
+		mainWindow.focus();
+		return;
+	}
+
+	createWindow();
+}
+
+// Ahead of the CLI/GUI split and of `whenReady` on purpose: this is the one
+// place every window in either boot path passes through, so no window can exist
+// before the navigation guard is attached to it.
+installNavigationPolicy();
+
+// CLI runs skip the single-instance lock so `openscreen export/record` works
+// while the GUI app is open (they share nothing but the recordings directory).
+const hasSingleInstanceLock = cliCommand ? false : app.requestSingleInstanceLock();
+
+if (cliCommand) {
+	runCli(cliCommand);
+} else if (hasSingleInstanceLock) {
+	app.on("second-instance", () => {
+		showMainWindow();
+	});
+} else {
+	app.quit();
+}
+
+function isEditorWindow(window: BrowserWindow) {
+	return window.webContents.getURL().includes("windowType=editor");
+}
+
+function sendEditorMenuAction(
+	channel: "menu-load-project" | "menu-save-project" | "menu-save-project-as" | "menu-new-project",
+) {
+	let targetWindow = BrowserWindow.getFocusedWindow() ?? mainWindow;
+
+	if (!targetWindow || targetWindow.isDestroyed() || !isEditorWindow(targetWindow)) {
+		createEditorWindowWrapper();
+		targetWindow = mainWindow;
+		if (!targetWindow || targetWindow.isDestroyed()) return;
+
+		targetWindow.webContents.once("did-finish-load", () => {
+			if (!targetWindow || targetWindow.isDestroyed()) return;
+			targetWindow.webContents.send(channel);
+		});
+		return;
+	}
+
+	targetWindow.webContents.send(channel);
 }
 
 /**
- * Test-only startup hook. `CAPTURIA_E2E_VIDEO` names a recording the app should
- * open the editor on directly, so an end-to-end spec never has to drive a real
- * capture to reach the export UI.
- *
- * Honoured only in unpackaged builds, and only for a file that exists. The path
- * is registered as readable so `local-media://` and `set-current-video-path`
- * accept a fixture that lives outside the recordings directory; the renderer
- * still has to ask for it, nothing here loads it behind the editor's back.
+ * Resolve which window the Edit menu's Undo/Redo is aimed at. The routing itself
+ * is `routeEditorUndoRedo`, in `edit-menu.ts`, where a test can reach it.
  */
-function e2eStartupVideoPath(): string | null {
-  if (app.isPackaged) return null
-  const raw = process.env['CAPTURIA_E2E_VIDEO']?.trim()
-  if (!raw) return null
-  const resolved = path.resolve(raw)
-  try {
-    if (!statSync(resolved).isFile()) {
-      console.warn(`CAPTURIA_E2E_VIDEO is not a file: ${resolved}`)
-      return null
-    }
-  } catch (error) {
-    console.warn(`CAPTURIA_E2E_VIDEO cannot be read: ${resolved}`, error)
-    return null
-  }
-  approveFilePath(resolved)
-  console.log(`[e2e] editor start-up video approved: ${resolved}`)
-  return resolved
+function sendEditorUndoRedo(channel: EditorUndoRedoChannel) {
+	const targetWindow = BrowserWindow.getFocusedWindow() ?? mainWindow;
+	routeEditorUndoRedo(channel, targetWindow, () => !!targetWindow && isEditorWindow(targetWindow));
 }
 
-// Restore + show + focus the current main window (HUD or editor), or create the HUD.
-function showMainWindow() {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    if (mainWindow.isMinimized()) {
-      mainWindow.restore()
-    }
-    if (!HEADLESS) {
-      mainWindow.show()
-      mainWindow.focus()
-    }
-    return
-  }
-  createWindow()
-}
+function setupApplicationMenu() {
+	const isMac = process.platform === "darwin";
+	const template: Electron.MenuItemConstructorOptions[] = [];
 
-// Only `app.requestSingleInstanceLock()`: an earlier PID-file lock was removed
-// because a recycled PID made the app exit silently. Dev and packaged builds use
-// different userData dirs, so they still run side by side.
-const hasSingleInstanceLock = app.requestSingleInstanceLock()
-if (hasSingleInstanceLock) {
-  app.on('second-instance', () => {
-    showMainWindow()
-  })
-} else {
-  app.quit()
+	if (isMac) {
+		template.push({
+			label: app.name,
+			submenu: [
+				{
+					role: "about",
+					label: mainT("common", "actions.about") || "About OpenScreen",
+				},
+				{ type: "separator" as const },
+				{
+					label: mainT("common", "actions.saveDiagnostics") || "Save Diagnostics",
+					click: runSaveDiagnostics,
+				},
+				// Omitted entirely — here, in the Help menu and in the tray — where a package
+				// manager owns the update. See `canOfferUpdateCheck`.
+				...(canOfferUpdateCheck()
+					? [
+							{ type: "separator" as const },
+							{
+								label: mainT("common", "actions.checkForUpdates") || "Check for Updates",
+								click: runUpdateCheck,
+							},
+						]
+					: []),
+				{ type: "separator" },
+				{
+					role: "services",
+					label: mainT("common", "actions.services") || "Services",
+				},
+				{ type: "separator" },
+				{
+					role: "hide",
+					label: mainT("common", "actions.hide") || "Hide OpenScreen",
+				},
+				{
+					role: "hideOthers",
+					label: mainT("common", "actions.hideOthers") || "Hide Others",
+				},
+				{
+					role: "unhide",
+					label: mainT("common", "actions.unhide") || "Show All",
+				},
+				{ type: "separator" },
+				{ role: "quit", label: mainT("common", "actions.quit") || "Quit" },
+			],
+		});
+	}
+
+	template.push(
+		{
+			label: mainT("common", "actions.file") || "File",
+			submenu: [
+				{
+					label: mainT("dialogs", "unsavedChanges.newProject") || "New Project",
+					accelerator: "CmdOrCtrl+N",
+					click: () => sendEditorMenuAction("menu-new-project"),
+				},
+				{ type: "separator" as const },
+				{
+					label: mainT("dialogs", "unsavedChanges.loadProject") || "Load Project…",
+					accelerator: "CmdOrCtrl+O",
+					click: () => sendEditorMenuAction("menu-load-project"),
+				},
+				{
+					label: mainT("dialogs", "unsavedChanges.saveProject") || "Save Project…",
+					accelerator: "CmdOrCtrl+S",
+					click: () => sendEditorMenuAction("menu-save-project"),
+				},
+				{
+					label: mainT("dialogs", "unsavedChanges.saveProjectAs") || "Save Project As…",
+					accelerator: "CmdOrCtrl+Shift+S",
+					click: () => sendEditorMenuAction("menu-save-project-as"),
+				},
+				...(isMac
+					? []
+					: [
+							{ type: "separator" as const },
+							{
+								role: "quit" as const,
+								label: mainT("common", "actions.quit") || "Quit",
+							},
+						]),
+			],
+		},
+		{
+			label: mainT("common", "actions.edit") || "Edit",
+			// Built in `edit-menu.ts` — read its header for why Undo/Redo are not roles.
+			submenu: buildEditMenuSubmenu({
+				label: (key, fallback) => mainT("common", key) || fallback,
+				dispatch: sendEditorUndoRedo,
+			}),
+		},
+		{
+			label: mainT("common", "actions.view") || "View",
+			submenu: [
+				{
+					role: "reload",
+					label: mainT("common", "actions.reload") || "Reload",
+				},
+				{
+					role: "forceReload",
+					label: mainT("common", "actions.forceReload") || "Force Reload",
+				},
+				{
+					role: "toggleDevTools",
+					label: mainT("common", "actions.toggleDevTools") || "Toggle Developer Tools",
+				},
+				{ type: "separator" },
+				{
+					role: "resetZoom",
+					label: mainT("common", "actions.actualSize") || "Actual Size",
+				},
+				{
+					role: "zoomIn",
+					label: mainT("common", "actions.zoomIn") || "Zoom In",
+				},
+				{
+					role: "zoomOut",
+					label: mainT("common", "actions.zoomOut") || "Zoom Out",
+				},
+				{ type: "separator" },
+				{
+					role: "togglefullscreen",
+					label: mainT("common", "actions.toggleFullScreen") || "Toggle Full Screen",
+				},
+			],
+		},
+		{
+			label: mainT("common", "actions.window") || "Window",
+			submenu: isMac
+				? [
+						{
+							role: "minimize",
+							label: mainT("common", "actions.minimize") || "Minimize",
+						},
+						{ role: "zoom" },
+						{ type: "separator" },
+						{ role: "front" },
+					]
+				: [
+						{
+							role: "minimize",
+							label: mainT("common", "actions.minimize") || "Minimize",
+						},
+						{
+							role: "close",
+							label: mainT("common", "actions.close") || "Close",
+						},
+					],
+		},
+	);
+
+	// Windows and Linux have no app menu, so the two items macOS keeps there — About and the
+	// update check — live under Help, which is where those platforms look for them.
+	if (!isMac) {
+		template.push({
+			label: mainT("common", "actions.help") || "Help",
+			submenu: [
+				...(canOfferUpdateCheck()
+					? [
+							{
+								label: mainT("common", "actions.checkForUpdates") || "Check for Updates",
+								click: runUpdateCheck,
+							},
+							{ type: "separator" as const },
+						]
+					: []),
+				{
+					label: mainT("common", "actions.about") || "About OpenScreen",
+					click: runAboutDialog,
+				},
+				{ type: "separator" as const },
+				{
+					label: mainT("common", "actions.saveDiagnostics") || "Save Diagnostics",
+					click: runSaveDiagnostics,
+				},
+			],
+		});
+	}
+
+	const menu = Menu.buildFromTemplate(template);
+	Menu.setApplicationMenu(menu);
 }
 
 function createTray() {
-  tray = new Tray(defaultTrayIcon)
-  // Left click (Windows) / click without context menu: bring the HUD back.
-  tray.on('click', () => {
-    showMainWindow()
-  })
-  tray.on('double-click', () => {
-    showMainWindow()
-  })
+	tray = new Tray(defaultTrayIcon);
+	tray.on("click", () => {
+		showMainWindow();
+	});
+	tray.on("double-click", () => {
+		showMainWindow();
+	});
 }
 
 function getTrayIcon(filename: string, size: number) {
-  return nativeImage
-    .createFromPath(path.join(process.env.VITE_PUBLIC || RENDERER_DIST, filename))
-    .resize({
-      width: size,
-      height: size,
-      quality: 'best',
-    })
+	return nativeImage
+		.createFromPath(path.join(process.env.VITE_PUBLIC || RENDERER_DIST, filename))
+		.resize({
+			width: size,
+			height: size,
+			quality: "best",
+		});
 }
 
-// Main follows the renderer's language via the `set-locale` IPC; until the
-// renderer announces one, fall back to the OS locale.
-function currentLocale(): string {
-  return getMainLocale()
-}
+let updateCheckInFlight = false;
+/** Aborted on quit so a pending check cannot outlive the app and pop a dialog on the way out —
+ *  or reject into `main-process-errors`, which re-throws and would take the process with it. */
+let updateCheckAbort: AbortController | null = null;
 
-function runtimeErrorText(
-  locale: string,
-  key: 'message' | 'detailPrefix' | 'report' | 'close',
-): string {
-  return mainT(locale, `common.electron.runtimeError.${key}`)
-}
-
-function normalizeRuntimeErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim().length > 0) {
-    return error.message.trim()
-  }
-  if (typeof error === 'string' && error.trim().length > 0) {
-    return error.trim()
-  }
-  if (error === null || error === undefined) {
-    return 'Unknown error'
-  }
-  try {
-    return JSON.stringify(error)
-  } catch {
-    return String(error)
-  }
-}
-
-function normalizeRuntimeErrorStack(error: unknown): string | null {
-  if (error instanceof Error && typeof error.stack === 'string' && error.stack.trim().length > 0) {
-    return error.stack
-  }
-  return null
-}
-
-async function showRuntimeErrorDialog(context: string, error: unknown): Promise<void> {
-  if (runtimeErrorDialogOpen || !app.isReady()) {
-    return
-  }
-  runtimeErrorDialogOpen = true
-
-  const locale = currentLocale()
-  const now = Date.now()
-  const errorId = `CL-MAIN-${now.toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`
-  const message = normalizeRuntimeErrorMessage(error)
-  const stack = normalizeRuntimeErrorStack(error)
-  const details = [
-    `${runtimeErrorText(locale, 'detailPrefix')}: ${errorId}`,
-    `Context: ${context}`,
-    `Time: ${new Date(now).toISOString()}`,
-    `Message: ${message}`,
-    stack ? `Stack:\n${stack}` : null,
-  ].filter((line): line is string => Boolean(line))
-
-  const issueUrl = buildIssueReportUrl({
-    title: `[Bug] Runtime error (${context})`,
-    bodyLines: [
-      '## Summary',
-      runtimeErrorText(locale, 'message'),
-      '',
-      '## Reference',
-      `- Error ID: ${errorId}`,
-      `- Context: ${context}`,
-      `- Time: ${new Date(now).toISOString()}`,
-      `- Platform: ${process.platform} ${process.arch}`,
-      `- Version: ${app.getVersion()} (${installChannel()})`,
-      '',
-      '## Error Message',
-      message,
-      ...(stack ? ['', '## Stack', '```', stack, '```'] : []),
-      // buildIssueReportUrl truncates the body to keep the URL openable, so the
-      // tail goes last and the parts above always survive.
-      ...mainLogTailSection(),
-    ],
-  })
-
-  try {
-    const messageBoxOptions: Electron.MessageBoxOptions = {
-      type: 'error',
-      title: 'Capturia',
-      message: runtimeErrorText(locale, 'message'),
-      detail: details.join('\n\n'),
-      buttons: [runtimeErrorText(locale, 'report'), runtimeErrorText(locale, 'close')],
-      defaultId: 0,
-      cancelId: 1,
-      noLink: true,
-    }
-    const focusedWindow = BrowserWindow.getFocusedWindow()
-    const result = focusedWindow
-      ? await dialog.showMessageBox(focusedWindow, messageBoxOptions)
-      : await dialog.showMessageBox(messageBoxOptions)
-    if (result.response === 0) {
-      await shell.openExternal(issueUrl)
-    }
-  } catch (dialogError) {
-    console.error('Failed to display runtime error dialog:', dialogError)
-  } finally {
-    runtimeErrorDialogOpen = false
-  }
-}
-
-function reportRuntimeError(context: string, error: unknown): void {
-  if (shouldSwallowMainProcessError(error)) {
-    // EPIPE / ECONNRESET / ERR_STREAM_DESTROYED from renderer reloads and DevTools
-    // detaches are churn, not bugs: log and skip the dialog.
-    const code = (error as NodeJS.ErrnoException).code
-    console.warn(`[runtime-error] swallowed ${context}: ${code} ${(error as Error).message}`)
-    return
-  }
-  console.error(`[runtime-error] ${context}`, error)
-  void showRuntimeErrorDialog(context, error)
-}
-
-function trayText(
-  locale: string,
-  key: 'app' | 'recording' | 'stop' | 'open' | 'quit',
-  source?: string,
-): string {
-  const keys = {
-    app: 'common.electron.tray.openScreen',
-    recording: 'common.electron.tray.recording',
-    stop: 'common.electron.tray.stopRecording',
-    open: 'common.electron.tray.open',
-    quit: 'common.electron.tray.quit',
-  } as const
-  return mainT(locale, keys[key], { source: source ?? '' })
-}
-
-/**
- * The one rule every update affordance keys off: not on a package-manager
- * channel (Store, Flatpak, Snap, Nix) and not mid-recording. Recording is part
- * of the answer because a download would compete with the encoder, so the
- * tray and the app menu are rebuilt whenever the recording flag flips.
- */
+/** Every update affordance in the app keys off this one answer, so that the rule in
+ *  install-channel.ts — a Store/Flathub/Snap/Nix copy is offered nothing at all, not even a
+ *  disabled item — cannot be asked two different ways by the menu, the tray and the HUD.
+ *
+ *  Recording is part of the same answer. The tray used to enforce it structurally — its
+ *  recording template holds nothing but "Stop Recording" — but the app and Help menus are
+ *  built once and would otherwise stay live mid-take, and `blockedFromInstalling` only vetoes
+ *  the install, i.e. after a 240 MB download has already competed with the encoder. Every
+ *  surface is rebuilt when the flag flips (see `setupApplicationMenu`/`updateTrayMenu`). */
 function canOfferUpdateCheck(): boolean {
-  return offersUpdateCheck(installChannel(), { recording: recordingActive })
+	return offersUpdateCheck(getInstallChannel(), { recording: isRecording });
 }
 
-function updateTrayMenu(recording: boolean = false) {
-  if (!tray) return
-  const locale = currentLocale()
-  const trayIcon = recording ? recordingTrayIcon : defaultTrayIcon
-  const trayToolTip = recording
-    ? trayText(locale, 'recording', selectedSourceName)
-    : trayText(locale, 'app')
-  const menuTemplate = buildTrayMenuTemplate({
-    recording,
-    offersUpdateCheck: offersUpdateCheck(installChannel(), { recording }),
-    nativeAboutPanel: usesNativeAboutPanel(process.platform),
-    labels: {
-      stopRecording: trayText(locale, 'stop'),
-      open: trayText(locale, 'open'),
-      checkForUpdates: menuLabel('actions.checkForUpdates', 'Check for Updates…'),
-      about: menuLabel('actions.about', 'About Capturia'),
-      saveDiagnostics: menuLabel('actions.saveDiagnostics', 'Save Diagnostics…'),
-      quit: trayText(locale, 'quit'),
-    },
-    actions: {
-      stopRecording: () => emitStopRecordingRequest(),
-      open: () => showMainWindow(),
-      checkForUpdates: () => {
-        void checkForUpdates()
-      },
-      about: () => {
-        void showAboutDialog()
-      },
-      saveDiagnostics: () => {
-        void runSaveDiagnostics()
-      },
-      quit: () => app.quit(),
-    },
-  })
-  tray.setImage(trayIcon)
-  tray.setToolTip(trayToolTip)
-  tray.setContextMenu(Menu.buildFromTemplate(menuTemplate))
+/** What the HUD is told at mount, and only the permanent half of the veto. The recording half
+ *  is transient and the renderer already knows whether it is recording, so folding it into a
+ *  once-per-mount answer would strand the button off for the rest of a HUD that happened to
+ *  mount mid-take — and the HUD is rebuilt for every recording. The renderer applies the
+ *  transient half itself; `check-for-updates` still enforces both. */
+function channelAllowsUpdateCheck(): boolean {
+	return !platformOwnsUpdates(getInstallChannel());
 }
 
-function emitStopRecordingRequest(): void {
-  if (!recordingActive) return
-  if (!mainWindow || mainWindow.isDestroyed()) return
-  mainWindow.webContents.send('stop-recording-from-tray')
-}
-
-// ── Global (OS-level) shortcuts ─────────────────────────────────────────────
-// `openApp` and `stopRecording` share one manager and are persisted in the same
-// shortcuts.json the editor's ShortcutsConfigDialog writes (see globalShortcut.ts).
-const SHORTCUTS_FILE = path.join(app.getPath('userData'), SHORTCUTS_FILE_NAME)
-const globalShortcuts = new GlobalShortcutManager(globalShortcut, {
-  openApp: () => showMainWindow(),
-  stopRecording: () => emitStopRecordingRequest(),
-})
-
-async function loadAndRegisterGlobalShortcuts(): Promise<void> {
-  const stored = await readStoredGlobalBindings(SHORTCUTS_FILE)
-  globalShortcuts.registerAll(stored)
-}
-
-function isGlobalShortcutAction(value: unknown): value is GlobalShortcutAction {
-  return typeof value === 'string' && (GLOBAL_SHORTCUT_ACTIONS as readonly string[]).includes(value)
-}
-
-function shortcutErrorMessage(
-  error: 'empty' | 'conflict' | 'unavailable' | undefined,
-): string | undefined {
-  if (!error) return undefined
-  return mainT(currentLocale(), `common.electron.shortcut.${error}`)
-}
-
-// ── Editor window helpers ──────────────────────────────────────────────────
-function isEditorWindow(win: BrowserWindow | null | undefined): boolean {
-  if (!win || win.isDestroyed()) return false
-  try {
-    return win.webContents.getURL().includes('windowType=editor')
-  } catch {
-    return false
-  }
-}
-
-/** The editor renderer, when it is the focused window or the current main window. */
-function editorTarget(): BrowserWindow | null {
-  const focused = BrowserWindow.getFocusedWindow()
-  if (isEditorWindow(focused)) return focused
-  if (isEditorWindow(mainWindow)) return mainWindow
-  return null
-}
-
-type EditorMenuChannel =
-  | 'menu-import-video'
-  | 'menu-export'
-  | 'menu-return-to-recorder'
-  | 'menu-toggle-timeline'
-  | 'menu-toggle-settings'
-  | 'menu-open-shortcuts'
-
-/** Forward a menu action to the editor renderer; a no-op when no editor is open. */
-function sendEditorMenuAction(channel: EditorMenuChannel): void {
-  const target = editorTarget()
-  if (!target) return
-  target.webContents.send(channel)
-}
-
-function dispatchUndoRedo(channel: EditorUndoRedoChannel): void {
-  const target = BrowserWindow.getFocusedWindow() ?? mainWindow
-  routeEditorUndoRedo(channel, target, () => isEditorWindow(target))
-}
-
-// ── Flush-on-close (P3) ────────────────────────────────────────────────────
-// The editor auto-saves on a 2 s debounce, so closing the window inside that
-// window would drop the last edit. Main asks the renderer to flush first
-// (`request-save-before-close` -> `save-before-close-done`) and waits at most
-// EDITOR_FLUSH_TIMEOUT_MS before letting the close proceed.
-const EDITOR_FLUSH_TIMEOUT_MS = 2000
-type FlushState = { state: 'idle' | 'pending' | 'done' }
-const editorFlushStates = new WeakMap<BrowserWindow, FlushState>()
-
-function requestEditorFlush(win: BrowserWindow): Promise<void> {
-  if (!isEditorWindow(win) || win.webContents.isLoading()) return Promise.resolve()
-  return new Promise<void>((resolve) => {
-    let settled = false
-    const finish = () => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      ipcMain.removeListener('save-before-close-done', onDone)
-      resolve()
-    }
-    const onDone = (event: Electron.IpcMainEvent) => {
-      if (event.sender === win.webContents) finish()
-    }
-    const timer = setTimeout(finish, EDITOR_FLUSH_TIMEOUT_MS)
-    ipcMain.on('save-before-close-done', onDone)
-    try {
-      win.webContents.send('request-save-before-close')
-    } catch {
-      finish()
-    }
-  })
-}
-
-/** Flush the current editor (if any) and mark it so its close no longer waits. */
-async function flushEditorBeforeQuit(): Promise<void> {
-  const win = mainWindow
-  if (!win || !isEditorWindow(win)) return
-  const flush = editorFlushStates.get(win)
-  if (flush?.state === 'done') return
-  if (flush) flush.state = 'pending'
-  try {
-    await requestEditorFlush(win)
-  } finally {
-    if (flush) flush.state = 'done'
-  }
-}
-
-function createEditorWindowWrapper() {
-  if (mainWindow) {
-    mainWindow.close()
-    mainWindow = null
-  }
-  const win = createEditorWindow()
-  mainWindow = win
-
-  const flush: FlushState = { state: 'idle' }
-  editorFlushStates.set(win, flush)
-  win.on('close', (event) => {
-    if (flush.state === 'done') return
-    event.preventDefault()
-    if (flush.state === 'pending') return
-    flush.state = 'pending'
-    void requestEditorFlush(win).finally(() => {
-      flush.state = 'done'
-      if (!win.isDestroyed()) win.close()
-    })
-  })
-}
-
-// ── Application menu (P6 / M10) ────────────────────────────────────────────
-function menuLabel(key: string, fallback: string): string {
-  const value = mainT(currentLocale(), `common.${key}`)
-  return value === `common.${key}` ? fallback : value
-}
-
-/** "Check for Updates…" only where this install may offer one (see `canOfferUpdateCheck`). */
-function checkForUpdatesMenuItems(): Electron.MenuItemConstructorOptions[] {
-  if (!canOfferUpdateCheck()) return []
-  return [
-    {
-      label: menuLabel('actions.checkForUpdates', 'Check for Updates…'),
-      click: () => {
-        void checkForUpdates()
-      },
-    },
-  ]
-}
-
-function setupApplicationMenu(): void {
-  const template: Electron.MenuItemConstructorOptions[] = []
-
-  if (isMac) {
-    template.push({
-      label: app.name,
-      submenu: [
-        { role: 'about', label: menuLabel('actions.about', 'About Capturia') },
-        ...checkForUpdatesMenuItems(),
-        { type: 'separator' },
-        { role: 'services', label: menuLabel('actions.services', 'Services') },
-        { type: 'separator' },
-        { role: 'hide', label: menuLabel('actions.hide', 'Hide Capturia') },
-        { role: 'hideOthers', label: menuLabel('actions.hideOthers', 'Hide Others') },
-        { role: 'unhide', label: menuLabel('actions.unhide', 'Show All') },
-        { type: 'separator' },
-        { role: 'quit', label: menuLabel('actions.quit', 'Quit') },
-      ],
-    })
-  }
-
-  template.push(
-    {
-      label: menuLabel('actions.file', 'File'),
-      submenu: [
-        {
-          label: menuLabel('actions.importVideo', 'Import Video…'),
-          accelerator: 'CmdOrCtrl+O',
-          click: () => sendEditorMenuAction('menu-import-video'),
-        },
-        {
-          label: menuLabel('actions.export', 'Export…'),
-          accelerator: 'CmdOrCtrl+E',
-          click: () => sendEditorMenuAction('menu-export'),
-        },
-        { type: 'separator' },
-        {
-          label: menuLabel('actions.returnToRecorder', 'Return to Recorder'),
-          click: () => sendEditorMenuAction('menu-return-to-recorder'),
-        },
-        ...(isMac
-          ? []
-          : [
-              { type: 'separator' as const },
-              { role: 'quit' as const, label: menuLabel('actions.quit', 'Quit') },
-            ]),
-      ],
-    },
-    {
-      label: menuLabel('actions.edit', 'Edit'),
-      submenu: [
-        ...buildEditMenuSubmenu({ label: menuLabel, dispatch: dispatchUndoRedo }),
-        { type: 'separator' },
-        {
-          label: menuLabel('actions.keyboardShortcuts', 'Keyboard Shortcuts…'),
-          click: () => sendEditorMenuAction('menu-open-shortcuts'),
-        },
-      ],
-    },
-    {
-      label: menuLabel('actions.view', 'View'),
-      submenu: [
-        {
-          label: menuLabel('actions.toggleTimeline', 'Toggle Timeline'),
-          accelerator: 'CmdOrCtrl+Shift+T',
-          click: () => sendEditorMenuAction('menu-toggle-timeline'),
-        },
-        {
-          label: menuLabel('actions.toggleSettings', 'Toggle Settings Panel'),
-          accelerator: 'CmdOrCtrl+Shift+P',
-          click: () => sendEditorMenuAction('menu-toggle-settings'),
-        },
-        { type: 'separator' },
-        { role: 'reload', label: menuLabel('actions.reload', 'Reload') },
-        { role: 'forceReload', label: menuLabel('actions.forceReload', 'Force Reload') },
-        {
-          role: 'toggleDevTools',
-          label: menuLabel('actions.toggleDevTools', 'Toggle Developer Tools'),
-        },
-        { type: 'separator' },
-        { role: 'resetZoom', label: menuLabel('actions.actualSize', 'Actual Size') },
-        { role: 'zoomIn', label: menuLabel('actions.zoomIn', 'Zoom In') },
-        { role: 'zoomOut', label: menuLabel('actions.zoomOut', 'Zoom Out') },
-        { type: 'separator' },
-        {
-          role: 'togglefullscreen',
-          label: menuLabel('actions.toggleFullScreen', 'Toggle Full Screen'),
-        },
-      ],
-    },
-    {
-      label: menuLabel('actions.window', 'Window'),
-      submenu: isMac
-        ? [
-            { role: 'minimize', label: menuLabel('actions.minimize', 'Minimize') },
-            { role: 'zoom' },
-            { type: 'separator' },
-            { role: 'front' },
-          ]
-        : [
-            { role: 'minimize', label: menuLabel('actions.minimize', 'Minimize') },
-            { role: 'close', label: menuLabel('actions.close', 'Close') },
-          ],
-    },
-    {
-      label: menuLabel('actions.help', 'Help'),
-      submenu: [
-        {
-          label: menuLabel('actions.reportIssue', 'Report an Issue…'),
-          click: () => {
-            void shell.openExternal(`${GITHUB_ISSUES_URL}/new`)
-          },
-        },
-        {
-          label: menuLabel('actions.saveDiagnostics', 'Save Diagnostics…'),
-          click: () => {
-            void runSaveDiagnostics()
-          },
-        },
-        ...checkForUpdatesMenuItems(),
-        // macOS keeps About in the app menu; Windows/Linux look for it under Help.
-        ...(isMac
-          ? []
-          : [
-              { type: 'separator' as const },
-              {
-                label: menuLabel('actions.about', 'About Capturia'),
-                click: () => {
-                  void showAboutDialog()
-                },
-              },
-            ]),
-      ],
-    },
-  )
-
-  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
-}
-
-// ── Check for updates (F10 / M12) ──────────────────────────────────────────
-// Two flows share the menu item. When this copy can update itself (packaged
-// dmg / nsis / AppImage, see `auto-updater.ts`) electron-updater drives a
-// download-then-restart flow with progress forwarded to the renderer. Every
-// other install keeps the release-page flow below: one GitHub API call, a
-// verdict dialog, and at most an "open release page" through the external-URL
-// allowlist. The updater also falls back to it when the build is unsigned or
-// the release carries no update feed.
-let updateCheckInFlight = false
-const UPDATE_CHECK_TIMEOUT_MS = 10_000
-const LAUNCH_UPDATE_CHECK_DELAY_MS = 10_000
-// Upper bound on a manual check. The updater's own probe takes no signal, so a
-// stalled feed (corporate proxy, CDN blackhole) would otherwise hang the check
-// forever and leave the in-flight latch set for the rest of the session.
-const MANUAL_UPDATE_CHECK_TIMEOUT_MS = 30_000
-
-type UpdatesTextKey =
-  | 'available'
-  | 'current'
-  | 'failed'
-  | 'openRelease'
-  | 'downloadPrompt'
-  | 'downloadNow'
-  | 'later'
-  | 'downloaded'
-  | 'restartNow'
-  | 'onNextQuit'
-  | 'offline'
-
-function updatesText(key: UpdatesTextKey, vars?: Record<string, string>): string {
-  return mainT(currentLocale(), `common.electron.updates.${key}`, vars)
-}
-
-let autoUpdaterController: AutoUpdaterController | null | undefined
-
-/**
- * Lazily builds the electron-updater controller; `null` when this install
- * cannot update itself. The module is imported only on eligible channels so
- * dev runs and package-manager installs never pay for it.
- */
-async function getAutoUpdater(): Promise<AutoUpdaterController | null> {
-  if (autoUpdaterController !== undefined) return autoUpdaterController
-  const eligibility = getUpdaterEligibility(installChannel(), app.isPackaged)
-  if (!eligibility.eligible) {
-    autoUpdaterController = null
-    return null
-  }
-  try {
-    const { autoUpdater } = await import('electron-updater')
-    autoUpdaterController = createAutoUpdater({
-      updater: autoUpdater,
-      currentVersion: app.getVersion(),
-      isRecording: () => recordingActive,
-      emit: broadcastUpdateProgress,
-      prompts: {
-        available: async (version) => {
-          const choice = await showMessageBox({
-            type: 'info',
-            title: PRODUCT_NAME,
-            message: updatesText('downloadPrompt', {
-              latestVersion: version,
-              currentVersion: app.getVersion(),
-            }),
-            buttons: [updatesText('downloadNow'), updatesText('later')],
-            defaultId: 0,
-            cancelId: 1,
-            noLink: true,
-          })
-          return availableDialogAction(choice.response)
-        },
-        downloaded: async (version) => {
-          const choice = await showMessageBox({
-            type: 'info',
-            title: PRODUCT_NAME,
-            message: updatesText('downloaded', { latestVersion: version }),
-            buttons: [updatesText('restartNow'), updatesText('onNextQuit')],
-            defaultId: 0,
-            cancelId: 1,
-            noLink: true,
-          })
-          return downloadedDialogAction(choice.response)
-        },
-        current: async (version) => {
-          await showMessageBox({
-            type: 'info',
-            title: PRODUCT_NAME,
-            message: updatesText('current', { currentVersion: version }),
-            buttons: [menuLabel('actions.close', 'Close')],
-            noLink: true,
-          })
-        },
-        failed: async (kind: UpdateErrorKind, message: string) => {
-          await showMessageBox({
-            type: 'warning',
-            title: PRODUCT_NAME,
-            message: updatesText(kind === 'offline' ? 'offline' : 'failed'),
-            detail: message,
-            buttons: [menuLabel('actions.close', 'Close')],
-            noLink: true,
-          })
-        },
-      },
-      fallbackToReleasePage: checkForUpdatesViaReleasePage,
-      log: (message, ...detail) => console.warn(message, ...detail),
-    })
-  } catch (error) {
-    console.warn('[updates] electron-updater unavailable; using the release page flow:', error)
-    autoUpdaterController = null
-  }
-  return autoUpdaterController
-}
-
-function broadcastUpdateProgress(event: UpdateProgressEvent): void {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (win.isDestroyed()) continue
-    win.webContents.send('update-progress', event)
-  }
-}
-
-const UPDATE_PREFERENCES_FILE = path.join(app.getPath('userData'), UPDATE_PREFERENCES_FILE_NAME)
-
-async function readAutoUpdateCheckPreference(): Promise<boolean> {
-  try {
-    return parseUpdatePreferences(await fs.readFile(UPDATE_PREFERENCES_FILE, 'utf-8'))
-      .autoUpdateCheck
-  } catch {
-    return parseUpdatePreferences(null).autoUpdateCheck
-  }
-}
-
-async function writeAutoUpdateCheckPreference(enabled: boolean): Promise<void> {
-  await fs.mkdir(path.dirname(UPDATE_PREFERENCES_FILE), { recursive: true })
-  await fs.writeFile(
-    UPDATE_PREFERENCES_FILE,
-    serializeUpdatePreferences({ autoUpdateCheck: enabled }),
-    'utf-8',
-  )
-}
-
-/** Launch check: 10 s after the first window, only when enabled and this copy can act on it. */
-function scheduleLaunchUpdateCheck(): void {
-  if (HEADLESS) return
-  globalThis.setTimeout(() => {
-    void (async () => {
-      const controller = await getAutoUpdater()
-      const autoUpdateCheck = await readAutoUpdateCheckPreference()
-      if (
-        !shouldRunLaunchCheck({
-          eligible: controller !== null,
-          autoUpdateCheck,
-          recording: recordingActive,
-        })
-      ) {
-        return
-      }
-      await controller?.check('launch')
-    })().catch((error) => {
-      console.warn('[updates] launch check failed:', error)
-    })
-  }, LAUNCH_UPDATE_CHECK_DELAY_MS)
-}
-
-/**
- * Menu / tray entry point: the updater when it can act, the release-page flow
- * otherwise. Enforces `canOfferUpdateCheck` itself (the menus hide the entry,
- * but the IPC and a stale tray menu must not be able to bypass it) and bounds
- * the updater probe by `MANUAL_UPDATE_CHECK_TIMEOUT_MS`; on timeout the
- * release-page flow (which carries its own 10 s bound) answers instead.
- */
-async function checkForUpdates(): Promise<void> {
-  if (!canOfferUpdateCheck()) return
-  const controller = await getAutoUpdater()
-  if (controller) {
-    const outcome = await Promise.race([
-      controller.check('menu').then(() => 'done' as const),
-      new Promise<'timeout'>((resolve) => {
-        const timer = globalThis.setTimeout(
-          () => resolve('timeout'),
-          MANUAL_UPDATE_CHECK_TIMEOUT_MS,
-        )
-        timer.unref?.()
-      }),
-    ])
-    if (outcome === 'done') return
-    console.warn(
-      `[updates] updater probe exceeded ${MANUAL_UPDATE_CHECK_TIMEOUT_MS} ms; falling back to the release page`,
-    )
-  }
-  await checkForUpdatesViaReleasePage()
-}
-
-async function checkForUpdatesViaReleasePage(): Promise<void> {
-  if (updateCheckInFlight) return
-  updateCheckInFlight = true
-  try {
-    const result = await checkLatestRelease({
-      currentVersion: app.getVersion(),
-      fetchLatest: (url, init) => net.fetch(url, init),
-      signal: AbortSignal.timeout(UPDATE_CHECK_TIMEOUT_MS),
-    })
-
-    if (result.kind === 'current') {
-      await showMessageBox({
-        type: 'info',
-        title: PRODUCT_NAME,
-        message: updatesText('current', { currentVersion: result.currentVersion }),
-        buttons: [menuLabel('actions.close', 'Close')],
-        noLink: true,
-      })
-      return
-    }
-
-    const choice = await showMessageBox({
-      type: 'info',
-      title: PRODUCT_NAME,
-      message: updatesText('available', {
-        latestVersion: result.latestVersion,
-        currentVersion: result.currentVersion,
-      }),
-      buttons: [updatesText('openRelease'), menuLabel('actions.close', 'Close')],
-      defaultId: 0,
-      cancelId: 1,
-      noLink: true,
-    })
-    if (choice.response !== 0) return
-    // Same policy as the `open-external-url` IPC: http(s)/mailto only.
-    const releaseUrl = normalizeExternalUrl(result.releaseUrl)
-    if (!releaseUrl) {
-      console.warn('[updates] refused to open release URL:', result.releaseUrl)
-      return
-    }
-    await shell.openExternal(releaseUrl)
-  } catch (error) {
-    console.warn('[updates] check failed:', error)
-    await showMessageBox({
-      type: 'warning',
-      title: PRODUCT_NAME,
-      message: updatesText('failed'),
-      detail: error instanceof Error ? error.message : String(error),
-      buttons: [menuLabel('actions.close', 'Close')],
-      noLink: true,
-    })
-  } finally {
-    updateCheckInFlight = false
-  }
-}
-
-// ── About (M11) ────────────────────────────────────────────────────────────
-function installChannel() {
-  return getInstallChannel({ isPackaged: app.isPackaged, resourcesPath: process.resourcesPath })
+/** Message boxes must be owned by a window. The HUD is `alwaysOnTop` and `skipTaskbar`
+ *  (electron/windows.ts), so an unowned dialog opens *behind* it on Windows and most Linux
+ *  WMs, with no taskbar entry to recover it — the user sees a button flash and nothing else.
+ *  Mirrors what ipc/handlers.ts already does for its own dialogs. */
+function showMessageBox(options: Electron.MessageBoxOptions) {
+	const visible = (win: BrowserWindow | null) =>
+		win && !win.isDestroyed() && win.isVisible() ? win : null;
+	// A modal owned by a hidden window may never be drawn, so an unowned dialog is the safer
+	// fallback when the HUD has been closed to the tray.
+	const parent = visible(BrowserWindow.getFocusedWindow()) ?? visible(mainWindow);
+	return parent ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options);
 }
 
 function aboutFacts(): AboutFacts {
-  return {
-    version: app.getVersion(),
-    channel: installChannel(),
-    platform: process.platform,
-    arch: process.arch,
-    electron: process.versions.electron,
-    chrome: process.versions.chrome,
-    node: process.versions.node,
-  }
+	return {
+		version: app.getVersion(),
+		channel: getInstallChannel(),
+		platform: process.platform,
+		arch: process.arch,
+		electron: process.versions.electron,
+		chrome: process.versions.chrome,
+		node: process.versions.node,
+	};
 }
 
-/** macOS gets its native About panel (the app menu's `role: "about"` opens it). */
-function configureAboutPanel(): void {
-  if (!usesNativeAboutPanel(process.platform)) return
-  const facts = aboutFacts()
-  app.setAboutPanelOptions({
-    applicationName: PRODUCT_NAME,
-    applicationVersion: facts.version,
-    version: facts.channel,
-    copyright: COPYRIGHT,
-    credits: formatAboutDetail(facts),
-  })
+/** macOS gets its native About panel (the app menu's `role: "about"` opens it) because that
+ *  is the window its users expect; this is the only chance to put our facts in it. Nothing
+ *  here is translated, so it needs no re-run when the locale changes. */
+function configureAboutPanel() {
+	if (!usesNativeAboutPanel(process.platform)) return;
+	const facts = aboutFacts();
+	app.setAboutPanelOptions({
+		applicationName: PRODUCT_NAME,
+		applicationVersion: facts.version,
+		// Rendered in parentheses after the version, where a build number would go. The install
+		// channel is worth more there than a second copy of the version.
+		version: facts.channel,
+		copyright: COPYRIGHT,
+		credits: formatAboutDetail(facts),
+	});
 }
 
-/** Message boxes must be owned by a visible window or they open behind the always-on-top HUD. */
-function showMessageBox(options: Electron.MessageBoxOptions) {
-  const visible = (win: BrowserWindow | null) =>
-    win && !win.isDestroyed() && win.isVisible() ? win : null
-  const parent = visible(BrowserWindow.getFocusedWindow()) ?? visible(mainWindow)
-  return parent ? dialog.showMessageBox(parent, options) : dialog.showMessageBox(options)
+/** Mirrors `updateCheckInFlight`. A menu item cannot fire twice — the menu closes on the
+ *  click — but the in-app menu reaches the same box from a renderer, where a double click or
+ *  a held Enter can, and every one of those would stack another modal on the same parent. */
+let aboutDialogOpen = false;
+
+/** The About box for the platforms with no native panel worth opening. The "Copy" button is
+ *  the point of building it ourselves: version, runtime and install channel are exactly what
+ *  a bug report needs, and retyping them off a screenshot is how they arrive wrong. */
+async function showAboutDialog() {
+	if (aboutDialogOpen) return;
+	aboutDialogOpen = true;
+	try {
+		await presentAboutDialog();
+	} finally {
+		aboutDialogOpen = false;
+	}
 }
 
-let aboutDialogOpen = false
-
-/** The About box for the platforms with no native panel; "Copy" puts the facts on the clipboard. */
-async function showAboutDialog(): Promise<void> {
-  if (aboutDialogOpen) return
-  aboutDialogOpen = true
-  try {
-    const facts = aboutFacts()
-    const detail = `${formatAboutDetail(facts)}\n${COPYRIGHT}`
-    const heading = `${PRODUCT_NAME} ${facts.version}`
-    const choice = await showMessageBox({
-      type: 'info',
-      title: menuLabel('actions.about', 'About Capturia'),
-      message: heading,
-      detail,
-      buttons: [menuLabel('actions.close', 'Close'), menuLabel('actions.copy', 'Copy')],
-      defaultId: 0,
-      cancelId: 0,
-      noLink: true,
-    })
-    if (choice.response === 1) clipboard.writeText(`${heading}\n${detail}`)
-  } finally {
-    aboutDialogOpen = false
-  }
+async function presentAboutDialog() {
+	const facts = aboutFacts();
+	const detail = `${formatAboutDetail(facts)}\n${COPYRIGHT}`;
+	const heading = `${PRODUCT_NAME} ${facts.version}`;
+	const choice = await showMessageBox({
+		type: "info",
+		title: mainT("common", "actions.about") || "About OpenScreen",
+		message: heading,
+		detail,
+		buttons: [
+			mainT("common", "actions.close") || "Close",
+			mainT("common", "actions.copy") || "Copy",
+		],
+		defaultId: 0,
+		cancelId: 0,
+		noLink: true,
+	});
+	if (choice.response === 1) clipboard.writeText(`${heading}\n${detail}`);
 }
 
-// ── Diagnostics (M2) ───────────────────────────────────────────────────────
-const ISSUE_LOG_TAIL_LINES = 40
-
-function mainLogTailSection(): string[] {
-  const tail = mainLogBuffer.tail(ISSUE_LOG_TAIL_LINES)
-  if (tail.length === 0) return []
-  return ['', '## Main process log (tail)', '```', ...tail, '```']
+/** Menu entry point. Not `void showAboutDialog()`: an unhandled rejection here is re-thrown
+ *  by main-process-errors and would take the main process with it. */
+function runAboutDialog() {
+	showAboutDialog().catch((error) => {
+		console.error("[about] dialog failed", error);
+	});
 }
 
-type DiagnosticPayload = {
-  error?: string
-  stack?: string
-  projectState?: unknown
-  logs?: string[]
-  locale?: string
+/** Menu and tray entry point, for the same reason `runAboutDialog` exists. */
+function runUpdateCheck() {
+	checkForUpdates().catch((error) => {
+		console.error("[updates] check failed", error);
+	});
 }
 
-function buildDiagnosticReport(payload: DiagnosticPayload): string {
-  const now = new Date()
-  const lines: string[] = [
-    `${PRODUCT_NAME} diagnostic report`,
-    `Generated: ${now.toISOString()}`,
-    '',
-    '## App',
-    `Version: ${app.getVersion()}`,
-    `Install channel: ${installChannel()}`,
-    `Locale: ${payload.locale ?? currentLocale()}`,
-    `Packaged: ${app.isPackaged}`,
-    '',
-    '## Platform',
-    `OS: ${process.platform} ${process.arch} (${os.release()})`,
-    `Session: ${process.platform === 'linux' ? LINUX_SESSION_TYPE || 'unknown' : 'n/a'}`,
-    `Electron: ${process.versions.electron}`,
-    `Chromium: ${process.versions.chrome}`,
-    `Node: ${process.versions.node}`,
-    `Memory: ${Math.round(os.totalmem() / 1024 / 1024)} MB total, ${Math.round(os.freemem() / 1024 / 1024)} MB free`,
-    `Recording active: ${recordingActive}`,
-  ]
-  if (payload.error) {
-    lines.push('', '## Error', payload.error)
-    if (payload.stack) lines.push('', payload.stack)
-  }
-  if (payload.projectState !== undefined) {
-    let serialized: string
-    try {
-      serialized = JSON.stringify(payload.projectState, null, 2)
-    } catch {
-      serialized = String(payload.projectState)
-    }
-    lines.push('', '## Project state', serialized)
-  }
-  if (payload.logs && payload.logs.length > 0) {
-    lines.push('', '## Renderer log (tail)', ...payload.logs.slice(-200))
-  }
-  const mainLog = mainLogBuffer.snapshot()
-  lines.push('', `## Main process log (${mainLog.length} lines)`)
-  for (const entry of mainLog) {
-    lines.push(
-      `${new Date(entry.timestampMs).toISOString()} ${entry.level.toUpperCase().padEnd(5)} ${entry.text}`,
-    )
-  }
-  return `${lines.join('\n')}\n`
+/**
+ * Menu and tray entry point for exporting a diagnostic bundle. The backend
+ * (`exportDiagnosticFile`) and its "Save Diagnostics" label already existed —
+ * nothing in the app ever called it (getopenscreen/openscreen#460). Reveals
+ * the written file on success, the same confirmation the export flow's "Show
+ * in folder" gives, so there is no need for a second dialog on top of the
+ * native Save dialog the user already went through.
+ *
+ * No renderer `projectState`/`logs` to attach from here, unlike the in-app
+ * crash path this shares a payload shape with — the diagnostic value for a
+ * capture bug is almost entirely `helperOutput`/`mainProcessLogs`, which
+ * `exportDiagnosticFile` reads straight from the main process regardless.
+ */
+function runSaveDiagnostics() {
+	exportDiagnosticFile({ error: "Manual diagnostic export", projectState: null, logs: [] })
+		.then((result) => {
+			if (result.canceled) return;
+			if (!result.success) {
+				// exportDiagnosticFile resolves rather than rejects on a write
+				// failure, so this is the branch that turns "user picked a save
+				// location and got silence" into a visible error instead of a
+				// menu action that looks like it did nothing.
+				showMessageBox({
+					type: "error",
+					title: PRODUCT_NAME,
+					message: mainT("dialogs", "export.failed") || "Export Failed",
+					detail: result.error,
+				}).catch((error) => {
+					console.error("[diagnostics] failure dialog failed", error);
+				});
+				return;
+			}
+			if (result.path) {
+				shell.showItemInFolder(result.path);
+			}
+		})
+		.catch((error) => {
+			console.error("[diagnostics] save failed", error);
+		});
 }
 
-async function exportDiagnosticFile(
-  payload: DiagnosticPayload,
-): Promise<{ success: boolean; path?: string; cancelled?: boolean; error?: string }> {
-  const locale = payload.locale ?? currentLocale()
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
-  const defaultName = `capturia-diagnostic-${stamp}.txt`
-  let defaultDir = app.getPath('downloads')
-  try {
-    await fs.access(defaultDir)
-  } catch {
-    defaultDir = app.getPath('home')
-  }
-  const parent = BrowserWindow.getFocusedWindow() ?? mainWindow
-  const options: Electron.SaveDialogOptions = {
-    title: mainT(locale, 'common.electron.diagnostics.saveTitle'),
-    defaultPath: path.join(defaultDir, defaultName),
-    filters: [
-      { name: mainT(locale, 'common.electron.diagnostics.fileType'), extensions: ['txt'] },
-      { name: mainT(locale, 'common.electron.allFiles'), extensions: ['*'] },
-    ],
-  }
-  const result =
-    parent && !parent.isDestroyed()
-      ? await dialog.showSaveDialog(parent, options)
-      : await dialog.showSaveDialog(options)
-  if (result.canceled || !result.filePath) {
-    return { success: false, cancelled: true }
-  }
-  try {
-    await fs.writeFile(result.filePath, buildDiagnosticReport(payload), 'utf-8')
-    return { success: true, path: result.filePath }
-  } catch (error) {
-    console.error('Failed to write diagnostic file:', error)
-    return { success: false, error: String(error) }
-  }
+/** Mirrors the flag that already drives the tray icon. An update must never interrupt a take —
+ *  and on Windows it physically cannot, because the capture helpers spawn from inside the
+ *  install directory and NSIS cannot overwrite a running .exe. */
+let isRecording = false;
+let currentUpdateMode: UpdateMode = "notify";
+let backgroundUpdateTimer: ReturnType<typeof setInterval> | null = null;
+
+function showUpdateSettingsMenu(): boolean {
+	return app.isPackaged && ownsItsUpdates(getInstallChannel());
 }
 
-/** Help menu entry: save the report, then offer to reveal it. */
-async function runSaveDiagnostics(): Promise<void> {
-  const result = await exportDiagnosticFile({})
-  if (result.cancelled) return
-  const locale = currentLocale()
-  if (!result.success || !result.path) {
-    await showMessageBox({
-      type: 'error',
-      title: mainT(locale, 'common.electron.diagnostics.failedTitle'),
-      message: mainT(locale, 'common.electron.diagnostics.failedTitle'),
-      detail: result.error ?? '',
-      buttons: [menuLabel('actions.close', 'Close')],
-      noLink: true,
-    })
-    return
-  }
-  const choice = await showMessageBox({
-    type: 'info',
-    title: mainT(locale, 'common.electron.diagnostics.savedTitle'),
-    message: mainT(locale, 'common.electron.diagnostics.savedTitle'),
-    detail: mainT(locale, 'common.electron.diagnostics.savedMessage', { path: result.path }),
-    buttons: [
-      mainT(locale, 'common.electron.diagnostics.reveal'),
-      menuLabel('actions.close', 'Close'),
-    ],
-    defaultId: 0,
-    cancelId: 1,
-    noLink: true,
-  })
-  if (choice.response === 0) shell.showItemInFolder(result.path)
+function persistUpdateMode(mode: UpdateMode) {
+	currentUpdateMode = mode;
+	saveUpdateMode(app.getPath("userData"), mode);
+	updateTrayMenu(isRecording);
+}
+
+async function downloadAndInstall(latestVersion: string) {
+	const result = await runUnblockedDownloadAndInstall({
+		download: downloadSelfUpdate,
+		blocked: () =>
+			blockedFromInstalling({
+				recording: isRecording,
+				inApplicationsFolder:
+					process.platform === "darwin" ? (app.isInApplicationsFolder?.() ?? true) : true,
+				platform: process.platform,
+			}),
+		confirmRestart: async () => {
+			const restart = await showMessageBox({
+				type: "info",
+				title: PRODUCT_NAME,
+				message: mainT("common", "updates.readyToInstall", { latestVersion }),
+				buttons: [
+					mainT("common", "actions.restartNow") || "Restart Now",
+					mainT("common", "actions.cancel") || "Cancel",
+				],
+				defaultId: 0,
+				cancelId: 1,
+			});
+			return restart.response;
+		},
+		install: installSelfUpdate,
+	});
+	if (result.status === "failed") {
+		await showMessageBox({
+			type: "error",
+			title: PRODUCT_NAME,
+			// Not `updates.failed`: the CHECK succeeded — that is how we got here — and telling
+			// the user we could not check for updates sends them looking in the wrong place.
+			message: mainT("common", "updates.downloadFailed"),
+			detail: result.error.message,
+		});
+		return;
+	}
+	if (result.status === "blocked") {
+		const blocked = blockedFromInstalling({
+			recording: isRecording,
+			inApplicationsFolder:
+				process.platform === "darwin" ? (app.isInApplicationsFolder?.() ?? true) : true,
+			platform: process.platform,
+		});
+		await showMessageBox({
+			type: "info",
+			title: PRODUCT_NAME,
+			message: mainT(
+				"common",
+				blocked === "recording" ? "updates.blockedRecording" : "updates.blockedLocation",
+			),
+		});
+	}
+}
+
+async function presentAvailableUpdate(latestVersion: string) {
+	const choice = await showMessageBox({
+		type: "info",
+		title: PRODUCT_NAME,
+		message: mainT("common", "updates.available", {
+			currentVersion: app.getVersion(),
+			latestVersion,
+		}),
+		buttons: [
+			mainT("common", "actions.downloadUpdate") || "Download Update",
+			mainT("common", "actions.cancel") || "Cancel",
+		],
+		defaultId: 0,
+		cancelId: 1,
+	});
+	if (choice.response === 0) await downloadAndInstall(latestVersion);
+}
+
+async function runBackgroundUpdateCheck() {
+	if (updateCheckInFlight || !canOfferUpdateCheck()) return;
+	updateCheckInFlight = true;
+	try {
+		const outcome = await probeSelfUpdate();
+		const plan = planBackgroundUpdate({ outcome, mode: currentUpdateMode });
+		if (plan.action === "none") return;
+		if (plan.action === "notify-available") {
+			await presentAvailableUpdate(plan.version);
+			return;
+		}
+		if (plan.action === "download") {
+			const downloaded = await downloadSelfUpdate();
+			if (downloaded.kind === "failed") {
+				await showMessageBox({
+					type: "error",
+					title: PRODUCT_NAME,
+					message: mainT("common", "updates.downloadFailed"),
+					detail: downloaded.error.message,
+				});
+				return;
+			}
+			await showMessageBox({
+				type: "info",
+				title: PRODUCT_NAME,
+				message: mainT("common", "updates.downloaded", { latestVersion: plan.version }),
+			});
+			return;
+		}
+		await downloadAndInstall(plan.version);
+	} catch (error) {
+		console.error("[updates] background check failed", error);
+	} finally {
+		updateCheckInFlight = false;
+	}
+}
+
+function startBackgroundUpdateTimer() {
+	if (backgroundUpdateTimer) return;
+	if (
+		!shouldStartBackgroundUpdateTimer({
+			isPackaged: app.isPackaged,
+			ownsItsUpdates: ownsItsUpdates(getInstallChannel()),
+		})
+	) {
+		return;
+	}
+	backgroundUpdateTimer = setInterval(() => {
+		void runBackgroundUpdateCheck();
+	}, BACKGROUND_UPDATE_INTERVAL_MS);
+	backgroundUpdateTimer.unref?.();
+}
+
+/** `onVerdict` fires as soon as we know whether an update exists — before any of the dialogs
+ *  that answer leads to. The HUD's button waits on it to drop its "Checking…" label, and must
+ *  not be left spinning behind a dialog the user walked away from, or behind a 240 MB
+ *  download they approved. */
+/** `checkForSelfUpdate` accepts no signal and no timeout, so a stalled update feed (corporate
+ *  proxy, CDN blackhole) hangs it forever. Unbounded, that would leave `checkForUpdates`'
+ *  `finally` unreachable and `updateCheckInFlight` latched true for the rest of the session,
+ *  silently turning every later check — menu, tray and HUD — into a no-op. */
+async function probeSelfUpdate(): Promise<UpdateOutcome> {
+	let timer: NodeJS.Timeout | undefined;
+	const timeout = new Promise<UpdateOutcome>((resolve) => {
+		timer = setTimeout(
+			() => resolve({ kind: "failed", error: new Error("self-update probe timed out") }),
+			30_000,
+		);
+		timer.unref?.();
+	});
+	try {
+		return await Promise.race([checkForSelfUpdate(getInstallChannel()), timeout]);
+	} finally {
+		if (timer) clearTimeout(timer);
+	}
+}
+
+async function checkForUpdates(onVerdict?: () => void) {
+	if (updateCheckInFlight) {
+		// Another check owns the dialogs; this caller has nothing left to wait for.
+		onVerdict?.();
+		return;
+	}
+	updateCheckInFlight = true;
+	updateCheckAbort = new AbortController();
+	const signal = AbortSignal.any([updateCheckAbort.signal, AbortSignal.timeout(10_000)]);
+	try {
+		const result = await checkLatestRelease({
+			currentVersion: app.getVersion(),
+			fetchLatest: (url, init) => net.fetch(url, init),
+			signal,
+		});
+		if (result.kind === "current") {
+			await showMessageBox({
+				type: "info",
+				title: PRODUCT_NAME,
+				message: mainT("common", "updates.current", {
+					currentVersion: result.currentVersion,
+				}),
+			});
+			return;
+		}
+
+		// An install we built can replace itself; everything else — dev builds, an unclassified
+		// payload, and every macOS install predating Developer ID signing, which Squirrel can
+		// never update — can only be pointed at the download page. Ask the updater first so the
+		// buttons offered match what this install can actually do.
+		const selfUpdate = await probeSelfUpdate();
+		const canSelfUpdate = selfUpdate.kind === "downloaded";
+		if (selfUpdate.kind === "failed") {
+			// A release published before the update feeds existed has no latest*.yml. Not worth a
+			// dialog — the download page below still works — but it must not vanish silently.
+			console.warn("[updates] self-update unavailable, falling back to the release page", {
+				channel: getInstallChannel(),
+				error: selfUpdate.error.message,
+			});
+		}
+
+		const choice = await showMessageBox({
+			type: "info",
+			title: PRODUCT_NAME,
+			message: mainT("common", "updates.available", {
+				currentVersion: result.currentVersion,
+				latestVersion: result.latestVersion,
+			}),
+			buttons: [
+				canSelfUpdate
+					? mainT("common", "actions.downloadUpdate") || "Download Update"
+					: mainT("common", "actions.viewRelease") || "View Release",
+				mainT("common", "actions.cancel") || "Cancel",
+			],
+			defaultId: 0,
+			cancelId: 1,
+		});
+		if (choice.response !== 0) return;
+		if (!canSelfUpdate) {
+			// The release URL arrives from the update feed, so it is not ours to
+			// trust blindly: `shell.openExternal` hands anything else to the OS.
+			const releaseUrl = normalizeExternalUrl(result.releaseUrl);
+			if (releaseUrl) await shell.openExternal(releaseUrl);
+			else console.warn("Refused to open a release URL from the feed:", result.releaseUrl);
+			return;
+		}
+		await downloadAndInstall(result.latestVersion);
+	} catch (error) {
+		// Quitting is not a failure, and the app is already on its way out — there is nothing
+		// left to show the dialog on.
+		if (signal.aborted && updateCheckAbort?.signal.aborted) return;
+		await showMessageBox({
+			type: "error",
+			title: PRODUCT_NAME,
+			message: mainT("common", "updates.failed"),
+			detail: error instanceof Error ? error.message : String(error),
+		});
+	} finally {
+		updateCheckInFlight = false;
+		updateCheckAbort = null;
+		// Reported here, not the moment the release lookup returns. Until this point
+		// `updateCheckInFlight` is still set, so a caller told "done" early re-enables a
+		// button whose very next click hits the guard above and does nothing at all — no
+		// dialog, no error, nothing the user can see.
+		onVerdict?.();
+	}
+}
+
+function updateTrayMenu(recording: boolean = false) {
+	if (!tray) return;
+	const trayIcon = recording ? recordingTrayIcon : defaultTrayIcon;
+	const trayToolTip = recording
+		? mainT("common", "actions.recordingStatus", {
+				source: selectedSourceName,
+			}) || `Recording: ${selectedSourceName}`
+		: PRODUCT_NAME;
+	const menuTemplate = recording
+		? [
+				{
+					label: mainT("common", "actions.stopRecording") || "Stop Recording",
+					click: () => {
+						if (mainWindow && !mainWindow.isDestroyed()) {
+							mainWindow.webContents.send("stop-recording-from-tray");
+						}
+					},
+				},
+			]
+		: [
+				{
+					label: mainT("common", "actions.open") || "Open",
+					click: () => {
+						showMainWindow();
+					},
+				},
+				// Omitted entirely where a package manager owns the update (Microsoft Store,
+				// Flathub, Snap, Nix): there the app is already kept current, and offering a
+				// GitHub download walks the user into a second, parallel installation.
+				...(canOfferUpdateCheck()
+					? [
+							{
+								label: mainT("common", "actions.checkForUpdates") || "Check for Updates",
+								click: runUpdateCheck,
+							},
+						]
+					: []),
+				...(showUpdateSettingsMenu()
+					? [
+							{
+								label: mainT("common", "actions.updateSettings") || "Update Settings",
+								submenu: (
+									[
+										["notify", "updateModeNotify", "Notify when an update is available"],
+										["download", "updateModeDownload", "Download updates automatically"],
+										[
+											"download-and-install",
+											"updateModeDownloadAndInstall",
+											"Download and install updates automatically",
+										],
+									] as const
+								).map(([mode, key, fallback]) => ({
+									label: mainT("common", `actions.${key}`) || fallback,
+									type: "radio" as const,
+									checked: currentUpdateMode === mode,
+									click: () => persistUpdateMode(mode),
+								})),
+							},
+						]
+					: []),
+				// The About box's other homes are menu-bar items, and no window this app creates
+				// shows a menu bar: the HUD is frameless (electron/windows.ts), and the editor and
+				// notes windows call setAutoHideMenuBar(true) on Windows and Linux. Without this
+				// entry the box — and the Copy button that is the point of building it ourselves —
+				// is reachable there only by opening the editor and holding Alt.
+				isMac
+					? {
+							role: "about" as const,
+							label: mainT("common", "actions.about") || "About OpenScreen",
+						}
+					: {
+							label: mainT("common", "actions.about") || "About OpenScreen",
+							click: runAboutDialog,
+						},
+				// Right next to About, and reachable without opening any window: this is the
+				// one place in the app most likely to still be usable right after a recording
+				// failed to stop, which is exactly when the [stop-timing]/encoder-selection
+				// lines this exports are worth the most (getopenscreen/openscreen#460).
+				{
+					label: mainT("common", "actions.saveDiagnostics") || "Save Diagnostics",
+					click: runSaveDiagnostics,
+				},
+				{ type: "separator" as const },
+				{
+					label: mainT("common", "actions.quit") || "Quit",
+					click: () => {
+						app.quit();
+					},
+				},
+			];
+	tray.setImage(trayIcon);
+	tray.setToolTip(trayToolTip);
+	tray.setContextMenu(Menu.buildFromTemplate(menuTemplate));
+}
+
+let editorHasUnsavedChanges = false;
+let isForceClosing = false;
+let isCloseConfirmInFlight = false;
+
+ipcMain.on("set-has-unsaved-changes", (_, hasChanges: boolean) => {
+	editorHasUnsavedChanges = hasChanges;
+});
+
+// Quit requested from the editor's in-app File menu. Mirrors the native
+// menu's role:"quit" so the unsaved-changes close flow still runs.
+ipcMain.on("app-quit", () => {
+	app.quit();
+});
+
+function forceCloseEditorWindow(windowToClose: BrowserWindow | null) {
+	if (!windowToClose || windowToClose.isDestroyed()) return;
+
+	isForceClosing = true;
+	setImmediate(() => {
+		try {
+			if (!windowToClose.isDestroyed()) {
+				windowToClose.close();
+			}
+		} finally {
+			isForceClosing = false;
+		}
+	});
+}
+
+function createEditorWindowWrapper() {
+	if (mainWindow) {
+		isForceClosing = true;
+		mainWindow.close();
+		isForceClosing = false;
+		mainWindow = null;
+	}
+	mainWindow = createEditorWindow();
+	editorHasUnsavedChanges = false;
+
+	mainWindow.on("close", (event) => {
+		if (isForceClosing || !editorHasUnsavedChanges || isCloseConfirmInFlight) return;
+
+		event.preventDefault();
+		isCloseConfirmInFlight = true;
+
+		const windowToClose = mainWindow;
+		if (!windowToClose || windowToClose.isDestroyed()) return;
+
+		// Ask renderer to show the in-app close dialog.
+		windowToClose.webContents.send("request-close-confirm");
+
+		ipcMain.once("close-confirm-response", (event, choice: "save" | "discard" | "cancel") => {
+			if (event.sender.id !== windowToClose?.webContents.id) return;
+			isCloseConfirmInFlight = false;
+			if (!windowToClose || windowToClose.isDestroyed()) return;
+
+			if (choice === "save") {
+				// Save first, then close when the renderer reports done.
+				windowToClose.webContents.send("request-save-before-close");
+				ipcMain.once("save-before-close-done", (event, shouldClose: boolean) => {
+					if (event.sender.id !== windowToClose?.webContents.id) return;
+					if (!shouldClose) return;
+					forceCloseEditorWindow(windowToClose);
+				});
+			} else if (choice === "discard") {
+				forceCloseEditorWindow(windowToClose);
+			}
+			// "cancel": flag reset, window stays open
+		});
+	});
 }
 
 function createSourceSelectorWindowWrapper() {
-  sourceSelectorWindow = createSourceSelectorWindow()
-  sourceSelectorWindow.on('closed', () => {
-    sourceSelectorWindow = null
-    // Lets the HUD drop a pending "record after selection" intent when the
-    // picker is dismissed without choosing a source.
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('source-selector-closed')
-    }
-  })
-  return sourceSelectorWindow
-}
-
-function createPermissionCheckerWindowWrapper() {
-  permissionCheckerWindow = createPermissionCheckerWindow()
-  permissionCheckerWindow.on('closed', () => {
-    permissionCheckerWindow = null
-  })
-  return permissionCheckerWindow
-}
-
-function createCountdownOverlayWindowWrapper() {
-  if (countdownOverlayWindow && !countdownOverlayWindow.isDestroyed()) {
-    return countdownOverlayWindow
-  }
-  countdownOverlayWindow = createCountdownOverlayWindow()
-  countdownOverlayWindow.on('closed', () => {
-    countdownOverlayWindow = null
-  })
-  return countdownOverlayWindow
+	sourceSelectorWindow = createSourceSelectorWindow();
+	sourceSelectorWindow.on("closed", () => {
+		sourceSelectorWindow = null;
+		if (mainWindow && !mainWindow.isDestroyed()) {
+			mainWindow.webContents.send("source-selector-closed");
+		}
+	});
+	return sourceSelectorWindow;
 }
 
 function createNotesWindowWrapper() {
-  if (notesWindow && !notesWindow.isDestroyed()) {
-    return notesWindow
-  }
-  notesWindow = createNotesWindow()
-  notesWindow.on('closed', () => {
-    notesWindow = null
-    // Lets the HUD drop its "notes open" indicator.
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('notes-window-closed')
-    }
-  })
-  return notesWindow
+	{
+		notesWindow = createNotesWindow();
+		notesWindow.on("closed", () => {
+			notesWindow = null;
+			if (mainWindow && !mainWindow.isDestroyed()) {
+				mainWindow.webContents.send("notes-window-closed");
+			}
+		});
+		return notesWindow;
+	}
 }
 
-// On macOS, applications and their menu bar stay active until the user quits
-// explicitly with Cmd + Q.
-app.on('window-all-closed', () => {
-  // Keep app running (macOS behavior)
-})
+function createCountdownOverlayWindowWrapper() {
+	if (countdownOverlayWindow && !countdownOverlayWindow.isDestroyed()) {
+		return countdownOverlayWindow;
+	}
 
-app.on('activate', () => {
-  // On macOS, re-open/raise the main window when the dock icon is clicked and no
-  // window is visible. While recording the HUD is minimized on purpose
-  // (`hud-overlay-hide`), so leave it alone until the recording ends.
-  if (recordingActive) return
-  // The countdown overlay is decoration, not a window the user can interact with.
-  const hasVisibleWindow = BrowserWindow.getAllWindows().some(
-    (window) => !window.isDestroyed() && window.isVisible() && window !== countdownOverlayWindow,
-  )
-  if (!hasVisibleWindow) {
-    showMainWindow()
-  }
-})
+	countdownOverlayWindow = createCountdownOverlayWindow();
+	countdownOverlayWindow.on("closed", () => {
+		countdownOverlayWindow = null;
+	});
+	return countdownOverlayWindow;
+}
 
-app.on('will-quit', () => {
-  globalShortcuts.unregisterAll()
-})
+// Closing every window quits the app (tray goes too). The in-app "Return to Recorder"
+// button covers the editor-to-HUD round-trip, so closing the last window means "I'm done".
+// CLI mode owns its own lifecycle (see electron/cli/cliMain.ts).
+if (!cliCommand) {
+	app.on("window-all-closed", () => {
+		app.quit();
+	});
+}
 
-process.on('uncaughtException', (error) => {
-  reportRuntimeError('main.uncaughtException', error)
-})
+app.on("activate", () => {
+	if (cliCommand) return;
+	// On macOS, re-open a window when the dock icon is clicked and none are open.
+	const hasVisibleWindow = BrowserWindow.getAllWindows().some((window) => {
+		if (window.isDestroyed() || !window.isVisible()) {
+			return false;
+		}
 
-process.on('unhandledRejection', (reason) => {
-  reportRuntimeError('main.unhandledRejection', reason)
-})
+		const url = window.webContents.getURL();
+		const isCountdownOverlayWindow = url.includes("windowType=countdown-overlay");
+		return !isCountdownOverlayWindow;
+	});
+	if (!hasVisibleWindow) {
+		showMainWindow();
+	}
+});
 
-app.on('before-quit', (event) => {
-  if (shutdownFinished) {
-    return
-  }
+let sttShutdownPromise: Promise<void> | null = null;
+let sttShutdownFinished = false;
 
-  event.preventDefault()
-  if (shutdownInProgress) {
-    return
-  }
+// Electron does not wait for an async event listener. Hold the first quit long
+// enough to terminate the long-lived Whisper helper, then re-enter app.quit()
+// with a guard so the second before-quit event can proceed normally. Without
+// this, a normal Cmd+Q orphaned the helper under launchd with the model and GPU
+// resources still resident after every OpenScreen window had gone away.
+app.on("before-quit", (event) => {
+	// A check started seconds ago must not settle after the app is gone and try to open a
+	// dialog on a quitting app. Aborting on the FIRST quit is deliberate even though that
+	// quit is deferred below: the user asked to leave, and a check they can re-run from the
+	// tray is not worth holding the helper's teardown behind.
+	updateCheckAbort?.abort();
+	if (sttShutdownFinished) return;
+	event.preventDefault();
+	if (sttShutdownPromise) return;
+	sttShutdownPromise = shutdownStt()
+		.catch((error) => {
+			console.error("[stt] Failed to stop whisper helper during app quit:", error);
+		})
+		.finally(() => {
+			sttShutdownFinished = true;
+			app.quit();
+		});
+});
 
-  shutdownInProgress = true
+app.on("will-quit", () => {
+	unregisterAllGlobalShortcuts();
+});
 
-  void (async () => {
-    try {
-      // Let the editor write its pending auto-save before the windows go away.
-      await flushEditorBeforeQuit()
-    } catch (error) {
-      console.warn('Failed to flush the editor before quit:', error)
-    }
-    try {
-      if (ipcRuntime) {
-        await Promise.race([
-          ipcRuntime.shutdown(),
-          new Promise<void>((resolve) => {
-            globalThis.setTimeout(resolve, 12_000)
-          }),
-        ])
-      }
-    } catch (error) {
-      console.warn('Failed to cleanly shutdown capture resources before quit:', error)
-    } finally {
-      shutdownFinished = true
-      app.quit()
-    }
-  })()
-})
-
-// Web permissions the renderer may hold/request. Everything else (notifications,
-// geolocation, clipboard, ...) is denied. `fullscreen` is here for the editor's
-// fullscreen preview (`requestFullscreen()`); the rest is what capture needs.
-const ALLOWED_WEB_PERMISSIONS: ReadonlySet<string> = new Set([
-  'media',
-  'audioCapture',
-  'microphone',
-  'videoCapture',
-  'camera',
-  'screen',
-  'display-capture',
-  'fullscreen',
-])
-
-// Register all IPC handlers when app is ready
-const appReady = hasSingleInstanceLock ? app.whenReady() : null
+const appReady = !cliCommand && hasSingleInstanceLock ? app.whenReady() : null;
 
 appReady?.then(async () => {
-  // Force "regular" activation policy so the Dock icon appears. The HUD overlay
-  // (transparent, frameless, skipTaskbar) is the first window, and AppKit would
-  // otherwise classify us as an accessory app.
-  // HEADLESS (e2e): no Dock icon either, so nothing bounces or steals focus.
-  if (isMac && !HEADLESS) {
-    app.dock?.show()
-  }
+	if (isDiagnosticModeEnabled()) {
+		mainLogBuffer.install();
+		console.info("[diagnostic] OPENSCREEN_DIAGNOSTIC=1, capturing console.* into ring buffer");
+	}
 
-  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
-    return ALLOWED_WEB_PERMISSIONS.has(permission)
-  })
+	// Force "regular" activation policy so the Dock icon appears. The HUD overlay
+	// (transparent, frameless, skipTaskbar) is the first window, and AppKit would
+	// otherwise classify us as an accessory app.
+	if (process.platform === "darwin") {
+		app.dock?.show();
+	}
 
-  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-    callback(ALLOWED_WEB_PERMISSIONS.has(permission))
-  })
+	// Was a blanket allowlist that granted capture to any WebContents that asked,
+	// including the editor — which runs with `webSecurity: false` and renders
+	// model-generated content. Now keyed on which window is asking.
+	installPermissionPolicy(session.defaultSession);
 
-  app.on('web-contents-created', (_event, contents) => {
-    contents.on('render-process-gone', (_goneEvent, details) => {
-      reportRuntimeError(
-        'renderer.render-process-gone',
-        new Error(`reason=${details.reason}; exitCode=${details.exitCode}`),
-      )
-    })
-  })
+	session.defaultSession.setDisplayMediaRequestHandler(
+		(request, callback) => {
+			const source = getSelectedDesktopSource();
+			// ponytail: diagnostic for the 0-byte screen-recording bug. Log what
+			// we're handing to the renderer so we can see if the source is stale
+			// or the handler is returning an empty payload.
+			console.info(
+				`[display-media] videoRequested=${request.videoRequested} ` +
+					`audioRequested=${request.audioRequested} ` +
+					`source=${source ? `${source.id} (${source.name})` : "(none)"}`,
+			);
+			if (!request.videoRequested || !source) {
+				callback({});
+				return;
+			}
 
-  // Handle local-media:// requests by reading local files into Buffer.
-  // Uses Buffer (not Node.js streams) because Electron's Response constructor
-  // reliably accepts Buffer. Supports Range requests for video seeking.
-  // Only files inside the recordings dir or explicitly approved by the user
-  // (file picker) are served; the editor runs with webSecurity off, so this
-  // gate is what keeps the scheme from being an arbitrary file reader.
-  protocol.handle('local-media', async (request) => {
-    const filePath = localMediaUrlToPath(request.url)
-    if (!filePath || !isReadablePathAllowed(filePath, { recordingsDir: RECORDINGS_DIR })) {
-      console.warn('[local-media] refused (not an approved readable path):', request.url)
-      return new Response('Forbidden', { status: 403 })
-    }
-    try {
-      const stat = statSync(filePath)
-      const ext = path.extname(filePath).toLowerCase()
-      const mimeMap: Record<string, string> = {
-        '.webm': 'video/webm',
-        '.mp4': 'video/mp4',
-        '.mov': 'video/quicktime',
-        '.m4v': 'video/x-m4v',
-        '.mkv': 'video/x-matroska',
-        '.json': 'application/json',
-      }
-      const contentType = mimeMap[ext] || 'application/octet-stream'
+			callback({
+				video: source,
+				...(request.audioRequested && process.platform === "win32" ? { audio: "loopback" } : {}),
+			});
+		},
+		{ useSystemPicker: false },
+	);
 
-      const rangeHeader = request.headers.get('range')
-      if (rangeHeader) {
-        const match = rangeHeader.match(/bytes=(\d+)-(\d*)/)
-        if (match) {
-          const start = parseInt(match[1], 10)
-          const end = match[2] ? parseInt(match[2], 10) : stat.size - 1
-          const chunkSize = end - start + 1
-          const buffer = Buffer.alloc(chunkSize)
-          const fd = openSync(filePath, 'r')
-          readSync(fd, buffer, 0, chunkSize, start)
-          closeSync(fd)
-          console.log('[local-media] range:', start, '-', end, '/', stat.size, filePath)
-          return new Response(buffer, {
-            status: 206,
-            headers: {
-              'Content-Type': contentType,
-              'Content-Range': `bytes ${start}-${end}/${stat.size}`,
-              'Content-Length': String(chunkSize),
-              'Accept-Ranges': 'bytes',
-              // See the note on the 200 response below.
-              'Access-Control-Allow-Origin': '*',
-            },
-          })
-        }
-      }
+	// ponytail: forward renderer console.warn/error to main-process stdout so
+	// recorder diagnostics (which fire in the renderer) show up next to the
+	// main-process logs in `npm run dev` output. Without this, the
+	// `[recorder:...]` lines from recorderHandle.ts are only visible in
+	// DevTools. One-time wire; no per-message cost beyond a single IPC hop.
+	const logChannels = ["log", "warn", "error"] as const;
+	for (const channel of logChannels) {
+		ipcMain.on(`renderer-console-${channel}`, (_event, ...args) => {
+			const text = args
+				.map((arg) => (typeof arg === "string" ? arg : JSON.stringify(arg)))
+				.join(" ");
+			const stream = channel === "error" ? process.stderr : process.stdout;
+			stream.write(`[renderer:${channel}] ${text}\n`);
+		});
+	}
 
-      console.log('[local-media] full:', stat.size, 'bytes', contentType, filePath)
-      const buffer = readFileSync(filePath)
-      return new Response(buffer, {
-        status: 200,
-        headers: {
-          'Content-Type': contentType,
-          'Content-Length': String(stat.size),
-          'Accept-Ranges': 'bytes',
-          // `local-media://` is a different origin from the page that loads it,
-          // so without this a <video> reading from it is CORS-tainted and every
-          // pixel read fails: `new VideoFrame(video)` throws SecurityError and
-          // canvases go opaque. The exporter's decoder asks for the file in CORS
-          // mode; the request is already refused unless the path is approved, so
-          // the wildcard adds no reach beyond what the handler above allows.
-          'Access-Control-Allow-Origin': '*',
-        },
-      })
-    } catch (error) {
-      console.error('[local-media] failed to serve file:', request.url, error)
-      return new Response('Not Found', { status: 404 })
-    }
-  })
+	// Request mic permission now. Screen Recording is requested lazily from the
+	// source-picker action so its prompt isn't hidden behind the selector window.
+	//
+	// NOT awaited, on purpose. `askForMediaAccess` resolves only once the user
+	// answers the modal TCC prompt, and `createWindow()` is 70 lines below this in
+	// the same async block — so on a Mac where the microphone is still
+	// `not-determined` (every first run, and every fresh dev machine) the app
+	// showed a permission dialog with NO window behind it and created the HUD only
+	// after it was dismissed. Nothing between here and `createWindow()` needs the
+	// answer: the recorder re-checks the status when the user actually arms the mic.
+	if (process.platform === "darwin") {
+		const micStatus = systemPreferences.getMediaAccessStatus("microphone");
+		if (micStatus !== "granted") {
+			systemPreferences
+				.askForMediaAccess("microphone")
+				.then((granted) => console.info(`[permissions] microphone granted=${granted}`))
+				.catch((error) => console.warn("[permissions] microphone request failed:", error));
+		}
+	}
 
-  session.defaultSession.setDisplayMediaRequestHandler(async (request, callback) => {
-    let callbackInvoked = false
-    try {
-      console.log(
-        '[display-media] handler invoked, selectedDesktopSourceId:',
-        selectedDesktopSourceId,
-      )
-      if (!selectedDesktopSourceId) {
-        console.warn('[display-media] no selectedDesktopSourceId, rejecting request')
-        callbackInvoked = true
-        callback({})
-        return
-      }
+	ipcMain.on("hud-overlay-close", () => {
+		app.quit();
+	});
+	ipcMain.handle("set-locale", (_, locale: string) => {
+		setMainLocale(locale);
+		setupApplicationMenu();
+		updateTrayMenu();
+	});
 
-      const sources = await desktopCapturer.getSources({
-        types: ['screen', 'window'],
-        thumbnailSize: { width: 1, height: 1 },
-        fetchWindowIcons: false,
-      })
-      console.log(
-        '[display-media] desktopCapturer returned',
-        sources.length,
-        'sources:',
-        sources.map((s) => s.id),
-      )
-      let selectedSource = sources.find((source) => source.id === selectedDesktopSourceId)
-      // On Linux, window/screen IDs can change between source selection and recording.
-      // Fall back to matching by type prefix (e.g. "window:" or "screen:").
-      if (!selectedSource && selectedDesktopSourceId) {
-        const typePrefix = selectedDesktopSourceId.split(':')[0] + ':'
-        selectedSource = sources.find((source) => source.id.startsWith(typePrefix))
-        if (selectedSource) {
-          console.log(
-            '[display-media] exact ID not found, matched by type prefix:',
-            selectedSource.id,
-          )
-        }
-      }
-      if (!selectedSource) {
-        console.warn('[display-media] no matching source found in sources, rejecting')
-        callbackInvoked = true
-        callback({})
-        return
-      }
+	ipcMain.handle("update-global-shortcut", (_, binding: ShortcutBinding) => {
+		const success = registerOpenAppShortcut(binding, showMainWindow);
+		return { success };
+	});
 
-      // System audio: Chromium only offers a loopback device on Windows. Linux gets
-      // desktop audio through the renderer's legacy `chromeMediaSource: 'desktop'`
-      // audio constraint (PulseAudio/PipeWire monitor), and macOS through the native
-      // helper, so those platforms are handed video only here.
-      const grantSystemAudio = request.audioRequested && process.platform === 'win32'
-      console.log(
-        '[display-media] providing source:',
-        selectedSource.id,
-        selectedSource.name,
-        'audio:',
-        grantSystemAudio ? 'loopback' : 'none',
-      )
-      callbackInvoked = true
-      callback({
-        video: selectedSource,
-        ...(grantSystemAudio ? { audio: 'loopback' as const } : {}),
-      })
-    } catch (error) {
-      console.error('[display-media] handler failed:', error)
-      if (!callbackInvoked) {
-        try {
-          callback({})
-        } catch {
-          // callback was already consumed internally
-        }
-      }
-    }
-  })
+	// The HUD's settings panel shows the running version and, where this copy owns its updates,
+	// runs the same check the menu does. Registered here rather than in ipc/handlers.ts because
+	// this is where the check and the install channel already live — but inside `appReady`, like
+	// every other handler in this file: at module scope they would also be live in the headless
+	// CLI boot path and in a losing second instance that is on its way to app.quit().
+	ipcMain.handle("get-app-info", () => ({
+		version: app.getVersion(),
+		canCheckForUpdates: channelAllowsUpdateCheck(),
+	}));
 
-  // Listen for HUD overlay quit event (macOS only)
-  ipcMain.on('hud-overlay-close', () => {
-    app.quit()
-  })
-  ipcMain.handle('switch-to-launch', () => {
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.close()
-      mainWindow = null
-    }
-    showMainWindow()
-  })
+	// The FULL veto, permanent and transient, for a caller that can ask again at the moment it
+	// needs the answer. `get-app-info` deliberately carries only the permanent half because the
+	// HUD reads it once per mount (see 33e19d6e); the editor's app menu has no such excuse — it
+	// asks each time it opens, so a stale "yes" cannot outlive the take that invalidated it.
+	// Without this, that menu would keep offering a check mid-recording that the handler below
+	// then silently refuses.
+	ipcMain.handle("can-check-for-updates-now", () => canOfferUpdateCheck());
 
-  ipcMain.on('app-quit', () => {
-    app.quit()
-  })
-  ipcMain.handle('show-about', async () => {
-    if (usesNativeAboutPanel(process.platform)) {
-      app.showAboutPanel()
-      return
-    }
-    await showAboutDialog()
-  })
+	// The editor's app menu opens the SAME About box the native menu and the tray do, rather
+	// than rendering its own panel: the version block exists to be pasted into a bug report,
+	// and a second React spelling of it is a second thing to keep in step with about.ts.
+	//
+	// Returns immediately instead of awaiting the box. `check-for-updates` resolves on its
+	// verdict because the caller has a spinner to stop; this one has nothing to wait for, and
+	// awaiting it would leave the renderer's promise pending for as long as the user leaves
+	// the dialog open.
+	ipcMain.handle("show-about", () => {
+		// macOS asked for its own panel and `configureAboutPanel()` already filled it in.
+		// Calling runAboutDialog() here would open a second, differently-shaped box beside the
+		// one the app menu's `role: "about"` gives — the exact duplication about.ts:31-33 warns
+		// against.
+		if (usesNativeAboutPanel(process.platform)) {
+			app.showAboutPanel();
+			return;
+		}
+		runAboutDialog();
+	});
 
-  // Legacy HUD path: a raw accelerator string. Registered through the shared
-  // manager and written through to shortcuts.json so the editor's dialog and
-  // the HUD agree on the binding.
-  ipcMain.handle('set-stop-recording-shortcut', async (_, accelerator: string) => {
-    const result = globalShortcuts.register('stopRecording', String(accelerator || ''))
-    if (result.ok) {
-      const binding = acceleratorToBinding(result.accelerator)
-      if (binding) {
-        try {
-          await persistStoredGlobalBinding(SHORTCUTS_FILE, 'stopRecording', binding)
-        } catch (error) {
-          console.warn('Failed to persist stop-recording shortcut:', error)
-        }
-      }
-    }
-    return {
-      success: result.ok,
-      accelerator: result.accelerator,
-      message: shortcutErrorMessage(result.error),
-    }
-  })
-  ipcMain.handle('get-stop-recording-shortcut', () => {
-    return { success: true, accelerator: globalShortcuts.getAccelerator('stopRecording') ?? '' }
-  })
-  // Shortcuts dialog path: a ShortcutBinding for one of the global actions.
-  // Persistence is the renderer's job (save-shortcuts) once every action registered.
-  ipcMain.handle('update-global-shortcut', (_, action: unknown, binding: ShortcutBinding) => {
-    if (!isGlobalShortcutAction(action)) {
-      return { ok: false, accelerator: '', error: 'invalid' as const }
-    }
-    if (!binding || typeof binding.key !== 'string' || !isGlobalBindingAllowed(binding)) {
-      return {
-        ok: false,
-        accelerator: globalShortcuts.getAccelerator(action) ?? '',
-        error: 'needsModifier' as const,
-      }
-    }
-    const result = globalShortcuts.register(action, binding)
-    return { ok: result.ok, accelerator: result.accelerator, error: result.error }
-  })
-  ipcMain.handle('get-global-shortcuts', () => {
-    const accelerators: Partial<Record<GlobalShortcutAction, string>> = {}
-    for (const action of GLOBAL_SHORTCUT_ACTIONS) {
-      const accelerator = globalShortcuts.getAccelerator(action)
-      if (accelerator) accelerators[action] = accelerator
-    }
-    return accelerators
-  })
+	ipcMain.handle("check-for-updates", async () => {
+		// The renderer hides the button on a package-manager channel, and while recording. A
+		// renderer is not where those rules get to be enforced.
+		if (!canOfferUpdateCheck()) return;
+		await new Promise<void>((resolve) => {
+			checkForUpdates(resolve).catch((error) => {
+				console.error("[updates] check failed", error);
+				resolve();
+			});
+		});
+	});
 
-  ipcMain.handle('save-diagnostic', (_, payload?: DiagnosticPayload) => {
-    return exportDiagnosticFile(payload && typeof payload === 'object' ? payload : {})
-  })
-  ipcMain.handle('get-main-log-tail', (_, lines?: number) => {
-    const count =
-      Number.isFinite(lines) && (lines as number) > 0
-        ? Math.min(500, Math.floor(lines as number))
-        : ISSUE_LOG_TAIL_LINES
-    return mainLogBuffer.tail(count)
-  })
+	// Deliberately no updater touch here: importing electron-updater costs
+	// startup time and the channels that cannot use it must not pay for it at
+	// all (see auto-updater.ts getUpdater) — every real update path applies
+	// its settings lazily on first use.
+	currentUpdateMode = loadUpdateMode(app.getPath("userData"));
+	createTray();
+	updateTrayMenu();
+	startBackgroundUpdateTimer();
+	configureAboutPanel();
+	setupApplicationMenu();
+	await ensureRecordingsDir();
+	// Nothing else ever sweeps this directory, so without one pass per launch it
+	// only grows: discarded takes, dead helpers' half-files, orphaned sidecars and
+	// repair scratch all accumulate until the disk is full — and a full disk is
+	// how a recording is lost. Deliberately not awaited: startup must not wait on
+	// a stat of every file in the folder, and a sweep that fails changes nothing.
+	scheduleRecordingsCleanup({
+		recordingsDir: RECORDINGS_DIR,
+		userDataDir: app.getPath("userData"),
+		reason: "startup",
+	});
 
-  // Renderer announces the user's language; rebuild the tray and menu so their labels follow.
-  ipcMain.handle('set-locale', (_, locale: string) => {
-    setMainLocale(locale)
-    updateTrayMenu(recordingActive)
-    setupApplicationMenu()
-  })
+	function switchToHudWrapper() {
+		if (mainWindow) {
+			isForceClosing = true;
+			mainWindow.close();
+			isForceClosing = false;
+			mainWindow = null;
+		}
+		showMainWindow();
+	}
 
-  // Launch update check preference (main-owned so it is known before any
-  // renderer loads); the renderer only reads and toggles it.
-  ipcMain.handle('get-auto-update-check', async () => {
-    return { success: true, enabled: await readAutoUpdateCheckPreference() }
-  })
-  ipcMain.handle('set-auto-update-check', async (_, enabled: unknown) => {
-    try {
-      await writeAutoUpdateCheckPreference(enabled === true)
-      return { success: true, enabled: enabled === true }
-    } catch (error) {
-      console.warn('Failed to persist the auto-update preference:', error)
-      return { success: false, error: error instanceof Error ? error.message : String(error) }
-    }
-  })
-  ipcMain.handle('check-for-updates', async () => {
-    // The renderer may hide its button on a package-manager channel or while
-    // recording, but the rule is enforced here, not in the renderer.
-    if (!canOfferUpdateCheck()) return { success: false, reason: 'unavailable' as const }
-    void checkForUpdates()
-    return { success: true }
-  })
-  setMainLocale(app.getLocale())
-  configureAboutPanel()
-  setupApplicationMenu()
-  createTray()
-  updateTrayMenu()
-  await loadAndRegisterGlobalShortcuts()
-  // Ensure recordings directory exists
-  await ensureRecordingsDir()
-  scheduleRecordingsCleanup({
-    recordingsDir: RECORDINGS_DIR,
-    reason: 'startup',
-  })
+	registerIpcHandlers(
+		createEditorWindowWrapper,
+		createSourceSelectorWindowWrapper,
+		createCountdownOverlayWindowWrapper,
+		createNotesWindowWrapper,
+		() => mainWindow,
+		() => sourceSelectorWindow,
+		() => notesWindow,
+		() => countdownOverlayWindow,
+		(recording: boolean, sourceName: string) => {
+			selectedSourceName = sourceName;
+			isRecording = recording;
+			if (!tray) createTray();
+			updateTrayMenu(recording);
+			// `canOfferUpdateCheck()` now answers "not mid-take" too, and the app/Help menus are
+			// built once at startup — without this they keep offering the check during a take.
+			setupApplicationMenu();
+			if (!recording) {
+				showMainWindow();
+			}
+		},
+		switchToHudWrapper,
+	);
 
-  ipcRuntime = registerIpcHandlers(
-    createEditorWindowWrapper,
-    createSourceSelectorWindowWrapper,
-    createPermissionCheckerWindowWrapper,
-    () => mainWindow,
-    () => sourceSelectorWindow,
-    () => permissionCheckerWindow || getPermissionCheckerWindow(),
-    (recording: boolean, sourceName: string) => {
-      recordingActive = recording
-      selectedSourceName = sourceName
-      if (!tray) createTray()
-      updateTrayMenu(recording)
-      // `canOfferUpdateCheck()` answers "not mid-take" too; the app menu is
-      // built once at startup, so rebuild it or it keeps offering the check.
-      setupApplicationMenu()
-      if (!recording) {
-        if (mainWindow) mainWindow.restore()
-      }
-    },
-    (source) => {
-      selectedDesktopSourceId = source?.id ?? null
-    },
-    {
-      createCountdownOverlayWindow: createCountdownOverlayWindowWrapper,
-      getCountdownOverlayWindow: () => countdownOverlayWindow,
-      createNotesWindow: createNotesWindowWrapper,
-      getNotesWindow: () => notesWindow,
-      getHudOverlayWindow,
-    },
-  )
-  if (e2eStartupVideoPath()) {
-    // Straight into the editor; the spec hands the approved path to the
-    // renderer through `set-current-video-path`.
-    createEditorWindowWrapper()
-  } else {
-    createWindow()
-  }
-  scheduleLaunchUpdateCheck()
-})
+	// Native STT (whisper.cpp + forced alignment) — single instance per app.
+	registerSttIpc(ipcMain);
+
+	await loadAndRegisterGlobalShortcut(showMainWindow);
+
+	// --bench=<query>: run the export bench instead of the app. Opens the real
+	// editor window (same webPreferences, same preload) pointed at the bench
+	// entry, and quits when it reports back. See src/bench/runBench.ts.
+	const benchArg = process.argv.find((a) => a.startsWith("--bench="));
+	if (benchArg) {
+		ipcMain.handle("bench:finished", () => {
+			// Let the reply reach the renderer before the process goes away.
+			setTimeout(() => app.exit(0), 100);
+		});
+		const query = Object.fromEntries(new URLSearchParams(benchArg.slice("--bench=".length)));
+		mainWindow = createEditorWindow({ ...query, windowType: "bench" });
+		return;
+	}
+
+	createWindow();
+});

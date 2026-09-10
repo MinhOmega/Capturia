@@ -1,616 +1,643 @@
-import { app, BrowserWindow, screen } from 'electron'
-import { ipcMain } from 'electron'
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import path from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { app, BrowserWindow, ipcMain, screen } from "electron";
 import {
-  boundsFromHudAnchor,
-  HUD_MIN_WINDOW_SIZE,
-  type HudPoint,
-  type HudRect,
-  type HudSize,
-  hudAnchorOf,
-} from '../src/hooks/useHudLayout'
+	clampRectToWorkArea,
+	loadEditorWindowState,
+	resolveEditorCreation,
+	saveEditorWindowState,
+	shouldTrackEditorWindow,
+} from "./editorWindowState";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const APP_ROOT = path.join(__dirname, '..')
-const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL']
-const RENDERER_DIST = path.join(APP_ROOT, 'dist')
-const LINUX_SESSION_TYPE = (process.env['XDG_SESSION_TYPE'] || '').toLowerCase()
+const APP_ROOT = path.join(__dirname, "..");
+const VITE_DEV_SERVER_URL = process.env["VITE_DEV_SERVER_URL"];
+const RENDERER_DIST = path.join(APP_ROOT, "dist");
+const HEADLESS = process.env["HEADLESS"] === "true";
+
+// The HUD and Notes windows are excluded from every screen/window capture (WGC on Windows uses
+// the same SetWindowDisplayAffinity this sets), so the recording controls never end up baked into
+// the recorded video.
+//
+// The side effect is that they are equally invisible to an *agent's* screenshots, and the HUD is
+// what opens the editor — which makes a whole slice of the app unreachable from automation. Hence
+// this escape hatch, for testing only. It warns on every window it skips, because a recording made
+// while it is set WILL contain the HUD.
+const CONTENT_PROTECTION_DISABLED = process.env["OPENSCREEN_DISABLE_CONTENT_PROTECTION"] === "1";
+
+// Forces protection back on where it is auto-disabled below, so the macOS
+// regression can be re-tested against a future Electron without editing code.
+const CONTENT_PROTECTION_FORCED = process.env["OPENSCREEN_FORCE_CONTENT_PROTECTION"] === "1";
+
 /**
- * e2e / CI (F7): create every window but never show, raise or bounce it.
- * `HEADLESS=1` or `HEADLESS=true`; Playwright still attaches to hidden windows.
+ * macOS 26 (Darwin 25) never displays a window that has had
+ * `setContentProtection(true)` applied to it.
+ *
+ * Not "excludes it from captures" — which is the documented behaviour and the
+ * whole point — but never paints it for the user either. Confirmed on Darwin
+ * 25.5 / Electron 41.2.1 with the HUD: tray icon present, renderer alive and
+ * painting (React mounted, no console errors), `ready-to-show` fired, `show()`
+ * called, window at valid on-screen coordinates on the main display — and
+ * nothing on screen. `showMainWindow()` from the tray and the global shortcut
+ * were equally inert, because the window was already "visible" as far as
+ * Electron was concerned. Unsetting protection makes it appear instantly; the
+ * ordering of protect-vs-show makes no difference, so it is the call itself.
+ *
+ * `setContentProtection` maps to `NSWindow.sharingType = NSWindowSharingNone`,
+ * a path Electron has repeatedly churned on (electron/electron#45990, and
+ * PR #46886 reverting a macOS content-protection refactor).
+ *
+ * Gated on the Darwin major version rather than `darwin` wholesale: the
+ * breakage is only *confirmed* on 25.x, and silently dropping protection on
+ * older macOS — where it may well work — would be a privacy regression made on
+ * no evidence.
+ *
+ * NOTE: this leaves the HUD capturable on macOS 26. Apple already made that
+ * partly true regardless — ScreenCaptureKit ignores `sharingType`, so any
+ * SCK-based recorder (including *ours*, see
+ * `electron/native/screencapturekit/`) captures these windows anyway. The
+ * durable fix is to exclude our own windows via `SCContentFilter`'s
+ * `excludingWindows:`, which that helper currently passes as `[]`.
  */
-export const HEADLESS = process.env['HEADLESS'] === '1' || process.env['HEADLESS'] === 'true'
+const CONTENT_PROTECTION_BREAKS_DISPLAY = (() => {
+	if (process.platform !== "darwin") return false;
+	// getSystemVersion() reports the *macOS* version on darwin, not the Darwin
+	// kernel version: measured "26.5.0" here where `os.release()` is "25.5.0".
+	// So the affected major is 26, and the check must not be fed os.release().
+	const macOSMajor = Number.parseInt(process.getSystemVersion().split(".")[0] ?? "", 10);
+	return Number.isFinite(macOSMajor) && macOSMajor >= 26;
+})();
 
-let hudOverlayWindow: BrowserWindow | null = null
-let permissionCheckerWindow: BrowserWindow | null = null
-
-export function getHudOverlayWindow(): BrowserWindow | null {
-  return hudOverlayWindow && !hudOverlayWindow.isDestroyed() ? hudOverlayWindow : null
+function applyContentProtection(win: BrowserWindow, label: string) {
+	if (CONTENT_PROTECTION_DISABLED) {
+		console.warn(
+			`[content-protection] OFF for the ${label} window ` +
+				"(OPENSCREEN_DISABLE_CONTENT_PROTECTION=1) — it will appear in screen captures, " +
+				"including recordings. Unset it for anything but automated testing.",
+		);
+		return;
+	}
+	if (CONTENT_PROTECTION_BREAKS_DISPLAY && !CONTENT_PROTECTION_FORCED) {
+		console.warn(
+			`[content-protection] OFF for the ${label} window — macOS ` +
+				`${process.getSystemVersion()} never displays a content-protected window, so ` +
+				"enabling it would make this window permanently invisible. It may therefore appear " +
+				"in screen captures. Set OPENSCREEN_FORCE_CONTENT_PROTECTION=1 to re-test.",
+		);
+		return;
+	}
+	win.setContentProtection(true);
 }
 
+// Asset base URL for renderer (wallpapers, etc.). Packaged: extraResources copies
+// public/wallpapers to resources/wallpapers. Unpackaged: <appRoot>/public/.
+const ASSET_BASE_DIR = process.defaultApp
+	? path.join(__dirname, "..", "public")
+	: process.resourcesPath;
+export const ASSET_BASE_URL_ARG = `--asset-base-url=${pathToFileURL(`${ASSET_BASE_DIR}${path.sep}`).toString()}`;
+
+let hudOverlayWindow: BrowserWindow | null = null;
+
+// Origin the current drag gesture started from. The renderer sends the pointer's
+// *total* travel since pointerdown rather than per-frame deltas, so every move is
+// an absolute `origin + delta` — no rounding to accumulate, and a dropped message
+// self-corrects on the next one instead of leaving the window permanently offset.
+let hudDragOrigin: { x: number; y: number } | null = null;
+
+ipcMain.on("hud-overlay-hide", () => {
+	if (hudOverlayWindow && !hudOverlayWindow.isDestroyed()) {
+		hudOverlayWindow.minimize();
+	}
+});
+
+// The cursor, sampled here and pushed to the renderer, because while the HUD is
+// click-through nothing else can tell it where the pointer is.
+//
+// Chromium delivers no pointer event of any kind to a window it has made
+// input-transparent — including the pointermove the renderer needs to ask for input
+// back. Electron's `{ forward: true }` covered that with a global WH_MOUSE_LL hook
+// that re-posts WM_MOUSEMOVE, and that hook was the ONLY route out: its install is
+// unchecked (SetWindowsHookEx's return value is discarded), latched behind Electron's
+// `forwarding_mouse_messages_` so it re-arms only after a setIgnoreMouseEvents(false)
+// the renderer can no longer request, and Windows silently revokes any low-level hook
+// whose callback overruns LowLevelHooksTimeout — "there is no way for the application
+// to know whether the hook is removed". One hook that never installs or quietly dies
+// and the HUD is painted, inert, forever, with the tray icon as the only way to quit
+// the app. That is issue #266, and issue #385 after it: #266 was closed by moving
+// *when* the hook is installed, which left the trapdoor exactly where it was.
+//
+// So the escape no longer runs on anything Windows can take away. getCursorScreenPoint
+// is a plain positional read the main process can always make, the poll exists only
+// while the window is click-through — the state it is there to escape — and the
+// renderer re-derives the answer from scratch on every tick, so no dropped message,
+// dead hook or stale flag can strand it.
+const HUD_CURSOR_POLL_MS = 32;
+let hudCursorPoll: ReturnType<typeof setInterval> | null = null;
+let hudLastPoint: { x: number; y: number } | null = null;
+
+function stopHudCursorPoll() {
+	if (hudCursorPoll) clearInterval(hudCursorPoll);
+	hudCursorPoll = null;
+	hudLastPoint = null;
+}
+
+function pollHudCursor() {
+	const win = hudOverlayWindow;
+	if (!win || win.isDestroyed() || !win.isVisible() || win.isMinimized()) return;
+
+	// getBounds() and getCursorScreenPoint() are both in DIP, and so is a renderer CSS
+	// pixel (the HUD is frameless, so the client area is the whole window).
+	const bounds = win.getBounds();
+	const cursor = screen.getCursorScreenPoint();
+	const x = cursor.x - bounds.x;
+	const y = cursor.y - bounds.y;
+	if (x < 0 || y < 0 || x >= bounds.width || y >= bounds.height) return;
+
+	// Deduped on the WINDOW-RELATIVE point, not the cursor: "hud-overlay-set-size"
+	// re-anchors the window on every content change, so the bar can arrive under a
+	// cursor that never moved — and that changes the answer just as much.
+	if (hudLastPoint && hudLastPoint.x === x && hudLastPoint.y === y) return;
+	hudLastPoint = { x, y };
+
+	win.webContents.send("hud-overlay-cursor", x, y);
+}
+
+ipcMain.on("hud-overlay-ignore-mouse-events", (_event, ignore: boolean) => {
+	if (!hudOverlayWindow || hudOverlayWindow.isDestroyed()) {
+		return;
+	}
+
+	// No `forward`: the poll above replaces it, and leaving it on would keep the app
+	// depending on a hook it cannot check for a transition it no longer needs.
+	hudOverlayWindow.setIgnoreMouseEvents(ignore);
+
+	if (!ignore) {
+		// Input is live again; the document's own pointer events are cheaper and
+		// finer-grained than anything sampled at 32 ms.
+		stopHudCursorPoll();
+		return;
+	}
+	if (!hudCursorPoll) {
+		hudCursorPoll = setInterval(pollHudCursor, HUD_CURSOR_POLL_MS);
+	}
+});
+
+ipcMain.on("hud-overlay-drag-start", () => {
+	if (!hudOverlayWindow || hudOverlayWindow.isDestroyed()) {
+		return;
+	}
+
+	// Under Wayland this origin is a lie: Electron documents getPosition() as returning
+	// [0, 0] there, because the protocol prohibits a client from introspecting or
+	// setting its own global coordinates. The origin+delta scheme below therefore
+	// resolves against 0 rather than the window's real position, and setPosition() is
+	// itself a no-op — so dragging cannot work on Wayland by this route at all. The
+	// finiteness check only keeps a garbage origin from reaching a native setter.
+	const [x, y] = hudOverlayWindow.getPosition();
+	hudDragOrigin = Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+});
+
+ipcMain.on("hud-overlay-drag-to", (_event, deltaX: number, deltaY: number) => {
+	if (
+		!hudOverlayWindow ||
+		hudOverlayWindow.isDestroyed() ||
+		!hudDragOrigin ||
+		!Number.isFinite(deltaX) ||
+		!Number.isFinite(deltaY)
+	) {
+		return;
+	}
+
+	// `| 0` is load-bearing, not defensive noise. Math.round returns NEGATIVE ZERO for
+	// any delta in [-0.5, 0) — routine under fractional scaling, where screenY deltas
+	// are fractional. V8's IsInt32() rejects -0, so gin refuses to convert it and the
+	// main process dies with "Error processing argument at index 1, conversion failure
+	// from". `Number.isFinite(-0)` is true, so a finiteness check does NOT catch this;
+	// `| 0` collapses -0 to 0 and pins the value to int32. (`+ 0` would not: -0 + 0 is
+	// still -0, and Math.trunc preserves it too.)
+	const x = Math.round(hudDragOrigin.x + deltaX) | 0;
+	const y = Math.round(hudDragOrigin.y + deltaY) | 0;
+
+	hudOverlayWindow.setPosition(x, y, false);
+});
+
+ipcMain.on("hud-overlay-drag-end", () => {
+	hudDragOrigin = null;
+});
+
+// Resize the HUD to fit its rendered content. Anchored by its bottom-centre so it
+// stays where the user dragged it while only growing/shrinking, which lets the
+// vertical tray layout grow tall instead of scrolling inside a fixed window.
+//
+// Applied in one shot rather than tweened. The renderer now reserves space for
+// everything that can float above the bar, so a resize only ever accompanies a
+// discrete content change (orientation flip, recording controls appearing) that
+// snaps anyway — tweening the window across 10 frames just meant 10 frames of the
+// bar sitting at an offset that didn't match the content it was drawn with.
+ipcMain.on("hud-overlay-set-size", (_event, width: number, height: number) => {
+	if (
+		!hudOverlayWindow ||
+		hudOverlayWindow.isDestroyed() ||
+		!Number.isFinite(width) ||
+		!Number.isFinite(height)
+	) {
+		return;
+	}
+
+	// A resize re-anchors from the window's current bounds, which would fight the
+	// position an in-flight drag is applying. The renderer re-measures on release.
+	if (hudDragOrigin) {
+		return;
+	}
+
+	const bounds = hudOverlayWindow.getBounds();
+
+	// Clamp to the work area of the display the HUD sits on; on a short screen the
+	// vertical layout can exceed the display, where the bar's own overflow scroll takes over.
+	const { workArea } = screen.getDisplayMatching(bounds);
+	const nextWidth = Math.min(workArea.width, Math.max(1, Math.round(width)));
+	const nextHeight = Math.min(workArea.height, Math.max(1, Math.round(height)));
+
+	if (bounds.width === nextWidth && bounds.height === nextHeight) {
+		return;
+	}
+
+	const centerX = bounds.x + bounds.width / 2;
+	const bottomY = bounds.y + bounds.height;
+
+	// Growing height keeps the bottom edge anchored (so the vertical tray grows
+	// upward from where the user left it), but that alone can push the top edge
+	// above the screen — e.g. switching to the tall vertical layout while sitting
+	// low/mid-screen. The drag handle lives at the tray's start (top, in vertical
+	// mode), so an off-screen top edge makes the HUD both invisible and
+	// undraggable back into view. Clamp both axes to the display's work area so
+	// the window (and its drag handle) always stays fully reachable.
+	const nextX = Math.min(
+		Math.max(workArea.x, Math.round(centerX - nextWidth / 2)),
+		workArea.x + workArea.width - nextWidth,
+	);
+	const nextY = Math.min(
+		Math.max(workArea.y, Math.round(bottomY - nextHeight)),
+		workArea.y + workArea.height - nextHeight,
+	);
+
+	hudOverlayWindow.setBounds({
+		x: nextX,
+		y: nextY,
+		width: nextWidth,
+		height: nextHeight,
+	});
+});
+
 /**
- * Where the HUD was last left. The bar hangs from the bottom-centre of its
- * window and the window is resized around that point to fit its content, so
- * the anchor (plus the last content-fit size, to avoid a clamp on a window
- * that starts larger than it ends) is what survives a relaunch.
+ * Frameless transparent HUD overlay, always-on-top, centred at the bottom of the
+ * primary display. Follows the user across macOS Spaces so it isn't lost on switch.
  */
-type HudOverlayPlacement = { anchor: HudPoint; size: HudSize }
+export function createHudOverlayWindow(): BrowserWindow {
+	const primaryDisplay = screen.getPrimaryDisplay();
+	const { workArea } = primaryDisplay;
 
-const HUD_PLACEMENT_FILE = 'hud-overlay-placement.json'
-const HUD_PLACEMENT_WRITE_DELAY_MS = 300
+	// Close to what the renderer asks for on its very first measurement (bar plus
+	// the reserved space above it), so the HUD doesn't visibly resize itself the
+	// instant it becomes visible. See src/components/launch/hudGeometry.ts.
+	const windowWidth = 820;
+	const windowHeight = 560;
 
-function hudPlacementPath(): string {
-  return path.join(app.getPath('userData'), HUD_PLACEMENT_FILE)
-}
+	const x = Math.floor(workArea.x + (workArea.width - windowWidth) / 2);
+	const y = Math.floor(workArea.y + workArea.height - windowHeight - 5);
 
-function isFinitePair(value: unknown, a: string, b: string): boolean {
-  if (!value || typeof value !== 'object') return false
-  const record = value as Record<string, unknown>
-  return Number.isFinite(record[a]) && Number.isFinite(record[b])
-}
+	const win = new BrowserWindow({
+		width: windowWidth,
+		height: windowHeight,
+		// Min/max are intentionally loose: the renderer resizes to fit content via
+		// "hud-overlay-set-size" (above), needed for the vertical tray to grow taller.
+		minWidth: 120,
+		minHeight: 80,
+		x: x,
+		y: y,
+		frame: false,
+		transparent: true,
+		// Fully-transparent ARGB backing. Without this macOS draws the window as a
+		// rounded glass panel with a border around the HUD content.
+		backgroundColor: "#00000000",
+		// Don't let macOS mask the window into a rounded rect; the HUD bar provides
+		// its own rounding and the window itself must be invisible.
+		roundedCorners: false,
+		resizable: false,
+		alwaysOnTop: true,
+		skipTaskbar: true,
+		hasShadow: false,
+		show: false, // shown via ready-to-show to avoid black rectangle flash
+		webPreferences: {
+			preload: path.join(__dirname, "preload.mjs"),
+			additionalArguments: [ASSET_BASE_URL_ARG],
+			nodeIntegration: false,
+			contextIsolation: true,
+			backgroundThrottling: false,
+		},
+	});
 
-function readHudPlacement(): HudOverlayPlacement | null {
-  try {
-    const parsed: unknown = JSON.parse(readFileSync(hudPlacementPath(), 'utf8'))
-    if (!parsed || typeof parsed !== 'object') return null
-    const { anchor, size } = parsed as Record<string, unknown>
-    if (!isFinitePair(anchor, 'x', 'y') || !isFinitePair(size, 'width', 'height')) return null
-    const placement = { anchor: anchor as HudPoint, size: size as HudSize }
-    // Ignore an anchor that no display contains any more (monitor unplugged).
-    const display = screen.getDisplayNearestPoint(placement.anchor)
-    const { bounds } = display
-    const inside =
-      placement.anchor.x >= bounds.x &&
-      placement.anchor.x <= bounds.x + bounds.width &&
-      placement.anchor.y >= bounds.y &&
-      placement.anchor.y <= bounds.y + bounds.height
-    return inside ? placement : null
-  } catch {
-    return null
-  }
-}
+	// Deliberately NOT born click-through: the renderer asks for it on mount, over
+	// "hud-overlay-ignore-mouse-events" (`show: false` holds this window back until
+	// ready-to-show, so the two are ~85 ms apart — measured, not assumed). What that
+	// leaves open is an invisible rectangle that can swallow one desktop click in
+	// those 85 ms, right after the user launched the app — against what doing it here
+	// cost them: the whole app (issue #266). A window nothing ever asks for — a
+	// renderer that dies before mount — then stays clickable instead of becoming a
+	// ghost. See the "hud-overlay-cursor" poll above for the way back out.
 
-function writeHudPlacement(bounds: HudRect): void {
-  try {
-    const file = hudPlacementPath()
-    mkdirSync(path.dirname(file), { recursive: true })
-    const placement: HudOverlayPlacement = {
-      anchor: hudAnchorOf(bounds),
-      size: { width: bounds.width, height: bounds.height },
-    }
-    writeFileSync(file, JSON.stringify(placement))
-  } catch (error) {
-    console.warn('[hud] failed to persist the HUD placement:', error)
-  }
-}
+	// Keep the recording controls out of the recording (see applyContentProtection).
+	applyContentProtection(win, "HUD");
 
-/** Debounced: `move` fires for every frame of a drag and `resize` for every content change. */
-function trackHudPlacement(win: BrowserWindow): void {
-  let timer: NodeJS.Timeout | null = null
-  const schedule = () => {
-    if (timer) clearTimeout(timer)
-    timer = setTimeout(() => {
-      timer = null
-      if (!win.isDestroyed() && !win.isMinimized()) writeHudPlacement(win.getBounds())
-    }, HUD_PLACEMENT_WRITE_DELAY_MS)
-  }
-  win.on('move', schedule)
-  win.on('resize', schedule)
-  win.on('closed', () => {
-    if (timer) clearTimeout(timer)
-  })
+	// Follow the user across macOS Spaces, else the HUD stays pinned to the Space
+	// it was first opened on.
+	if (process.platform === "darwin") {
+		win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+	}
+
+	// Show only once painted to avoid the black rectangle flash when a transparent
+	// window is shown before its first paint.
+	win.once("ready-to-show", () => {
+		applyContentProtection(win, "HUD");
+		if (!HEADLESS) win.show();
+	});
+
+	win.webContents.on("did-finish-load", () => {
+		win?.webContents.send("main-process-message", new Date().toLocaleString());
+	});
+
+	hudOverlayWindow = win;
+
+	win.on("closed", () => {
+		if (hudOverlayWindow === win) {
+			hudOverlayWindow = null;
+			hudDragOrigin = null;
+			stopHudCursorPoll();
+		}
+	});
+
+	if (VITE_DEV_SERVER_URL) {
+		win.loadURL(VITE_DEV_SERVER_URL + "?windowType=hud-overlay");
+	} else {
+		win.loadFile(path.join(RENDERER_DIST, "index.html"), {
+			query: { windowType: "hud-overlay" },
+		});
+	}
+
+	return win;
 }
 
 /**
- * C-1: the editor's caption worker loads the Whisper model over file:// and a
- * Web Worker cannot call IPC, so the model root (and the resources dir, for
- * future bundled assets) travel to the preload as `additionalArguments`.
- * Trailing separator so `new URL(relative, base)` resolves inside the directory.
+ * Main editor window. Starts maximised with a hidden title bar on macOS; not
+ * always-on-top and appears in the taskbar/dock.
+ *
+ * `query` overrides the renderer's routing params. The export bench passes
+ * windowType=bench so it runs under THIS window's webPreferences — same
+ * preload, same sandbox, same backgroundThrottling:false — because a bench that
+ * configures its own window measures a different app than the one we ship.
  */
-function fileUrlArg(prefix: string, dir: string): string {
-  return `${prefix}${pathToFileURL(`${dir}${path.sep}`).toString()}`
-}
+export function createEditorWindow(query: Record<string, string> = {}): BrowserWindow {
+	const isMac = process.platform === "darwin";
+	const persist = shouldTrackEditorWindow(query);
+	const loaded = persist ? loadEditorWindowState(app.getPath("userData")) : null;
+	const saved = loaded
+		? {
+				...clampRectToWorkArea(loaded, screen.getDisplayMatching(loaded).workArea),
+				maximized: loaded.maximized,
+			}
+		: null;
+	const creation = resolveEditorCreation({ isBench: query.windowType === "bench", saved });
 
-function editorAdditionalArguments(): string[] {
-  const assetBaseDir = app.isPackaged ? process.resourcesPath : path.join(APP_ROOT, 'public')
-  const captionModelsDir = path.join(app.getPath('userData'), 'caption-models')
-  return [
-    fileUrlArg('--asset-base-url=', assetBaseDir),
-    fileUrlArg('--caption-model-dir=', captionModelsDir),
-  ]
-}
+	const win = new BrowserWindow({
+		...creation.bounds,
+		minWidth: 800,
+		minHeight: 600,
+		// Seamless titlebar on every platform: the app's own topbar IS the titlebar
+		// (it already carries the logo, the title and a drag region). macOS keeps its
+		// traffic lights, Windows/Linux get the native Window Controls Overlay — which
+		// preserves Snap Layouts and the system close/maximise semantics instead of
+		// re-implementing them as HTML buttons. Its colours follow the app theme via
+		// the "set-titlebar-overlay" IPC (see handlers.ts).
+		titleBarStyle: "hidden",
+		...(isMac
+			? { trafficLightPosition: { x: 18, y: 21 } }
+			: { titleBarOverlay: { color: "#09090b", symbolColor: "#a1a1aa", height: 58 } }),
+		transparent: false,
+		resizable: true,
+		alwaysOnTop: false,
+		skipTaskbar: false,
+		title: "OpenScreen",
+		backgroundColor: "#09090b",
+		show: false, // shown via ready-to-show to avoid white flash on first load
+		webPreferences: {
+			preload: path.join(__dirname, "preload.mjs"),
+			additionalArguments: [ASSET_BASE_URL_ARG],
+			nodeIntegration: false,
+			contextIsolation: true,
+			webSecurity: false,
+			backgroundThrottling: false,
+		},
+	});
 
-// macOS 26 (Darwin 25) never paints a content-protected window: the Notes window
-// would exist but stay invisible. Skip protection there unless forced back on.
-const CONTENT_PROTECTION_DISABLED = process.env['CAPTURIA_DISABLE_CONTENT_PROTECTION'] === '1'
-const CONTENT_PROTECTION_FORCED = process.env['CAPTURIA_FORCE_CONTENT_PROTECTION'] === '1'
-const CONTENT_PROTECTION_BREAKS_DISPLAY =
-  process.platform === 'darwin' &&
-  Number.parseInt(process.getSystemVersion().split('.')[0] ?? '0', 10) >= 26
+	if (creation.maximize) win.maximize();
+	if (creation.persist) {
+		const persistState = () => {
+			if (win.isDestroyed()) return;
+			const bounds = win.getNormalBounds();
+			saveEditorWindowState(app.getPath("userData"), {
+				x: bounds.x,
+				y: bounds.y,
+				width: bounds.width,
+				height: bounds.height,
+				maximized: win.isMaximized(),
+			});
+		};
+		win.on("moved", persistState);
+		win.on("resized", persistState);
+		win.on("close", persistState);
+	}
+
+	// The editor renders its own File/Edit/View menu bar in the custom titlebar,
+	// so hide the native OS menu bar on Windows/Linux (it stays reachable via Alt).
+	// macOS keeps its global menu bar.
+	if (process.platform !== "darwin") {
+		win.setAutoHideMenuBar(true);
+	}
+
+	// Show only once painted to avoid a white flash on cold Vite start.
+	win.once("ready-to-show", () => {
+		if (!HEADLESS) win.show();
+	});
+
+	// Inject dark background before any React paint so the sub-titlebar area never
+	// flashes white on a cold Vite load.
+	win.webContents.on("dom-ready", () => {
+		// `--titlebar-inset-left` reserves room for the macOS traffic lights; on
+		// Windows/Linux the topbar uses the `titlebar-area-*` env vars instead.
+		win.webContents
+			.insertCSS(
+				`html, body, #root { background: #09090b !important; }
+				 :root { --titlebar-inset-left: ${isMac ? "68px" : "0px"}; }`,
+			)
+			.catch(() => {
+				// Best-effort cosmetic; ignore if the page is mid-teardown.
+			});
+	});
+
+	win.webContents.on("did-finish-load", () => {
+		win?.webContents.send("main-process-message", new Date().toLocaleString());
+	});
+
+	const routing = { windowType: "editor", ...query };
+	if (VITE_DEV_SERVER_URL) {
+		win.loadURL(`${VITE_DEV_SERVER_URL}?${new URLSearchParams(routing).toString()}`);
+	} else {
+		win.loadFile(path.join(RENDERER_DIST, "index.html"), { query: routing });
+	}
+
+	return win;
+}
 
 /**
- * Keep a window out of screen captures (including Capturia's own recording)
- * where the OS supports it. Linux has no equivalent; callers hide the feature
- * there instead of calling this.
+ * Floating source-selector window for picking a screen or window to record.
+ * Frameless, transparent, and follows the user across macOS Spaces.
  */
-export function applyContentProtection(win: BrowserWindow, label: string): void {
-  if (CONTENT_PROTECTION_DISABLED) {
-    console.warn(
-      `[content-protection] OFF for the ${label} window (CAPTURIA_DISABLE_CONTENT_PROTECTION=1) - it will appear in screen captures, including recordings. Unset it for anything but automated testing.`,
-    )
-    return
-  }
-  if (CONTENT_PROTECTION_BREAKS_DISPLAY && !CONTENT_PROTECTION_FORCED) {
-    console.warn(
-      `[content-protection] OFF for the ${label} window - macOS ${process.getSystemVersion()} never displays a content-protected window, so enabling it would make this window permanently invisible. It may therefore appear in screen captures. Set CAPTURIA_FORCE_CONTENT_PROTECTION=1 to re-test.`,
-    )
-    return
-  }
-  win.setContentProtection(true)
+export function createSourceSelectorWindow(): BrowserWindow {
+	const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+
+	const win = new BrowserWindow({
+		width: 680,
+		height: 580,
+		minHeight: 420,
+		maxHeight: 680,
+		x: Math.round((width - 680) / 2),
+		y: Math.round((height - 580) / 2),
+		frame: false,
+		resizable: false,
+		alwaysOnTop: true,
+		transparent: true,
+		backgroundColor: "#00000000",
+		webPreferences: {
+			preload: path.join(__dirname, "preload.mjs"),
+			additionalArguments: [ASSET_BASE_URL_ARG],
+			nodeIntegration: false,
+			contextIsolation: true,
+		},
+	});
+
+	// Follow the user across macOS Spaces so the selector appears on the active
+	// desktop regardless of where the HUD was opened.
+	if (process.platform === "darwin") {
+		win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+	}
+
+	if (VITE_DEV_SERVER_URL) {
+		win.loadURL(VITE_DEV_SERVER_URL + "?windowType=source-selector");
+	} else {
+		win.loadFile(path.join(RENDERER_DIST, "index.html"), {
+			query: { windowType: "source-selector" },
+		});
+	}
+
+	return win;
 }
 
 /**
- * Always-on-top scratchpad for notes while recording. Content-protected so it
- * stays out of the capture (see `applyContentProtection`).
- */
-export function createNotesWindow(): BrowserWindow {
-  const win = new BrowserWindow({
-    width: 400,
-    height: 540,
-    minWidth: 360,
-    minHeight: 400,
-    maxWidth: 640,
-    maxHeight: 720,
-    title: 'Capturia - Notes',
-    backgroundColor: '#ffffff',
-    resizable: true,
-    alwaysOnTop: true,
-    skipTaskbar: false,
-    show: false,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.mjs'),
-      nodeIntegration: false,
-      contextIsolation: true,
-      backgroundThrottling: false,
-    },
-  })
-
-  attachDevWindowLogging(win, 'notes')
-
-  // Match the editor: no native OS menu bar on Windows/Linux (reachable via Alt).
-  if (process.platform !== 'darwin') {
-    win.setAutoHideMenuBar(true)
-  }
-
-  applyContentProtection(win, 'Notes')
-  win.once('ready-to-show', () => {
-    applyContentProtection(win, 'Notes')
-    if (!HEADLESS) win.show()
-  })
-
-  if (VITE_DEV_SERVER_URL) {
-    win.loadURL(VITE_DEV_SERVER_URL + '?showNotes=true')
-  } else {
-    win.loadFile(path.join(RENDERER_DIST, 'index.html'), {
-      query: { showNotes: 'true' },
-    })
-  }
-
-  return win
-}
-
-/**
- * Transparent, non-focusable countdown overlay centred on the primary display.
- * The HUD drives it over IPC (`countdown-overlay-show/set-value/hide`) from its
- * own countdown timer; the window is created once and hidden between runs.
+ * Centered transparent countdown overlay that sits above the HUD during
+ * recording pre-roll.
  */
 export function createCountdownOverlayWindow(): BrowserWindow {
-  const { workArea } = screen.getPrimaryDisplay()
-  const overlayWidth = 420
-  const overlayHeight = 260
+	const { workArea } = screen.getPrimaryDisplay();
+	const overlayWidth = 420;
+	const overlayHeight = 260;
 
-  const win = new BrowserWindow({
-    width: overlayWidth,
-    height: overlayHeight,
-    minWidth: overlayWidth,
-    maxWidth: overlayWidth,
-    minHeight: overlayHeight,
-    maxHeight: overlayHeight,
-    x: Math.round(workArea.x + (workArea.width - overlayWidth) / 2),
-    y: Math.round(workArea.y + (workArea.height - overlayHeight) / 2),
-    frame: false,
-    resizable: false,
-    alwaysOnTop: true,
-    skipTaskbar: true,
-    focusable: false,
-    transparent: true,
-    backgroundColor: '#00000000',
-    hasShadow: false,
-    show: false,
-    title: 'Capturia Countdown',
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.mjs'),
-      nodeIntegration: false,
-      contextIsolation: true,
-      backgroundThrottling: false,
-    },
-  })
+	const win = new BrowserWindow({
+		width: overlayWidth,
+		height: overlayHeight,
+		minWidth: overlayWidth,
+		maxWidth: overlayWidth,
+		minHeight: overlayHeight,
+		maxHeight: overlayHeight,
+		x: Math.round(workArea.x + (workArea.width - overlayWidth) / 2),
+		y: Math.round(workArea.y + (workArea.height - overlayHeight) / 2),
+		frame: false,
+		resizable: false,
+		alwaysOnTop: true,
+		skipTaskbar: true,
+		focusable: false,
+		transparent: true,
+		backgroundColor: "#00000000",
+		hasShadow: false,
+		show: false,
+		webPreferences: {
+			preload: path.join(__dirname, "preload.mjs"),
+			additionalArguments: [ASSET_BASE_URL_ARG],
+			nodeIntegration: false,
+			contextIsolation: true,
+			backgroundThrottling: false,
+		},
+	});
 
-  attachDevWindowLogging(win, 'countdown-overlay')
+	win.setIgnoreMouseEvents(true);
 
-  // Purely decorative: clicks fall through to whatever is underneath.
-  win.setIgnoreMouseEvents(true)
+	if (process.platform === "darwin") {
+		win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+	}
 
-  if (process.platform === 'darwin') {
-    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  }
+	if (VITE_DEV_SERVER_URL) {
+		win.loadURL(VITE_DEV_SERVER_URL + "?windowType=countdown-overlay");
+	} else {
+		win.loadFile(path.join(RENDERER_DIST, "index.html"), {
+			query: { windowType: "countdown-overlay" },
+		});
+	}
 
-  if (VITE_DEV_SERVER_URL) {
-    win.loadURL(VITE_DEV_SERVER_URL + '?windowType=countdown-overlay')
-  } else {
-    win.loadFile(path.join(RENDERER_DIST, 'index.html'), {
-      query: { windowType: 'countdown-overlay' },
-    })
-  }
-
-  return win
+	return win;
 }
 
-function attachDevWindowLogging(win: BrowserWindow, label: string): void {
-  if (!VITE_DEV_SERVER_URL) return
+// Frameless Notes Window for taking notes during a recording.
+export function createNotesWindow(): BrowserWindow {
+	const win = new BrowserWindow({
+		width: 400,
+		height: 540,
+		minWidth: 360,
+		minHeight: 400,
+		maxWidth: 640,
+		maxHeight: 720,
+		title: "OpenScreen - Notes",
+		backgroundColor: "#09090b",
+		resizable: true,
+		alwaysOnTop: true,
+		skipTaskbar: false,
+		show: false,
+		webPreferences: {
+			preload: path.join(__dirname, "preload.mjs"),
+			additionalArguments: [ASSET_BASE_URL_ARG],
+			nodeIntegration: false,
+			contextIsolation: true,
+			backgroundThrottling: false,
+		},
+	});
 
-  // Electron 39 deprecates the positional `(event, level, message, line, sourceId)`
-  // listener; the details now ride on the event object itself.
-  win.webContents.on('console-message', (details) => {
-    const tags: Record<string, string> = {
-      info: 'LOG',
-      debug: 'LOG',
-      warning: 'WARN',
-      error: 'ERR',
-    }
-    const tag = tags[details.level] ?? 'LOG'
-    const shortSource = details.sourceId ? details.sourceId.replace(/.*\//, '') : ''
-    console.log(`[${label}:${tag}] ${details.message} (${shortSource}:${details.lineNumber})`)
-  })
+	// Match the editor: no native OS menu bar on Windows/Linux (reachable via Alt).
+	if (process.platform !== "darwin") {
+		win.setAutoHideMenuBar(true);
+	}
 
-  win.webContents.on(
-    'did-fail-load',
-    (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
-      if (!isMainFrame) return
-      console.error(
-        `[${label}:LOAD_FAIL] code=${errorCode} description=${errorDescription} url=${validatedURL}`,
-      )
-    },
-  )
-}
+	applyContentProtection(win, "Notes");
+	win.once("ready-to-show", () => {
+		applyContentProtection(win, "Notes");
+		win.show();
+	});
 
-ipcMain.on('hud-overlay-hide', () => {
-  if (hudOverlayWindow && !hudOverlayWindow.isDestroyed()) {
-    hudOverlayWindow.minimize()
-  }
-})
+	if (VITE_DEV_SERVER_URL) {
+		win.loadURL(VITE_DEV_SERVER_URL + "?showNotes=true");
+	} else {
+		win.loadFile(path.join(RENDERER_DIST, "index.html"), {
+			query: { showNotes: "true" },
+		});
+	}
 
-// Recording mode: the renderer switches to its compact bar and the window
-// follows the content through `hud-overlay-set-size` (see hudWindowsHandlers).
-// This channel only re-asserts always-on-top: resizing/repositioning is
-// unreliable on Wayland (the compositor ignores setBounds) and can place the
-// window off-centre or in the top-left corner.
-
-ipcMain.on('hud-overlay-resize', () => {
-  if (!hudOverlayWindow || hudOverlayWindow.isDestroyed()) return
-  // Re-apply always-on-top so the recording bar stays visible over other apps
-  hudOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
-  hudOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-})
-
-ipcMain.on('hud-overlay-restore', () => {
-  if (!hudOverlayWindow || hudOverlayWindow.isDestroyed()) return
-  // Un-minimize if the window was hidden during recording
-  if (hudOverlayWindow.isMinimized()) {
-    hudOverlayWindow.restore()
-  }
-  if (!HEADLESS) hudOverlayWindow.showInactive()
-  hudOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
-  hudOverlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-})
-
-export function createHudOverlayWindow(): BrowserWindow {
-  const isLinux = process.platform === 'linux'
-  const isLinuxWayland = isLinux && LINUX_SESSION_TYPE === 'wayland'
-  const primaryDisplay = screen.getPrimaryDisplay()
-  const { workArea } = primaryDisplay
-
-  // First launch (or Wayland, where the window never resizes itself): a wide,
-  // fairly tall transparent reserve so the bar and its popovers fit. Once the
-  // renderer reports its content size the window shrinks to it, anchored at
-  // its bottom-centre, and the reserve becomes click-through in the meantime.
-  const horizontalMargin = 12
-  const maxWindowWidth = 2200
-  const availableWidth = Math.max(760, workArea.width - horizontalMargin)
-  const defaultSize: HudSize = {
-    width: Math.min(maxWindowWidth, availableWidth),
-    height: Math.min(420, Math.max(300, Math.round(workArea.height * 0.38))),
-  }
-  const defaultAnchor: HudPoint = {
-    x: Math.floor(workArea.x + workArea.width / 2),
-    y: workArea.y + workArea.height - 8,
-  }
-
-  // Wayland ignores client-side positioning, so the remembered placement is moot there.
-  const placement = isLinuxWayland ? null : readHudPlacement()
-  const placementWorkArea = placement
-    ? screen.getDisplayNearestPoint(placement.anchor).workArea
-    : workArea
-  const { x, y, width, height } = boundsFromHudAnchor(
-    placement?.anchor ?? defaultAnchor,
-    placement?.size ?? defaultSize,
-    placementWorkArea,
-  )
-
-  const win = new BrowserWindow({
-    width,
-    height,
-    // Loose on purpose: `hud-overlay-set-size` fits the window to its content.
-    minWidth: HUD_MIN_WINDOW_SIZE.width,
-    minHeight: HUD_MIN_WINDOW_SIZE.height,
-    x,
-    y,
-    frame: false,
-    transparent: true,
-    // Fully transparent backing: without it macOS paints the window as a glass
-    // panel, and the OS rounding would clip the bar's own corners.
-    backgroundColor: '#00000000',
-    roundedCorners: false,
-    resizable: false,
-    alwaysOnTop: true,
-    skipTaskbar: !isLinuxWayland,
-    hasShadow: false,
-    title: 'Capturia',
-    show: !HEADLESS,
-    // On Linux/X11:
-    //   focusable: false — stops WM from managing stacking, buttons still receive clicks
-    //   type: 'dock' — maps to _NET_WM_WINDOW_TYPE_DOCK (highest X11 stacking level)
-    // On Linux/Wayland these hints can make the launcher effectively invisible
-    // from normal desktop UX, so fall back to a normal focusable window.
-    ...(isLinux && !isLinuxWayland && { focusable: false, type: 'dock' as const }),
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.mjs'),
-      nodeIntegration: false,
-      contextIsolation: true,
-      backgroundThrottling: false,
-    },
-  })
-
-  attachDevWindowLogging(win, 'launch')
-
-  // Re-apply always-on-top after creation and after show — some Linux X11 WMs
-  // ignore the constructor option and need a post-show re-apply.
-  // `visibleOnFullScreen` (macOS) lets the HUD follow the user across Spaces and
-  // stay visible over a fullscreen app instead of staying pinned to the Space it
-  // was first opened on. Wayland compositors reject the workspace hint entirely.
-  win.setAlwaysOnTop(true, 'screen-saver')
-  win.setVisibleOnAllWorkspaces(!isLinuxWayland, { visibleOnFullScreen: true })
-  win.once('show', () => {
-    win.setAlwaysOnTop(true, 'screen-saver')
-    win.setVisibleOnAllWorkspaces(!isLinuxWayland, { visibleOnFullScreen: true })
-  })
-
-  // Safety net: if the WM drops always-on-top, re-apply immediately.
-  win.on('always-on-top-changed', (_event, isAlwaysOnTop) => {
-    if (!isAlwaysOnTop && !win.isDestroyed()) {
-      win.setAlwaysOnTop(true, 'screen-saver')
-    }
-  })
-
-  // Fallback for Linux: periodically toggle always-on-top to force WM re-evaluation.
-  // Some compositors (especially Wayland/Mutter) silently drop the state.
-  if (isLinux) {
-    const alwaysOnTopTimer = setInterval(() => {
-      if (win.isDestroyed()) {
-        clearInterval(alwaysOnTopTimer)
-        return
-      }
-      if (!win.isMinimized() && !isLinuxWayland) {
-        win.setAlwaysOnTop(false)
-        win.setAlwaysOnTop(true, 'screen-saver')
-      }
-    }, 3000)
-    win.on('closed', () => clearInterval(alwaysOnTopTimer))
-  }
-
-  win.webContents.on('did-finish-load', () => {
-    win?.webContents.send('main-process-message', new Date().toLocaleString())
-  })
-
-  hudOverlayWindow = win
-  if (!isLinuxWayland) trackHudPlacement(win)
-
-  win.on('closed', () => {
-    if (hudOverlayWindow === win) {
-      hudOverlayWindow = null
-    }
-  })
-
-  if (VITE_DEV_SERVER_URL) {
-    win.loadURL(VITE_DEV_SERVER_URL + '?windowType=hud-overlay')
-  } else {
-    win.loadFile(path.join(RENDERER_DIST, 'index.html'), {
-      query: { windowType: 'hud-overlay' },
-    })
-  }
-
-  return win
-}
-
-export function createEditorWindow(): BrowserWindow {
-  const isMac = process.platform === 'darwin'
-
-  const win = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    minWidth: 800,
-    minHeight: 600,
-    ...(isMac && {
-      titleBarStyle: 'hiddenInset',
-      trafficLightPosition: { x: 12, y: 12 },
-    }),
-    transparent: false,
-    resizable: true,
-    alwaysOnTop: false,
-    skipTaskbar: false,
-    title: 'Capturia',
-    backgroundColor: '#09090b',
-    show: false, // shown via ready-to-show to avoid a white flash on first load
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.mjs'),
-      nodeIntegration: false,
-      contextIsolation: true,
-      webSecurity: false,
-      backgroundThrottling: false,
-      additionalArguments: editorAdditionalArguments(),
-    },
-  })
-
-  attachDevWindowLogging(win, 'editor')
-
-  // Maximize the window by default
-  win.maximize()
-
-  // The editor renders its own File/Edit/View menu bar in the custom titlebar,
-  // so hide the native OS menu bar on Windows/Linux (it stays reachable via Alt).
-  // macOS keeps its global menu bar.
-  if (!isMac) {
-    win.setAutoHideMenuBar(true)
-  }
-
-  // Show only once painted to avoid a white flash on cold Vite start.
-  win.once('ready-to-show', () => {
-    if (!HEADLESS) win.show()
-  })
-
-  // Inject the dark background before any React paint so the sub-titlebar area
-  // never flashes white on a cold Vite load.
-  win.webContents.on('dom-ready', () => {
-    win.webContents.insertCSS('html, body, #root { background: #09090b !important; }').catch(() => {
-      // Best-effort cosmetic; ignore if the page is mid-teardown.
-    })
-  })
-
-  win.webContents.on('did-finish-load', () => {
-    win?.webContents.send('main-process-message', new Date().toLocaleString())
-  })
-
-  if (VITE_DEV_SERVER_URL) {
-    win.loadURL(VITE_DEV_SERVER_URL + '?windowType=editor')
-  } else {
-    win.loadFile(path.join(RENDERER_DIST, 'index.html'), {
-      query: { windowType: 'editor' },
-    })
-  }
-
-  return win
-}
-
-export function createSourceSelectorWindow(): BrowserWindow {
-  const isLinuxWayland = process.platform === 'linux' && LINUX_SESSION_TYPE === 'wayland'
-  const { width, height } = screen.getPrimaryDisplay().workAreaSize
-
-  const win = new BrowserWindow({
-    width: 620,
-    height: 420,
-    minHeight: 350,
-    maxHeight: 500,
-    x: Math.round((width - 620) / 2),
-    y: Math.round((height - 420) / 2),
-    frame: false,
-    resizable: false,
-    alwaysOnTop: true,
-    transparent: true,
-    skipTaskbar: !isLinuxWayland,
-    title: 'Capturia Source Selector',
-    backgroundColor: '#00000000',
-    show: !HEADLESS,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.mjs'),
-      nodeIntegration: false,
-      contextIsolation: true,
-    },
-  })
-
-  attachDevWindowLogging(win, 'source-selector')
-
-  // Follow the user across macOS Spaces so the picker appears on the active
-  // desktop (or over a fullscreen app) regardless of where the HUD was opened.
-  if (process.platform === 'darwin') {
-    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  }
-
-  if (VITE_DEV_SERVER_URL) {
-    win.loadURL(VITE_DEV_SERVER_URL + '?windowType=source-selector')
-  } else {
-    win.loadFile(path.join(RENDERER_DIST, 'index.html'), {
-      query: { windowType: 'source-selector' },
-    })
-  }
-
-  return win
-}
-
-export function getPermissionCheckerWindow(): BrowserWindow | null {
-  if (permissionCheckerWindow && !permissionCheckerWindow.isDestroyed()) {
-    return permissionCheckerWindow
-  }
-  permissionCheckerWindow = null
-  return null
-}
-
-export function createPermissionCheckerWindow(): BrowserWindow {
-  const { width, height } = screen.getPrimaryDisplay().workAreaSize
-  const win = new BrowserWindow({
-    width: Math.min(980, Math.max(840, width - 80)),
-    height: Math.min(760, Math.max(620, height - 120)),
-    minWidth: 840,
-    minHeight: 620,
-    x: Math.round((width - Math.min(980, Math.max(840, width - 80))) / 2),
-    y: Math.round((height - Math.min(760, Math.max(620, height - 120))) / 2),
-    title: 'Capturia Permission Check',
-    frame: true,
-    resizable: true,
-    alwaysOnTop: true,
-    backgroundColor: '#1c1c22',
-    show: !HEADLESS,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.mjs'),
-      nodeIntegration: false,
-      contextIsolation: true,
-    },
-  })
-
-  attachDevWindowLogging(win, 'permission-checker')
-
-  // Same Spaces behaviour as the HUD and the source selector: the checker is
-  // opened from the HUD and must show up where the user currently is.
-  if (process.platform === 'darwin') {
-    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-  }
-
-  permissionCheckerWindow = win
-  win.on('closed', () => {
-    if (permissionCheckerWindow === win) {
-      permissionCheckerWindow = null
-    }
-  })
-
-  if (VITE_DEV_SERVER_URL) {
-    win.loadURL(VITE_DEV_SERVER_URL + '?windowType=permission-checker')
-  } else {
-    win.loadFile(path.join(RENDERER_DIST, 'index.html'), {
-      query: { windowType: 'permission-checker' },
-    })
-  }
-
-  return win
+	return win;
 }

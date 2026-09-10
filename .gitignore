@@ -12,9 +12,26 @@ dist
 dist-electron
 dist-ssr
 *.local
+.env
+
+# Native helper build outputs
+/electron/native/wgc-capture/build/
+/electron/native/compositor-view/build/
+/electron/native/screencapturekit/build/
+/electron/native/screencapturekit/.build/
+/electron/native/screencapturekit/.swiftpm/
+/electron/native/bin/
+/electron/native/pipewire-capture/build/
+/electron/native/pipewire-capture/target/
+
+# Native macOS generated files
+DerivedData/
+*.xcuserstate
+xcuserdata/
 
 # Editor directories and files
 .vscode/*
+.zed/
 !.vscode/extensions.json
 .idea
 .DS_Store
@@ -24,18 +41,95 @@ dist-ssr
 *.sln
 *.sw?
 release/**
-thirdparty/
-.codex/
 *.kiro/
-*.tsbuildinfo
-landing/.astro/
+.claude/
+.worktrees/
 # npx electron-builder --mac --win
-electron/native/bin/*
-!electron/native/bin/.gitkeep
 
-# Claude Code agent worktrees
-.claude/worktrees/
-
-# Playwright (npm run test:e2e)
+# Playwright
+test-results
 playwright-report/
-test-results/
+
+
+# Vitest browser mode screenshots
+__screenshots__/
+.vitest-attachments/
+
+# shell files
+/shell.sh
+# Nix
+result
+result-*
+.direnv/
+
+#kilocode
+.kilo/
+
+#others
+
+**/*.import
+
+# Auto-caption model + ORT wasm — regenerated at build by scripts/fetch-caption-model.mjs
+/caption-assets/
+
+# Native STT artifacts — whisper-stt-server binaries + ggml backend sidecars.
+/electron/native/bin/
+/electron/native/models/
+
+# Build cache for the native STT server (FetchContent clones + CMake build).
+/.cache/
+
+# Vite's dependency cache, moved out of node_modules so concurrent dev servers
+# (main checkout + worktrees, which share node_modules via a junction) stop
+# re-optimising into each other's cache. See `cacheDir` in vite.config.ts.
+/.vite-cache/
+
+# whisper.cpp DTW POC (tools/stt-eval/whispercpp-dtw-poc) — vendored engine
+# clone, downloaded GGML models, and generated build/results artifacts.
+# See technical-documentation/architecture/transcription-and-captions.md.
+/tools/stt-eval/whispercpp-dtw-poc/whisper.cpp/
+/tools/stt-eval/whispercpp-dtw-poc/build-cpu/
+/tools/stt-eval/whispercpp-dtw-poc/build-vulkan/
+/tools/stt-eval/whispercpp-dtw-poc/build-cuda/
+/tools/stt-eval/whispercpp-dtw-poc/build-harness/
+/tools/stt-eval/whispercpp-dtw-poc/fixtures/*.wav
+/tools/stt-eval/whispercpp-dtw-poc/results/
+
+opencode.json
+opencode.json
+
+# Frames dumped by `npm run bench:export -- --dumpFrame=N`, for eyes only.
+bench-frame-*.png
+
+# POC inputs (real recordings) and outputs — big, and not source.
+poc/media/
+poc/out/
+
+# poc-d3d — cargo build output and the vendored ffmpeg it links against.
+# ~1.3 GB of generated artifacts (1765 + 223 files), never source. Scoped to
+# these two subtrees so the POC's own sources stay committable.
+/poc-d3d/target/
+/poc-d3d/thirdparty/
+
+# cc-delegate worker worktrees/branches + scratch test artifacts.
+.cc-delegate/
+
+# Workbench LLM — secrets locaux, jamais versionnés
+.env.workbench
+
+# Workbench — sorties de run et bundle CLI, jamais versionnés
+workbench/reports/
+workbench/.build/
+workbench/runs/
+
+# Fixture d'évaluation — enregistrement réel de l'utilisateur, jamais versionné
+workbench/fixtures/
+
+# Artefacts de setup de la publication AUR (scripts/ + .github/workflows/aur-publish.yml).
+# La clé privée ne vit que dans le secret GitHub AUR_SSH_PRIVATE_KEY ; si `aur_ci`
+# réapparaît ici c'est une régénération locale, à détruire (`shred -u`) après usage.
+# Le dépôt est public : rien de tout ça ne doit pouvoir partir dans un commit.
+/aur_ci
+/aur_ci.pub
+/aur_known_hosts
+tmp_handoff.md

@@ -1,128 +1,61 @@
-> [!WARNING]
-> Capturia is still in beta and some workflows may be unstable on specific machines.
-
-[简体中文](./README.zh-CN.md)
-
 <p align="center">
-  <img src="public/app-icon.png" alt="Capturia Banner" width="256" />
-  <br />
-  <a href="https://github.com/MinhOmega/Capturia">
-    <img src="https://img.shields.io/badge/GitHub-Capturia-181717?logo=github" alt="Capturia on GitHub" />
-  </a>
-  <a href="https://MinhOmega.github.io/Capturia/">
-    <img src="https://img.shields.io/badge/Website-Landing%20Page-blue?logo=astro" alt="Capturia Landing Page" />
-  </a>
-  <a href="https://github.com/MinhOmega/Capturia/releases">
-    <img src="https://img.shields.io/github/downloads/MinhOmega/Capturia/total?logo=github&label=Downloads" alt="Total Downloads" />
-  </a>
+  <img src="icons/icons/png/256x256.png" alt="Capturia" width="64" />
 </p>
 
 # <p align="center">Capturia</p>
 
-<p align="center"><strong>Capturia is a free, open-source screen recorder and editor for creators, developers, and teams making product demos and walkthrough videos.</strong></p>
-
-Capturia is built on top of the excellent [OpenScreen](https://github.com/siddharthvaddem/openscreen) foundation and significantly upgraded for a stronger macOS-native capture and editing workflow.
+<p align="center"><strong>Free, open-source screen recorder and editor — intelligent cursor tracking, zoom effects, and cinematic output.</strong></p>
 
 <p align="center">
-  <img src="public/preview.png" alt="Capturia Preview 1" style="height: 320px; margin-right: 12px;" />
-  <img src="public/preview2.png" alt="Capturia Preview 2" style="height: 320px; margin-right: 12px;" />
-  <img src="public/preview3.png" alt="Capturia Preview 3" style="height: 320px; margin-right: 12px;" />
-  <img src="public/preview4.png" alt="Capturia Preview 4" style="height: 320px; margin-right: 12px;" />
+  <a href="https://github.com/MinhOmega/Capturia/blob/main/LICENSE"><img src="https://img.shields.io/github/license/MinhOmega/Capturia?style=for-the-badge&label=License" alt="License" /></a>
+  <a href="https://github.com/MinhOmega/Capturia/releases/latest"><img src="https://img.shields.io/github/v/release/MinhOmega/Capturia?style=for-the-badge&label=Release" alt="Latest release" /></a>
+  <img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-lightgrey?style=for-the-badge" alt="Platform" />
 </p>
 
-## Core Features
+> [!IMPORTANT]
+> **Capturia is a fork of [OpenScreen](https://github.com/getopenscreen/openscreen).**
+> It is re-baselined on upstream **v1.10.0** (commit `70e30c1f`), and most of this
+> codebase is still OpenScreen's work. OpenScreen is MIT licensed and its copyright
+> notice is preserved in [LICENSE](./LICENSE) alongside ours, as that licence requires.
+>
+> Capturia is **not affiliated with, endorsed by, or supported by** the OpenScreen
+> project. Please do not take Capturia's bugs to their issue tracker — report them
+> [here](https://github.com/MinhOmega/Capturia/issues) instead.
 
-- Record full screen or a selected app window.
-- Native macOS capture helper with native cursor hide/show capture behavior.
-- Camera overlay capture on the native recording pipeline.
-- Microphone voice recording with editor-side gain adjustment.
-- Timeline editing: trim, crop, zoom, cursor effects, and annotations.
-- Subtitle generation and rough-cut workflow in editor.
-- Multi-aspect export (16:9, 9:16, 1:1 and more), including batch export.
-- Export audio controls: track toggle, gain, loudness normalization, limiter.
-- Recording UX controls: countdown, auto-hide launcher, customizable stop shortcut, permission diagnostics.
+## Features
 
-## Installation
+- Record a whole screen or a single window, with microphone and system audio.
+- Webcam overlay with picture-in-picture, drag-to-position, mirroring and shape options.
+- Auto or manual zooms with adjustable depth, duration and easing; auto-zoom follows the cursor.
+- Cursor themes, size and smoothing, with click effects and post-recording path smoothing.
+- On-device captions for voiceovers — nothing is uploaded, and it works offline.
+- Wallpapers, gradients, solid colours or your own image as a background.
+- Crop, trim, per-segment speed, motion blur, and text/arrow/image annotations.
+- Export to MP4 or GIF at several aspect ratios, rendered on the GPU with a CPU fallback.
 
-Download the latest installer for your platform from [GitHub Releases](https://github.com/MinhOmega/Capturia/releases).
+## Install
 
-### macOS
+Download the installer for your platform from the
+[Releases page](https://github.com/MinhOmega/Capturia/releases).
 
-If macOS Gatekeeper blocks an unsigned build, or you see "Capturia is damaged and can't be opened", run:
+**Requirements:** macOS 13 (Ventura) or later, Windows 10 1903+ (build 18362), or a Linux
+desktop with `xdg-desktop-portal` and PipeWire. 8 GB RAM minimum, 16 GB recommended.
 
-```bash
-xattr -rd com.apple.quarantine "/Applications/Capturia.app"
-```
-
-Then grant required permissions in **System Settings -> Privacy & Security**:
-
-- Screen Recording (or Screen & System Audio on newer macOS)
-- Accessibility
-- Microphone (for voice recording)
-- Camera (for camera overlay)
-
-### Linux
-
-Download the `.deb` package from releases and install it on Ubuntu/Debian:
-
-```bash
-sudo apt install ./Capturia-Linux-*.deb
-```
-
-Or download the `.AppImage` and run:
-
-```bash
-chmod +x Capturia-Linux-*.AppImage
-./Capturia-Linux-*.AppImage
-```
+On macOS, grant **Screen Recording** and **Accessibility** under *System Settings > Privacy
+& Security* on first launch — recording cannot start until both are granted.
 
 ## Development
 
-### Requirements
-
-- Node.js 20+
-- npm 10+
-- macOS + Xcode Command Line Tools (for native helper build)
-
-### Run
-
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
-### Build
-
-```bash
-npm run build
-```
-
-On Ubuntu/Debian, to build only the installable `.deb` package:
-
-```bash
-npm run build:deb
-```
-
-## Built With
-
-- Electron
-- React
-- TypeScript
-- Vite
-- PixiJS
-- dnd-timeline
-
-## Contributing
-
-Contributions are welcome through issues and pull requests.
-
-- Issues: [https://github.com/MinhOmega/Capturia/issues](https://github.com/MinhOmega/Capturia/issues)
-- Discussions: [https://github.com/MinhOmega/Capturia/discussions](https://github.com/MinhOmega/Capturia/discussions)
-
-## Acknowledgements
-
-- Upstream project: [siddharthvaddem/openscreen](https://github.com/siddharthvaddem/openscreen)
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full setup, including the native capture
+helpers and the compositor addon, which are built per platform.
 
 ## License
 
-This project is licensed under the [MIT License](./LICENSE).
+[MIT](./LICENSE) — covering both Capturia's work and the OpenScreen code it derives from.
+Third-party components bundled in the installers are listed in
+[THIRD-PARTY-NOTICES.md](./THIRD-PARTY-NOTICES.md).

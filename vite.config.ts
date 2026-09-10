@@ -1,137 +1,103 @@
-import { defineConfig, type Plugin } from 'vite'
-import fs from 'node:fs'
-import path from 'node:path'
-import electron from 'vite-plugin-electron/simple'
-import react from '@vitejs/plugin-react'
-import pkg from './package.json'
-
-// ONNX Runtime wasm for the in-browser Whisper caption fallback. Only the
-// single-threaded SIMD build is shipped: the worker runs numThreads=1 (no
-// SharedArrayBuffer under file://) and Electron's Chromium always has WebAssembly
-// SIMD, so the non-SIMD build would never be loaded (the worker maps exactly this
-// file name through `wasmPaths`, see src/lib/captioning/ortWasm.ts). Served from
-// /ort/ in dev and emitted to dist/ort/ at build so the renderer resolves it
-// relative to its own page URL (see captionModel.ts).
-const ORT_WASM_FILES = ['ort-wasm-simd.wasm']
-const ORT_WASM_SRC_DIR = path.resolve(__dirname, 'node_modules/onnxruntime-web/dist')
-
-function ortWasmPlugin(): Plugin {
-  return {
-    name: 'capturia-ort-wasm',
-    configureServer(server) {
-      server.middlewares.use((req, res, next) => {
-        const match = /^\/ort\/([A-Za-z0-9._-]+\.wasm)(?:\?.*)?$/.exec(req.url ?? '')
-        if (!match || !ORT_WASM_FILES.includes(match[1])) return next()
-        const file = path.join(ORT_WASM_SRC_DIR, match[1])
-        if (!fs.existsSync(file)) return next()
-        res.setHeader('Content-Type', 'application/wasm')
-        res.setHeader('Cache-Control', 'no-cache')
-        fs.createReadStream(file).pipe(res)
-      })
-    },
-    generateBundle() {
-      for (const name of ORT_WASM_FILES) {
-        const file = path.join(ORT_WASM_SRC_DIR, name)
-        if (!fs.existsSync(file)) {
-          this.warn(
-            `[capturia-ort-wasm] missing ${file}; in-browser captions will not work in this build`,
-          )
-          continue
-        }
-        this.emitFile({ type: 'asset', fileName: `ort/${name}`, source: fs.readFileSync(file) })
-      }
-    },
-  }
-}
-
-const EMPTY_NODE_MODULE = path.resolve(__dirname, 'src/lib/vite-stubs/empty-node-module.ts')
-
-// Mirrors the guard in electron/main.ts: software rendering on Linux Wayland because
-// Electron 39 could hard-crash on some Ubuntu Wayland GPU stacks at startup. Kept as-is
-// through the Electron 41 upgrade (F8) until someone re-tests on a Wayland desktop; if
-// 41 launches cleanly without it, drop both this and the main.ts block together.
-const isLinuxWayland =
-  process.platform === 'linux' && (process.env.XDG_SESSION_TYPE || '').toLowerCase() === 'wayland'
-const devElectronArgs = [
-  '.',
-  '--no-sandbox',
-  ...(isLinuxWayland ? ['--in-process-gpu', '--disable-gpu', '--disable-gpu-compositing'] : []),
-]
+import path from "node:path";
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
+import electron from "vite-plugin-electron/simple";
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  define: {
-    __APP_VERSION__: JSON.stringify(pkg.version),
-  },
-  plugins: [
-    react(),
-    ortWasmPlugin(),
-    electron({
-      main: {
-        // Shortcut of `build.lib.entry`.
-        entry: 'electron/main.ts',
-        onstart({ startup }) {
-          return startup(devElectronArgs)
-        },
-        vite: {
-          build: {},
-        },
-      },
-      preload: {
-        // Shortcut of `build.rollupOptions.input`.
-        // Preload scripts may contain Web assets, so use the `build.rollupOptions.input` instead `build.lib.entry`.
-        input: path.join(__dirname, 'electron/preload.ts'),
-      },
-      // Ployfill the Electron and Node.js API for Renderer process.
-      // If you want use Node.js in Renderer process, the `nodeIntegration` needs to be enabled in the Main process.
-      // See https://github.com/electron-vite/vite-plugin-electron-renderer
-      renderer:
-        process.env.NODE_ENV === 'test'
-          ? // https://github.com/electron-vite/vite-plugin-electron-renderer/issues/78#issuecomment-2053600808
-            undefined
-          : {},
-    }),
-  ],
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, 'src'),
-      // @xenova/transformers: env.js statically imports fs/path/url; onnx.js imports
-      // onnxruntime-node (must not be bundled in the renderer: it requires fs).
-      // These aliases only apply to the renderer build; the electron main/preload
-      // builds have their own config and keep the real Node modules.
-      fs: EMPTY_NODE_MODULE,
-      path: EMPTY_NODE_MODULE,
-      url: EMPTY_NODE_MODULE,
-      'onnxruntime-node': path.resolve(__dirname, 'src/lib/vite-stubs/onnxruntime-node-stub.ts'),
-    },
-  },
-  optimizeDeps: {
-    exclude: ['@xenova/transformers'],
-  },
-  // The captioning worker dynamically imports @xenova/transformers, which makes the
-  // worker bundle code-split, unsupported by the default "iife" worker format.
-  worker: {
-    format: 'es',
-  },
-  build: {
-    target: 'esnext',
-    minify: 'terser',
-    terserOptions: {
-      compress: {
-        drop_console: true,
-        drop_debugger: true,
-        pure_funcs: ['console.log', 'console.debug'],
-      },
-    },
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          'pixi': ['pixi.js'],
-          'react-vendor': ['react', 'react-dom'],
-          'video-processing': ['mediabunny', 'mp4box', '@fix-webm-duration/fix'],
-        },
-      },
-    },
-    chunkSizeWarningLimit: 1000,
-  },
-})
+	// Vite's dependency cache defaults to `node_modules/.vite`, and in this repo every
+	// worktree's `node_modules` is a JUNCTION to the main checkout's — so the main repo
+	// and every worktree share ONE cache directory. Running two dev servers at once
+	// (routine here) then has them re-optimising into each other's cache: the second run
+	// rewrites `deps/` while the first has already handed the browser URLs stamped with
+	// the previous `?v=` token, so the renderer ends up holding two generations of the
+	// same dependency at once — "Invalid hook call / more than one copy of React",
+	// `useState` null, blank editor. Same symptom as the `dedupe` note below, different
+	// cause: that one is about resolution, this one about a cache with several writers.
+	// Keeping the cache beside the checkout that owns it (NOT under `node_modules`, which
+	// is the junction) makes concurrent servers independent.
+	cacheDir: path.resolve(__dirname, ".vite-cache"),
+	plugins: [
+		react(),
+		electron({
+			main: {
+				entry: "electron/main.ts",
+				onstart({ startup }) {
+					if (process.env.NO_ELECTRON) {
+						console.log("NO_ELECTRON is set, skipping Electron startup.");
+						return;
+					}
+					const env = { ...process.env };
+					delete env.ELECTRON_RUN_AS_NODE;
+					return startup(["."], { env });
+				},
+				vite: {
+					build: {},
+				},
+			},
+			preload: {
+				input: path.join(__dirname, "electron/preload.ts"),
+			},
+			renderer: process.env.NODE_ENV === "test" ? undefined : {},
+		}),
+	],
+	resolve: {
+		alias: {
+			"@": path.resolve(__dirname, "src"),
+		},
+		// This checkout is a git worktree nested under the main repo, and its
+		// node_modules is incomplete (e.g. zustand is absent), so bare deps that
+		// aren't present here resolve UP into the main repo's node_modules and drag
+		// in a SECOND copy of React — "Invalid hook call / more than one copy of
+		// React" → blank editor. Force every importer (app + hoisted deps like
+		// zustand) onto this checkout's single React copy. Harmless in a normal
+		// full install (already a single copy there); required to run from a worktree.
+		dedupe: ["react", "react-dom", "react/jsx-runtime"],
+	},
+	server: {
+		watch: {
+			// Nested worktrees (`.claude/worktrees/**`) and delegate task checkouts
+			// (`.cc-delegate/**`) each carry their own full copy of the repo, including
+			// their own vite/tsconfig files. Without this, deleting/touching one (e.g.
+			// `git worktree remove`) fires hundreds of change events across the main
+			// dev server, forcing repeated full-reloads unrelated to any real source
+			// change — observed as the running app going unresponsive/stale mid-session.
+			//
+			// `crates/thirdparty/**` is the vendored ffmpeg tree the Rust compositor
+			// builds against (see crates/.cargo/config.toml). It is gitignored but still
+			// watched: several thousand files, including a doc/ directory full of HTML,
+			// whose extraction fires the same reload storm.
+			ignored: ["**/.claude/worktrees/**", "**/.cc-delegate/**", "**/crates/thirdparty/**"],
+		},
+	},
+	build: {
+		target: "esnext",
+		minify: "terser",
+		terserOptions: {
+			compress: {
+				// Drop the noise, keep the diagnostics. `drop_console: true` takes
+				// console.error and console.warn with it, which leaves a packaged build
+				// with no signal at all for failures that are silent by design -- a
+				// refused subtitle sidecar never throws and never reaches the UI, so
+				// its console.error was the only trace it left. The array form is what
+				// the neighbouring `pure_funcs` list already implied was intended.
+				drop_console: ["log", "debug"],
+				drop_debugger: true,
+			},
+		},
+		rollupOptions: {
+			output: {
+				manualChunks(id) {
+					if (id.includes("react-dom") || id.includes("/react/")) return "react-vendor";
+					if (
+						id.includes("mediabunny") ||
+						id.includes("mp4box") ||
+						id.includes("fix-webm-duration")
+					)
+						return "video-processing";
+				},
+			},
+		},
+		chunkSizeWarningLimit: 1000,
+	},
+});

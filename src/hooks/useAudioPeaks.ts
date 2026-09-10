@@ -1,76 +1,14 @@
-import { useEffect, useRef, useState } from 'react'
-import { materializeLocalSourceFile, releaseLocalSourceFile } from '@/lib/exporter/localSourceFile'
-import { shouldStreamAudioPeaks, streamAudioPeaks } from './streamingAudioPeaks'
+import { useEffect, useState } from "react";
+import { materializeLocalSourceFile, releaseLocalSourceFile } from "@/lib/exporter/localSourceFile";
+import { MAX_IN_MEMORY_SOURCE_BYTES } from "@/lib/exporter/sourceFileLimits";
+import { loadFileAsArrayBuffer } from "@/lib/exporter/streamingDecoder";
+import { computePeaksFromFileStreaming } from "./streamingAudioPeaks";
 
-/**
- * Decoded waveform peaks for one media source. `peaks` is [min, max] per block
- * (see `audioPeaks.ts`); `durationMs` is the decoded audio's own duration, which
- * is the SOURCE timeline (Capturia maps it into effective time when drawing).
- */
-export interface AudioPeaksResult {
-  peaks: Float32Array
-  durationMs: number
-}
-
-/**
- * `data` is the peaks decoded so far: partial while `status` is `'streaming'`,
- * so the timeline fills in as a huge recording is read. `'unavailable'` means
- * both decode paths failed and the caller should show a hint instead of a
- * waveform.
- */
-export interface AudioPeaksState {
-  data: AudioPeaksResult | null
-  status: 'idle' | 'decoding' | 'streaming' | 'ready' | 'unavailable'
-  /** 0..1 while streaming; 0 on the in-memory path, which has no milestones. */
-  progress: number
-}
-
-export interface AudioPeaksSource {
-  /** Raw filesystem path; read through the approved-file IPC when available. */
-  filePath?: string | null
-  /** `local-media://` (or blob/http) URL used as the fetch fallback. */
-  url?: string | null
-}
-
-let _audioCtx: AudioContext | null = null
+let _audioCtx: AudioContext | null = null;
 /** Returns the shared AudioContext, creating it lazily on first call. */
 function getAudioCtx(): AudioContext {
-  if (!_audioCtx) _audioCtx = new AudioContext()
-  return _audioCtx
-}
-
-function abortError(): DOMException {
-  return new DOMException('Aborted', 'AbortError')
-}
-
-function throwIfAborted(signal?: AbortSignal): void {
-  if (signal?.aborted) throw abortError()
-}
-
-/**
- * Loads the media file bytes. Prefers the preload `readBinaryFile` IPC (W1-c,
- * approved paths only); falls back to `fetch` on the URL, which the
- * `local-media://` protocol supports.
- */
-async function loadSourceBytes(
-  source: AudioPeaksSource,
-  signal?: AbortSignal,
-): Promise<ArrayBuffer> {
-  const api = typeof window !== 'undefined' ? window.electronAPI : undefined
-  if (source.filePath && api?.readBinaryFile) {
-    try {
-      const result = await api.readBinaryFile(source.filePath)
-      throwIfAborted(signal)
-      if (result.success && result.data) return result.data
-    } catch (err) {
-      if (err instanceof DOMException && err.name === 'AbortError') throw err
-      // Fall through to fetch
-    }
-  }
-  if (!source.url) throw new Error('No readable audio source')
-  const response = await fetch(source.url, { signal })
-  if (!response.ok) throw new Error(`Failed to fetch audio source (${response.status})`)
-  return response.arrayBuffer()
+	if (!_audioCtx) _audioCtx = new AudioContext();
+	return _audioCtx;
 }
 
 /**
@@ -78,200 +16,230 @@ async function loadSourceBytes(
  * On abort, the worker is terminated and the promise rejects with AbortError.
  */
 function computePeaksInWorker(
-  audioBuffer: AudioBuffer,
-  signal?: AbortSignal,
+	audioBuffer: AudioBuffer,
+	signal?: AbortSignal,
 ): Promise<Float32Array> {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(abortError())
-      return
-    }
+	return new Promise((resolve, reject) => {
+		if (signal?.aborted) {
+			reject(new DOMException("Aborted", "AbortError"));
+			return;
+		}
 
-    const worker = new Worker(new URL('./audioPeaksWorker.ts', import.meta.url), {
-      type: 'module',
-    })
+		const worker = new Worker(new URL("./audioPeaksWorker.ts", import.meta.url), {
+			type: "module",
+		});
 
-    const onAbort = () => {
-      worker.terminate()
-      reject(abortError())
-    }
-    signal?.addEventListener('abort', onAbort, { once: true })
+		const onAbort = () => {
+			worker.terminate();
+			reject(new DOMException("Aborted", "AbortError"));
+		};
+		signal?.addEventListener("abort", onAbort, { once: true });
 
-    // slice() creates an owned copy so the transfer is safe and the
-    // AudioBuffer remains valid if anything else holds a reference.
-    const channels: Float32Array[] = []
-    for (let c = 0; c < audioBuffer.numberOfChannels; c++) {
-      channels.push(audioBuffer.getChannelData(c).slice())
-    }
+		// slice() creates an owned copy so the transfer is safe and the
+		// AudioBuffer remains valid if anything else holds a reference.
+		const channels: Float32Array[] = [];
+		for (let c = 0; c < audioBuffer.numberOfChannels; c++) {
+			channels.push(audioBuffer.getChannelData(c).slice());
+		}
 
-    worker.onmessage = (e: MessageEvent<Float32Array>) => {
-      signal?.removeEventListener('abort', onAbort)
-      worker.terminate()
-      resolve(e.data)
-    }
+		worker.onmessage = (e: MessageEvent<Float32Array>) => {
+			signal?.removeEventListener("abort", onAbort);
+			worker.terminate();
+			resolve(e.data);
+		};
 
-    worker.onerror = (e) => {
-      signal?.removeEventListener('abort', onAbort)
-      worker.terminate()
-      reject(e)
-    }
+		worker.onerror = (e) => {
+			signal?.removeEventListener("abort", onAbort);
+			worker.terminate();
+			reject(e);
+		};
 
-    worker.postMessage(
-      { channels, duration: audioBuffer.duration },
-      channels.map((ch) => ch.buffer),
-    )
-  })
-}
-
-async function computeInMemoryPeaks(
-  source: AudioPeaksSource,
-  signal?: AbortSignal,
-): Promise<AudioPeaksResult> {
-  const bytes = await loadSourceBytes(source, signal)
-  throwIfAborted(signal)
-  const audioBuffer = await getAudioCtx().decodeAudioData(bytes)
-  throwIfAborted(signal)
-  const peaks = await computePeaksInWorker(audioBuffer, signal)
-  return { peaks, durationMs: audioBuffer.duration * 1000 }
+		worker.postMessage(
+			{ channels, duration: audioBuffer.duration },
+			channels.map((ch) => ch.buffer),
+		);
+	});
 }
 
 /**
- * Streams the recording's audio instead of reading it whole: the file is
- * materialized on demand (OPFS-backed for a huge source, so nothing multi-GB is
- * resident) and decoded chunk by chunk into peak columns.
+ * Bytes one second of decoded audio occupies in an `AudioBuffer`: Float32,
+ * stereo, 44.1 kHz. An estimate on purpose — it picks the pipeline, before
+ * anything has been decoded and while the real rate is still unknown.
  */
-async function computeStreamedPeaks(
-  filePath: string,
-  signal: AbortSignal | undefined,
-  onProgress: (partial: AudioPeaksResult, progress: number) => void,
-): Promise<AudioPeaksResult> {
-  const name = filePath.split(/[\\/]/).pop() || 'recording'
-  const file = await materializeLocalSourceFile(filePath, name, { signal })
-  try {
-    return await streamAudioPeaks(file, {
-      signal,
-      onProgress: (update) =>
-        onProgress({ peaks: update.peaks, durationMs: update.durationMs }, update.progress),
-    })
-  } finally {
-    // Drops the OPFS cache reference taken for a large source (no-op otherwise).
-    releaseLocalSourceFile(file.name)
-  }
-}
+const DECODED_BYTES_PER_SEC = 44_100 * 2 * 4;
 
-/** Size of the source when the desktop bridge can tell us; null otherwise. */
-async function readSourceSize(filePath: string | null): Promise<number | null> {
-  const api = typeof window !== 'undefined' ? window.electronAPI : undefined
-  if (!filePath || !api?.getReadableFileInfo) return null
-  try {
-    const info = await api.getReadableFileInfo(filePath)
-    return info.success && typeof info.size === 'number' ? info.size : null
-  } catch {
-    return null
-  }
-}
+/**
+ * Routes to the right peaks pipeline. Small/remote files use the original
+ * decodeAudioData → worker path. Recordings too big to hold decoded stream
+ * instead: the file is materialized into OPFS (reused by the export afterwards)
+ * and its audio is decoded chunk-by-chunk into peaks, so the whole recording is
+ * never held in memory.
+ *
+ * "Too big" is measured on the DECODED size, estimated from duration — not on
+ * the file's bytes, which is close to meaningless here and is what this used to
+ * compare. Compression ratio is the entire point of a screen recording: a
+ * 32-minute capture is 68 MB on disk and 656 MB decoded, and the in-memory path
+ * then `slice()`s every channel again for the worker transfer. That is ~1.4 GB
+ * of transient allocation to draw 400 bars, and it sat comfortably under a
+ * 256 MB *file* threshold — so the streaming path built for exactly this case
+ * never ran. (`ffmpeg -vn -f null` decodes the same track in 2.1s: that is the
+ * floor all that allocation was being piled onto.)
+ */
+async function computePeaksForUrl(
+	videoUrl: string,
+	signal?: AbortSignal,
+	durationSec?: number,
+): Promise<Float32Array> {
+	const isRemoteUrl = /^(https?:|blob:|data:)/i.test(videoUrl);
 
-function sourceKey(source: AudioPeaksSource | undefined): string | null {
-  if (!source) return null
-  const key = source.filePath || source.url
-  return key ? key : null
-}
+	// Native first. Both browser pipelines below decode the whole track in
+	// Chromium — 12s on a 32-minute recording, whichever one runs — where ffmpeg
+	// in the main process takes ~2s and caches the result on disk, so the second
+	// time it is free.
+	//
+	// Only ONE of the three replies is a reason to fall through (see
+	// `AudioPeaksResult`): `peaks: null` means "no native ffmpeg on this host",
+	// which is the gap the browser pipelines exist to cover. `success: false`
+	// means ffmpeg RAN and found nothing to decode — a verdict, not a gap.
+	//
+	// Falling through on that verdict is issue #348's real cost: a recording made
+	// with no mic and no system audio has no audio stream at all, ffmpeg says so
+	// in ~2s, and the renderer then spent a 175 MB copy into OPFS plus a full
+	// Chromium decode re-discovering it on every project open. Empty peaks rather
+	// than a throw, so the answer caches like any other and is never recomputed.
+	if (!isRemoteUrl && durationSec && window.electronAPI?.getAudioPeaks) {
+		try {
+			const native = await window.electronAPI.getAudioPeaks(videoUrl, durationSec);
+			if (native.success) {
+				if (native.peaks && native.peaks.length > 0) return native.peaks;
+				if (native.peaks !== null) return new Float32Array(0);
+			} else {
+				return new Float32Array(0);
+			}
+		} catch {
+			// The IPC itself failed — that IS a gap, so fall through.
+		}
+	}
 
-function isAbort(error: unknown): boolean {
-  return error instanceof DOMException && error.name === 'AbortError'
+	if (!isRemoteUrl && window.electronAPI?.getReadableFileInfo) {
+		const info = await window.electronAPI.getReadableFileInfo(videoUrl);
+		const decodedBytes = (durationSec ?? 0) * DECODED_BYTES_PER_SEC;
+		if (
+			info.success &&
+			((typeof info.size === "number" && info.size > MAX_IN_MEMORY_SOURCE_BYTES) ||
+				decodedBytes > MAX_IN_MEMORY_SOURCE_BYTES)
+		) {
+			const filename = (videoUrl.split(/[\\/]/).pop() || "video").replace(/^file:/, "");
+			// signal also aborts the OPFS copy (unless the export shares it).
+			const file = await materializeLocalSourceFile(videoUrl, filename, { signal });
+			try {
+				return await computePeaksFromFileStreaming(file, signal);
+			} finally {
+				releaseLocalSourceFile(file.name);
+			}
+		}
+	}
+
+	const { data: arrayBuffer } = await loadFileAsArrayBuffer(videoUrl);
+	const audioBuffer = await getAudioCtx().decodeAudioData(arrayBuffer);
+	return computePeaksInWorker(audioBuffer, signal);
 }
 
 /**
- * Decodes the audio of a media source into waveform peaks.
+ * Peaks describe a FILE, so they are cached per file, at module scope.
  *
- * Two paths. Sources that fit in memory are read whole and decoded with
- * `decodeAudioData`, which is fastest and handles the common containers.
- * Anything above `MAX_IN_MEMORY_SOURCE_BYTES` would need the whole recording
- * plus its PCM resident at once, so it is demuxed and decoded chunk by chunk
- * instead (`streamingAudioPeaks.ts`), reporting partial columns as it goes so
- * the waveform draws progressively rather than after a long blank wait.
+ * This used to be a `useRef` Map, i.e. one cache per mounted component. Peaks
+ * for a 32-minute recording cost seconds and (before the routing fix above) a
+ * gigabyte-plus of transient allocation, and that was paid again for every clip
+ * of the same asset, and again from scratch on every remount — switching
+ * Media↔Edit re-decoded the whole recording, which is what "the waveform takes
+ * ages to appear" actually was.
  *
- * A small source that fails the in-memory decode falls back to the streaming
- * path, which handles containers `decodeAudioData` refuses; a large one does
- * not fall back the other way, since reading it whole is what we are avoiding.
- * When neither works the status is `'unavailable'` and the caller shows a hint.
+ * `inFlight` is the other half: N clips of one asset mounting together must
+ * share a single decode instead of racing N of them.
  *
- * In-flight work is aborted and stale peaks dropped as soon as the source
- * changes. Finished results are cached per source for the lifetime of the hook
- * instance, so toggling the waveform off and on does not decode again; partial
- * results are never cached.
+ * FAILURE IS CACHED TOO (`null`), which is why the value type is nullable and
+ * why lookups go through `has()` rather than truthiness. A file with no audio
+ * fails deterministically, so retrying it is pure cost — and on a host with no
+ * native ffmpeg that retry is the whole-file browser decode. Caching only
+ * successes meant a recording WITH a mic paid for its waveform once while one
+ * WITHOUT paid, and threw away, the same work on every mount (issue #348).
  */
-export function useAudioPeaks(source: AudioPeaksSource | undefined): AudioPeaksState {
-  const cacheRef = useRef<Map<string, AudioPeaksResult>>(new Map())
-  const key = sourceKey(source)
-  const [state, setState] = useState<AudioPeaksState>(() => {
-    const cached = key ? cacheRef.current.get(key) : undefined
-    return cached
-      ? { data: cached, status: 'ready', progress: 1 }
-      : { data: null, status: 'idle', progress: 0 }
-  })
-  const filePath = source?.filePath ?? null
-  const url = source?.url ?? null
+const peaksCache = new Map<string, Float32Array | null>();
+const peaksInFlight = new Map<string, Promise<Float32Array>>();
 
-  useEffect(() => {
-    if (!key) {
-      setState({ data: null, status: 'idle', progress: 0 })
-      return
-    }
+function loadPeaks(videoUrl: string, durationSec: number): Promise<Float32Array> {
+	const existing = peaksInFlight.get(videoUrl);
+	if (existing) return existing;
+	// Deliberately NOT wired to any component's AbortSignal: the work is shared,
+	// so one subscriber unmounting must not cancel it for the others. An unmount
+	// drops the result instead — and the cache means the next mount is free.
+	const promise = computePeaksForUrl(videoUrl, undefined, durationSec)
+		.then((p) => {
+			peaksCache.set(videoUrl, p);
+			return p;
+		})
+		.catch((err: unknown) => {
+			// "This file has no waveform" is an answer, and a permanent one — record
+			// it so the decode is never attempted again for this file.
+			peaksCache.set(videoUrl, null);
+			throw err;
+		})
+		.finally(() => {
+			peaksInFlight.delete(videoUrl);
+		});
+	peaksInFlight.set(videoUrl, promise);
+	return promise;
+}
 
-    const cached = cacheRef.current.get(key)
-    if (cached) {
-      setState({ data: cached, status: 'ready', progress: 1 })
-      return
-    }
+/**
+ * Decodes audio from `videoUrl` into paired [min, max] peaks (length = 2 * N
+ * blocks). Returns `null` while decoding, and stays `null` on no audio track or
+ * decode failure (silent degradation).
+ *
+ * Nothing is decoded until `durationSec` is known. It is not a hint: it is what
+ * routes the work to the cheap native ffmpeg tier (`computePeaksForUrl` skips
+ * that tier without it and falls through to reading the whole file into memory),
+ * and `ClipWaveform` cannot draw a single bar without it either. Starting early
+ * therefore bought nothing and cost a full-file read — so the effect waits, and
+ * re-runs when the probed duration arrives.
+ */
+export function useAudioPeaks(videoUrl?: string, durationSec?: number): Float32Array | null {
+	const [peaks, setPeaks] = useState<Float32Array | null>(() =>
+		videoUrl ? (peaksCache.get(videoUrl) ?? null) : null,
+	);
 
-    let cancelled = false
-    const controller = new AbortController()
-    const signal = controller.signal
+	useEffect(() => {
+		if (!videoUrl) {
+			setPeaks(null);
+			return;
+		}
 
-    const onPartial = (partial: AudioPeaksResult, progress: number) => {
-      if (cancelled) return
-      setState({ data: partial, status: 'streaming', progress })
-    }
+		if (peaksCache.has(videoUrl)) {
+			setPeaks(peaksCache.get(videoUrl) ?? null);
+			return;
+		}
 
-    ;(async () => {
-      const size = await readSourceSize(filePath)
-      if (cancelled) return
-      const streamFirst = filePath !== null && shouldStreamAudioPeaks(size)
-      setState({ data: null, status: streamFirst ? 'streaming' : 'decoding', progress: 0 })
+		setPeaks(null);
+		if (!durationSec) return;
+		let cancelled = false;
 
-      try {
-        let next: AudioPeaksResult
-        if (streamFirst && filePath) {
-          next = await computeStreamedPeaks(filePath, signal, onPartial)
-        } else {
-          try {
-            next = await computeInMemoryPeaks({ filePath, url }, signal)
-          } catch (error) {
-            if (isAbort(error) || !filePath) throw error
-            // Containers `decodeAudioData` cannot open still demux fine.
-            console.warn('useAudioPeaks: in-memory decode failed, streaming instead:', error)
-            if (cancelled) return
-            setState({ data: null, status: 'streaming', progress: 0 })
-            next = await computeStreamedPeaks(filePath, signal, onPartial)
-          }
-        }
-        if (cancelled) return
-        cacheRef.current.set(key, next)
-        setState({ data: next, status: 'ready', progress: 1 })
-      } catch (error) {
-        // AbortError means the effect cleaned up, so no state update needed.
-        if (isAbort(error)) return
-        console.warn('useAudioPeaks: could not decode audio for waveform:', error)
-        if (!cancelled) setState({ data: null, status: 'unavailable', progress: 0 })
-      }
-    })()
+		loadPeaks(videoUrl, durationSec)
+			.then((p) => {
+				if (!cancelled) setPeaks(p);
+			})
+			.catch((err: unknown) => {
+				if (err instanceof DOMException && err.name === "AbortError") return;
+				// No audio track or unsupported format: degrade to no waveform, but log
+				// so an unexpectedly-missing waveform is diagnosable.
+				console.warn("useAudioPeaks: could not decode audio for waveform:", err);
+				if (!cancelled) setPeaks(null);
+			});
 
-    return () => {
-      cancelled = true
-      controller.abort()
-    }
-  }, [key, filePath, url])
+		return () => {
+			cancelled = true;
+		};
+	}, [videoUrl, durationSec]);
 
-  return state
+	return peaks;
 }

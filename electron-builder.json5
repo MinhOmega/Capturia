@@ -3,23 +3,74 @@
   "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
   "appId": "com.capturia.app",
   "asar": true,
-  "productName": "Capturia",
-  // Must stay byte-identical to COPYRIGHT in electron/about.ts (about.test.ts pins it).
-  "copyright": "© 2025-2026 MinhOmega and contributors — MIT License",
-  // Capturia loads no native npm module at runtime: the macOS helpers are standalone Swift
-  // binaries under extraResources, onnxruntime-node is stubbed out of the renderer bundle and
-  // sharp only arrives as an optional dependency of @xenova/transformers. Rebuilding those
-  // prebuilt (napi) modules against Electron's ABI is wasted CI time and sharp built from
-  // source needs a system libvips the runners do not have (upstream c6331bad).
-  "npmRebuild": false,
-  "buildDependenciesFromSource": false,
-  // Any .node that does get packaged cannot be dlopen'd from inside the asar.
+  // .node binaries can't be dlopen'd from inside an asar — must live unpacked.
+  // onnxruntime-node distributes as a `.node` shared object that whisper.cpp
+  // helpers run from process spawn, so they all unpack via the same glob.
   "asarUnpack": [
     "**/*.node"
   ],
+  "productName": "Capturia",
+  // There is deliberately no `electronVersion` here. electron-builder needs an EXACT
+  // version because it downloads the binaries for one release, and it takes that from
+  // package.json's `electron` devDependency, which is pinned without a caret for this
+  // reason. Setting it here as well would make the version two facts that have to agree,
+  // and nothing would notice when they stopped.
+  //
+  // The error that leads people here is "Electron version ... is a range, not a fixed
+  // version", raised when the project has no `node_modules/electron` of its own — a git
+  // worktree, typically, where module resolution finds the parent checkout's copy but
+  // electron-builder looks only at the project's. The fix is `npm ci` in the worktree, not
+  // a second declaration of the version.
+  // Declared rather than left to default BECAUSE the default is package.json's `author` — one
+  // name, where LICENSE has holders on both sides of the fork. Feeds Info.plist's
+  // NSHumanReadableCopyright and the Windows LegalCopyright, so leaving it implicit put an
+  // attribution on the binary that the LICENSE it ships alongside does not make. Capturia is a
+  // fork of OpenScreen and a large part of this binary is still theirs, so both are named here
+  // for the same reason LICENSE names both. Any other surface that renders this line must
+  // repeat it byte-for-byte — electron/about.ts COPYRIGHT does, and about.test.ts pins them
+  // together.
+  "copyright": "© 2025-2026 Capturia contributors — MIT License. Includes OpenScreen, © 2025-2026 OpenScreen contributors.",
+  // Declared explicitly, NOT to start publishing from CI — every build still passes
+  // `--publish never`, which suppresses uploading only. What this turns on is the update
+  // METADATA: `latest.yml` / `latest-mac.yml` / `latest-linux.yml`, the `.blockmap` used for
+  // differential downloads, `app-update.yml` inside resources, and the `package-type` marker
+  // in deb/rpm/pacman that tells electron-updater which installer to run.
+  //
+  // Some of that was already being produced, because app-builder-lib falls back to inferring
+  // the provider from `.git/config`'s origin when no publish config is declared — which works
+  // in CI and silently stops working for anyone building from a source tarball. Declaring it
+  // (plus `repository` in package.json) makes it deterministic instead of incidental.
+  //
+  // The Store (appx) target deliberately gets NO publish config: `isSuitableWindowsTarget()`
+  // only writes `app-update.yml` for nsis, so the MSIX build cannot arm an updater that its
+  // read-only container could never run. Do not add `appx.electronUpdaterAware`.
+  "publish": [
+    {
+      "provider": "github",
+      "owner": "MinhOmega",
+      "repo": "Capturia"
+    }
+  ],
+  // Fails the build when compositor_view.node is older than the crates/ Rust sources. Plain
+  // `npm run build` does not rebuild the addon, and a stale one fails SILENTLY at runtime
+  // (unknown scene fields are #[serde(default)]) rather than erroring. See the script header
+  // and technical-documentation/engineering/build-and-packaging.md.
+  "beforePack": "scripts/before-pack.cjs",
+  "npmRebuild": true,
+  // sharp ships ABI-stable (napi) prebuilt binaries with bundled libvips. Building it from source
+  // needs a system libvips we don't provide and breaks on CI/local ("vips-cpp.42 not found"), so we
+  // let electron-builder use the prebuilt instead of recompiling.
+  "buildDependenciesFromSource": false,
   "compression": "normal",
   "directories": {
-    "output": "release/${version}"
+    "output": "release/${version}",
+    // Electron-builder's default, spelled out because the appx target depends on it:
+    // it looks for Store tile assets in `<buildResources>/appx/` and, when that
+    // directory is absent, silently packages its own vendored placeholders instead
+    // (winCodeSign's SampleAppx.*.png — blank white squares). Shipping those failed
+    // Store certification 10.1.1.11 "On Device Tiles". `build/appx/` is committed and
+    // regenerated by `npm run assets:appx`.
+    "buildResources": "build"
   },
   "files": [
     "dist",
@@ -31,109 +82,358 @@
     "!CONTRIBUTING.md",
     "!LICENSE"
   ],
+  // Asset layout contract: "wallpapers/" and "cursors/" under resourcesPath must
+  // align with assetBaseDir in electron/preload.ts (packaged branch).
+  // Native capture helpers + whisper-stt-server binaries (and their ggml
+  // backend sidecars) live under `electron/native/bin/<platform>-<arch>/`
+  // and the per-platform sections below limit them to the matching arch in
+  // each installer.
+  //
+  // ponytail: the STT model (ggml-small-q8_0.bin) is downloaded into the
+  // userData cache on first use by electron/stt/modelManager.ts, so no model
+  // files are bundled at build time.
   "extraResources": [
+    // Attribution + LGPL source offer for the bundled ffmpeg DLLs and
+    // whisper.cpp binaries. Redistributing LGPL libraries obliges us to ship
+    // the notice with them, so it goes in resources/, not just in the repo.
+    {
+      "from": "THIRD-PARTY-NOTICES.md",
+      "to": "THIRD-PARTY-NOTICES.md"
+    },
+    {
+      "from": "LICENSE",
+      "to": "LICENSE"
+    },
     {
       "from": "public/wallpapers",
-      "to": "assets/wallpapers"
-    }
-  ],
-  // Where electron-updater looks for `latest*.yml`. Having a publish provider is also what
-  // makes electron-builder write those feeds (plus `.blockmap`s) next to the installers and the
-  // `package-type` marker install-channel.ts reads. Nothing is uploaded by electron-builder
-  // itself: every build script passes `--publish never`; release.yml attaches the artifacts.
-  "publish": [
+      "to": "wallpapers"
+    },
     {
-      "provider": "github",
-      "owner": "MinhOmega",
-      "repo": "Capturia",
-      "releaseType": "release"
+      "from": "public/cursors",
+      "to": "cursors"
+    },
+    // The segmentation model, out of the asar for the same reason as the two above: the main
+    // process resolves it with `original-fs` (see realExistsSync in compositorViewService.ts),
+    // which cannot see inside app.asar, so a copy that ships only in `dist` resolves to null and
+    // the compositor draws the webcam unsegmented — the whole camera-background feature, silently
+    // off in every installer. 457 KB.
+    {
+      "from": "public/mediapipe",
+      "to": "mediapipe"
     }
   ],
 
   "mac": {
-    // Notarization is done by the release workflow (notarytool + stapler on the DMG), gated on
-    // the signing secrets. Explicit false so electron-builder 26 does not try to notarize on its
-    // own whenever APPLE_ID happens to be in the environment.
+    // Declared, not merely documented. Electron 41's own LSMinimumSystemVersion is 12.0
+    // and the .app inherits it verbatim when this key is absent — so before this line the
+    // bundle advertised macOS 12 while its native payload was built for 13, and a
+    // Monterey user got as far as the record button before anything went wrong (#515).
+    // LaunchServices now refuses to open the app below 13 instead, which is the honest
+    // signal.
+    //
+    // macOS 13 because ScreenCaptureKit capture requires it: ScreenCaptureRecorder is
+    // `@available(macOS 13.0, *)`. Keep in step with README.md, website/docs/
+    // installation.md, and electron/native/screencapturekit/Package.swift.
+    "minimumSystemVersion": "13.0",
     "notarize": false,
     "hardenedRuntime": true,
-    "gatekeeperAssess": false,
-    "entitlements": "build/entitlements.mac.plist",
-    "entitlementsInherit": "build/entitlements.mac.inherit.plist",
-    "extendInfo": {
-      "NSScreenCaptureUsageDescription": "Capturia needs screen recording access to capture your screen.",
-      "NSCameraUsageDescription": "Capturia needs camera access to render camera overlays while recording.",
-      "NSMicrophoneUsageDescription": "Capturia needs microphone access to record your voice during screen capture.",
-      "NSSpeechRecognitionUsageDescription": "Capturia needs speech recognition access to generate subtitles from recordings.",
-      "NSCameraUseContinuityCameraDeviceType": true
-    },
-    // The DMG is what people download; the ZIP is what electron-updater (Squirrel.Mac) installs
-    // from, so both ship. An unsigned .app cannot be auto-updated: Squirrel refuses it, and the
-    // updater then falls back to the release page.
+    "entitlements": "macos.entitlements",
+    "entitlementsInherit": "macos.entitlements",
+    // Squirrel.Mac can only install from a ZIP, so auto-update needs one beside each DMG.
+    // It is NOT listed here on purpose: the macOS job packs with `electron-builder --mac --dir`,
+    // and `--dir` skips every target — so adding "zip" (or anything else) to this list would be
+    // dead config that reads as if it worked. The DMG below is likewise hand-rolled with
+    // `hdiutil` in build.yml, which is why the release assets are named `-macOS-Apple-Silicon-`
+    // rather than following `artifactName`. The update ZIP is produced with `ditto` in the same
+    // job, from the signed and stapled .app. Same trap as `linux.target` below, where the CLI
+    // target list replaces this one.
     "target": [
       {
         "target": "dmg",
         "arch": ["x64", "arm64"]
-      },
-      {
-        "target": "zip",
-        "arch": ["x64", "arm64"]
-      }
-    ],
-    "extraResources": [
-      {
-        "from": "electron/native/bin/sck-recorder",
-        "to": "native/sck-recorder"
-      },
-      {
-        "from": "electron/native/bin/cursor-kind-monitor",
-        "to": "native/cursor-kind-monitor"
-      },
-      {
-        "from": "electron/native/bin/mouse-button-monitor",
-        "to": "native/mouse-button-monitor"
-      },
-      {
-        "from": "electron/native/bin/speech-transcriber",
-        "to": "native/speech-transcriber"
-      },
-      {
-        "from": "electron/native/bin/window-bounds-helper",
-        "to": "native/window-bounds-helper"
       }
     ],
     "icon": "icons/icons/mac/icon.icns",
-    "artifactName": "${productName}-Mac-${arch}-${version}-Installer.${ext}"
+    "artifactName": "${productName}-Mac-${arch}-${version}-Installer.${ext}",
+    "extraResources": [
+      {
+        "from": "electron/native/bin",
+        "to": "electron/native/bin",
+        "filter": ["darwin-*/*"]
+      }
+    ],
+    "extendInfo": {
+      "NSAudioCaptureUsageDescription": "Capturia needs audio capture permission to record system audio.",
+      "NSMicrophoneUsageDescription": "Capturia needs microphone access to record voice audio.",
+      "NSCameraUsageDescription": "Capturia needs camera access to record webcam video.",
+      "NSScreenCaptureUsageDescription": "Capturia needs screen recording permission to detect and capture windows.",
+      "NSCameraUseContinuityCameraDeviceType": true
+    }
   },
   "linux": {
+    // Cette liste ne suffit PAS à produire un artefact en CI : `build:linux` passe
+    // ses cibles en ligne de commande (`electron-builder --linux AppImage deb pacman
+    // rpm`), et la CLI REMPLACE `linux.target` au lieu de le compléter. Toute cible
+    // ajoutée ici doit l'être aussi dans le script, sinon elle n'existe que pour un
+    // `electron-builder --linux` nu, que rien n'exécute.
     "target": [
       "AppImage",
-      "deb"
+      "deb",
+      "pacman",
+      "rpm"
     ],
     "icon": "icons/icons/png",
     "artifactName": "${productName}-Linux-${version}.${ext}",
-    "category": "AudioVideo",
     "maintainer": "MinhOmega",
-    "executableArgs": [
-      "--disable-gpu",
-      "--disable-gpu-compositing"
-    ],
-    // electron-builder 26 moved the flat key map under `desktop.entry` (24.x took the keys directly).
-    "desktop": {
-      "entry": {
-        "StartupWMClass": "Capturia"
+    "category": "AudioVideo",
+    "extraResources": [
+      {
+        "from": "electron/native/bin",
+        "to": "electron/native/bin",
+        // `**`, not `*`: the capture helper's ffmpeg libraries live one level
+        // deeper, in `linux-x64/helper-ffmpeg/`. They are in their own directory
+        // because `linux-x64/` also holds the compositor addon's copies of the
+        // same sonames with every symbol renamed to `osff_*`, and the helper
+        // must not find those — see scripts/build-linux-pipewire-helper.mjs.
+        // A single-level filter ships a helper that cannot start.
+        //
+        // The name is `helper-ffmpeg` rather than `ffmpeg` because that shorter
+        // name is taken: fetch-ffmpeg.mjs vendors the static ffmpeg executable
+        // there, and audioPeaks.ts resolves it by that path.
+        "filter": ["linux-*/**"]
       }
-    }
+    ]
+  },
+  // Le compositeur natif rend via wgpu/Vulkan (crates/compositor/src/d3d_linux.rs).
+  // Sans AUCUN ICD Vulkan installé, `request_adapter` ne rend rien : pas de pilote
+  // GPU, et pas non plus le repli logiciel lavapipe — donc `probe()` répond `"none"`
+  // et l'aperçu s'ouvre sur « Aperçu indisponible sur cette machine ». Le paquet
+  // Mesa est ce qui garantit qu'au minimum le rastériseur logiciel existe.
+  //
+  // `depends` REMPLACE la liste par défaut d'electron-builder au lieu de s'y ajouter
+  // (app-builder-lib, FpmTarget.getDefaultDepends) : le défaut y est repris verbatim,
+  // de `libgtk-3-0` à `libsecret-1-0`, et en retirer une casse le paquet silencieusement.
+  // Ce qui suit est à NOUS, et se lit par nom plutôt que par position — un compteur
+  // « les N dernières » se périme à chaque ajout, et l'a déjà fait :
+  // `mesa-vulkan-drivers`, `libgbm1`, `libasound2`, `libgomp1`, `xdg-desktop-portal`.
+  //
+  // L'AppImage n'a pas de mécanisme de dépendances et reste donc exposée : c'est
+  // pour elle que `d3d_linux::diagnose` nomme le paquet à installer.
+  //
+  // `libgbm1`, `libasound2` et `libgomp1` comblent des sonames que rien ne déclarait ni
+  // n'embarquait, mesurés sur la 1.9.1 installée dans une Ubuntu 22.04 nue :
+  //
+  //   libgbm1     — réclamé par le binaire Electron LUI-MÊME. Sans lui l'app sort en
+  //                 127 sur `libgbm.so.1: cannot open shared object file`, avant toute
+  //                 fenêtre. Absent du défaut d'electron-builder, qui n'a jamais suivi
+  //                 le passage de Chromium à GBM.
+  //   libasound2  — même binaire, même conséquence. Sur 24.04+ le paquet réel est
+  //                 `libasound2t64`, qui `Provides: libasound2` : le nom court résout
+  //                 sur les deux, comme `libgtk-3-0` plus haut.
+  //   libgomp1    — l'OpenMP de GCC, réclamé par les 32 ELF de la pile STT
+  //                 (whisper-stt-server, les libggml*, libwhisper, libparakeet). Sans
+  //                 lui l'app démarre et seule la transcription meurt dans ld.so.
+  //
+  // Aucun n'a été vu avant parce que les métapaquets de bureau les tirent tous les
+  // trois — libgomp1 seulement via libfftw3-single3, libimagequant0 et libsoxr0, trois
+  // libs média périphériques. Une install minimale ou un WM monté à la main n'a
+  // aucune de ces garanties. C'est ce que le job `verify-linux-package` prouve
+  // désormais à chaque build, en interrogeant le loader plutôt que cette liste.
+  //
+  // `xdg-desktop-portal` est la MÊME classe de bug, et le job ci-dessus ne la verra
+  // jamais : il interroge ld.so, or un portail est un service D-Bus et n'apparaît dans
+  // aucun DT_NEEDED. Toute la capture Linux passe par lui — X11 compris, le helper
+  // n'a pas d'autre chemin — et sans lui l'app affiche l'erreur zbus brute (#324).
+  //
+  // Le déclarer ne suffit PAS à lui seul, et il faut le dire clairement plutôt que
+  // laisser croire que la ligne referme le sujet : le frontend ne fait que router, et
+  // l'implémentation de ScreenCast vient d'un backend qui dépend du bureau
+  // (-gnome, -kde, -hyprland, -wlr, -gtk). On ne peut pas en choisir un ici sans se
+  // tromper sur la moitié des machines. Ce que la déclaration achète, c'est que la
+  // contrainte devient explicite au lieu d'être héritée par accident du métapaquet de
+  // bureau, exactement comme les trois sonames au-dessus. Le reste est fait à
+  // l'exécution par `portal.rs::portal_unavailable`, qui nomme le backend à installer —
+  // et c'est la seule moitié qui couvre l'AppImage, qui ne déclare rien.
+  //
+  // Nom identique sur les trois distributions, et vérifié plutôt que supposé :
+  // `verify-linux-package.sh` installe réellement le paquet dans une image nue, où un nom
+  // inexistant fait échouer la transaction entière — c'est comme ça que `http-parser` a
+  // été pris sur pacman. Les trois formats répondent `ok install: declared depends
+  // resolved` sur ubuntu:22.04, fedora:40 et archlinux:latest (run 31391020354).
+  "deb": {
+    "depends": [
+      "libgtk-3-0",
+      "libnotify4",
+      "libnss3",
+      "libxss1",
+      "libxtst6",
+      "xdg-utils",
+      "libatspi2.0-0",
+      "libuuid1",
+      "libsecret-1-0",
+      "mesa-vulkan-drivers",
+      "libgbm1",
+      "libasound2",
+      "libgomp1",
+      "xdg-desktop-portal"
+    ]
+  },
+  "pacman": {
+    // `vulkan-swrast` est le lavapipe d'Arch ; il tire `vulkan-icd-loader` avec lui.
+    //
+    // `mesa`, `alsa-lib` et `libgomp` sont les équivalents Arch des sonames décrits sur
+    // `deb`, et `xdg-desktop-portal` y porte le même nom. Noms relevés dans un conteneur
+    // archlinux, pas devinés : `libgomp.so.1` appartient à `libgomp` (core), PAS à
+    // `gcc-libs` — il en a été sorti.
+    //
+    // `http-parser` A ÉTÉ RETIRÉ, et c'est la seule entrée de ce fichier qui s'écarte
+    // volontairement du défaut d'electron-builder. Arch l'a supprimé de ses dépôts
+    // (Node est passé à llhttp il y a des années) et RIEN ne le fournit plus, donc
+    // pacman refusait la transaction entière : « unable to satisfy dependency
+    // 'http-parser' ». Le paquet Arch de la 1.9.1 est intégralement non installable,
+    // pour cette seule ligne. Aucun des 49 sonames du payload ne le réclame.
+    //
+    // `libappindicator-gtk3` est dans le même état de péremption mais reste correct :
+    // `libappindicator` le déclare en `Provides` ET en `Replaces`, donc il résout.
+    "depends": [
+      "c-ares",
+      "ffmpeg",
+      "gtk3",
+      "libevent",
+      "libvpx",
+      "libxslt",
+      "libxss",
+      "minizip",
+      "nss",
+      "re2",
+      "snappy",
+      "libnotify",
+      "libappindicator-gtk3",
+      "vulkan-swrast",
+      "mesa",
+      "alsa-lib",
+      "libgomp",
+      "xdg-desktop-portal"
+    ]
+  },
+  "rpm": {
+    // Même règle que ci-dessus : la liste REMPLACE le défaut d'electron-builder, donc
+    // celui-ci est repris verbatim de `gtk3` à `(libuuid or libuuid1)`
+    // (FpmTarget.getDefaultDepends, cas "rpm"). Le reste est à nous, par nom et non par
+    // position : `libsecret`, `mesa-vulkan-drivers`, `mesa-libgbm`, `alsa-lib`,
+    // `libgomp`, `xdg-desktop-portal`.
+    //
+    // `mesa-vulkan-drivers` porte le même nom sur Fedora que sur Debian : c'est le
+    // paquet qui garantit lavapipe, sans quoi l'aperçu du compositeur est indisponible.
+    //
+    // `libsecret` n'est PAS dans le défaut rpm alors qu'il l'est dans le défaut deb
+    // (`libsecret-1-0`). `safeStorage` chiffre les clés d'API des fournisseurs LLM
+    // (electron/ai-edition/llm-config-store.ts) et passe par le Secret Service :
+    // sans lui, `isEncryptionAvailable()` répond faux et l'enregistrement d'une clé
+    // lève. Une omission d'electron-builder, pas un choix.
+    //
+    // `mesa-libgbm`, `alsa-lib` et `libgomp` sont les équivalents Fedora des sonames
+    // décrits sur `deb`, relevés par `dnf provides` : `libgbm.so.1` vient de
+    // `mesa-libgbm` et non du `mesa` d'Arch. `libgomp` fait partie de l'install de base
+    // sur Fedora, donc le rpm y était moins exposé que le deb — le déclarer reste ce qui
+    // rend la contrainte vraie plutôt que chanceuse. `xdg-desktop-portal` y porte le même
+    // nom que sur Debian et Arch.
+    "depends": [
+      "gtk3",
+      "libnotify",
+      "nss",
+      "libXScrnSaver",
+      "(libXtst or libXtst6)",
+      "xdg-utils",
+      "at-spi2-core",
+      "(libuuid or libuuid1)",
+      "libsecret",
+      "mesa-vulkan-drivers",
+      "mesa-libgbm",
+      "alsa-lib",
+      "libgomp",
+      "xdg-desktop-portal"
+    ]
   },
   "win": {
     "target": [
       "nsis"
     ],
     "icon": "icons/icons/win/icon.ico",
-    "artifactName": "${productName}-Setup-${version}.${ext}"
+    "artifactName": "${productName}.Setup.${version}.${ext}",
+    "extraResources": [
+      {
+        "from": "electron/native/bin",
+        "to": "electron/native/bin",
+        // The static ffmpeg.exe is excluded on purpose. scripts/fetch-ffmpeg.mjs
+        // vendors two artifacts into this directory: the shared av*.dll set,
+        // which the D3D11 compositor addon dlopens at require() time and
+        // therefore MUST ship, and a standalone static ffmpeg.exe that nothing
+        // in the app spawns. Shipping it added a large binary to every Windows
+        // installer, plus an LGPL redistribution obligation, for a file no
+        // shipped code opens.
+        "filter": ["win32-*/*", "!win32-*/ffmpeg.exe"]
+      }
+    ],
+    // The D3D11 compositor addon deliberately does NOT travel through `files` into
+    // app.asar. It ships with the ffmpeg DLLs it links against, via the
+    // `extraResources` entry above, because it has to sit in the SAME directory as
+    // them — exactly like the Metal addon on macOS.
+    //
+    // It used to be listed here and unpacked to app.asar.unpacked/…, one directory
+    // away from `electron/native/bin/win32-x64/*.dll`. That only ever worked because
+    // `ensureFfmpegSharedDllsOnPath` prepends the DLL directory to PATH before the
+    // require. MSIX ignores PATH when resolving dependent DLLs — it resolves through
+    // the package graph — so the Store build of 1.9.0 loaded no compositor at all and
+    // the editor ran with no preview while audio kept playing.
+    //
+    // Node loads .node files with LOAD_WITH_ALTERED_SEARCH_PATH, so the addon's own
+    // directory is searched for its dependencies; colocation makes the load work with
+    // no PATH at all, on every Windows packaging format.
   },
-  // Assisted installer so the user can pick the install directory (upstream 56988e86).
   "nsis": {
     "oneClick": false,
     "allowToChangeInstallationDirectory": true
+  },
+  // Microsoft Store packaging identity.
+  //
+  // NOT SUBMITTABLE AS-IS. `publisher` is a Partner Center account identity, and the value
+  // below is the one Capturia inherited from OpenScreen at the re-baseline — it identifies
+  // THEIR Store account, not ours. It is left in place only so the appx target keeps building
+  // and the tile-asset checks in build.yml keep running; a package signed against it would be
+  // claiming someone else's publisher identity, so it must be replaced with Capturia's own
+  // CN=<GUID> from our Partner Center "Product identity" page before anything is submitted to
+  // the Store. `identityName` and `publisherDisplayName` must be changed in the same edit:
+  // the Store rejects a package whose identity does not match the reserved name on the
+  // account that submits it.
+  "appx": {
+    "identityName": "MinhOmega.Capturia",
+    "publisher": "CN=03B0FC8C-2067-45D9-BE82-9F15CE264B4A",
+    "publisherDisplayName": "MinhOmega",
+    "applicationId": "Capturia",
+    "displayName": "Capturia",
+    "backgroundColor": "transparent",
+    "capabilities": ["runFullTrust", "microphone", "webcam"],
+    // Mirrors SUPPORTED_LOCALES in src/i18n/config.ts. This list is what the Store
+    // shows as "supported languages" on the product page and what lets the listing
+    // surface in each language's Store search — declaring only en-US/fr-FR advertised
+    // 2 of the 13 languages the app actually ships. Bare tags (ar, es, ...) match every
+    // region of that language, which is what the renderer's locale resolution does too.
+    "languages": [
+      "en-US",
+      "fr-FR",
+      "ar",
+      "es",
+      "it",
+      "ja-JP",
+      "ko-KR",
+      "pt-BR",
+      "ru",
+      "tr",
+      "vi",
+      "zh-CN",
+      "zh-TW"
+    ],
+    "showNameOnTiles": true
   }
 }

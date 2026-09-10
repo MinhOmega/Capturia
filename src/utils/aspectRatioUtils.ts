@@ -1,134 +1,132 @@
+/** The fixed shapes offered in the ratio picker, in menu order. */
+export const ASPECT_RATIO_PRESETS = [
+	"16:9",
+	"9:16",
+	"1:1",
+	"4:3",
+	"4:5",
+	"16:10",
+	"10:16",
+] as const;
+
+export type AspectRatioPreset = (typeof ASPECT_RATIO_PRESETS)[number];
+
 /**
- * Fixed ratios plus `'native'` ("Original"): the cropped source's own ratio, so
- * the video fills the frame edge to edge with no padding and exports at the
- * cropped source dimensions. Its numeric value depends on the source and the
- * crop, so callers with that context must use resolveAspectRatioValue().
+ * A concrete `"W:H"` shape. The presets are just the well-known members — the picker also
+ * offers the clips' own native shapes ("Original"), which are stored the same way and can be
+ * anything (`"64:27"` for an ultrawide, `"683:384"` for an odd capture size).
+ *
+ * `"native"` is a LEGACY value kept only so projects saved before the shapes were enumerated
+ * still open. It resolves to the timeline's reference asset (largest pixel area), which is
+ * exactly the silent, drifting behaviour the enumeration replaced — nothing writes it any
+ * more, so it can be dropped once old projects are assumed migrated.
  */
-export const ASPECT_RATIOS = [
-  '16:9',
-  '9:16',
-  '1:1',
-  '4:3',
-  '4:5',
-  '16:10',
-  '10:16',
-  'native',
-] as const
+export type AspectRatio = AspectRatioPreset | `${number}:${number}` | "native";
 
-export type AspectRatio = (typeof ASPECT_RATIOS)[number]
+const NATIVE_ASPECT_RATIO_FALLBACK = 16 / 9;
 
-export const NATIVE_ASPECT_RATIO: AspectRatio = 'native'
+/** Split a `"W:H"` token. Returns null for `"native"` and for anything malformed. */
+export function parseAspectRatio(value: string): { width: number; height: number } | null {
+	const match = /^\s*(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)\s*$/.exec(value);
+	if (!match) return null;
+	const width = Number(match[1]);
+	const height = Number(match[2]);
+	if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+		return null;
+	}
+	return { width, height };
+}
 
-/** Used for `'native'` when the source dimensions are unknown (e.g. before metadata loads). */
-const NATIVE_ASPECT_RATIO_FALLBACK = 16 / 9
-
+/** Validation gate for anything read back from disk (project files, user prefs). */
 export function isAspectRatio(value: unknown): value is AspectRatio {
-  return typeof value === 'string' && (ASPECT_RATIOS as readonly string[]).includes(value)
+	if (typeof value !== "string") return false;
+	return value === "native" || parseAspectRatio(value) !== null;
+}
+
+function greatestCommonDivisor(a: number, b: number): number {
+	let x = a;
+	let y = b;
+	while (y !== 0) {
+		const next = x % y;
+		x = y;
+		y = next;
+	}
+	return x;
 }
 
 /**
- * Returns the numeric value of an aspect ratio. `'native'` returns the 16:9
- * fallback; callers with source/crop context should use resolveAspectRatioValue().
- * Uses exhaustive type checking to ensure all AspectRatio cases are handled.
- * If TypeScript errors here, a new ratio was added to the type but not handled.
+ * Pixel dimensions → the reduced `"W:H"` token that identifies their shape. This is what makes
+ * "distinct native formats" a small set: 1920x1080 and 3840x2160 both reduce to `"16:9"`, so a
+ * timeline mixing them offers ONE "Original" entry, not two.
+ */
+export function toAspectRatioToken(width: number, height: number): AspectRatio | null {
+	if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+		return null;
+	}
+	const w = Math.round(width);
+	const h = Math.round(height);
+	if (w <= 0 || h <= 0) return null;
+	const divisor = greatestCommonDivisor(w, h) || 1;
+	return `${w / divisor}:${h / divisor}`;
+}
+
+/**
+ * Numeric value of an aspect ratio. Legacy `"native"` has no document context here so it
+ * returns the 16/9 fallback — callers holding a document must resolve it through
+ * `resolveAspectRatioValue` (lib/ai-edition/document/outputFormat) instead, or preview and
+ * output silently disagree on old projects.
  */
 export function getAspectRatioValue(aspectRatio: AspectRatio): number {
-  switch (aspectRatio) {
-    case '16:9':
-      return 16 / 9
-    case '9:16':
-      return 9 / 16
-    case '1:1':
-      return 1
-    case '4:3':
-      return 4 / 3
-    case '4:5':
-      return 4 / 5
-    case '16:10':
-      return 16 / 10
-    case '10:16':
-      return 10 / 16
-    case 'native':
-      return NATIVE_ASPECT_RATIO_FALLBACK
-    default: {
-      // Ensures all cases are handled - TypeScript errors if missing
-      const _exhaustiveCheck: never = aspectRatio
-      return _exhaustiveCheck
-    }
-  }
+	if (aspectRatio === "native") return NATIVE_ASPECT_RATIO_FALLBACK;
+	const parsed = parseAspectRatio(aspectRatio);
+	return parsed ? parsed.width / parsed.height : NATIVE_ASPECT_RATIO_FALLBACK;
 }
 
-interface NormalizedCropRegion {
-  x: number
-  y: number
-  width: number
-  height: number
-}
-
-/**
- * Ratio of the cropped source (`crop` is normalised 0..1 of the source). Falls
- * back to 16:9 when the source dimensions or the crop are unusable.
- */
 export function getNativeAspectRatioValue(
-  videoWidth: number,
-  videoHeight: number,
-  cropRegion?: NormalizedCropRegion,
+	videoWidth: number,
+	videoHeight: number,
+	cropRegion?: { x: number; y: number; width: number; height: number },
 ): number {
-  const cropW = cropRegion?.width ?? 1
-  const cropH = cropRegion?.height ?? 1
-  if (
-    !Number.isFinite(videoWidth) ||
-    !Number.isFinite(videoHeight) ||
-    !Number.isFinite(cropW) ||
-    !Number.isFinite(cropH) ||
-    videoWidth <= 0 ||
-    videoHeight <= 0 ||
-    cropW <= 0 ||
-    cropH <= 0
-  ) {
-    return NATIVE_ASPECT_RATIO_FALLBACK
-  }
+	const cropW = cropRegion?.width ?? 1;
+	const cropH = cropRegion?.height ?? 1;
+	if (
+		!Number.isFinite(videoWidth) ||
+		!Number.isFinite(videoHeight) ||
+		!Number.isFinite(cropW) ||
+		!Number.isFinite(cropH) ||
+		videoWidth <= 0 ||
+		videoHeight <= 0 ||
+		cropW <= 0 ||
+		cropH <= 0
+	) {
+		return NATIVE_ASPECT_RATIO_FALLBACK;
+	}
 
-  const ratio = (videoWidth * cropW) / (videoHeight * cropH)
-  return Number.isFinite(ratio) && ratio > 0 ? ratio : NATIVE_ASPECT_RATIO_FALLBACK
-}
-
-/** Numeric ratio for any aspect, resolving `'native'` against the source and its crop. */
-export function resolveAspectRatioValue(
-  aspectRatio: AspectRatio,
-  videoWidth: number,
-  videoHeight: number,
-  cropRegion?: NormalizedCropRegion,
-): number {
-  return aspectRatio === 'native'
-    ? getNativeAspectRatioValue(videoWidth, videoHeight, cropRegion)
-    : getAspectRatioValue(aspectRatio)
+	const ratio = (videoWidth * cropW) / (videoHeight * cropH);
+	return Number.isFinite(ratio) && ratio > 0 ? ratio : NATIVE_ASPECT_RATIO_FALLBACK;
 }
 
 export function getAspectRatioDimensions(
-  aspectRatio: AspectRatio,
-  baseWidth: number,
+	aspectRatio: AspectRatio,
+	baseWidth: number,
 ): { width: number; height: number } {
-  const ratio = getAspectRatioValue(aspectRatio)
-  return {
-    width: baseWidth,
-    height: baseWidth / ratio,
-  }
+	const ratio = getAspectRatioValue(aspectRatio);
+	return {
+		width: baseWidth,
+		height: baseWidth / ratio,
+	};
 }
 
-/** Non-localised label; UI code translates `'native'` via `settings.aspectRatioNative`. */
 export function getAspectRatioLabel(aspectRatio: AspectRatio): string {
-  if (aspectRatio === 'native') return 'Original'
-  return aspectRatio
+	if (aspectRatio === "native") return "Original";
+	return aspectRatio;
+}
+
+export function isPortraitAspectRatio(aspectRatio: AspectRatio): boolean {
+	return getAspectRatioValue(aspectRatio) < 1;
 }
 
 export function formatAspectRatioForCSS(aspectRatio: AspectRatio, nativeRatio?: number): string {
-  if (aspectRatio === 'native') {
-    const ratio =
-      nativeRatio !== undefined && Number.isFinite(nativeRatio) && nativeRatio > 0
-        ? nativeRatio
-        : NATIVE_ASPECT_RATIO_FALLBACK
-    return String(ratio)
-  }
-  return aspectRatio.replace(':', '/')
+	if (aspectRatio === "native") return String(nativeRatio ?? NATIVE_ASPECT_RATIO_FALLBACK);
+	return aspectRatio.replace(":", "/");
 }

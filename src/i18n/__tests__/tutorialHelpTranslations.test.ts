@@ -1,48 +1,73 @@
-import { describe, expect, it } from 'vitest'
-import { COMPLETE_LOCALES } from '@/i18n/config'
-import { getAvailableLocales, getMessageValue, getMessages } from '@/i18n/loader'
+import { describe, expect, it } from "vitest";
+import { type Locale, SUPPORTED_LOCALES } from "@/i18n/config";
+import arDialogs from "@/i18n/locales/ar/dialogs.json";
+import enDialogs from "@/i18n/locales/en/dialogs.json";
+import esDialogs from "@/i18n/locales/es/dialogs.json";
+import frDialogs from "@/i18n/locales/fr/dialogs.json";
+import itDialogs from "@/i18n/locales/it/dialogs.json";
+import jaJPDialogs from "@/i18n/locales/ja-JP/dialogs.json";
+import koKRDialogs from "@/i18n/locales/ko-KR/dialogs.json";
+import ptBRDialogs from "@/i18n/locales/pt-BR/dialogs.json";
+import ruDialogs from "@/i18n/locales/ru/dialogs.json";
+import trDialogs from "@/i18n/locales/tr/dialogs.json";
+import viDialogs from "@/i18n/locales/vi/dialogs.json";
+import zhCNDialogs from "@/i18n/locales/zh-CN/dialogs.json";
+import zhTWDialogs from "@/i18n/locales/zh-TW/dialogs.json";
 
-/** Every key TutorialHelp.tsx renders (dialogs.tutorial.*). */
 const tutorialHelpKeys = [
-  'trigger',
-  'title',
-  'desc',
-  'explain',
-  'visualExample',
-  'part',
-  'removed',
-  'kept',
-  'finalVideo',
-  'step1',
-  'step1desc',
-  'step2',
-  'step2desc',
-] as const
+	"triggerLabel",
+	"title",
+	"description",
+	"explanationBefore",
+	"remove",
+	"explanationMiddle",
+	"covered",
+	"explanationAfter",
+	"visualExample",
+	"removed",
+	"kept",
+	"part1",
+	"part2",
+	"part3",
+	"finalVideo",
+	"step1Title",
+	"step1DescriptionBefore",
+	"step1DescriptionAfter",
+	"step2Title",
+	"step2Description",
+] as const;
 
-describe('TutorialHelp translations', () => {
-  it('defines every tutorial help key for each complete locale', () => {
-    for (const locale of COMPLETE_LOCALES) {
-      const dialogs = getMessages(locale, 'dialogs')
-      for (const key of tutorialHelpKeys) {
-        const label = `${locale} dialogs.tutorial.${key}`
-        const message = getMessageValue(dialogs, `tutorial.${key}`)
-        expect(message, label).toEqual(expect.any(String))
-        expect((message as string).trim().length, label).toBeGreaterThan(0)
-      }
-    }
-  })
+const keysThatMayBeEmpty = new Set<(typeof tutorialHelpKeys)[number]>(["step1DescriptionBefore"]);
 
-  it('never ships an empty tutorial string in a partial locale', () => {
-    const complete = new Set<string>(COMPLETE_LOCALES)
-    for (const locale of getAvailableLocales()) {
-      if (complete.has(locale)) continue
-      const tutorial = getMessages(locale, 'dialogs').tutorial
-      if (!tutorial || typeof tutorial !== 'object') continue
-      for (const [key, message] of Object.entries(tutorial as Record<string, unknown>)) {
-        const label = `${locale} dialogs.tutorial.${key}`
-        expect(message, label).toEqual(expect.any(String))
-        expect((message as string).trim().length, label).toBeGreaterThan(0)
-      }
-    }
-  })
-})
+const dialogsByLocale = {
+	en: enDialogs,
+	ar: arDialogs,
+	es: esDialogs,
+	fr: frDialogs,
+	it: itDialogs,
+	"ja-JP": jaJPDialogs,
+	"ko-KR": koKRDialogs,
+	ru: ruDialogs,
+	tr: trDialogs,
+	vi: viDialogs,
+	"pt-BR": ptBRDialogs,
+	"zh-CN": zhCNDialogs,
+	"zh-TW": zhTWDialogs,
+} satisfies Record<Locale, { tutorial: Record<string, unknown> }>;
+
+describe("TutorialHelp translations", () => {
+	it("defines every tutorial help key for each supported locale", () => {
+		for (const locale of SUPPORTED_LOCALES) {
+			const tutorial = dialogsByLocale[locale].tutorial;
+
+			for (const key of tutorialHelpKeys) {
+				const message = tutorial[key];
+				const label = `${locale} dialogs.tutorial.${key}`;
+				expect(message, label).toEqual(expect.any(String));
+				if (!keysThatMayBeEmpty.has(key)) {
+					expect((message as string).trim().length, label).toBeGreaterThan(0);
+				}
+			}
+		}
+	});
+});
