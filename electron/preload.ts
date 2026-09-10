@@ -431,6 +431,9 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	updateGlobalShortcut: (binding: ShortcutBinding) => {
 		return ipcRenderer.invoke("update-global-shortcut", binding);
 	},
+	getGlobalShortcutStatus: () => {
+		return ipcRenderer.invoke("get-global-shortcut-status");
+	},
 	setLocale: (locale: string) => {
 		return ipcRenderer.invoke("set-locale", locale);
 	},

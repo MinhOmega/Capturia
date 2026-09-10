@@ -1,5 +1,9 @@
-const LATEST_RELEASE_API = "https://api.github.com/repos/getopenscreen/openscreen/releases/latest";
-const OFFICIAL_RELEASE_PREFIX = "/getopenscreen/openscreen/releases/tag/";
+// This fork's own repo, not upstream's: asking getopenscreen/openscreen whether
+// Capturia is out of date offered the user an OpenScreen release as "the update"
+// and linked them to upstream's tag page. `OFFICIAL_RELEASE_PREFIX` is the trust
+// anchor for `officialReleaseUrl` below, so the two must name the same repo.
+const LATEST_RELEASE_API = "https://api.github.com/repos/MinhOmega/Capturia/releases/latest";
+const OFFICIAL_RELEASE_PREFIX = "/MinhOmega/Capturia/releases/tag/";
 
 interface ReleaseResponse {
 	ok: boolean;
@@ -130,6 +134,20 @@ export async function checkLatestRelease(options: {
 		},
 		...(options.signal ? { signal: options.signal } : {}),
 	});
+	// GitHub answers 404 — not an empty body — when a repo has published no releases
+	// at all, which is this fork's state today. That is "nothing newer exists", not a
+	// failure: letting it fall through to the throw below put a modal ERROR dialog
+	// ("GitHub release check failed (404)") in front of every user who pressed Check
+	// for Updates. Reported as `current` so the honest "you are up to date" shows
+	// instead. Every other non-2xx still throws — a 5xx really is a failed check.
+	if (response.status === 404) {
+		const current = parseVersion(options.currentVersion);
+		return {
+			kind: "current",
+			currentVersion: current.normalized,
+			latestVersion: current.normalized,
+		};
+	}
 	if (!response.ok) throw new Error(`GitHub release check failed (${response.status})`);
 
 	const payload = await response.json();

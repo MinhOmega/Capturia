@@ -12,7 +12,14 @@
 // and shows the original text, which is the honest fallback for a partial run.
 
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
-import { createOpenScreenChatModel, messageContentToText } from "./deep-agent/chat-model";
+
+// chat-model is loaded on demand, not at module scope: it pulls in the
+// @langchain/{anthropic,openai,mistralai} SDKs, and this module is reached
+// eagerly from the main-process graph (nativeBridge → aiEditionService). A
+// static import here was what forced those SDKs into the eager chunk and made
+// the matching `await import("./deep-agent/chat-model")` in chat-service.ts a
+// no-op ("dynamic import will not move module into another chunk").
+type ChatModelModule = typeof import("./deep-agent/chat-model");
 
 /** One transcript segment to translate. */
 export interface CaptionTranslateSegment {
@@ -129,9 +136,12 @@ export async function translateCaptionSegments(
 
 	// Built once, not per batch: a long transcript is a lot of batches and the
 	// model object is reusable across all of them.
-	let model: Awaited<ReturnType<typeof createOpenScreenChatModel>>;
+	let model: Awaited<ReturnType<ChatModelModule["createOpenScreenChatModel"]>>;
+	let messageContentToText: ChatModelModule["messageContentToText"];
 	try {
-		model = await createOpenScreenChatModel({
+		const chatModel = await import("./deep-agent/chat-model");
+		messageContentToText = chatModel.messageContentToText;
+		model = await chatModel.createOpenScreenChatModel({
 			provider: options.provider,
 			model: options.model,
 			apiKey: options.apiKey,

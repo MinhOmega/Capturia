@@ -14,6 +14,7 @@
 	"savedToast": "Keyboard shortcuts saved",
 	"resetToast": "Reset to default shortcuts — click Save to apply",
 	"registrationFailed": "Failed to register shortcut. It may be in use by another app. Try a different key.",
+	"globalShortcutUnavailable": "Global shortcuts aren't available in this session, so this one won't work. Every other shortcut is unaffected.",
 	"actions": {
 		"openApp": "Open App",
 		"addZoom": "Add Zoom",

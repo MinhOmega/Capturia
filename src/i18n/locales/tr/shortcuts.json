@@ -14,6 +14,7 @@
 	"savedToast": "Klavye kısayolları kaydedildi",
 	"resetToast": "Varsayılan kısayollara sıfırlandı — uygulamak için Kaydet'e tıklayın",
 	"registrationFailed": "Kısayol kaydedilemedi. Başka bir uygulama tarafından kullanılıyor olabilir. Farklı bir tuş deneyin.",
+	"globalShortcutUnavailable": "Bu oturumda genel kısayollar kullanılamıyor, bu nedenle bu kısayol çalışmayacak. Diğer kısayollar etkilenmez.",
 	"actions": {
 		"openApp": "Uygulamayı Aç",
 		"addZoom": "Yakınlaştırma Ekle",

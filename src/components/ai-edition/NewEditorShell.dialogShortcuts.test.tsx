@@ -34,7 +34,8 @@ vi.mock("@/contexts/ShortcutsContext", async () => {
 			setShortcuts: () => {
 				/* not exercised here */
 			},
-			persistShortcuts: () => Promise.resolve(true),
+			persistShortcuts: () => Promise.resolve("registered" as const),
+			globalShortcutStatus: "registered" as const,
 		}),
 	};
 });
