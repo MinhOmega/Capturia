@@ -348,6 +348,8 @@
 		"playPauseTitle": "再生 / 一時停止（スペース）",
 		"previousClip": "前のクリップ",
 		"nextClip": "次のクリップ",
+		"reviewSpeedSet": "確認速度 {{rate}}×",
+		"reviewSpeedReset": "確認速度 — クリックで 1× に戻す",
 		"loop": "ループ",
 		"seekVideo": "動画をシーク"
 	},

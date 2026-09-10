@@ -348,6 +348,8 @@
 		"playPauseTitle": "Phát / Tạm dừng (Phím cách)",
 		"previousClip": "Clip trước",
 		"nextClip": "Clip tiếp theo",
+		"reviewSpeedSet": "Tốc độ xem lại {{rate}}×",
+		"reviewSpeedReset": "Tốc độ xem lại — nhấp để trở về 1×",
 		"loop": "Lặp lại",
 		"seekVideo": "Tua video"
 	},

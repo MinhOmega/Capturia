@@ -9,7 +9,8 @@
 		"addTrim": "트림 추가 (T)",
 		"addAnnotation": "주석 추가 (A)",
 		"addSpeed": "속도 추가 (S)",
-		"addCameraFullscreen": "전체 화면 카메라 추가 (C)"
+		"addCameraFullscreen": "전체 화면 카메라 추가 (C)",
+		"splitAtPlayhead": "재생 헤드에서 클립 분할"
 	},
 	"hints": {
 		"pressZoom": "Z를 눌러 줌 추가",
@@ -96,7 +97,8 @@
 		"smartCutsNoSpeech": "음성이 감지되지 않음",
 		"smartCutsFailed": "받아쓰기에 실패했습니다 — 미디어에서 다시 시도하세요",
 		"addAudioTooltip": "오디오 추가",
-		"addedWord": "추가한 단어: \"{{word}}\" — 뒤에 오디오가 없습니다"
+		"addedWord": "추가한 단어: \"{{word}}\" — 뒤에 오디오가 없습니다",
+		"splitNothingHere": "여기에는 분할할 것이 없습니다 — 재생 헤드를 클립 안으로 옮기세요."
 	},
 	"audio": {
 		"addVoiceover": "내레이션 추가",

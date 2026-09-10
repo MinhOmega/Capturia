@@ -348,6 +348,8 @@
 		"playPauseTitle": "Reproducir / Pausar (Espacio)",
 		"previousClip": "Clip anterior",
 		"nextClip": "Clip siguiente",
+		"reviewSpeedSet": "Velocidad de revisión {{rate}}×",
+		"reviewSpeedReset": "Velocidad de revisión: haz clic para volver a 1×",
 		"loop": "Bucle",
 		"seekVideo": "Desplazarse por el vídeo"
 	},

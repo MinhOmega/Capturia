@@ -3,6 +3,7 @@
 	"customize": "Tùy chỉnh",
 	"configurable": "Có thể định cấu hình",
 	"fixed": "Cố định",
+	"options": "Tùy chọn",
 	"pressKey": "Nhấn một phím…",
 	"clickToChange": "Nhấp để thay đổi",
 	"pressEscToCancel": "Nhấn Esc để hủy",
@@ -23,6 +24,7 @@
 		"addAnnotation": "Thêm Chú thích",
 		"addAudio": "Thêm âm thanh",
 		"addVoiceover": "Ghi âm lời thuyết minh",
+		"splitAtPlayhead": "Cắt tại đầu phát",
 		"addKeyframe": "Thêm Khung hình chính",
 		"addCameraFullscreen": "Thêm Camera Toàn màn hình",
 		"deleteSelected": "Xóa mục đã chọn",
@@ -38,7 +40,17 @@
 		"deleteSelectedAlt": "Xóa mục đã chọn (alt)",
 		"panTimeline": "Xoay Trục thời gian",
 		"zoomTimeline": "Thu phóng Trục thời gian",
+		"zoomTimelineIn": "Phóng to dòng thời gian",
+		"zoomTimelineOut": "Thu nhỏ dòng thời gian",
 		"frameBack": "Lùi một khung hình",
-		"frameForward": "Tiến một khung hình"
+		"frameForward": "Tiến một khung hình",
+		"reviewSpeedDown": "Giảm tốc độ xem lại",
+		"reviewSpeedUp": "Tăng tốc độ xem lại"
+	},
+	"seekStep": {
+		"label": "Bước phím mũi tên",
+		"frame": "Một khung hình",
+		"second": "Một giây",
+		"fiveSeconds": "Năm giây"
 	}
 }

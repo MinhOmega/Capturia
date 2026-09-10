@@ -3,6 +3,7 @@
 	"customize": "カスタマイズ",
 	"configurable": "設定可能",
 	"fixed": "固定",
+	"options": "オプション",
 	"pressKey": "キーを押してください…",
 	"clickToChange": "クリックして変更",
 	"pressEscToCancel": "Escキーを押してキャンセル",
@@ -23,6 +24,7 @@
 		"addAnnotation": "注釈を追加",
 		"addAudio": "音声を追加",
 		"addVoiceover": "ナレーションを録音",
+		"splitAtPlayhead": "再生ヘッドで分割",
 		"addKeyframe": "キーフレームを追加",
 		"addCameraFullscreen": "フルスクリーンカメラを追加",
 		"deleteSelected": "選択を削除",
@@ -38,7 +40,17 @@
 		"deleteSelectedAlt": "選択を削除 (alt)",
 		"panTimeline": "タイムラインをパン",
 		"zoomTimeline": "タイムラインをズーム",
+		"zoomTimelineIn": "タイムラインを拡大",
+		"zoomTimelineOut": "タイムラインを縮小",
 		"frameBack": "フレームを戻す",
-		"frameForward": "フレームを進める"
+		"frameForward": "フレームを進める",
+		"reviewSpeedDown": "確認速度を下げる",
+		"reviewSpeedUp": "確認速度を上げる"
+	},
+	"seekStep": {
+		"label": "矢印キーの移動量",
+		"frame": "1フレーム",
+		"second": "1秒",
+		"fiveSeconds": "5秒"
 	}
 }

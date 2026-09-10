@@ -9,7 +9,8 @@
 		"addTrim": "Agregar recorte (T)",
 		"addAnnotation": "Agregar anotación (A)",
 		"addSpeed": "Agregar velocidad (S)",
-		"addCameraFullscreen": "Agregar cámara a pantalla completa (C)"
+		"addCameraFullscreen": "Agregar cámara a pantalla completa (C)",
+		"splitAtPlayhead": "Dividir el clip en el cursor de reproducción"
 	},
 	"hints": {
 		"pressZoom": "Presiona Z para agregar zoom",
@@ -96,7 +97,8 @@
 		"smartCutsNoSpeech": "No se detectó voz",
 		"smartCutsFailed": "La transcripción falló: reinténtala desde Medios",
 		"addAudioTooltip": "Añadir audio",
-		"addedWord": "Palabra añadida: «{{word}}» — sin audio detrás"
+		"addedWord": "Palabra añadida: «{{word}}» — sin audio detrás",
+		"splitNothingHere": "Aquí no hay nada que dividir: coloca el cursor de reproducción dentro de un clip."
 	},
 	"audio": {
 		"addVoiceover": "Añadir voz en off",

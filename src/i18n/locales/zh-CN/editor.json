@@ -348,6 +348,8 @@
 		"playPauseTitle": "播放 / 暂停（空格）",
 		"previousClip": "上一个片段",
 		"nextClip": "下一个片段",
+		"reviewSpeedSet": "预览速度 {{rate}}×",
+		"reviewSpeedReset": "预览速度 — 点击恢复 1×",
 		"loop": "循环",
 		"seekVideo": "拖动视频进度"
 	},

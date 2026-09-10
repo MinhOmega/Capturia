@@ -3,6 +3,7 @@
 	"customize": "사용자 지정",
 	"configurable": "변경 가능",
 	"fixed": "고정",
+	"options": "옵션",
 	"pressKey": "키를 누르세요...",
 	"clickToChange": "클릭해서 변경",
 	"pressEscToCancel": "Esc를 눌러 취소",
@@ -23,6 +24,7 @@
 		"addAnnotation": "주석 추가",
 		"addAudio": "오디오 추가",
 		"addVoiceover": "보이스오버 녹음",
+		"splitAtPlayhead": "재생 헤드에서 분할",
 		"addKeyframe": "키프레임 추가",
 		"addCameraFullscreen": "전체 화면 카메라 추가",
 		"deleteSelected": "선택 항목 삭제",
@@ -38,7 +40,17 @@
 		"deleteSelectedAlt": "선택 항목 삭제 (대체)",
 		"panTimeline": "타임라인 이동",
 		"zoomTimeline": "타임라인 확대/축소",
+		"zoomTimelineIn": "타임라인 확대",
+		"zoomTimelineOut": "타임라인 축소",
 		"frameBack": "이전 프레임",
-		"frameForward": "다음 프레임"
+		"frameForward": "다음 프레임",
+		"reviewSpeedDown": "검토 속도 낮추기",
+		"reviewSpeedUp": "검토 속도 높이기"
+	},
+	"seekStep": {
+		"label": "화살표 키 이동 단위",
+		"frame": "1프레임",
+		"second": "1초",
+		"fiveSeconds": "5초"
 	}
 }

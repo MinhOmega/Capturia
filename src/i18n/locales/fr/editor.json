@@ -348,6 +348,8 @@
 		"playPauseTitle": "Lecture / Pause (Espace)",
 		"previousClip": "Clip précédent",
 		"nextClip": "Clip suivant",
+		"reviewSpeedSet": "Vitesse de relecture {{rate}}×",
+		"reviewSpeedReset": "Vitesse de relecture — cliquez pour revenir à 1×",
 		"loop": "Boucle",
 		"seekVideo": "Naviguer dans la vidéo"
 	},

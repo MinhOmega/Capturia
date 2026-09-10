@@ -3,6 +3,7 @@
 	"customize": "Personalizar",
 	"configurable": "Configurável",
 	"fixed": "Fixo",
+	"options": "Opções",
 	"pressKey": "Pressione uma tecla…",
 	"clickToChange": "Clique para alterar",
 	"pressEscToCancel": "Pressione Esc para cancelar",
@@ -23,6 +24,7 @@
 		"addAnnotation": "Adicionar Anotação",
 		"addAudio": "Adicionar áudio",
 		"addVoiceover": "Gravar narração",
+		"splitAtPlayhead": "Dividir na cabeça de reprodução",
 		"addKeyframe": "Adicionar Quadro-chave",
 		"addCameraFullscreen": "Adicionar Câmera em Tela Cheia",
 		"deleteSelected": "Excluir Selecionado",
@@ -38,7 +40,17 @@
 		"deleteSelectedAlt": "Excluir Selecionado (alt)",
 		"panTimeline": "Mover Linha do Tempo",
 		"zoomTimeline": "Zoom na Linha do Tempo",
+		"zoomTimelineIn": "Aproximar a linha do tempo",
+		"zoomTimelineOut": "Afastar a linha do tempo",
 		"frameBack": "Quadro Anterior",
-		"frameForward": "Próximo Quadro"
+		"frameForward": "Próximo Quadro",
+		"reviewSpeedDown": "Diminuir velocidade de revisão",
+		"reviewSpeedUp": "Aumentar velocidade de revisão"
+	},
+	"seekStep": {
+		"label": "Passo das setas",
+		"frame": "Um quadro",
+		"second": "Um segundo",
+		"fiveSeconds": "Cinco segundos"
 	}
 }

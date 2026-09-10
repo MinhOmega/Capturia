@@ -348,6 +348,8 @@
 		"playPauseTitle": "Oynat / Duraklat (Boşluk)",
 		"previousClip": "Önceki klip",
 		"nextClip": "Sonraki klip",
+		"reviewSpeedSet": "İnceleme hızı {{rate}}×",
+		"reviewSpeedReset": "İnceleme hızı — 1× değerine dönmek için tıklayın",
 		"loop": "Döngü",
 		"seekVideo": "Videoda gezin"
 	},

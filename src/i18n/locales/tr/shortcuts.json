@@ -3,6 +3,7 @@
 	"customize": "Özelleştir",
 	"configurable": "Yapılandırılabilir",
 	"fixed": "Sabit",
+	"options": "Seçenekler",
 	"pressKey": "Bir tuşa basın…",
 	"clickToChange": "Değiştirmek için tıklayın",
 	"pressEscToCancel": "İptal etmek için Esc tuşuna basın",
@@ -23,6 +24,7 @@
 		"addAnnotation": "Açıklama Ekle",
 		"addAudio": "Ses ekle",
 		"addVoiceover": "Seslendirme kaydet",
+		"splitAtPlayhead": "Oynatma çizgisinde böl",
 		"addKeyframe": "Anahtar Kare Ekle",
 		"addCameraFullscreen": "Tam Ekran Kamera Ekle",
 		"deleteSelected": "Seçileni Sil",
@@ -38,7 +40,17 @@
 		"deleteSelectedAlt": "Seçileni Sil (alternatif)",
 		"panTimeline": "Zaman Çizelgesini Kaydır",
 		"zoomTimeline": "Zaman Çizelgesini Yakınlaştır",
+		"zoomTimelineIn": "Zaman çizelgesini yakınlaştır",
+		"zoomTimelineOut": "Zaman çizelgesini uzaklaştır",
 		"frameBack": "Önceki Kare",
-		"frameForward": "Sonraki Kare"
+		"frameForward": "Sonraki Kare",
+		"reviewSpeedDown": "İnceleme hızını azalt",
+		"reviewSpeedUp": "İnceleme hızını artır"
+	},
+	"seekStep": {
+		"label": "Ok tuşu adımı",
+		"frame": "Bir kare",
+		"second": "Bir saniye",
+		"fiveSeconds": "Beş saniye"
 	}
 }

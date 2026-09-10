@@ -348,6 +348,8 @@
 		"playPauseTitle": "تشغيل / إيقاف مؤقت (مسافة)",
 		"previousClip": "المقطع السابق",
 		"nextClip": "المقطع التالي",
+		"reviewSpeedSet": "سرعة المراجعة {{rate}}×",
+		"reviewSpeedReset": "سرعة المراجعة — انقر للعودة إلى 1×",
 		"loop": "تكرار",
 		"seekVideo": "التنقل في الفيديو"
 	},
