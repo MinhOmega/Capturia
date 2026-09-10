@@ -17,25 +17,6 @@
 		"color": "색상",
 		"colorWheel": "색상 휠"
 	},
-	"customFont": {
-		"namePlaceholder": "내 커스텀 폰트",
-		"failedToAdd": "폰트 추가에 실패했습니다",
-		"addingButton": "추가 중...",
-		"errorInvalidUrl": "유효한 Google Fonts URL을 입력해 주세요",
-		"urlHelp": "Google Fonts에서 폰트 선택 → \"폰트 가져오기\" 클릭 → @import URL 복사",
-		"urlLabel": "Google Fonts 가져오기 URL",
-		"successMessage": "\"{{fontName}}\" 폰트가 성공적으로 추가되었습니다",
-		"nameLabel": "표시 이름",
-		"errorEmptyName": "폰트 이름을 입력해 주세요",
-		"nameHelp": "폰트 선택기에서 표시될 이름입니다",
-		"errorEmptyUrl": "Google Fonts 가져오기 URL을 입력해 주세요",
-		"errorExtractFailed": "URL에서 폰트 패밀리를 추출할 수 없습니다",
-		"urlPlaceholder": "https://fonts.googleapis.com/css2?family=Roboto&display=swap",
-		"dialogTitle": "Google 폰트 추가",
-		"errorTimeout": "폰트 로딩 시간이 초과되었습니다. URL을 확인하고 다시 시도해 주세요.",
-		"errorLoadFailed": "폰트를 불러올 수 없습니다. Google Fonts URL이 올바른지 확인해 주세요.",
-		"addButton": "폰트 추가"
-	},
 	"imageUpload": {
 		"invalidFileType": "지원하지 않는 파일 형식입니다",
 		"failedToUpload": "이미지 업로드에 실패했습니다",
@@ -69,7 +50,6 @@
 		"typeArrow": "화살표",
 		"none": "없음",
 		"blurColor": "블러 색상",
-		"customFonts": "커스텀 폰트",
 		"imageUploadSuccess": "이미지가 성공적으로 업로드되었습니다!",
 		"type": "유형",
 		"arrowColor": "화살표 색상",
