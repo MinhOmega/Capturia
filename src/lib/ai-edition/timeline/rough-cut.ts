@@ -219,3 +219,26 @@ export function roughCutsToTrimRanges(
 		origin: "system" as const,
 	}));
 }
+
+/**
+ * The suggestions the document does not already cut.
+ *
+ * The pass is idempotent by nothing but this: running it twice on the same
+ * recording finds the same pauses, and without a reservation step the second run
+ * would stack a duplicate trim on every one of them. Same job the auto-zoom pass
+ * does with `existingRegions`, one layer up.
+ *
+ * Overlap is judged on the ASSET alone. A suggestion carries no `clipId` on
+ * purpose (see above), so it cannot be compared clip to clip — and touching an
+ * existing cut at all is enough to leave the stretch to that cut, whoever made
+ * it. That is deliberately conservative: a user's hand-made trim near a pause
+ * keeps its edges rather than gaining a machine-made neighbour.
+ */
+export function dropTrimsAlreadyCovered(
+	suggested: AxcutTrimRange[],
+	existing: AxcutTrimRange[],
+): AxcutTrimRange[] {
+	const overlaps = (a: AxcutTrimRange, b: AxcutTrimRange) =>
+		a.assetId === b.assetId && a.startSec < b.endSec && b.startSec < a.endSec;
+	return suggested.filter((cut) => !existing.some((trim) => overlaps(cut, trim)));
+}

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { AxcutWord } from "../schema";
-import { generateRoughCutSuggestions, roughCutsToTrimRanges } from "./rough-cut";
+import type { AxcutTrimRange, AxcutWord } from "../schema";
+import {
+	dropTrimsAlreadyCovered,
+	generateRoughCutSuggestions,
+	roughCutsToTrimRanges,
+} from "./rough-cut";
 
 let counter = 0;
 function word(text: string, startSec: number, endSec: number, id?: string): AxcutWord {
@@ -99,5 +103,33 @@ describe("roughCutsToTrimRanges", () => {
 				origin: "system",
 			},
 		]);
+	});
+});
+
+describe("dropTrimsAlreadyCovered", () => {
+	function trim(id: string, assetId: string, startSec: number, endSec: number): AxcutTrimRange {
+		return { id, assetId, startSec, endSec, reason: "silence", origin: "system" };
+	}
+
+	// What makes a second run a no-op instead of a pile of duplicate cuts.
+	it("keeps only the stretches no existing trim touches", () => {
+		const kept = dropTrimsAlreadyCovered(
+			[trim("t_1", "asset_1", 1, 2), trim("t_2", "asset_1", 5, 6), trim("t_3", "asset_2", 1, 2)],
+			[
+				// Overlaps t_1 by a tenth of a second — still that trim's stretch.
+				{ ...trim("old", "asset_1", 1.9, 3), origin: "user" },
+				// The same span as t_3, on an asset t_3 has nothing to do with.
+				trim("elsewhere", "asset_3", 1, 2),
+			],
+		);
+		expect(kept.map((cut) => cut.id)).toEqual(["t_2", "t_3"]);
+	});
+
+	// Touching end-to-start is not overlapping: a cut that begins exactly where
+	// another ends removes a different stretch of the recording.
+	it("keeps a cut that only abuts an existing trim", () => {
+		expect(
+			dropTrimsAlreadyCovered([trim("t_1", "asset_1", 2, 3)], [trim("old", "asset_1", 1, 2)]),
+		).toHaveLength(1);
 	});
 });
