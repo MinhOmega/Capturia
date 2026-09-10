@@ -72,6 +72,7 @@ async function captureRequest(start: ReturnType<typeof vi.fn>) {
 	expect(start).toHaveBeenCalledTimes(1);
 	return start.mock.calls[0][0] as {
 		video: { fps: number; width?: number; height?: number; bitrate?: number; maxLongEdge?: number };
+		audio: { microphone: { gain: number } };
 	};
 }
 
@@ -154,6 +155,39 @@ describe("capture bitrate", () => {
 		const request = await captureRequest(api.startNativeMacRecording);
 
 		expect(request.video).toMatchObject({ width: 1920, height: 1080, bitrate: 18_000_000 });
+	});
+});
+
+describe("microphone gain", () => {
+	/**
+	 * A multiplier on the mix's own levelling, not a replacement for it: at the
+	 * default the request must carry exactly the 1.4x boost that shipped before the
+	 * setting existed, or every existing user's recordings change loudness.
+	 */
+	it("leaves the request at the app's own boost by default", async () => {
+		stubElectronAPI("win32");
+
+		const request = await captureRequest(api.startNativeWindowsRecording);
+
+		expect(request.audio.microphone.gain).toBeCloseTo(1.4);
+	});
+
+	it("multiplies the app's boost by the user's choice", async () => {
+		saveUserPreferences({ microphoneGain: 2 });
+		stubElectronAPI("win32");
+
+		const request = await captureRequest(api.startNativeWindowsRecording);
+
+		expect(request.audio.microphone.gain).toBeCloseTo(2.8);
+	});
+
+	it("reaches the Linux helper too", async () => {
+		saveUserPreferences({ microphoneGain: 0.5 });
+		stubElectronAPI("linux");
+
+		const request = await captureRequest(api.startNativeLinuxRecording);
+
+		expect(request.audio.microphone.gain).toBeCloseTo(0.7);
 	});
 });
 

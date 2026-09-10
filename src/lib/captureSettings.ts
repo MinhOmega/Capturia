@@ -80,3 +80,49 @@ export function capCaptureSize(
 function toEven(value: number): number {
 	return Math.max(2, Math.round(value / 2) * 2);
 }
+
+/**
+ * Seconds of countdown before a take starts, `0` included and meaningful.
+ *
+ * Zero is a real choice, not the absence of one: someone recording a dozen short
+ * clips wants the button to be the shutter. It is spelled out in the union rather
+ * than left to a falsy check for exactly that reason — `if (delay)` would read 0
+ * as "unset" and hand back the default, which is the bug this type exists to
+ * make unrepresentable.
+ */
+export type CountdownSeconds = 0 | 3 | 5 | 10;
+
+/** Selectable countdown lengths, in the order the picker shows them. */
+export const COUNTDOWN_OPTIONS: readonly CountdownSeconds[] = [0, 3, 5, 10];
+
+export function isCountdownSeconds(value: unknown): value is CountdownSeconds {
+	return COUNTDOWN_OPTIONS.includes(value as CountdownSeconds);
+}
+
+/**
+ * The numbers the overlay counts through, largest first. Empty for `0`, which is
+ * what the caller checks to skip the overlay entirely rather than flash it for a
+ * frame.
+ */
+export function countdownTicks(seconds: CountdownSeconds): number[] {
+	return Array.from({ length: seconds }, (_, index) => seconds - index);
+}
+
+/**
+ * How much the microphone is amplified, as a multiplier on top of the mix's own
+ * levelling.
+ *
+ * NOT the absolute gain: `MIC_GAIN_BOOST` already lifts the mic when it has to
+ * sit over system audio, and a mic on its own already rides at unity. This scales
+ * whichever of those applies, so `1` — the default — leaves every existing
+ * recording's loudness exactly where it was, and the setting only has to answer
+ * "louder or quieter than the app's own judgement".
+ */
+export type MicrophoneGain = 0.5 | 1 | 1.5 | 2;
+
+/** Selectable microphone gains, in the order the picker shows them. */
+export const MICROPHONE_GAINS: readonly MicrophoneGain[] = [0.5, 1, 1.5, 2];
+
+export function isMicrophoneGain(value: unknown): value is MicrophoneGain {
+	return MICROPHONE_GAINS.includes(value as MicrophoneGain);
+}

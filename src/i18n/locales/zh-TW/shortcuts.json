@@ -18,6 +18,7 @@
 	"globalShortcutUnavailable": "此工作階段不支援全域快捷鍵，因此該快捷鍵將無法使用。其他快捷鍵不受影響。",
 	"actions": {
 		"openApp": "開啟應用程式",
+		"stopRecording": "停止錄製",
 		"addZoom": "新增縮放",
 		"addTrim": "新增剪輯",
 		"addSpeed": "新增速度",

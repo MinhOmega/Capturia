@@ -18,6 +18,7 @@
 	"globalShortcutUnavailable": "このセッションではグローバルショートカットを利用できないため、これは動作しません。他のショートカットには影響ありません。",
 	"actions": {
 		"openApp": "アプリを開く",
+		"stopRecording": "録画を停止",
 		"addZoom": "ズームを追加",
 		"addTrim": "トリムを追加",
 		"addSpeed": "速度を追加",

@@ -23,6 +23,8 @@ import {
 	FIXED_SHORTCUTS,
 	findConflict,
 	formatBinding,
+	GLOBAL_SHORTCUT_ACTIONS,
+	isGlobalShortcutAction,
 	isGlobalShortcutLive,
 	SHORTCUT_ACTIONS,
 	type ShortcutAction,
@@ -42,10 +44,9 @@ export function ShortcutsConfigDialog() {
 		closeConfig,
 		setShortcuts,
 		persistShortcuts,
-		globalShortcutStatus,
+		globalShortcutStatuses,
 	} = useShortcuts();
 	void openConfig;
-	const globalShortcutLive = isGlobalShortcutLive(globalShortcutStatus);
 	const t = useScopedT("shortcuts");
 	const tc = useScopedT("common");
 
@@ -127,20 +128,24 @@ export function ShortcutsConfigDialog() {
 
 	const handleSave = useCallback(async () => {
 		saveSeekStep(seekStep);
-		const status = await persistShortcuts(draft);
+		const statuses = await persistShortcuts(draft);
+		const outcomes = GLOBAL_SHORTCUT_ACTIONS.map((action) => statuses[action]);
 
 		// Only a conflict is the user's to fix, so only a conflict holds the dialog
 		// open. On a session with no global shortcuts at all there is no key that
 		// would work, and refusing to close would trap them in a dialog whose advice
-		// cannot be followed — the other eleven shortcuts saved fine, so say what
+		// cannot be followed — every non-global shortcut saved fine, so say what
 		// happened and let them out.
-		if (status === "conflict") {
+		//
+		// One dead global hotkey is enough to report: staying silent because the
+		// OTHER one registered is how a user ends up pressing a key that does nothing.
+		if (outcomes.includes("conflict")) {
 			toast.error(t("registrationFailed"));
 			return;
 		}
 
 		setShortcuts(draft);
-		if (status === "unavailable") toast.warning(t("globalShortcutUnavailable"));
+		if (outcomes.includes("unavailable")) toast.warning(t("globalShortcutUnavailable"));
 		else toast.success(t("savedToast"));
 		closeConfig();
 	}, [draft, seekStep, setShortcuts, persistShortcuts, closeConfig, t]);
@@ -179,9 +184,11 @@ export function ShortcutsConfigDialog() {
 						{SHORTCUT_ACTIONS.map((action) => {
 							const isCapturing = captureFor === action;
 							const hasConflict = conflict?.forAction === action;
-							// openApp is the only shortcut the OS owns, so it is the only one a
-							// session without global shortcuts can take away.
-							const isDead = action === "openApp" && !globalShortcutLive;
+							// Only the OS-owned shortcuts can be taken away by the session or by
+							// another app; the rest are renderer keydowns and always work.
+							const isDead =
+								isGlobalShortcutAction(action) &&
+								!isGlobalShortcutLive(globalShortcutStatuses[action]);
 							return (
 								<div key={action}>
 									<div className="flex items-center justify-between py-1.5 px-1 border-b border-[var(--border-soft)]">

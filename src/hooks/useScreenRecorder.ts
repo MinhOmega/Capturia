@@ -6,8 +6,11 @@ import { MIC_GAIN_BOOST, mixAudioTracks } from "@/lib/audioMix";
 import {
 	type CaptureFrameRate,
 	type CaptureResolutionPreset,
+	type CountdownSeconds,
 	capCaptureSize,
 	captureLongEdge,
+	countdownTicks,
+	type MicrophoneGain,
 } from "@/lib/captureSettings";
 import {
 	type NativeLinuxRecordingRequest,
@@ -126,6 +129,10 @@ type UseScreenRecorderReturn = {
 	setCaptureFrameRate: (fps: CaptureFrameRate) => void;
 	captureResolution: CaptureResolutionPreset;
 	setCaptureResolution: (preset: CaptureResolutionPreset) => void;
+	countdownSeconds: CountdownSeconds;
+	setCountdownSeconds: (seconds: CountdownSeconds) => void;
+	microphoneGain: MicrophoneGain;
+	setMicrophoneGain: (gain: MicrophoneGain) => void;
 	softwareEncoderFallbackNoticeVisible: boolean;
 	dismissSoftwareEncoderFallbackNotice: (dontShowAgain?: boolean) => void;
 	/** Flags this instant in the running capture. A no-op while paused or idle. */
@@ -276,6 +283,12 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const [captureResolution, setCaptureResolutionState] = useState<CaptureResolutionPreset>(
 		() => loadUserPreferences().captureResolution,
 	);
+	const [countdownSeconds, setCountdownSecondsState] = useState<CountdownSeconds>(
+		() => loadUserPreferences().countdownSeconds,
+	);
+	const [microphoneGain, setMicrophoneGainState] = useState<MicrophoneGain>(
+		() => loadUserPreferences().microphoneGain,
+	);
 	const [softwareEncoderFallbackNoticeVisible, setSoftwareEncoderFallbackNoticeVisible] =
 		useState(false);
 
@@ -321,6 +334,16 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const setCaptureResolution = useCallback((preset: CaptureResolutionPreset) => {
 		setCaptureResolutionState(preset);
 		saveUserPreferences({ captureResolution: preset });
+	}, []);
+
+	const setCountdownSeconds = useCallback((seconds: CountdownSeconds) => {
+		setCountdownSecondsState(seconds);
+		saveUserPreferences({ countdownSeconds: seconds });
+	}, []);
+
+	const setMicrophoneGain = useCallback((gain: MicrophoneGain) => {
+		setMicrophoneGainState(gain);
+		saveUserPreferences({ microphoneGain: gain });
 	}, []);
 
 	const screenRecorder = useRef<RecorderHandle | null>(null);
@@ -1318,7 +1341,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 						enabled: microphoneEnabled,
 						deviceId: microphoneDeviceId,
 						deviceName: microphoneDeviceName,
-						gain: MIC_GAIN_BOOST,
+						gain: MIC_GAIN_BOOST * microphoneGain,
 					},
 				},
 				webcam: {
@@ -1481,7 +1504,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 						enabled: microphoneEnabled,
 						deviceId: microphoneDeviceId,
 						deviceName: microphoneDeviceName,
-						gain: MIC_GAIN_BOOST,
+						gain: MIC_GAIN_BOOST * microphoneGain,
 					},
 				},
 				webcam: {
@@ -1588,7 +1611,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					// microphone get the empty headphone jack recorded, because the
 					// helper then fell back to the session default source.
 					...(microphoneDeviceName ? { deviceName: microphoneDeviceName } : {}),
-					gain: MIC_GAIN_BOOST,
+					gain: MIC_GAIN_BOOST * microphoneGain,
 				},
 			},
 			cursor: { mode: cursorCaptureMode },
@@ -1792,40 +1815,51 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			return;
 		}
 
-		setCountdownActive(true);
+		// Empty at 0 s, which is a chosen value and not a missing one: the overlay is
+		// never shown, nothing is slept on, and the take starts here. Everything the
+		// countdown exists alongside has already happened above — the source gate, the
+		// macOS cursor preflight, and the portal prepare whose picker is the wait that
+		// actually has no upper bound.
+		const values = countdownTicks(countdownSeconds);
+		const counting = values.length > 0;
 
-		let overlayHiddenBeforeStart = false;
+		setCountdownActive(counting);
+
+		// True from the start when there is no overlay, so the `finally` below does not
+		// hide one that was never shown.
+		let overlayHiddenBeforeStart = !counting;
 		try {
-			const values = [3, 2, 1];
-			const overlayShown = await safeShowCountdownOverlay(values[0], runId);
+			if (counting) {
+				const overlayShown = await safeShowCountdownOverlay(values[0], runId);
 
-			if (countdownRunId.current !== runId) {
-				return;
-			}
-
-			for (const value of values) {
 				if (countdownRunId.current !== runId) {
 					return;
 				}
 
-				if (overlayShown && value !== values[0]) {
-					await safeSetCountdownOverlayValue(value, runId);
-
+				for (const value of values) {
 					if (countdownRunId.current !== runId) {
 						return;
 					}
+
+					if (overlayShown && value !== values[0]) {
+						await safeSetCountdownOverlayValue(value, runId);
+
+						if (countdownRunId.current !== runId) {
+							return;
+						}
+					}
+
+					await new Promise((resolve) => window.setTimeout(resolve, 1000));
 				}
 
-				await new Promise((resolve) => window.setTimeout(resolve, 1000));
-			}
+				if (countdownRunId.current !== runId) {
+					return;
+				}
 
-			if (countdownRunId.current !== runId) {
-				return;
+				setCountdownActive(false);
+				await safeHideCountdownOverlay(runId);
+				overlayHiddenBeforeStart = true;
 			}
-
-			setCountdownActive(false);
-			await safeHideCountdownOverlay(runId);
-			overlayHiddenBeforeStart = true;
 
 			if (countdownRunId.current !== runId) {
 				return;
@@ -2083,6 +2117,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			const { context: mixingCtx, track: mixedTrack } = mixAudioTracks({
 				systemAudioTrack,
 				micAudioTrack,
+				micGain: microphoneGain,
 			});
 			if (mixingCtx) {
 				mixingContext.current = mixingCtx;
@@ -2551,6 +2586,10 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		setCaptureFrameRate,
 		captureResolution,
 		setCaptureResolution,
+		countdownSeconds,
+		setCountdownSeconds,
+		microphoneGain,
+		setMicrophoneGain,
 		softwareEncoderFallbackNoticeVisible,
 		dismissSoftwareEncoderFallbackNotice,
 		addRecordingMarker,

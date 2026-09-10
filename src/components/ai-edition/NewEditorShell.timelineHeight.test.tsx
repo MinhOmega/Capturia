@@ -14,7 +14,10 @@ vi.mock("@/contexts/ShortcutsContext", async () => {
 			closeConfig: vi.fn(),
 			setShortcuts: vi.fn(),
 			persistShortcuts: () => Promise.resolve("registered" as const),
-			globalShortcutStatus: "registered" as const,
+			globalShortcutStatuses: {
+				openApp: "registered" as const,
+				stopRecording: "registered" as const,
+			},
 		}),
 	};
 });

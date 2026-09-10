@@ -18,6 +18,7 @@
 	"globalShortcutUnavailable": "Le scorciatoie globali non sono disponibili in questa sessione, quindi questa non funzionerà. Le altre scorciatoie non sono interessate.",
 	"actions": {
 		"openApp": "Apri applicazione",
+		"stopRecording": "Interrompi registrazione",
 		"addZoom": "Aggiungi zoom",
 		"addTrim": "Aggiungi taglio",
 		"addSpeed": "Aggiungi velocità",

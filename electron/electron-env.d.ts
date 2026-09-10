@@ -447,15 +447,17 @@ interface Window {
 		) => Promise<{ success: boolean; error?: string; message?: string }>;
 		getShortcuts: () => Promise<Record<string, unknown> | null>;
 		saveShortcuts: (shortcuts: unknown) => Promise<{ success: boolean; error?: string }>;
-		updateGlobalShortcut: (binding: {
-			key: string;
-			ctrl?: boolean;
-			shift?: boolean;
-			alt?: boolean;
-		}) => Promise<{ status: import("../src/lib/shortcuts").ShortcutStatus }>;
-		/** What the last openApp registration actually achieved. See `ShortcutStatus`:
-		 *  "conflict" is the user's to fix, "unavailable" is the session's. */
-		getGlobalShortcutStatus: () => Promise<import("../src/lib/shortcuts").ShortcutStatus>;
+		updateGlobalShortcuts: (
+			bindings: Partial<
+				Record<
+					import("../src/lib/shortcuts").GlobalShortcutAction,
+					{ key: string; ctrl?: boolean; shift?: boolean; alt?: boolean }
+				>
+			>,
+		) => Promise<{ statuses: import("../src/lib/shortcuts").GlobalShortcutStatuses }>;
+		/** What the last registration actually achieved, per global action. See
+		 *  `ShortcutStatus`: "conflict" is the user's to fix, "unavailable" is the session's. */
+		getGlobalShortcutStatuses: () => Promise<import("../src/lib/shortcuts").GlobalShortcutStatuses>;
 		hudOverlayHide: () => void;
 		hudOverlayClose: () => void;
 		setHudOverlayIgnoreMouseEvents: (ignore: boolean) => void;

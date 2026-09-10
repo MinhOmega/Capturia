@@ -18,6 +18,7 @@
 	"globalShortcutUnavailable": "Global shortcuts aren't available in this session, so this one won't work. Every other shortcut is unaffected.",
 	"actions": {
 		"openApp": "Open App",
+		"stopRecording": "Stop Recording",
 		"addZoom": "Add Zoom",
 		"addTrim": "Add Trim",
 		"addSpeed": "Add Speed",

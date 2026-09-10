@@ -430,11 +430,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	saveShortcuts: (shortcuts: unknown) => {
 		return ipcRenderer.invoke("save-shortcuts", shortcuts);
 	},
-	updateGlobalShortcut: (binding: ShortcutBinding) => {
-		return ipcRenderer.invoke("update-global-shortcut", binding);
+	updateGlobalShortcuts: (bindings: Record<string, ShortcutBinding>) => {
+		return ipcRenderer.invoke("update-global-shortcuts", bindings);
 	},
-	getGlobalShortcutStatus: () => {
-		return ipcRenderer.invoke("get-global-shortcut-status");
+	getGlobalShortcutStatuses: () => {
+		return ipcRenderer.invoke("get-global-shortcut-statuses");
 	},
 	setLocale: (locale: string) => {
 		return ipcRenderer.invoke("set-locale", locale);

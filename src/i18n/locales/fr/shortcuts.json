@@ -18,6 +18,7 @@
 	"globalShortcutUnavailable": "Les raccourcis globaux ne sont pas disponibles dans cette session : celui-ci ne fonctionnera pas. Les autres raccourcis ne sont pas affectés.",
 	"actions": {
 		"openApp": "Ouvrir l'application",
+		"stopRecording": "Arrêter l'enregistrement",
 		"addZoom": "Ajouter un zoom",
 		"addTrim": "Ajouter une coupe",
 		"addSpeed": "Ajouter une vitesse",
