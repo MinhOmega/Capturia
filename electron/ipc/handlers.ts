@@ -1058,7 +1058,7 @@ function resolvePackagedResourcePath(...segments: string[]) {
 }
 
 function getNativeWindowsCaptureHelperCandidates() {
-	const envPath = process.env.OPENSCREEN_WGC_CAPTURE_EXE?.trim();
+	const envPath = process.env.CAPTURIA_WGC_CAPTURE_EXE?.trim();
 	const archTag = process.arch === "arm64" ? "win32-arm64" : "win32-x64";
 	return [
 		envPath,
@@ -1094,7 +1094,7 @@ async function findNativeWindowsCaptureHelperPath() {
 }
 
 function getNativeMacCaptureHelperCandidates() {
-	const envPath = process.env.OPENSCREEN_SCK_CAPTURE_EXE?.trim();
+	const envPath = process.env.CAPTURIA_SCK_CAPTURE_EXE?.trim();
 	const archTag = process.arch === "arm64" ? "darwin-arm64" : "darwin-x64";
 	const helperName = "openscreen-screencapturekit-helper";
 	return [
@@ -2659,7 +2659,7 @@ export function registerIpcHandlers(
 					: null;
 				const cursorCaptureMode =
 					normalizeCursorCaptureMode(request.cursor?.mode) ?? "editable-overlay";
-				const envPreferSoftwareEncoder = (process.env.OPENSCREEN_WGC_PREFER_SOFTWARE_ENCODER ?? "")
+				const envPreferSoftwareEncoder = (process.env.CAPTURIA_WGC_PREFER_SOFTWARE_ENCODER ?? "")
 					.trim()
 					.toLowerCase();
 				const preferSoftwareEncoder =

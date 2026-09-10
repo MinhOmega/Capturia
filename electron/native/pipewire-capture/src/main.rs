@@ -250,7 +250,7 @@ enum Message {
 }
 
 fn main() {
-    let debug = std::env::var("OPENSCREEN_PIPEWIRE_DEBUG")
+    let debug = std::env::var("CAPTURIA_PIPEWIRE_DEBUG")
         .map(|value| !matches!(value.as_str(), "" | "0" | "false"))
         .unwrap_or(false);
     let mut emitter = Emitter::new(std::io::stdout(), debug);
@@ -896,8 +896,8 @@ fn run<W: Write>(
                                         "the GPU could not import {consecutive_drops} captured \
                                          frames in a row ({reason}); the render node likely \
                                          cannot map the compositor's buffers. Set \
-                                         OPENSCREEN_LINUX_RENDER_NODE to the correct /dev/dri \
-                                         node, or OPENSCREEN_LINUX_ENCODER=software for the CPU \
+                                         CAPTURIA_LINUX_RENDER_NODE to the correct /dev/dri \
+                                         node, or CAPTURIA_LINUX_ENCODER=software for the CPU \
                                          path."
                                     ),
                                 });

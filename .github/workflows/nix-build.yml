@@ -193,10 +193,10 @@ jobs:
           # mere existence check here and be rejected at runtime. The compositor
           # addon is require()'d rather than spawned, so readable is its bar.
           for entry in \
-            "OPENSCREEN_FFMPEG_PATH:-x" \
-            "OPENSCREEN_COMPOSITOR_VIEW_NODE:-r" \
-            "OPENSCREEN_LINUX_CURSOR_HELPER_EXE:-x" \
-            "OPENSCREEN_WHISPER_SERVER_EXE:-x"; do
+            "CAPTURIA_FFMPEG_PATH:-x" \
+            "CAPTURIA_COMPOSITOR_VIEW_NODE:-r" \
+            "CAPTURIA_LINUX_CURSOR_HELPER_EXE:-x" \
+            "CAPTURIA_WHISPER_SERVER_EXE:-x"; do
             var=${entry%:*}
             test=${entry##*:}
             # Read the value the wrapper exports rather than re-deriving it here,
@@ -267,9 +267,9 @@ jobs:
           }
 
           check_dlopen_rpath "PipeWire helper" \
-            "$(wrapper_value OPENSCREEN_LINUX_CURSOR_HELPER_EXE)" libpipewire-0.3.so.0
+            "$(wrapper_value CAPTURIA_LINUX_CURSOR_HELPER_EXE)" libpipewire-0.3.so.0
           check_dlopen_rpath "compositor addon" \
-            "$(wrapper_value OPENSCREEN_COMPOSITOR_VIEW_NODE)" libvulkan.so.1
+            "$(wrapper_value CAPTURIA_COMPOSITOR_VIEW_NODE)" libvulkan.so.1
 
           [ "$missing" -eq 0 ]
 
@@ -357,7 +357,7 @@ jobs:
           # proves nothing either way. Five per run, sharing one build: the
           # build is the expensive part and it is already done by here.
           #
-          # OPENSCREEN_DIAGNOSTIC turns on the timestamped startup milestones.
+          # CAPTURIA_DIAGNOSTIC turns on the timestamped startup milestones.
           # Three of six earlier runs stopped here with the renderer emitting
           # nothing at all, so the question is how far the main process got, and
           # the last milestone before the kill is the answer.
@@ -380,7 +380,7 @@ jobs:
             # 2>&1, like record and export: the probe above established that this
             # host's xvfb-run folds stderr into stdout anyway, so the separate .err
             # capture was a file nothing could ever read.
-            CLI_TIMEOUT=$SOURCES_TIMEOUT OPENSCREEN_DIAGNOSTIC=1 run_cli $SANDBOX $CHROME_FLAGS sources -o "/tmp/sources.$i.json" >"/tmp/sources.$i.out" 2>&1 || RC=$?
+            CLI_TIMEOUT=$SOURCES_TIMEOUT CAPTURIA_DIAGNOSTIC=1 run_cli $SANDBOX $CHROME_FLAGS sources -o "/tmp/sources.$i.json" >"/tmp/sources.$i.out" 2>&1 || RC=$?
             # Before the branching, so a success reports its duration too. The
             # measurement was added to compare this path against record's, and the
             # first run to carry it printed only record's -- the grep lived in a
@@ -476,7 +476,7 @@ jobs:
           # informational: it cannot pass here, and nothing gates on it.
           echo "--- capture probe (informational; run_cli #$((RUN_CLI_N + 1))) ---"
           RC=0
-          CLI_TIMEOUT=120 OPENSCREEN_DIAGNOSTIC=1 run_cli $SANDBOX $CHROME_FLAGS record --duration 2 --project /tmp/probe.openscreen >/tmp/probe.out 2>&1 || RC=$?
+          CLI_TIMEOUT=120 CAPTURIA_DIAGNOSTIC=1 run_cli $SANDBOX $CHROME_FLAGS record --duration 2 --project /tmp/probe.openscreen >/tmp/probe.out 2>&1 || RC=$?
           if [ "$RC" -eq 0 ] && [ -f /tmp/probe.openscreen ]; then
             echo "::warning::record worked on this runner. Capture is no longer broken here -- see whether the export check below should go back to using a real recording."
           else
@@ -521,7 +521,7 @@ jobs:
 
           rm -f /tmp/demo.mp4
           RC=0
-          CLI_TIMEOUT=300 OPENSCREEN_DIAGNOSTIC=1 run_cli $SANDBOX $CHROME_FLAGS export /tmp/demo.openscreen -o /tmp/demo.mp4 >/tmp/exp.out 2>&1 || RC=$?
+          CLI_TIMEOUT=300 CAPTURIA_DIAGNOSTIC=1 run_cli $SANDBOX $CHROME_FLAGS export /tmp/demo.openscreen -o /tmp/demo.mp4 >/tmp/exp.out 2>&1 || RC=$?
           EXPORT_OK=0
           if [ "$RC" -ne 0 ] || [ ! -f /tmp/demo.mp4 ]; then
             echo "::error::export failed (rc=$RC). The compositor addon is packaged and the export path does not work."

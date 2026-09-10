@@ -2,7 +2,7 @@
 // so a wording change is one edit and so the wizard prompt is stated once, with
 // its provenance, rather than paraphrased per scenario.
 
-import { OPENSCREEN_TOOL_NAMES, PHANTOM_TOOL_NAMES } from "../../electron/ai-edition/agent-tools";
+import { CAPTURIA_TOOL_NAMES, PHANTOM_TOOL_NAMES } from "../../electron/ai-edition/agent-tools";
 
 /**
  * The Auto-enhance prompt the wizard scenarios send. It is NOT the string the
@@ -52,14 +52,14 @@ export const AI_ENHANCE_PROMPT =
  * added without updating the roster now fails the build rather than a bench
  * nobody runs.
  */
-export const OPENSCREEN_TOOLS = OPENSCREEN_TOOL_NAMES;
+export const CAPTURIA_TOOLS = CAPTURIA_TOOL_NAMES;
 export const PHANTOM_TOOLS = PHANTOM_TOOL_NAMES;
 
 /** Our whole surface, and nothing else. A change here means the agent's context
  * changed shape — which is the one thing a report cannot be compared across, so
  * `fingerprintOf` records the wire's own `toolNames`/`toolsSha256` in every
  * report rather than trusting this to have been noticed. */
-export const EXPECTED_TOOL_COUNT = OPENSCREEN_TOOL_NAMES.length;
+export const EXPECTED_TOOL_COUNT = CAPTURIA_TOOL_NAMES.length;
 
 const PHANTOM_SET: ReadonlySet<string> = new Set<string>(PHANTOM_TOOLS);
 

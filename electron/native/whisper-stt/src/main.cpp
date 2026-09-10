@@ -239,18 +239,18 @@ int main(int argc, char** argv) {
 	// ponytail: prefer env var (matches the prior native STT model env var
 	// shape; the Node wrapper passes both ways).
 	if (model_path.empty()) {
-		if (const char* p = std::getenv("OPENSCREEN_WHISPER_MODEL")) model_path = p;
+		if (const char* p = std::getenv("CAPTURIA_WHISPER_MODEL")) model_path = p;
 	}
 	if (port == 0) {
-		if (const char* p = std::getenv("OPENSCREEN_WHISPER_PORT")) port = std::atoi(p);
+		if (const char* p = std::getenv("CAPTURIA_WHISPER_PORT")) port = std::atoi(p);
 	}
-	if (const char* p = std::getenv("OPENSCREEN_WHISPER_THREADS")) threads = std::atoi(p);
+	if (const char* p = std::getenv("CAPTURIA_WHISPER_THREADS")) threads = std::atoi(p);
 	// Only a fallback, never an override: the app always passes --host 127.0.0.1,
 	// and an env var that can widen a shipped binary's bind address behind an
 	// explicit flag is a hole, not a knob. Anything but loopback is refused
 	// outright — this server has no authentication of any kind.
 	if (!host_from_flag) {
-		if (const char* p = std::getenv("OPENSCREEN_WHISPER_HOST")) host = p;
+		if (const char* p = std::getenv("CAPTURIA_WHISPER_HOST")) host = p;
 	}
 	if (host != "127.0.0.1" && host != "::1" && host != "localhost") {
 		std::cerr << "FATAL: refusing to bind " << host
@@ -261,7 +261,7 @@ int main(int argc, char** argv) {
 
 	if (model_path.empty()) {
 		std::cerr << "FATAL: --model <path-to-ggml.bin> or "
-		             "OPENSCREEN_WHISPER_MODEL is required" << std::endl;
+		             "CAPTURIA_WHISPER_MODEL is required" << std::endl;
 		return 2;
 	}
 	log("boot: model=" + model_path + " host=" + host +

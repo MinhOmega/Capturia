@@ -55,7 +55,7 @@ The renderer→addon IPC goes through `native-bridge:invoke` with a single
 service in the main process loads the addon from
 `electron/native/bin/<platform>-<arch>/compositor_view.node` (packaged) or
 `electron/native/compositor-view/build/compositor_view.node` (dev), with an
-`OPENSCREEN_COMPOSITOR_VIEW_NODE` env override for the standalone builds. The
+`CAPTURIA_COMPOSITOR_VIEW_NODE` env override for the standalone builds. The
 ffmpeg shared-DLL directory is prepended to `PATH` before the require so the
 addon's `LoadLibrary("avcodec-NN.dll")` resolves against the same pinned build the
 crate links against

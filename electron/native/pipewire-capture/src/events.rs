@@ -16,7 +16,7 @@
 //!     video half. `capture-started` is the Linux spelling of the "Recording
 //!     started" line the Windows helper prints, and the parent waits on it
 //!     before telling the UI that recording has begun.
-//!   * `debug` — the Stage 1 instrumentation, gated on OPENSCREEN_PIPEWIRE_DEBUG.
+//!   * `debug` — the Stage 1 instrumentation, gated on CAPTURIA_PIPEWIRE_DEBUG.
 
 use std::io::{self, Write};
 
@@ -107,7 +107,7 @@ pub enum Event {
     /// Which capture node each audio source was linked to.
     ///
     /// NOT a debug event, deliberately. This started life as one and was
-    /// therefore suppressed unless OPENSCREEN_PIPEWIRE_DEBUG was set — so when
+    /// therefore suppressed unless CAPTURIA_PIPEWIRE_DEBUG was set — so when
     /// a user reported "that is not my microphone", the one line that would
     /// have answered it was missing from their log. The resolved node is the
     /// first thing anyone needs when audio comes from the wrong device.
@@ -188,7 +188,7 @@ impl<W: Write> Emitter<W> {
         Self { out, debug }
     }
 
-    /// `debug` events are dropped unless OPENSCREEN_PIPEWIRE_DEBUG was set.
+    /// `debug` events are dropped unless CAPTURIA_PIPEWIRE_DEBUG was set.
     pub fn emit(&mut self, event: &Event) -> io::Result<()> {
         if matches!(event, Event::Debug { .. }) && !self.debug {
             return Ok(());

@@ -19,7 +19,7 @@ The workflow computes `X.Y.Z-rc.N`, migrates items from `Next Release` to the `v
 - **Explicit**, because a tag pushed with `GITHUB_TOKEN` does not fire `build.yml`'s `push:` trigger in this org's setup — GitHub withholds that to stop workflows triggering each other in a loop. `promote.yml` does push the stable tag that way, so without the dispatch nothing would build.
 - **Pinned with `--ref`**, because the build must check out the **tag**, not the default branch. The version bump lives only on the release branch; `main` still carries the previous stable version, and `build.yml`'s publish step would fail its guard (`package.json version X does not match <tag>`).
 
-The two workflows push their tags with different credentials, which is deliberate: `promote.yml` uses `GITHUB_TOKEN` (a tag is a ref, not a file change), while `prerelease.yml` pushes the RC tag with `OPENSCREEN_RELEASE_TOKEN`. A `GITHUB_TOKEN` tag push is answered with `remote: Internal Server Error` — a 500, not a 403 — by a tag ruleset that rejects the Actions token, and that failure took down the whole `v1.8.0-rc.1` cut, skipping the build trigger and the Discord announce with it.
+The two workflows push their tags with different credentials, which is deliberate: `promote.yml` uses `GITHUB_TOKEN` (a tag is a ref, not a file change), while `prerelease.yml` pushes the RC tag with `CAPTURIA_RELEASE_TOKEN`. A `GITHUB_TOKEN` tag push is answered with `remote: Internal Server Error` — a 500, not a 403 — by a tag ruleset that rejects the Actions token, and that failure took down the whole `v1.8.0-rc.1` cut, skipping the build trigger and the Discord announce with it.
 
 RC tags are signed and notarized exactly like stable ones. That keeps testers out of `xattr -rd com.apple.quarantine`, and exercises the whole credential path on every candidate instead of first proving it on the promotion build.
 
@@ -30,7 +30,7 @@ Run `Promote RC to stable release` (`promote.yml`) with:
 - `rc_tag`: required tag matching `vX.Y.Z-(rc|beta|alpha).N`.
 - `release_notes_extra`: optional text prepended to the stable Discord announcement.
 
-The workflow validates the tag, closes the version milestone, checks out `release/vX.Y.Z`, changes `package.json` to the stable version, tags that branch tip, opens and rebase-merges a release-sync PR into `main`, explicitly dispatches `build.yml` at the stable tag, and announces the stable release. The build publishes signed/notarized artifacts when Apple credentials are complete; publication with `OPENSCREEN_RELEASE_TOKEN` emits the event that starts stable Homebrew, WinGet, Nix, and AUR workflows.
+The workflow validates the tag, closes the version milestone, checks out `release/vX.Y.Z`, changes `package.json` to the stable version, tags that branch tip, opens and rebase-merges a release-sync PR into `main`, explicitly dispatches `build.yml` at the stable tag, and announces the stable release. The build publishes signed/notarized artifacts when Apple credentials are complete; publication with `CAPTURIA_RELEASE_TOKEN` emits the event that starts stable Homebrew, WinGet, Nix, and AUR workflows.
 
 **Before dispatching it, the RC has to have been through [the manual end-to-end checklist](../testing/manual-e2e-checklist.md).** Nothing in `promote.yml` enforces that — it will promote an untested tag exactly as readily — so the gate is the operator. It is not a human-only gate either: the checks need real OS mouse and keyboard events, which an agent with the computer-use MCP supplies, so asking one to run it is a normal way to get it done. For a promote that means the **whole file**, not a risk-picked subset — the checklist asks for it in its own opening, and its results log shows why: webcam PiP, microphone, GIF and the AI sections have been scoped out of every run recorded so far, so "the sections this RC puts at risk" is precisely the judgement that keeps missing them. A `Partial` row is not a green light to dispatch. Mechanics and the rule on partial runs: [AGENTS.md](../../AGENTS.md#desktop-e2e-testing-with-computer-use).
 
@@ -104,7 +104,7 @@ No new workflow code is needed; the tag-pushed trigger is branch-agnostic.
 
 ## Required release credential
 
-### `OPENSCREEN_RELEASE_TOKEN`
+### `CAPTURIA_RELEASE_TOKEN`
 
 This fine-grained personal access token is used by `prerelease.yml`, `promote.yml`, and `build.yml`. It migrates and closes issues/milestones, pushes release branches, creates and merges the release-sync PR, dispatches `build.yml`, and creates GitHub releases so `release: published` can start downstream workflows. The automatic `GITHUB_TOKEN` cannot reliably trigger those subsequent workflows.
 
@@ -117,10 +117,10 @@ Grant the token access only to the OpenScreen repository with:
 - Workflows: read and write, because the pushed release branch contains `.github/workflows/`.
 - Metadata: read-only.
 
-Create a fine-grained token from GitHub settings, set a finite expiry, and save it as the repository secret `OPENSCREEN_RELEASE_TOKEN`:
+Create a fine-grained token from GitHub settings, set a finite expiry, and save it as the repository secret `CAPTURIA_RELEASE_TOKEN`:
 
 ```bash
-gh secret set OPENSCREEN_RELEASE_TOKEN --body "<token>" --repo getopenscreen/openscreen
+gh secret set CAPTURIA_RELEASE_TOKEN --body "<token>" --repo getopenscreen/openscreen
 ```
 
 Rotate it by creating the replacement with the same repository and scopes, updating the secret, verifying a non-destructive workflow/API operation, then revoking the old token. Do not revoke the previous token until the replacement is installed.

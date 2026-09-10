@@ -567,7 +567,7 @@ export const removeClipArgs = z.object({
  * because `npm run wb` is not part of CI — so the bench asserted a surface the
  * product had not had for some time.
  */
-export const OPENSCREEN_TOOL_NAMES = [
+export const CAPTURIA_TOOL_NAMES = [
 	"getCurrentDocument",
 	"getTranscript",
 	"getTranscriptWords",

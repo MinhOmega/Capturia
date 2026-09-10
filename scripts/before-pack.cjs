@@ -604,7 +604,7 @@ const MAC_MIN_OS_FLOOR = "13.0";
  * an escape hatch, it is a hole. The runners are pinned to the floor, so they never
  * need it, and a release built with it set would be the bug this whole file prevents.
  */
-const SYMBOL_FLOOR_MODE = process.env.OPENSCREEN_SYMBOL_FLOOR ?? "";
+const SYMBOL_FLOOR_MODE = process.env.CAPTURIA_SYMBOL_FLOOR ?? "";
 
 /** Dotted numeric compare, so 3.4.9 < 3.4.30 and 2.4 < 2.38 rather than by string. */
 function compareVersions(a, b) {
@@ -755,7 +755,7 @@ function hostSymbolCeiling() {
 	const missing = Object.keys(MAX_SYMBOL_VERSION).filter((prefix) => !ceiling[prefix]);
 	if (missing.length > 0) {
 		throw new Error(
-			`OPENSCREEN_SYMBOL_FLOOR=host could not read ${missing.join(", ")} from this machine.\n\n` +
+			`CAPTURIA_SYMBOL_FLOOR=host could not read ${missing.join(", ")} from this machine.\n\n` +
 				`  looked in: ${providers.join(", ") || "(node reported no libc/libstdc++)"}\n\n` +
 				"Unset the variable to check against the pinned floor instead.",
 		);
@@ -765,7 +765,7 @@ function hostSymbolCeiling() {
 
 /**
  * The ceiling this run compares against, plus whether it is the pinned one. Validates
- * OPENSCREEN_SYMBOL_FLOOR here rather than at module load, so a stray value cannot
+ * CAPTURIA_SYMBOL_FLOOR here rather than at module load, so a stray value cannot
  * break a Windows or macOS pack that never consults it.
  */
 function resolveSymbolCeiling() {
@@ -776,7 +776,7 @@ function resolveSymbolCeiling() {
 	// a typo in the one variable that relaxes this guard must not decide either way.
 	if (SYMBOL_FLOOR_MODE !== "host") {
 		throw new Error(
-			`OPENSCREEN_SYMBOL_FLOOR=${SYMBOL_FLOOR_MODE} is not a value this guard knows.\n\n` +
+			`CAPTURIA_SYMBOL_FLOOR=${SYMBOL_FLOOR_MODE} is not a value this guard knows.\n\n` +
 				'The only accepted value is "host": compare against this machine rather than the\n' +
 				"oldest supported distro, for a package you are building to run locally.\n" +
 				"Unset it to check against the pinned floor.",
@@ -784,7 +784,7 @@ function resolveSymbolCeiling() {
 	}
 	if (process.env.CI) {
 		throw new Error(
-			"OPENSCREEN_SYMBOL_FLOOR=host is refused under CI.\n\n" +
+			"CAPTURIA_SYMBOL_FLOOR=host is refused under CI.\n\n" +
 				"It exists so a developer on a newer distro can build a package for their own\n" +
 				"machine; a released artifact built with it would not start on the distros the\n" +
 				"README claims. The runners are pinned to the floor (build.yml build-linux,\n" +
@@ -867,7 +867,7 @@ function checkLinuxSymbolVersionFloor(dir) {
 					.join(", ")}  (pinned floor: ${Object.entries(MAX_SYMBOL_VERSION)
 					.map(([prefix, max]) => `${prefix}_${max}`)
 					.join(", ")})\n` +
-				"  OPENSCREEN_SYMBOL_FLOOR=host is set. The package this produces may not start on\n" +
+				"  CAPTURIA_SYMBOL_FLOOR=host is set. The package this produces may not start on\n" +
 				"  the distros the README claims — do not publish it.",
 		);
 	}
@@ -901,7 +901,7 @@ function checkLinuxSymbolVersionFloor(dir) {
 			"    readelf -W --dyn-syms <file> | grep @GLIBC_2.38\n\n" +
 			(pinned
 				? "Building a package to run on THIS machine rather than to release? Set\n" +
-					"OPENSCREEN_SYMBOL_FLOOR=host, which compares against your own glibc instead of\n" +
+					"CAPTURIA_SYMBOL_FLOOR=host, which compares against your own glibc instead of\n" +
 					"the floor. It is refused under CI, so it cannot reach a published artifact.\n\n"
 				: "") +
 			"Raising MAX_SYMBOL_VERSION drops a distro the README claims to support.",

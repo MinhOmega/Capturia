@@ -444,7 +444,7 @@ void WgcSession::stop() {
         // Releasing it now would pull the device out from under a live
         // CopyResource, so leak it and let process exit reclaim it. This is
         // the exact hang class the pull-based default avoids; it is only
-        // reachable via OPENSCREEN_WGC_LEGACY_FRAME_CALLBACK=1.
+        // reachable via CAPTURIA_WGC_LEGACY_FRAME_CALLBACK=1.
         return;
     }
 

@@ -83,7 +83,7 @@ jobs:
       - name: Build native helper
         run: npm run build:native:mac
         env:
-          OPENSCREEN_MAC_HELPER_ARCHS: ${{ matrix.arch }}
+          CAPTURIA_MAC_HELPER_ARCHS: ${{ matrix.arch }}
 
       - name: Bundle diagnostic tool
         run: |

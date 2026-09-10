@@ -1,4 +1,4 @@
-//! Sondes de temps par étage pour l'export, activées par `OPENSCREEN_EXPORT_PROFILE=1`.
+//! Sondes de temps par étage pour l'export, activées par `CAPTURIA_EXPORT_PROFILE=1`.
 //!
 //! Le but est de répondre à UNE question — où part le temps d'un export — sans avoir à
 //! croire une intuition. Chaque étage accumule des nanosecondes et un compte d'appels ;
@@ -65,7 +65,7 @@ static ENABLED: OnceLock<bool> = OnceLock::new();
 pub fn enabled() -> bool {
     *ENABLED.get_or_init(|| {
         matches!(
-            std::env::var("OPENSCREEN_EXPORT_PROFILE").ok().as_deref(),
+            std::env::var("CAPTURIA_EXPORT_PROFILE").ok().as_deref(),
             Some("1") | Some("true")
         )
     })

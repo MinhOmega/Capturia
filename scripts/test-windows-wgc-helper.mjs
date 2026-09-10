@@ -8,44 +8,43 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
 const HELPER_PATH =
-	process.env.OPENSCREEN_WGC_CAPTURE_EXE ??
+	process.env.CAPTURIA_WGC_CAPTURE_EXE ??
 	path.join(ROOT, "electron", "native", "bin", "win32-x64", "wgc-capture.exe");
 
-const DURATION_MS = Number(process.env.OPENSCREEN_WGC_TEST_DURATION_MS ?? 5000);
+const DURATION_MS = Number(process.env.CAPTURIA_WGC_TEST_DURATION_MS ?? 5000);
 const WITH_SYSTEM_AUDIO =
-	process.env.OPENSCREEN_WGC_TEST_SYSTEM_AUDIO === "true" ||
-	process.argv.includes("--system-audio");
+	process.env.CAPTURIA_WGC_TEST_SYSTEM_AUDIO === "true" || process.argv.includes("--system-audio");
 const WITH_MICROPHONE =
-	process.env.OPENSCREEN_WGC_TEST_MICROPHONE === "true" ||
+	process.env.CAPTURIA_WGC_TEST_MICROPHONE === "true" ||
 	process.argv.includes("--microphone") ||
 	process.argv.includes("--mic");
 const WITH_WINDOW =
-	process.env.OPENSCREEN_WGC_TEST_WINDOW === "true" || process.argv.includes("--window");
+	process.env.CAPTURIA_WGC_TEST_WINDOW === "true" || process.argv.includes("--window");
 const WITH_WEBCAM =
-	process.env.OPENSCREEN_WGC_TEST_WEBCAM === "true" || process.argv.includes("--webcam");
+	process.env.CAPTURIA_WGC_TEST_WEBCAM === "true" || process.argv.includes("--webcam");
 const CAPTURE_CURSOR =
-	process.env.OPENSCREEN_WGC_TEST_CAPTURE_CURSOR === "true" ||
+	process.env.CAPTURIA_WGC_TEST_CAPTURE_CURSOR === "true" ||
 	process.argv.includes("--capture-cursor");
 const WITH_SOFTWARE_ENCODER =
-	process.env.OPENSCREEN_WGC_TEST_SOFTWARE_ENCODER === "true" ||
+	process.env.CAPTURIA_WGC_TEST_SOFTWARE_ENCODER === "true" ||
 	process.argv.includes("--software-encoder");
 const WITH_SOFTWARE_FALLBACK =
-	process.env.OPENSCREEN_WGC_TEST_SOFTWARE_FALLBACK === "true" ||
+	process.env.CAPTURIA_WGC_TEST_SOFTWARE_FALLBACK === "true" ||
 	process.argv.includes("--software-fallback");
 const INJECT_DEFAULT_SINK_WRITER_FAILURE_ENV =
-	"OPENSCREEN_WGC_TEST_INJECT_DEFAULT_SINK_WRITER_FAILURE_ONCE";
+	"CAPTURIA_WGC_TEST_INJECT_DEFAULT_SINK_WRITER_FAILURE_ONCE";
 const INJECTION_MARKER = "TEST-ONLY: Injected default sink-writer creation failure";
-const STALL_READBACK_ENV = "OPENSCREEN_WGC_TEST_STALL_READBACK_MS";
+const STALL_READBACK_ENV = "CAPTURIA_WGC_TEST_STALL_READBACK_MS";
 /**
  * Reproduces issue #252 on ordinary hardware: holds the frame lock across a
  * stall the way a wedged GPU readback does. Before the fix the helper hung
  * forever with no `[stop-timing]` output at all; it must now always exit.
  */
 const WITH_STALLED_READBACK =
-	process.env.OPENSCREEN_WGC_TEST_STALL_READBACK === "true" ||
+	process.env.CAPTURIA_WGC_TEST_STALL_READBACK === "true" ||
 	process.argv.includes("--stall-readback");
 const STALL_READBACK_MS = Number(process.env[STALL_READBACK_ENV] ?? 60_000);
-const STALL_FRAME_CALLBACK_ENV = "OPENSCREEN_WGC_TEST_STALL_FRAME_CALLBACK_MS";
+const STALL_FRAME_CALLBACK_ENV = "CAPTURIA_WGC_TEST_STALL_FRAME_CALLBACK_MS";
 /**
  * Reproduces getopenscreen/openscreen#460 on ordinary hardware: stalls the WGC
  * frame *callback* itself while it holds the frame lock, the shape that issue
@@ -61,19 +60,19 @@ const STALL_FRAME_CALLBACK_ENV = "OPENSCREEN_WGC_TEST_STALL_FRAME_CALLBACK_MS";
  * never be taken.
  */
 const WITH_STALLED_FRAME_CALLBACK =
-	process.env.OPENSCREEN_WGC_TEST_STALL_FRAME_CALLBACK === "true" ||
+	process.env.CAPTURIA_WGC_TEST_STALL_FRAME_CALLBACK === "true" ||
 	process.argv.includes("--stall-frame-callback");
 const STALL_FRAME_CALLBACK_MS = Number(process.env[STALL_FRAME_CALLBACK_ENV] ?? 60_000);
-const LEGACY_FRAME_CALLBACK_ENV = "OPENSCREEN_WGC_LEGACY_FRAME_CALLBACK";
+const LEGACY_FRAME_CALLBACK_ENV = "CAPTURIA_WGC_LEGACY_FRAME_CALLBACK";
 /**
  * Runs any scenario on the pre-#306 push-based delivery path instead of the
  * pull-based default -- the same lever a user gets, so a machine that only
  * fails one way can be A/B'd without swapping builds.
  */
 const WITH_LEGACY_FRAME_CALLBACK =
-	process.env.OPENSCREEN_WGC_LEGACY_FRAME_CALLBACK === "1" ||
+	process.env.CAPTURIA_WGC_LEGACY_FRAME_CALLBACK === "1" ||
 	process.argv.includes("--legacy-frame-callback");
-const STOP_BUDGET_ENV = "OPENSCREEN_WGC_STOP_BUDGET_MS";
+const STOP_BUDGET_ENV = "CAPTURIA_WGC_STOP_BUDGET_MS";
 /**
  * The helper's global shutdown ceiling, pinned into its environment below so
  * the harness and the helper cannot drift apart. It matters because the
@@ -481,14 +480,14 @@ const config = {
 	captureSystemAudio: WITH_SYSTEM_AUDIO,
 	captureMic: WITH_MICROPHONE,
 	captureCursor: CAPTURE_CURSOR,
-	microphoneDeviceId: process.env.OPENSCREEN_WGC_TEST_MICROPHONE_DEVICE_ID ?? "default",
-	microphoneDeviceName: process.env.OPENSCREEN_WGC_TEST_MICROPHONE_DEVICE_NAME ?? "",
+	microphoneDeviceId: process.env.CAPTURIA_WGC_TEST_MICROPHONE_DEVICE_ID ?? "default",
+	microphoneDeviceName: process.env.CAPTURIA_WGC_TEST_MICROPHONE_DEVICE_NAME ?? "",
 	microphoneGain: 1.4,
 	webcamEnabled: WITH_WEBCAM,
-	webcamDeviceId: process.env.OPENSCREEN_WGC_TEST_WEBCAM_DEVICE_ID ?? "",
-	webcamDeviceName: process.env.OPENSCREEN_WGC_TEST_WEBCAM_DEVICE_NAME ?? "",
+	webcamDeviceId: process.env.CAPTURIA_WGC_TEST_WEBCAM_DEVICE_ID ?? "",
+	webcamDeviceName: process.env.CAPTURIA_WGC_TEST_WEBCAM_DEVICE_NAME ?? "",
 	webcamDirectShowClsid: resolveDirectShowWebcamClsid(
-		process.env.OPENSCREEN_WGC_TEST_WEBCAM_DEVICE_NAME ?? "",
+		process.env.CAPTURIA_WGC_TEST_WEBCAM_DEVICE_NAME ?? "",
 	),
 	webcamWidth: 640,
 	webcamHeight: 360,

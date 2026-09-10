@@ -121,7 +121,7 @@ sudo usermod -aG input $USER
 
 Log out and back in for the new group to take effect. Nothing breaks without it — recording works exactly as it did before, and every cursor sample is simply recorded as a move.
 
-The scope is deliberately narrow: only the left mouse button (`BTN_LEFT`) is ever read, never keystrokes. To turn the reader off entirely even where the permission exists, set `OPENSCREEN_DISABLE_CLICK_CAPTURE=1` in the environment Capturia is launched from.
+The scope is deliberately narrow: only the left mouse button (`BTN_LEFT`) is ever read, never keystrokes. To turn the reader off entirely even where the permission exists, set `CAPTURIA_DISABLE_CLICK_CAPTURE=1` in the environment Capturia is launched from.
 
 **Touchpads:** only a physical click — pressing the pad down until it depresses — is recorded. **Tap-to-click is not**, because your compositor's input stack (libinput) synthesises those taps for its own use and never writes them back to the kernel device that Capturia reads, so there is nothing at the evdev layer to see. A mouse, or a touchpad with tap-to-click turned off, records every click.
 

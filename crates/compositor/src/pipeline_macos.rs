@@ -196,7 +196,7 @@ impl Decoder {
             // n'est pas éligible et garde le comportement d'avant.
             let is_h264_8bit = (*codecpar).codec_id == crate::ffi::AVCodecID::AV_CODEC_ID_H264
                 && (*codecpar).format == crate::ffi::AVPixelFormat::AV_PIX_FMT_YUV420P as i32;
-            let forced = std::env::var("OPENSCREEN_MAC_DECODE").ok();
+            let forced = std::env::var("CAPTURIA_MAC_DECODE").ok();
             let want_hw = match forced.as_deref() {
                 Some("software") => false,
                 Some("videotoolbox") => true,
@@ -626,7 +626,7 @@ pub enum ExportCodec {
 impl ExportCodec {
     /// Liste ordonnée des encodeurs candidats pour ce codec, **spécifique à macOS**.
     /// Symétrique de `ExportCodec::candidates()` côté Windows — la première candidate
-    /// qui ouvre gagne, sauf si `OPENSCREEN_EXPORT_ENCODER=<name>` force un autre choix
+    /// qui ouvre gagne, sauf si `CAPTURIA_EXPORT_ENCODER=<name>` force un autre choix
     /// (cf. `VideoEncoder::open`).
     ///
     /// Ordre côté macOS :
@@ -732,7 +732,7 @@ pub struct VideoEncoder {
 impl VideoEncoder {
     /// Ouvre l'encodeur pour `codec` sur la cible `w`x`h` à `fps` fps et `bit_rate` bits/s.
     /// Essaie chaque candidate retournée par `ExportCodec::candidates()` (honorant
-    /// `OPENSCREEN_EXPORT_ENCODER=<name>`) ; la première qui ouvre gagne.
+    /// `CAPTURIA_EXPORT_ENCODER=<name>`) ; la première qui ouvre gagne.
     ///
     /// Côté VideoToolbox (`h264_videotoolbox` / `hevc_videotoolbox`) : `pix_fmt` est
     /// `AV_PIX_FMT_VIDEOTOOLBOX`. On alloue un `hw_frames_ctx` (`AVHWFramesContext`)
@@ -750,7 +750,7 @@ impl VideoEncoder {
         fps: i32,
         bit_rate: i64,
     ) -> Result<VideoEncoder> {
-        let forced = std::env::var("OPENSCREEN_EXPORT_ENCODER").ok();
+        let forced = std::env::var("CAPTURIA_EXPORT_ENCODER").ok();
         let mut refused: Vec<String> = Vec::new();
         for &candidate in codec.candidates() {
             if forced.as_deref().is_some_and(|f| f != candidate.name) {
@@ -781,9 +781,9 @@ impl VideoEncoder {
         }
         match forced {
             Some(name) if refused.is_empty() => {
-                bail!("OPENSCREEN_EXPORT_ENCODER={name} ne nomme aucun candidat de ce codec")
+                bail!("CAPTURIA_EXPORT_ENCODER={name} ne nomme aucun candidat de ce codec")
             }
-            Some(name) => bail!("OPENSCREEN_EXPORT_ENCODER={name} inutilisable ici : {}", refused[0]),
+            Some(name) => bail!("CAPTURIA_EXPORT_ENCODER={name} inutilisable ici : {}", refused[0]),
             None => bail!(
                 "aucun encodeur vidéo utilisable sur cette machine : {}",
                 refused.join(" ; ")

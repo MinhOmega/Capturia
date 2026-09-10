@@ -104,7 +104,7 @@ buildNpmPackage {
 
     # Wrap system electron with the app directory.
     #
-    # OPENSCREEN_FFMPEG_PATH is checked before every other candidate in
+    # CAPTURIA_FFMPEG_PATH is checked before every other candidate in
     # ffmpegCandidates (electron/media/audioPeaks.ts), which is what makes this
     # a one-line answer to a problem that otherwise has none: the app normally
     # gets ffmpeg from scripts/fetch-ffmpeg.mjs, and a build-time download
@@ -117,7 +117,7 @@ buildNpmPackage {
     # raw PCM (-i/-ac/-ar/-f), so X11 and SDL would be closure weight for
     # nothing.
     #
-    # OPENSCREEN_LINUX_CURSOR_HELPER_EXE is the first candidate in
+    # CAPTURIA_LINUX_CURSOR_HELPER_EXE is the first candidate in
     # helperCandidates (pipeWireCursorRecordingSession.ts), and the same lookup
     # serves linuxNativeCaptureSession, so one variable covers both consumers.
     # Every other candidate is relative to APP_ROOT or resourcesPath and assumes
@@ -128,10 +128,10 @@ buildNpmPackage {
     makeWrapper "${electron}/bin/electron" "$out/bin/openscreen" \
       --add-flags "$out/lib/openscreen" \
       --set ELECTRON_IS_DEV 0 \
-      --set OPENSCREEN_FFMPEG_PATH "${ffmpegLgpl}/bin/ffmpeg" \
-      --set OPENSCREEN_COMPOSITOR_VIEW_NODE "${compositor-view}/lib/compositor_view.node" \
-      --set OPENSCREEN_LINUX_CURSOR_HELPER_EXE "${lib.getExe pipewire-helper}" \
-      --set OPENSCREEN_WHISPER_SERVER_EXE "${lib.getExe whisper-stt}"
+      --set CAPTURIA_FFMPEG_PATH "${ffmpegLgpl}/bin/ffmpeg" \
+      --set CAPTURIA_COMPOSITOR_VIEW_NODE "${compositor-view}/lib/compositor_view.node" \
+      --set CAPTURIA_LINUX_CURSOR_HELPER_EXE "${lib.getExe pipewire-helper}" \
+      --set CAPTURIA_WHISPER_SERVER_EXE "${lib.getExe whisper-stt}"
 
     # Install icons to hicolor theme
     for size in 16 24 32 48 64 128 256 512 1024; do

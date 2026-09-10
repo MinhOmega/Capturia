@@ -165,7 +165,7 @@ Foundation picks its own encoder MFT independently of our D3D device, so on this
 which *has* an AMD GPU, just not one this compositor is using — it can still reach hardware.
 On a genuinely GPU-less host `h264_mf` would fall to its own software encoder or fail, and
 `libopenh264` is the floor. The forced row is there precisely because the automatic one
-cannot be trusted to represent that host: `OPENSCREEN_EXPORT_ENCODER=libopenh264` is the
+cannot be trusted to represent that host: `CAPTURIA_EXPORT_ENCODER=libopenh264` is the
 only way to exercise the real last resort from a machine that has a GPU.
 
 The encoder is not the bottleneck either way — the two CPU rows differ by 5 %, while the
@@ -180,7 +180,7 @@ The measured window is the whole `openscreen export` process, as [`screen-record
 
 ### Where the time goes
 
-`OPENSCREEN_EXPORT_PROFILE=1` prints a per-stage breakdown to stderr; the probes cover ~99 % of the walk's own wall clock and the report prints what they do not cover, so a missing stage is visible rather than folded into a neighbour. On a 1920×1080@60 60 s S4 export (wallpaper, padding, radius, shadow, three zooms, motion blur, rendered cursor, webcam PiP):
+`CAPTURIA_EXPORT_PROFILE=1` prints a per-stage breakdown to stderr; the probes cover ~99 % of the walk's own wall clock and the report prints what they do not cover, so a missing stage is visible rather than folded into a neighbour. On a 1920×1080@60 60 s S4 export (wallpaper, padding, radius, shadow, three zooms, motion blur, rendered cursor, webcam PiP):
 
 | stage | before the decode change | after |
 |---|---:|---:|

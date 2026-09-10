@@ -97,7 +97,7 @@ rustPlatform.buildRustPackage {
   # Rust declarations import osff_-prefixed names, and it asserts that it renamed
   # something, so a mismatch between these two halves fails the build rather than
   # producing an addon that binds to the wrong ffmpeg.
-  env.OPENSCREEN_FFMPEG_SYMBOL_PREFIX = "osff_";
+  env.CAPTURIA_FFMPEG_SYMBOL_PREFIX = "osff_";
 
   # WHY. Electron links Chromium's own stripped libffmpeg.so as a DT_NEEDED
   # dependency, so it holds the global symbol scope before any addon is

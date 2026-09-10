@@ -2882,15 +2882,15 @@ mod tests {
     /// juste en dessous s'en passe volontairement) et qu'un runner sans adaptateur ne peut pas
     /// fournir. Même convention que le harnais visuel de la segmentation :
     ///
-    ///     set OPENSCREEN_CACHE_DEMO=1 && cargo test -p openscreen-compositor --release
+    ///     set CAPTURIA_CACHE_DEMO=1 && cargo test -p openscreen-compositor --release
     ///         img_cache_stays_under_budget -- --nocapture
     ///
     /// Les tests de `lru_evictions` couvrent la POLITIQUE ; celui-ci couvre le CÂBLAGE — que le
     /// backend l'appelle vraiment, sur les bonnes tailles, et que le budget morde sur nos assets.
     #[test]
     fn img_cache_stays_under_budget() {
-        if std::env::var_os("OPENSCREEN_CACHE_DEMO").is_none() {
-            eprintln!("OPENSCREEN_CACHE_DEMO absent — saute (ce test demande un device D3D11)");
+        if std::env::var_os("CAPTURIA_CACHE_DEMO").is_none() {
+            eprintln!("CAPTURIA_CACHE_DEMO absent — saute (ce test demande un device D3D11)");
             return;
         }
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

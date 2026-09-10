@@ -1305,7 +1305,7 @@ mod tests {
     /// gst-launch-1.0 videotestsrc is-live=true \
     ///   ! video/x-raw,format=BGRx,width=640,height=480,framerate=30/1 \
     ///   ! pipewiresink stream-properties="props,node.name=oscbgrxtest,media.class=Video/Source" &
-    /// OPENSCREEN_PIPEWIRE_TEST_NODE=$(pw-dump | jq '.[]
+    /// CAPTURIA_PIPEWIRE_TEST_NODE=$(pw-dump | jq '.[]
     ///   | select(.info.props["node.name"] == "oscbgrxtest") | .id') \
     ///   cargo test -- --ignored --nocapture
     /// ```
@@ -1313,10 +1313,10 @@ mod tests {
     /// `cursorMeta` is expected to be false here: only a compositor's screencast
     /// source attaches SPA_META_Cursor. That part still needs the portal.
     #[test]
-    #[ignore = "needs a live PipeWire daemon and OPENSCREEN_PIPEWIRE_TEST_NODE"]
+    #[ignore = "needs a live PipeWire daemon and CAPTURIA_PIPEWIRE_TEST_NODE"]
     fn negotiates_a_stream_against_a_local_pipewire_node() {
-        let node_id: u32 = std::env::var("OPENSCREEN_PIPEWIRE_TEST_NODE")
-            .expect("set OPENSCREEN_PIPEWIRE_TEST_NODE to a video node id")
+        let node_id: u32 = std::env::var("CAPTURIA_PIPEWIRE_TEST_NODE")
+            .expect("set CAPTURIA_PIPEWIRE_TEST_NODE to a video node id")
             .parse()
             .expect("node id must be an integer");
 
@@ -1420,8 +1420,8 @@ mod source_tests {
     /// does not match what got recorded.
     #[test]
     fn lists_the_audio_sources_of_a_live_session() {
-        if std::env::var("OPENSCREEN_PIPEWIRE_LIST").is_err() {
-            eprintln!("skipped: set OPENSCREEN_PIPEWIRE_LIST=1 with a running PipeWire");
+        if std::env::var("CAPTURIA_PIPEWIRE_LIST").is_err() {
+            eprintln!("skipped: set CAPTURIA_PIPEWIRE_LIST=1 with a running PipeWire");
             return;
         }
         super::load().expect("libpipewire must load");

@@ -42,11 +42,11 @@ describe("ffmpeg resolution", () => {
 	});
 
 	it("honours the env override first", () => {
-		process.env.OPENSCREEN_FFMPEG_PATH = "/custom/ffmpeg";
+		process.env.CAPTURIA_FFMPEG_PATH = "/custom/ffmpeg";
 		try {
 			expect(ffmpegCandidates(ROOT)[0]).toBe("/custom/ffmpeg");
 		} finally {
-			process.env.OPENSCREEN_FFMPEG_PATH = undefined;
+			process.env.CAPTURIA_FFMPEG_PATH = undefined;
 		}
 	});
 
@@ -129,7 +129,7 @@ describe("ffmpeg resolution", () => {
 	 * first — with a single candidate staged, `null` is equally consistent with
 	 * "skipped it" and "gave up on the whole list".
 	 *
-	 * `OPENSCREEN_FFMPEG_PATH` is the vehicle because `ffmpegCandidates` puts it
+	 * `CAPTURIA_FFMPEG_PATH` is the vehicle because `ffmpegCandidates` puts it
 	 * FIRST, so a bad value there is the one case that could shadow every real
 	 * candidate behind it.
 	 */
@@ -152,12 +152,12 @@ describe("ffmpeg resolution", () => {
 		});
 
 		afterEach(() => {
-			delete process.env.OPENSCREEN_FFMPEG_PATH;
+			delete process.env.CAPTURIA_FFMPEG_PATH;
 			rmSync(here, { recursive: true, force: true });
 		});
 
 		it("passes over a leading candidate that does not exist", () => {
-			process.env.OPENSCREEN_FFMPEG_PATH = path.join(here, "nowhere", "ffmpeg");
+			process.env.CAPTURIA_FFMPEG_PATH = path.join(here, "nowhere", "ffmpeg");
 
 			expect(resolveFfmpeg(here)).toBe(staged);
 		});
@@ -166,7 +166,7 @@ describe("ffmpeg resolution", () => {
 			const decoy = path.join(here, "decoy-ffmpeg");
 			mkdirSync(decoy, { recursive: true });
 			writeFileSync(path.join(decoy, "libavcodec.so.62"), "");
-			process.env.OPENSCREEN_FFMPEG_PATH = decoy;
+			process.env.CAPTURIA_FFMPEG_PATH = decoy;
 
 			expect(resolveFfmpeg(here)).toBe(staged);
 		});
@@ -176,7 +176,7 @@ describe("ffmpeg resolution", () => {
 			() => {
 				const decoy = path.join(here, "decoy-ffmpeg");
 				writeFileSync(decoy, "", { mode: 0o644 });
-				process.env.OPENSCREEN_FFMPEG_PATH = decoy;
+				process.env.CAPTURIA_FFMPEG_PATH = decoy;
 
 				expect(resolveFfmpeg(here)).toBe(staged);
 			},
@@ -190,7 +190,7 @@ describe("ffmpeg resolution", () => {
 			() => {
 				const executableOnly = path.join(here, "exec-only-ffmpeg");
 				writeFileSync(executableOnly, "", { mode: 0o111 });
-				process.env.OPENSCREEN_FFMPEG_PATH = executableOnly;
+				process.env.CAPTURIA_FFMPEG_PATH = executableOnly;
 
 				expect(resolveFfmpeg(here)).toBe(executableOnly);
 			},

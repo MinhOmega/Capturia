@@ -38,7 +38,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
 
-const PLAY_AT_MS = Number(process.env.OPENSCREEN_SCK_TEST_PLAY_AT_MS ?? 4000);
+const PLAY_AT_MS = Number(process.env.CAPTURIA_SCK_TEST_PLAY_AT_MS ?? 4000);
 const TONE_MS = 3000;
 /** Silence after the tone, so the trailing half of the timeline is exercised too. */
 const TAIL_MS = 3000;
@@ -75,7 +75,7 @@ if (process.platform !== "darwin") {
  * fine for shipping: Homebrew's build is GPL-3.0.
  */
 function resolveTool(name) {
-	const fromEnv = process.env[`OPENSCREEN_${name.toUpperCase()}`];
+	const fromEnv = process.env[`CAPTURIA_${name.toUpperCase()}`];
 	if (fromEnv && fs.existsSync(fromEnv)) return fromEnv;
 
 	const thirdparty = path.join(ROOT, "crates", "thirdparty");
@@ -94,7 +94,7 @@ function resolveTool(name) {
 
 function resolveHelper() {
 	const candidates = [
-		process.env.OPENSCREEN_SCK_HELPER_BIN,
+		process.env.CAPTURIA_SCK_HELPER_BIN,
 		path.join(
 			ROOT,
 			"electron",
@@ -129,7 +129,7 @@ function resolveHelper() {
  * guessing 1 is right on most single-display Macs and wrong on the rest.
  */
 function resolveDisplayId() {
-	const override = Number(process.env.OPENSCREEN_SCK_TEST_DISPLAY_ID);
+	const override = Number(process.env.CAPTURIA_SCK_TEST_DISPLAY_ID);
 	if (Number.isFinite(override) && override > 0) return override;
 
 	const probe = path.join(os.tmpdir(), "openscreen-main-display-id.swift");
@@ -150,7 +150,7 @@ if (!HELPER) {
 if (!FFMPEG || !FFPROBE) {
 	console.error(
 		"No ffmpeg/ffprobe found. Run `npm run fetch:ffmpeg:mac`, install one with Homebrew,\n" +
-			"or point OPENSCREEN_FFMPEG and OPENSCREEN_FFPROBE at binaries.",
+			"or point CAPTURIA_FFMPEG and CAPTURIA_FFPROBE at binaries.",
 	);
 	process.exit(1);
 }

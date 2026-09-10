@@ -24,7 +24,7 @@
 //!     `force_fallback_adapter`, `Backend::Hardware` rejette explicitement le
 //!     logiciel. `create` est donc reellement materiel strict.
 //!   - l'adaptateur retenu est journalise, comme le repli l'est cote Windows.
-//!   - `OPENSCREEN_COMPOSITOR_BACKEND=hardware|cpu` force le choix sans passer par
+//!   - `CAPTURIA_COMPOSITOR_BACKEND=hardware|cpu` force le choix sans passer par
 //!     `VK_DRIVER_FILES`, qui priverait tout le processus -- Chromium compris -- de
 //!     son GPU (cf. `FORCE_VAR`).
 
@@ -41,7 +41,7 @@ pub enum Backend {
 }
 
 impl Backend {
-    /// Le libelle accepte par `OPENSCREEN_COMPOSITOR_BACKEND`, pour que le message
+    /// Le libelle accepte par `CAPTURIA_COMPOSITOR_BACKEND`, pour que le message
     /// d'erreur d'un forcage rate cite la valeur telle qu'on l'ecrit.
     fn as_str(self) -> &'static str {
         match self {
@@ -195,7 +195,7 @@ fn classify(info: &wgpu::AdapterInfo) -> Backend {
     }
 }
 
-/// Forcage explicite du backend : `OPENSCREEN_COMPOSITOR_BACKEND=hardware|cpu`.
+/// Forcage explicite du backend : `CAPTURIA_COMPOSITOR_BACKEND=hardware|cpu`.
 ///
 /// `VK_DRIVER_FILES` / `VK_ICD_FILENAMES` obtiendraient le meme effet au niveau du
 /// loader Vulkan, mais s'appliquent au PROCESSUS ENTIER : sous Electron ils privent
@@ -204,9 +204,9 @@ fn classify(info: &wgpu::AdapterInfo) -> Backend {
 /// variable-ci ne touche que notre compositeur, ce qui en fait le seul moyen praticable
 /// d'exercer le chemin CPU depuis une machine qui a un GPU.
 ///
-/// Meme motif que `OPENSCREEN_EXPORT_ENCODER` cote pipeline. Linux seulement : Windows
+/// Meme motif que `CAPTURIA_EXPORT_ENCODER` cote pipeline. Linux seulement : Windows
 /// a le meme besoin (WARP) mais son chemin n'est pas exerce ici.
-pub const FORCE_VAR: &str = "OPENSCREEN_COMPOSITOR_BACKEND";
+pub const FORCE_VAR: &str = "CAPTURIA_COMPOSITOR_BACKEND";
 
 fn forced_backend() -> Option<Backend> {
     let raw = std::env::var(FORCE_VAR).ok()?;
@@ -240,7 +240,7 @@ impl Gpu {
     pub fn create_auto(_debug: bool) -> Result<Gpu> {
         // Un forcage ne retombe deliberement sur rien : un repli silencieux sur le
         // materiel ferait croire au test d'etre passe (meme politique que
-        // `OPENSCREEN_EXPORT_ENCODER` cote pipeline).
+        // `CAPTURIA_EXPORT_ENCODER` cote pipeline).
         if let Some(want) = forced_backend() {
             return create_backend(want).with_context(|| {
                 format!("{FORCE_VAR}={} inutilisable sur cet hote", want.as_str())

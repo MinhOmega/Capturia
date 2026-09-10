@@ -40,7 +40,7 @@ To inspect the real editor preview using the generated sidecar, run:
 npm run capture:openscreen-preview
 ```
 
-Set `CURSOR_RECORDING_DATA_PATH` to select a particular sidecar. `capture-openscreen-preview.mjs` also accepts `OPENSCREEN_PREVIEW_SKIP_BUILD`, `OPENSCREEN_PREVIEW_FRAME_COUNT`, `OPENSCREEN_PREVIEW_FPS`, and `OPENSCREEN_PREVIEW_OUTPUT_DIR`.
+Set `CURSOR_RECORDING_DATA_PATH` to select a particular sidecar. `capture-openscreen-preview.mjs` also accepts `CAPTURIA_PREVIEW_SKIP_BUILD`, `CAPTURIA_PREVIEW_FRAME_COUNT`, `CAPTURIA_PREVIEW_FPS`, and `CAPTURIA_PREVIEW_OUTPUT_DIR`.
 
 ## macOS cursor helper
 
@@ -64,7 +64,7 @@ The first JSON line should have `type: "ready"`, together with `mouseTapReady` a
 To run the app with a specific helper binary:
 
 ```bash
-export OPENSCREEN_MAC_CURSOR_HELPER_EXE=/path/to/openscreen-macos-cursor-helper
+export CAPTURIA_MAC_CURSOR_HELPER_EXE=/path/to/openscreen-macos-cursor-helper
 npm run dev
 ```
 

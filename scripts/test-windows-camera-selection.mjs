@@ -16,7 +16,7 @@
  *   npm run test:wgc-camera-selection:win
  *
  * The happy path needs a camera that exists here: pass its name through
- * OPENSCREEN_WGC_TEST_WEBCAM_DEVICE_NAME, or that case is skipped.
+ * CAPTURIA_WGC_TEST_WEBCAM_DEVICE_NAME, or that case is skipped.
  */
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -27,10 +27,10 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
 const HELPER =
-	process.env.OPENSCREEN_WGC_CAPTURE_EXE ??
+	process.env.CAPTURIA_WGC_CAPTURE_EXE ??
 	path.join(ROOT, "electron", "native", "bin", "win32-x64", "wgc-capture.exe");
-const REAL_CAMERA = process.env.OPENSCREEN_WGC_TEST_WEBCAM_DEVICE_NAME ?? "";
-const RECORD_MS = Number(process.env.OPENSCREEN_WGC_TEST_DURATION_MS ?? 2500);
+const REAL_CAMERA = process.env.CAPTURIA_WGC_TEST_WEBCAM_DEVICE_NAME ?? "";
+const RECORD_MS = Number(process.env.CAPTURIA_WGC_TEST_DURATION_MS ?? 2500);
 
 if (process.platform !== "win32") {
 	console.log("Windows only — skipping.");
@@ -165,7 +165,7 @@ if (REAL_CAMERA) {
 	});
 } else {
 	console.log(
-		"NOTE: set OPENSCREEN_WGC_TEST_WEBCAM_DEVICE_NAME to a real camera to cover the happy path.\n",
+		"NOTE: set CAPTURIA_WGC_TEST_WEBCAM_DEVICE_NAME to a real camera to cover the happy path.\n",
 	);
 }
 

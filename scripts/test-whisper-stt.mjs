@@ -17,8 +17,8 @@
 //   node scripts/test-whisper-stt.mjs --language fr  # force a language instead of auto
 //
 // Env overrides:
-//   OPENSCREEN_WHISPER_SERVER_EXE  helper binary (default: the staged one for this host)
-//   OPENSCREEN_WHISPER_MODEL       GGML model    (default: the userData cache location)
+//   CAPTURIA_WHISPER_SERVER_EXE  helper binary (default: the staged one for this host)
+//   CAPTURIA_WHISPER_MODEL       GGML model    (default: the userData cache location)
 
 import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -36,7 +36,7 @@ const argOf = (flag) => {
 
 const TAG = `${process.platform}-${process.arch}`;
 const BIN =
-	process.env.OPENSCREEN_WHISPER_SERVER_EXE ??
+	process.env.CAPTURIA_WHISPER_SERVER_EXE ??
 	path.join(
 		ROOT,
 		"electron",
@@ -46,7 +46,7 @@ const BIN =
 		process.platform === "win32" ? "whisper-stt-server.exe" : "whisper-stt-server",
 	);
 
-const MODEL = process.env.OPENSCREEN_WHISPER_MODEL ?? defaultModelPath();
+const MODEL = process.env.CAPTURIA_WHISPER_MODEL ?? defaultModelPath();
 const LANGUAGE = argOf("--language") ?? "auto";
 const WAV_ARG = argOf("--wav");
 const REF_ARG = argOf("--ref");
@@ -178,9 +178,7 @@ async function main() {
 			if (label === "helper binary") {
 				console.error("       Build it: bash scripts/build-whisper-stt.sh");
 			} else {
-				console.error(
-					"       Run a transcription in the app once, or set OPENSCREEN_WHISPER_MODEL.",
-				);
+				console.error("       Run a transcription in the app once, or set CAPTURIA_WHISPER_MODEL.");
 			}
 			process.exit(1);
 		}

@@ -1,4 +1,4 @@
-// OPENSCREEN_SYMBOL_FLOOR=host relaxes the one guard that keeps a Linux package
+// CAPTURIA_SYMBOL_FLOOR=host relaxes the one guard that keeps a Linux package
 // startable on the distros the README claims. That is the right trade for a developer
 // building for their own machine and a shipping bug anywhere else, so the two refusals
 // that keep it local — an unknown value, and CI — are tested rather than trusted.
@@ -44,8 +44,8 @@ function withEnv(env, body) {
 }
 
 describe("symbol-version ceiling", () => {
-	it("uses the pinned floor when OPENSCREEN_SYMBOL_FLOOR is unset", () => {
-		withEnv({ OPENSCREEN_SYMBOL_FLOOR: undefined, CI: undefined }, (t) => {
+	it("uses the pinned floor when CAPTURIA_SYMBOL_FLOOR is unset", () => {
+		withEnv({ CAPTURIA_SYMBOL_FLOOR: undefined, CI: undefined }, (t) => {
 			const { ceiling, pinned } = t.resolveSymbolCeiling();
 
 			expect(pinned).toBe(true);
@@ -54,13 +54,13 @@ describe("symbol-version ceiling", () => {
 	});
 
 	it("refuses an unknown value rather than guessing enforce or waive", () => {
-		withEnv({ OPENSCREEN_SYMBOL_FLOOR: "yes-please", CI: undefined }, (t) => {
+		withEnv({ CAPTURIA_SYMBOL_FLOOR: "yes-please", CI: undefined }, (t) => {
 			expect(() => t.resolveSymbolCeiling()).toThrow(/not a value this guard knows/);
 		});
 	});
 
 	it("refuses host mode under CI, so it cannot reach a published artifact", () => {
-		withEnv({ OPENSCREEN_SYMBOL_FLOOR: "host", CI: "true" }, (t) => {
+		withEnv({ CAPTURIA_SYMBOL_FLOOR: "host", CI: "true" }, (t) => {
 			expect(() => t.resolveSymbolCeiling()).toThrow(/refused under CI/);
 		});
 	});
@@ -74,7 +74,7 @@ describe("symbol-version ceiling", () => {
 	// legitimately comes back lower, which makes the check stricter rather than weaker.
 	// Requiring otherwise would fail this test on a correct machine.
 	it.runIf(process.platform === "linux")("takes the ceiling from this machine in host mode", () => {
-		withEnv({ OPENSCREEN_SYMBOL_FLOOR: "host", CI: undefined }, (t) => {
+		withEnv({ CAPTURIA_SYMBOL_FLOOR: "host", CI: undefined }, (t) => {
 			const { ceiling, pinned } = t.resolveSymbolCeiling();
 
 			expect(pinned).toBe(false);

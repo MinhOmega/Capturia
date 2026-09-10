@@ -152,7 +152,7 @@ int readEnvInt(const char* name, int fallback) {
 // against. Kept only until the pull-based path has enough field time to
 // retire this flag and the legacy path with it.
 bool useLegacyFrameCallback() {
-    return readEnvInt("OPENSCREEN_WGC_LEGACY_FRAME_CALLBACK", 0) != 0;
+    return readEnvInt("CAPTURIA_WGC_LEGACY_FRAME_CALLBACK", 0) != 0;
 }
 
 std::wstring utf8ToWide(const std::string& value) {
@@ -678,7 +678,7 @@ int main(int argc, char* argv[]) {
 
     char injectDefaultSinkWriterFailure[2]{};
     const DWORD injectDefaultSinkWriterFailureLength = GetEnvironmentVariableA(
-        "OPENSCREEN_WGC_TEST_INJECT_DEFAULT_SINK_WRITER_FAILURE_ONCE",
+        "CAPTURIA_WGC_TEST_INJECT_DEFAULT_SINK_WRITER_FAILURE_ONCE",
         injectDefaultSinkWriterFailure,
         static_cast<DWORD>(sizeof(injectDefaultSinkWriterFailure)));
     const bool injectDefaultSinkWriterFailureOnce =
@@ -690,7 +690,7 @@ int main(int argc, char* argv[]) {
     // with virtual display drivers; this makes the same failure reachable on
     // ordinary hardware, so the stop path can be regression-tested at all.
     const int testStallReadbackMs =
-        std::max(0, readEnvInt("OPENSCREEN_WGC_TEST_STALL_READBACK_MS", 0));
+        std::max(0, readEnvInt("CAPTURIA_WGC_TEST_STALL_READBACK_MS", 0));
     // Test-only: stall the WGC frame *callback* itself while it holds the
     // same frame lock, rather than the writer's readback -- the shape
     // getopenscreen/openscreen#460 actually reproduced on Intel HD 520
@@ -700,13 +700,13 @@ int main(int argc, char* argv[]) {
     // callbacksInFlight_ at zero and wgcDrained true, which cannot exercise
     // the video-writer-join skip this stall exists to test.
     //
-    // Requires OPENSCREEN_WGC_LEGACY_FRAME_CALLBACK=1: there is no callback
+    // Requires CAPTURIA_WGC_LEGACY_FRAME_CALLBACK=1: there is no callback
     // thread to stall on the default pull path, which is the point of it --
     // the wedge lands on the writer thread instead, where
     // testStallReadbackMs already reaches it and the video-writer-join
     // watchdog, not the drain, is what bounds it.
     const int testStallFrameCallbackMs =
-        std::max(0, readEnvInt("OPENSCREEN_WGC_TEST_STALL_FRAME_CALLBACK_MS", 0));
+        std::max(0, readEnvInt("CAPTURIA_WGC_TEST_STALL_FRAME_CALLBACK_MS", 0));
 
     std::cout << "{\"event\":\"ready\",\"schemaVersion\":2}" << std::endl;
 
@@ -826,13 +826,13 @@ int main(int argc, char* argv[]) {
         }
         std::cout << "}" << std::endl;
         AudioInputFormat sourceForEncoder = *audioFormat;
-        const int forcedAacSourceRate = readEnvInt("OPENSCREEN_WGC_FORCE_AAC_SOURCE_RATE", 0);
+        const int forcedAacSourceRate = readEnvInt("CAPTURIA_WGC_FORCE_AAC_SOURCE_RATE", 0);
         if (forcedAacSourceRate > 0) {
             sourceForEncoder.sampleRate = static_cast<UINT32>(forcedAacSourceRate);
             sourceForEncoder.avgBytesPerSec =
                 sourceForEncoder.sampleRate * sourceForEncoder.blockAlign;
         }
-        if (readEnvInt("OPENSCREEN_WGC_DISABLE_AAC_RATE_SNAP", 0) == 1) {
+        if (readEnvInt("CAPTURIA_WGC_DISABLE_AAC_RATE_SNAP", 0) == 1) {
             encoderAudioFormat = sourceForEncoder;
             encoderAudioFormat.subtype = MFAudioFormat_PCM;
             encoderAudioFormat.channels = 2;
@@ -849,9 +849,9 @@ int main(int argc, char* argv[]) {
                   << ",\"bitsPerSample\":" << encoderAudioFormat.bitsPerSample
                   << ",\"forcedSourceRate\":" << forcedAacSourceRate
                   << ",\"snapDisabled\":"
-                  << (readEnvInt("OPENSCREEN_WGC_DISABLE_AAC_RATE_SNAP", 0) == 1 ? "true" : "false")
+                  << (readEnvInt("CAPTURIA_WGC_DISABLE_AAC_RATE_SNAP", 0) == 1 ? "true" : "false")
                   << ",\"aacRateProbe\":"
-                  << (readEnvInt("OPENSCREEN_WGC_TEST_INJECT_AAC_RATE_PROBE", 0) == 1 ? "true"
+                  << (readEnvInt("CAPTURIA_WGC_TEST_INJECT_AAC_RATE_PROBE", 0) == 1 ? "true"
                                                                                    : "false")
                   << "}" << std::endl;
     }
@@ -859,9 +859,9 @@ int main(int argc, char* argv[]) {
     MFEncoderOptions encoderOptions{};
     encoderOptions.preferSoftwareEncoder = config.preferSoftwareEncoder;
     encoderOptions.injectDefaultSinkWriterFailureOnce = injectDefaultSinkWriterFailureOnce;
-    encoderOptions.skipAacRateSnap = readEnvInt("OPENSCREEN_WGC_DISABLE_AAC_RATE_SNAP", 0) == 1;
+    encoderOptions.skipAacRateSnap = readEnvInt("CAPTURIA_WGC_DISABLE_AAC_RATE_SNAP", 0) == 1;
     encoderOptions.injectAacRateProbe =
-        readEnvInt("OPENSCREEN_WGC_TEST_INJECT_AAC_RATE_PROBE", 0) == 1;
+        readEnvInt("CAPTURIA_WGC_TEST_INJECT_AAC_RATE_PROBE", 0) == 1;
     // OFF by default. The GPU path exists to dodge a Map() that wedges inside
     // the display driver on the machine in #252, and it demonstrably fixed
     // display and window capture there. It also broke recording outright for
@@ -874,7 +874,7 @@ int main(int argc, char* argv[]) {
     // #252. Neither has happened, and defaulting it on means every user carries
     // the risk so that the few who reproduce #252 might not have to.
     //
-    // Set OPENSCREEN_WGC_ENABLE_DXGI_INPUT=1 to turn it on -- that is what the
+    // Set CAPTURIA_WGC_ENABLE_DXGI_INPUT=1 to turn it on -- that is what the
     // people in #252 and #327 should be given to test with.
     //
     // The other two conditions are unchanged and still required: software
@@ -883,7 +883,7 @@ int main(int argc, char* argv[]) {
     // webcamActive -- the latter is only set once webcam capture has started,
     // well after this.
     encoderOptions.useDxgiInput =
-        readEnvInt("OPENSCREEN_WGC_ENABLE_DXGI_INPUT", 0) == 1 &&
+        readEnvInt("CAPTURIA_WGC_ENABLE_DXGI_INPUT", 0) == 1 &&
         !config.preferSoftwareEncoder &&
         (!config.webcamEnabled || writeSeparateWebcam);
 
@@ -956,7 +956,7 @@ int main(int argc, char* argv[]) {
     // whose job is to notice stopRequested and give up -- there is no second
     // thread left for it to take down with it.
     //
-    // OPENSCREEN_WGC_LEGACY_FRAME_CALLBACK=1 reverts to the previously
+    // CAPTURIA_WGC_LEGACY_FRAME_CALLBACK=1 reverts to the previously
     // shipped push-based design (frameMutex/frameCv guard the handoff from
     // WGC's own callback thread) as a rollback lever -- see wgc_session.h.
     const bool legacyFrameCallback = useLegacyFrameCallback();
@@ -1056,7 +1056,7 @@ int main(int argc, char* argv[]) {
                     // try_lock_for, not a blocking lock: the WGC callback
                     // holds frameMutex across CopyResource, which can wedge
                     // inside the display driver and never return (#252).
-                    // This is the exact failure OPENSCREEN_WGC_LEGACY_FRAME_
+                    // This is the exact failure CAPTURIA_WGC_LEGACY_FRAME_
                     // CALLBACK=1 opts back into; a blocking acquire here
                     // would let it also stall this thread's stop detection.
                     legacyLock = std::unique_lock<std::timed_mutex>(frameMutex, std::defer_lock);
@@ -1497,9 +1497,9 @@ int main(int argc, char* argv[]) {
     // the software encoder legitimately takes seconds (issue #34 raised the
     // app-side timeout for precisely this), so it gets whatever is left of the
     // ceiling rather than a step budget of its own.
-    const int shutdownBudgetMs = std::max(2000, readEnvInt("OPENSCREEN_WGC_STOP_BUDGET_MS", 50000));
+    const int shutdownBudgetMs = std::max(2000, readEnvInt("CAPTURIA_WGC_STOP_BUDGET_MS", 50000));
     const int stepBudgetMs =
-        std::min(shutdownBudgetMs, std::max(1000, readEnvInt("OPENSCREEN_WGC_STEP_BUDGET_MS", 8000)));
+        std::min(shutdownBudgetMs, std::max(1000, readEnvInt("CAPTURIA_WGC_STEP_BUDGET_MS", 8000)));
     std::atomic<int64_t> currentStepDeadlineMs{stepBudgetMs};
 
     auto beginStopStep = [&](const char* step, int budgetMs) {

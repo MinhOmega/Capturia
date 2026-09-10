@@ -181,7 +181,7 @@ export function resolveSceneAssetPaths(sceneJson: string): string {
 export interface CompositorViewServiceOptions {
 	/**
 	 * Optional explicit override for the addon path. Has precedence over the
-	 * `OPENSCREEN_COMPOSITOR_VIEW_NODE` env var and the candidate path list.
+	 * `CAPTURIA_COMPOSITOR_VIEW_NODE` env var and the candidate path list.
 	 * Useful for poking at a locally-built `.node` without copying it into
 	 * the standard search root.
 	 */
@@ -443,7 +443,7 @@ export class CompositorViewService {
 		this.loadAttempted = true;
 
 		const envOverride =
-			this.options.envOverride ?? process.env.OPENSCREEN_COMPOSITOR_VIEW_NODE ?? null;
+			this.options.envOverride ?? process.env.CAPTURIA_COMPOSITOR_VIEW_NODE ?? null;
 		const appRoot = this.options.appRoot ?? defaultAppRoot();
 		const isPackaged = this.options.isPackaged ?? defaultIsPackaged();
 
