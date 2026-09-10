@@ -1,0 +1,27 @@
+---
+title: Roadmap
+description: "What Capturia is shipping next — the tiers, what has landed, and what is still open. Rendered from ROADMAP.md at build time."
+keywords:
+  - Capturia roadmap
+  - screen recorder roadmap
+  - open source roadmap
+---
+
+{/*
+Rendered straight from the repo-root ROADMAP.md, the same file the Discord sync
+publishes and the same file contributors edit. Importing it at build time means
+there is exactly one copy: no fetch at runtime, no GitHub rate limit, no blank
+page when GitHub is down, and no transformed duplicate to drift out of step.
+`.github/workflows/docs.yml` watches ROADMAP.md so a merge that touches it
+redeploys the site.
+
+Re-exporting the document's `toc` is what gives the page its right-hand
+outline — the headings live in the imported component, so this page's own toc
+would otherwise be empty.
+*/}
+
+import Roadmap, { toc as roadmapToc } from "@site/../ROADMAP.md";
+
+export const toc = roadmapToc;
+
+<Roadmap />
