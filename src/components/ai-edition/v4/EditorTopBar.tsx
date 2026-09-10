@@ -393,14 +393,14 @@ function AppMenu({ actions }: { actions: TopBarActions }) {
 				className={`${styles.brand} ${styles.brandBtn}`}
 				aria-haspopup="menu"
 				aria-expanded={open}
-				aria-label="OpenScreen"
-				title="OpenScreen"
+				aria-label="Capturia"
+				title="Capturia"
 				onClick={() => setOpen((v) => !v)}
 			>
 				{/* Decorative: the wordmark beside it already names the app — and, being the
 				    button's only text, is also its accessible name. */}
 				<img src={logoMark} alt="" draggable={false} />
-				<span className={styles.name}>OpenScreen</span>
+				<span className={styles.name}>Capturia</span>
 				<ChevronDown size={13} className={styles.brandChevron} aria-hidden />
 			</button>
 			{open ? (
