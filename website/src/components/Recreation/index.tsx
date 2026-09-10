@@ -48,6 +48,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef } from "react";
 
+import { asset } from "../../lib/asset";
 import { attachDriver, SCENE_QUERIES } from "./driver";
 import { CONTROLS, CURSORS, INSPECTOR, PANELS } from "./generated";
 import {
@@ -184,8 +185,8 @@ export default function Recreation() {
 				data-bg={String(REST.bg)}
 				style={
 					{
-						"--shot-cursor": `url("${shotCursorSrc(REST)}")`,
-						"--ui-cursor": `url("${CURSORS.themes[0].src}")`,
+						"--shot-cursor": `url("${asset(shotCursorSrc(REST))}")`,
+						"--ui-cursor": `url("${asset(CURSORS.themes[0].src)}")`,
 					} as React.CSSProperties
 				}
 			>
@@ -258,7 +259,7 @@ export default function Recreation() {
 											    Phones are not an exception to pay it for: the scene
 											    runs from 360px up, and they reach this strip too. */}
 											<img
-												src={`/img/walkthrough/wp-${String(n).padStart(2, "0")}.jpg`}
+												src={asset(`/img/walkthrough/wp-${String(n).padStart(2, "0")}.jpg`)}
 												alt=""
 												width={240}
 												height={240}
@@ -314,7 +315,7 @@ export default function Recreation() {
 											className={styles.cursorStyle}
 											data-t={`cur-${i}`}
 											data-i={i}
-											style={{ backgroundImage: `url(${theme.src})` }}
+											style={{ backgroundImage: `url(${asset(theme.src)})` }}
 										/>
 									))}
 								</span>
@@ -410,7 +411,7 @@ export default function Recreation() {
 										key={n}
 										className={styles.bg}
 										data-i={n - 1}
-										src={`/img/walkthrough/canvas-bg-${n}.jpg`}
+										src={asset(`/img/walkthrough/canvas-bg-${n}.jpg`)}
 										alt=""
 										loading={n === 1 ? undefined : "lazy"}
 										decoding="async"
@@ -455,7 +456,7 @@ export default function Recreation() {
 											</div>
 											<div className={styles.pageShot}>
 												<img
-													src="/img/walkthrough/canvas-poster.jpg"
+													src={asset("/img/walkthrough/canvas-poster.jpg")}
 													alt=""
 													loading="lazy"
 													decoding="async"

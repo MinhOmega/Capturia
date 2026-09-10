@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { asset } from "../../lib/asset";
 import styles from "./styles.module.css";
 
 /** macOS window controls, drawn once for every panel that has a title bar. */
@@ -60,7 +61,7 @@ function RecordPanel() {
 					<div className={`${styles.target} ${styles.targetOn}`}>
 						<img
 							className={styles.targetShot}
-							src="/img/walkthrough/canvas-bg-1.jpg"
+							src={asset("/img/walkthrough/canvas-bg-1.jpg")}
 							alt=""
 							width={1200}
 							height={675}
@@ -157,7 +158,7 @@ function CaptionsPanel() {
 			<div className={styles.capStage}>
 				<img
 					className={styles.capWall}
-					src="/img/walkthrough/canvas-bg-2.jpg"
+					src={asset("/img/walkthrough/canvas-bg-2.jpg")}
 					alt=""
 					width={1200}
 					height={675}
@@ -235,7 +236,7 @@ function AgentPanel() {
 			<div className={styles.agentHead}>
 				<img
 					className={styles.agentLogo}
-					src="/img/logo-icon.png"
+					src={asset("/img/logo-icon.png")}
 					alt=""
 					width={96}
 					height={96}

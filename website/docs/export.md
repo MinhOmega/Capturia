@@ -3,7 +3,7 @@ id: export
 title: Exporting video
 sidebar_position: 9
 sidebar_label: Export
-description: "Export from OpenScreen to MP4 (720p, 1080p, or source resolution, H.264 or H.265) or animated GIF, and how the MP4 render path actually works."
+description: "Export from Capturia to MP4 (720p, 1080p, or source resolution, H.264 or H.265) or animated GIF, and how the MP4 render path actually works."
 keywords:
   - export MP4
   - H.264
@@ -48,9 +48,9 @@ MP4 export runs through the same native Rust compositor that draws the live prev
 Because preview and export consume the same scene description, the frame you're looking at is the frame you get — there is no separate export renderer that could drift.
 
 :::note Platform support
-MP4 and GIF export both work on Windows, macOS, and Linux. The one difference left is speed: the Linux encode is software rather than hardware today, so the same export takes longer there. See the [roadmap](https://github.com/getopenscreen/openscreen/blob/main/ROADMAP.md) for status.
+MP4 and GIF export both work on Windows, macOS, and Linux. The one difference left is speed: the Linux encode is software rather than hardware today, so the same export takes longer there. See the [roadmap](https://github.com/MinhOmega/Capturia/blob/main/ROADMAP.md) for status.
 :::
 
 ## Exported file vs. project file
 
-Exporting produces a finished, flattened video (or GIF) — it isn't editable afterward. If you want to keep editing later, save a `.openscreen` **project** instead (see [Editing & timeline](./editing-timeline.md#saving-your-work)); project files keep every clip, zoom, trim, annotation, and setting intact.
+Exporting produces a finished, flattened video (or GIF) — it isn't editable afterward. If you want to keep editing later, save a `.capturia` **project** instead (see [Editing & timeline](./editing-timeline.md#saving-your-work)); project files keep every clip, zoom, trim, annotation, and setting intact.

@@ -1,8 +1,8 @@
 {
-	"name": "openscreen-website",
+	"name": "capturia-website",
 	"version": "0.0.0",
 	"private": true,
-	"description": "OpenScreen docs site (Docusaurus)",
+	"description": "Capturia docs site (Docusaurus)",
 	"scripts": {
 		"dev": "docusaurus start",
 		"build": "docusaurus build",

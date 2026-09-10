@@ -22,6 +22,7 @@
  * which is the fastest cadence the decoder can hold without building a queue.
  */
 
+import { asset } from "../../lib/asset";
 import { CURSORS } from "./generated";
 import {
 	BEATS,
@@ -491,14 +492,14 @@ export function attachDriver(refs: DriverRefs, cls: DriverClasses): () => void {
 
 	let camReady = false;
 	let camPending: number | undefined;
-	const camSrc = "/video/webcam.mp4";
+	const camSrc = asset("/video/webcam.mp4");
 
 	// Set at attach, not in the markup and not in primeCam: in the markup every
 	// reader who never reaches the band pays for it, and in primeCam it would
 	// race the clip it exists to stand in for. Here it has the whole approach to
 	// the band to arrive — and on a phone, where the scene does run (the gate is
 	// 360px), it is still only fetched by a reader who scrolls into it.
-	cam.poster = "/img/walkthrough/webcam-poster.jpg";
+	cam.poster = asset("/img/walkthrough/webcam-poster.jpg");
 	const primeCam = () => {
 		if (cam.getAttribute("src")) return;
 		cam.setAttribute("src", camSrc);
@@ -617,7 +618,7 @@ export function attachDriver(refs: DriverRefs, cls: DriverClasses): () => void {
 			lastTheme = f.cursorTheme;
 			root.dataset.curSel = String(f.cursorTheme);
 			const theme = CURSORS.themes[f.cursorTheme];
-			root.style.setProperty("--shot-cursor", `url(${theme.src})`);
+			root.style.setProperty("--shot-cursor", `url(${asset(theme.src)})`);
 			num("--shot-hx", theme.hotspotX * 100, 2);
 			num("--shot-hy", theme.hotspotY * 100, 2);
 		}
@@ -630,7 +631,7 @@ export function attachDriver(refs: DriverRefs, cls: DriverClasses): () => void {
 			lastArt = art;
 			const sprite =
 				art === "text" ? CURSORS.text : art === "pointer" ? CURSORS.pointer : CURSORS.themes[0];
-			root.style.setProperty("--ui-cursor", `url(${sprite.src})`);
+			root.style.setProperty("--ui-cursor", `url(${asset(sprite.src)})`);
 			num("--ui-hx", sprite.hotspotX * 100, 2);
 			num("--ui-hy", sprite.hotspotY * 100, 2);
 			root.dataset.cur = art;

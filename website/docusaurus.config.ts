@@ -4,11 +4,16 @@ import { themes as prismThemes } from "prism-react-renderer";
 
 import type { LatestRelease } from "./src/lib/release";
 
-const SITE_URL = "https://getopenscreen.com";
-const REPO_SLUG = "getopenscreen/openscreen";
+const SITE_HOST = "https://minhvo.is-a.dev";
+const BASE_URL = "/Capturia/";
+// Host and base path joined, without the trailing slash: the canonical root that
+// every absolute URL we mint ourselves hangs off (structured-data @ids, the
+// sitemap comparisons below). Docusaurus keeps `url` and `baseUrl` apart, so on a
+// project page dropping the path here is what silently points those at
+// minhvo.is-a.dev — a user page that is not this site.
+const SITE_URL = `${SITE_HOST}${BASE_URL.replace(/\/$/, "")}`;
+const REPO_SLUG = "MinhOmega/Capturia";
 const REPO_URL = `https://github.com/${REPO_SLUG}`;
-const UPSTREAM_REPO_URL = "https://github.com/siddharthvaddem/openscreen";
-const DISCORD_URL = "https://getopenscreen.com/discord";
 
 // Kept under ~155 characters: past that, Google truncates the snippet mid-word.
 const SITE_DESCRIPTION =
@@ -23,18 +28,18 @@ const ORGANIZATION_LD = {
 	"@context": "https://schema.org",
 	"@type": "Organization",
 	"@id": `${SITE_URL}/#organization`,
-	name: "OpenScreen",
+	name: "Capturia",
 	url: SITE_URL,
 	logo: `${SITE_URL}/img/logo-icon.png`,
 	description: SITE_DESCRIPTION,
-	sameAs: [REPO_URL, UPSTREAM_REPO_URL, DISCORD_URL],
+	sameAs: [REPO_URL],
 };
 
 const WEBSITE_LD = {
 	"@context": "https://schema.org",
 	"@type": "WebSite",
 	"@id": `${SITE_URL}/#website`,
-	name: "OpenScreen",
+	name: "Capturia",
 	url: SITE_URL,
 	description: SITE_DESCRIPTION,
 	inLanguage: "en",
@@ -56,7 +61,7 @@ function formatStarCount(count: number): string {
 // across deploys without faking data or fighting a third-party widget's styling.
 async function fetchStarCount(): Promise<number | null> {
 	try {
-		const res = await fetch("https://api.github.com/repos/getopenscreen/openscreen", {
+		const res = await fetch(`https://api.github.com/repos/${REPO_SLUG}`, {
 			headers: { Accept: "application/vnd.github+json" },
 			signal: AbortSignal.timeout(5000),
 		});
@@ -147,15 +152,18 @@ export default async function createConfig(): Promise<Config> {
 			: "";
 
 	return {
-		title: "OpenScreen",
+		title: "Capturia",
 		tagline: "A free, open-source screen recorder and editor.",
 		favicon: "img/logo-icon.png",
 
-		// Pages serves this from the custom domain's root, not from
-		// getopenscreen.github.io/openscreen/, so baseUrl has to be "/" — a project
-		// baseUrl would prefix every asset URL with a path the server has nothing at.
-		url: SITE_URL,
-		baseUrl: "/",
+		// A project page, served from minhvo.is-a.dev/Capturia/ (the account's custom
+		// domain, so minhomega.github.io/Capturia/ 301s here) rather than a
+		// domain root, so `url` is the bare host and every asset URL has to carry the
+		// /Capturia/ prefix. Docusaurus adds it to anything it resolves itself
+		// (favicon, themeConfig.image, navbar logo, router links); a raw href written
+		// by hand does not get it and 404s against the user page — see headTags below.
+		url: SITE_HOST,
+		baseUrl: BASE_URL,
 
 		// Every page is emitted as <route>/index.html, and GitHub Pages 301s the
 		// extensionless form to the trailing-slash one. Leaving this unset makes
@@ -165,8 +173,8 @@ export default async function createConfig(): Promise<Config> {
 		// removes the redirect from the canonical path entirely.
 		trailingSlash: true,
 
-		organizationName: "getopenscreen",
-		projectName: "openscreen",
+		organizationName: "MinhOmega",
+		projectName: "Capturia",
 
 		// Read back by src/pages/download.tsx. Serialized into the client bundle,
 		// so it stays plain JSON.
@@ -187,7 +195,7 @@ export default async function createConfig(): Promise<Config> {
 				attributes: {
 					rel: "apple-touch-icon",
 					sizes: "180x180",
-					href: "/img/apple-touch-icon.png",
+					href: `${BASE_URL}img/apple-touch-icon.png`,
 				},
 			},
 			{
@@ -210,24 +218,7 @@ export default async function createConfig(): Promise<Config> {
 						sidebarPath: "./sidebars.ts",
 						editUrl: `${REPO_URL}/tree/main/website/`,
 					},
-					// A development journal, not a marketing blog. Each post is dated to
-					// the milestone it covers, so the list reads as a timeline.
-					blog: {
-						routeBasePath: "blog",
-						blogTitle: "OpenScreen development journal",
-						blogDescription:
-							"Release notes with the reasoning attached, from the maintainer of the community-maintained OpenScreen continuation.",
-						showReadingTime: true,
-						postsPerPage: "ALL",
-						blogSidebarCount: "ALL",
-						blogSidebarTitle: "All posts",
-						feedOptions: {
-							type: "all",
-							title: "OpenScreen development journal",
-							description:
-								"What I have shipped since picking OpenScreen up in June 2026, and what broke along the way.",
-						},
-					},
+					blog: false,
 					theme: {
 						customCss: "./src/css/custom.css",
 					},
@@ -273,8 +264,8 @@ export default async function createConfig(): Promise<Config> {
 				},
 				{ name: "robots", content: "index, follow, max-image-preview:large, max-snippet:-1" },
 				{ property: "og:type", content: "website" },
-				{ property: "og:site_name", content: "OpenScreen" },
-				{ name: "twitter:image:alt", content: "OpenScreen — free, open-source screen recorder" },
+				{ property: "og:site_name", content: "Capturia" },
+				{ name: "twitter:image:alt", content: "Capturia — free, open-source screen recorder" },
 			],
 			colorMode: {
 				defaultMode: "dark",
@@ -282,11 +273,11 @@ export default async function createConfig(): Promise<Config> {
 				respectPrefersColorScheme: false,
 			},
 			navbar: {
-				title: "OpenScreen",
+				title: "Capturia",
 				logo: {
 					// Explicit intrinsic size: without it the navbar reserves no space
 					// for the mark and the whole bar reflows once the PNG decodes.
-					alt: "OpenScreen logo",
+					alt: "Capturia logo",
 					src: "img/logo-icon.png",
 					width: 32,
 					height: 32,
@@ -300,21 +291,8 @@ export default async function createConfig(): Promise<Config> {
 						className: "navbar-link-strong",
 					},
 					{
-						// A router link (not href) so it gets SPA navigation and route
-						// prefetch, like the Download CTA below.
-						to: "/blog",
-						label: "Blog",
-						position: "left",
-						className: "navbar-link-strong",
-					},
-					{
 						href: `${REPO_URL}/blob/main/ROADMAP.md`,
 						label: "Roadmap",
-						position: "left",
-					},
-					{
-						href: DISCORD_URL,
-						label: "Discord",
 						position: "left",
 					},
 					{

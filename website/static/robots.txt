@@ -1,8 +1,14 @@
-# https://getopenscreen.com
+# https://minhvo.is-a.dev/Capturia/
 # Docusaurus does not emit a robots.txt, so without this file the sitemap is
 # only discoverable by submitting it in Search Console by hand.
+#
+# Note this file is inert while the site is a project page: crawlers only read
+# /robots.txt at the ORIGIN, and this site is served under /Capturia/. The origin
+# here is minhvo.is-a.dev, whose /robots.txt belongs to the user page, not to us
+# -- so a custom domain existing is not enough; it would take Capturia owning a
+# domain root. Kept correct so it starts working the day that happens.
 
 User-agent: *
 Allow: /
 
-Sitemap: https://getopenscreen.com/sitemap.xml
+Sitemap: https://minhvo.is-a.dev/Capturia/sitemap.xml

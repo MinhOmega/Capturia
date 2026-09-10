@@ -2,7 +2,7 @@
 id: ai-editing
 title: AI editing
 sidebar_position: 8
-description: "Connect your own LLM key to edit OpenScreen projects from a chat panel. Entirely optional and off by default — nothing leaves your machine until you opt in."
+description: "Connect your own LLM key to edit Capturia projects from a chat panel. Entirely optional and off by default — nothing leaves your machine until you opt in."
 keywords:
   - AI video editing
   - LLM video editor
@@ -13,7 +13,7 @@ keywords:
 
 # AI editing
 
-OpenScreen ships an optional agent that edits your project from a chat panel. It is **off until you connect a provider yourself**. Apart from the one-time Whisper model download, the provider you connect is the only network OpenScreen uses — for this agent, and for [caption translation](./captions.md#translation).
+Capturia ships an optional agent that edits your project from a chat panel. It is **off until you connect a provider yourself**. Apart from the one-time Whisper model download, the provider you connect is the only network Capturia uses — for this agent, and for [caption translation](./captions.md#translation).
 
 :::tip
 None of this is required. Recording, editing, transcription, captions, and export all work with no account and no provider, whether or not you ever open the chat panel — the only network any of them touches is the [one-time Whisper model download](./captions.md#transcribing) on your first transcription.
@@ -33,7 +33,7 @@ Open the chat column (the toggle at the far left of the top bar, in **Edit** mod
 | **MiniMax API** / **MiniMax Token Plan** | |
 | **OpenAI Compatible** | Any OpenAI-shaped endpoint — you supply the base URL. |
 
-Your key is stored encrypted through your OS's credential protection (Electron `safeStorage`); if encryption isn't available, the write fails rather than falling back to plaintext. OpenScreen's servers never see it, because there aren't any — requests go straight from your machine to the provider you picked. Provider-specific environment variables work too, if you'd rather not store a key at all.
+Your key is stored encrypted through your OS's credential protection (Electron `safeStorage`); if encryption isn't available, the write fails rather than falling back to plaintext. Capturia's servers never see it, because there aren't any — requests go straight from your machine to the provider you picked. Provider-specific environment variables work too, if you'd rather not store a key at all.
 
 :::note
 The ChatGPT and GitHub Copilot sign-in options were **removed in 1.8.0**. They worked by shipping first-party client credentials belonging to those vendors, which isn't ours to redistribute. Use an API-key provider instead.
