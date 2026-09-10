@@ -3,6 +3,10 @@
 
 import path from "node:path";
 import type { CliExportRequest, CliRecordRequest, CliRequest } from "../../src/lib/cliContracts";
+import {
+	PROJECT_FILE_EXTENSION,
+	PROJECT_FILE_EXTENSIONS,
+} from "../../src/lib/projectFileExtension";
 
 export interface CliInfoCommand {
 	kind: "info";
@@ -64,14 +68,14 @@ const SUBCOMMANDS = new Set([
 export const CLI_USAGE = `OpenScreen CLI
 
 Usage:
-  openscreen export <project.openscreen> [options]   Render a project to MP4/GIF
-  openscreen record [options]                        Record the screen headlessly
-  openscreen sources [--json] [-o <file>]            List displays, windows and microphones
-  openscreen pack <project.openscreen> --out <dir>   Copy project + media into one portable folder
-  openscreen captions <project.openscreen>           Add auto-captions (on-device Whisper) to a project
+  openscreen export <project.capturia> [options]   Render a project to MP4/GIF
+  openscreen record [options]                      Record the screen headlessly
+  openscreen sources [--json] [-o <file>]          List displays, windows and microphones
+  openscreen pack <project.capturia> --out <dir>   Copy project + media into one portable folder
+  openscreen captions <project.capturia>           Add auto-captions (on-device Whisper) to a project
                      [--min-words <n>] [--max-words <n>]
-  openscreen info <project.openscreen> [--json]      Inspect a project file
-  openscreen help                                    Show this help
+  openscreen info <project.capturia> [--json]      Inspect a project file
+  openscreen help                                  Show this help
 
 Export options:
   -o, --out <path>          Output file (.mp4 or .gif). Default: next to the project file
@@ -97,7 +101,7 @@ Record options (recording is saved into the app's recordings directory):
   --cursor <editable-overlay|system>
                             Cursor capture mode (default editable-overlay)
   --duration <seconds>      Stop automatically after this long
-  --project <out.openscreen>
+  --project <out.capturia>
                             Write a ready-to-export project file when done
   --json                    NDJSON events on stdout
 
@@ -137,7 +141,7 @@ export function parseCliArgs(
 	const rawArgs = argv.slice(firstArgIndex).filter((a) => !a.startsWith("--inspect"));
 
 	// Skip *leading* Chromium/Electron switches (e.g. the AppImage's required
-	// `--no-sandbox`) so `Openscreen --no-sandbox export demo.openscreen` still
+	// `--no-sandbox`) so `Openscreen --no-sandbox export demo.capturia` still
 	// enters CLI mode. Only leading dash-tokens are skipped — everything after
 	// the subcommand belongs to the subcommand parser. `--help`/`-h` are ours.
 	let subIndex = 0;
@@ -269,7 +273,7 @@ function parseExport(args: string[], cwd: string): CliCommand {
 		}
 	}
 
-	if (!request.projectPath) throw new Error("export requires a <project.openscreen> path");
+	if (!request.projectPath) throw new Error("export requires a <project.capturia> path");
 	if (request.outPath) {
 		const ext = path.extname(request.outPath).toLowerCase();
 		if (ext !== ".mp4" && ext !== ".gif") {
@@ -354,8 +358,12 @@ function parseRecord(args: string[], cwd: string): CliCommand {
 			}
 			case "--project": {
 				const [value, next] = takeValue(args, i, arg);
-				if (!value.endsWith(".openscreen")) {
-					throw new Error(`--project must end in .openscreen, got "${value}"`);
+				// Every spelling, not just `PROJECT_FILE_EXTENSION`: a wrapper script
+				// pinned to `--project out.openscreen` predates the rename and must
+				// keep working. The file is still a project file whichever name it
+				// carries — `DocumentService` migrates it on first open.
+				if (!PROJECT_FILE_EXTENSIONS.some((extension) => value.toLowerCase().endsWith(extension))) {
+					throw new Error(`--project must end in ${PROJECT_FILE_EXTENSION}, got "${value}"`);
 				}
 				request.projectOut = resolvePath(value, cwd);
 				i = next;
@@ -415,7 +423,7 @@ function parsePack(args: string[], cwd: string): CliCommand {
 			projectPath = resolvePath(arg, cwd);
 		}
 	}
-	if (!projectPath) throw new Error("pack requires a <project.openscreen> path");
+	if (!projectPath) throw new Error("pack requires a <project.capturia> path");
 	if (!outDir) throw new Error("pack requires --out <directory>");
 	return { kind: "pack", projectPath, outDir, json };
 }
@@ -446,7 +454,7 @@ function parseCaptions(args: string[], cwd: string): CliCommand {
 			projectPath = resolvePath(arg, cwd);
 		}
 	}
-	if (!projectPath) throw new Error("captions requires a <project.openscreen> path");
+	if (!projectPath) throw new Error("captions requires a <project.capturia> path");
 	if (minWordsPerCaption > maxWordsPerCaption) {
 		throw new Error("--min-words cannot exceed --max-words");
 	}
@@ -467,6 +475,6 @@ function parseInfo(args: string[], cwd: string): CliCommand {
 			projectPath = resolvePath(arg, cwd);
 		}
 	}
-	if (!projectPath) throw new Error("info requires a <project.openscreen> path");
+	if (!projectPath) throw new Error("info requires a <project.capturia> path");
 	return { kind: "info", projectPath, json };
 }

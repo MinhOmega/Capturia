@@ -62,7 +62,7 @@ describe("runRecordingsCleanup", () => {
 		await aged("recording-1.mp4.cursor.json", 400);
 		await aged("recording-2.mp4", 300);
 		await aged("recording-3.mp4", 200);
-		await project("keep.openscreen", [path.join(recordingsDir, "recording-1.mp4")]);
+		await project("keep.capturia", [path.join(recordingsDir, "recording-1.mp4")]);
 
 		await sweep();
 
@@ -74,22 +74,28 @@ describe("runRecordingsCleanup", () => {
 		]);
 	});
 
-	it("reads the pre-rename .axcut projects too", async () => {
-		await aged("recording-1.mp4", 400);
-		await aged("recording-2.mp4", 300);
-		await aged("recording-3.mp4", 200);
-		await project("legacy.axcut", [path.join(recordingsDir, "recording-1.mp4")]);
+	// The extension rename is a DELETION hazard here, not just a naming one: a
+	// project this scan cannot see is a project whose takes look unreferenced, and
+	// unreferenced takes are exactly what this sweep removes. Every spelling the
+	// app still opens has to protect its media.
+	for (const legacyName of ["legacy.openscreen", "legacy.axcut"]) {
+		it(`reads the pre-rename ${legacyName} projects too`, async () => {
+			await aged("recording-1.mp4", 400);
+			await aged("recording-2.mp4", 300);
+			await aged("recording-3.mp4", 200);
+			await project(legacyName, [path.join(recordingsDir, "recording-1.mp4")]);
 
-		await sweep();
+			await sweep();
 
-		expect(await remaining()).toContain("recording-1.mp4");
-	});
+			expect(await remaining()).toContain("recording-1.mp4");
+		});
+	}
 
 	it("deletes NOTHING when a project file cannot be read", async () => {
 		await aged("recording-1.mp4", 400);
 		await aged("recording-2.mp4", 300);
 		await aged("recording-3.mp4", 200);
-		await writeFile(path.join(userDataDir, "projects", "broken.openscreen"), "{ not json", "utf-8");
+		await writeFile(path.join(userDataDir, "projects", "broken.capturia"), "{ not json", "utf-8");
 
 		await sweep();
 
