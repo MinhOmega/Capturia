@@ -99,6 +99,19 @@ const CAPTURE_WINDOWS: ReadonlyMap<CaptureKind, ReadonlySet<OpenScreenWindowType
 /** Non-capture permissions any window the main process built may hold. */
 const WINDOW_PERMISSIONS: ReadonlySet<string> = new Set(["fullscreen"]);
 
+/**
+ * Non-capture permissions scoped to particular windows -- `CAPTURE_WINDOWS`'s
+ * shape, without a `CaptureKind`.
+ *
+ * `local-fonts` enumerates every font installed on the machine, which is a
+ * fingerprinting surface, so it is not in `WINDOW_PERMISSIONS` above: only the
+ * editor gets it, because only the editor offers the caption font picker that
+ * needs to know which families the compositor will be able to resolve.
+ */
+const SCOPED_WINDOW_PERMISSIONS: ReadonlyMap<string, ReadonlySet<OpenScreenWindowType>> = new Map([
+	["local-fonts", new Set<OpenScreenWindowType>(["editor"])],
+]);
+
 export interface PermissionDecisionInput {
 	readonly permission: string;
 	/** What the main process built this WebContents as; null when it built no such window. */
@@ -133,6 +146,9 @@ export function isPermissionAllowed(input: PermissionDecisionInput): boolean {
 		// A bare status query: true when the window may capture anything at all.
 		return mayCapture(windowType, "camera") || mayCapture(windowType, "microphone");
 	}
+
+	const scoped = SCOPED_WINDOW_PERMISSIONS.get(input.permission);
+	if (scoped) return scoped.has(windowType);
 
 	return WINDOW_PERMISSIONS.has(input.permission);
 }
