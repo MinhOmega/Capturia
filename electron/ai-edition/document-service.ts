@@ -1,10 +1,10 @@
 // DocumentService — main-process owner of v3 AxcutDocument projects.
-// Persists one .openscreen JSON per project under userData/projects/ (the file
+// Persists one .capturia JSON per project under userData/projects/ (the file
 // carries its own `schemaVersion`, so migration keys off the content, not the
-// extension). Older builds wrote these same documents as `.axcut`; those are
-// renamed to `.openscreen` on first access. Slim port of
-// axcut's apps/server/src/services/document-service.ts (no separate paths.ts —
-// uses app.getPath("userData") directly; no Python probe_media — assets carry
+// extension). Older builds wrote these same documents as `.openscreen`, and
+// before that `.axcut`; those are renamed to `.capturia` on first access.
+// Slim port of axcut's apps/server/src/services/document-service.ts (no
+// separate paths.ts — uses app.getPath("userData") directly; no Python probe_media — assets carry
 // only path metadata, duration is filled in by the renderer).
 //
 // ponytail: Phase 1 surface area is intentionally narrow (list / get / create
@@ -21,13 +21,12 @@ import {
 	documentSchema,
 	migrateRawDocumentToCurrent,
 } from "../../src/lib/ai-edition/schema";
+import {
+	LEGACY_PROJECT_FILE_EXTENSIONS,
+	PROJECT_FILE_EXTENSION,
+} from "../../src/lib/projectFileExtension";
 import { ensureDocumentExtensions } from "../media/extensionClip";
 import { relinkProjectMedia } from "../media/projectMediaRelinker";
-
-const PROJECT_FILE_EXTENSION = ".openscreen";
-// Older builds stored these same v3/v4 AxcutDocuments under `.axcut`. We read
-// them for back-compat and rename them to PROJECT_FILE_EXTENSION on access.
-const LEGACY_PROJECT_FILE_EXTENSION = ".axcut";
 
 export interface ProjectSummary {
 	id: string;
@@ -181,9 +180,9 @@ export class DocumentService {
 		await this.migrateLegacyExtensions();
 	}
 
-	// One-time-per-process pass renaming any legacy `.axcut` project files to
-	// `.openscreen`. The document bytes are identical (same schemaVersion), so
-	// this is a pure rename — no content migration involved.
+	// One-time-per-process pass renaming any legacy project file (`.openscreen`,
+	// and before that `.axcut`) to `.capturia`. The document bytes are identical
+	// (same schemaVersion), so this is a pure rename — no content migration.
 	private async migrateLegacyExtensions(): Promise<void> {
 		if (this.legacyMigrationDone) return;
 		this.legacyMigrationDone = true;
@@ -193,27 +192,34 @@ export class DocumentService {
 		} catch {
 			return;
 		}
-		await Promise.all(
-			entries
-				.filter((name) => name.endsWith(LEGACY_PROJECT_FILE_EXTENSION))
-				.map(async (name) => {
-					const from = path.join(this.projectsRoot, name);
-					const base = name.slice(0, -LEGACY_PROJECT_FILE_EXTENSION.length);
-					const to = path.join(this.projectsRoot, `${base}${PROJECT_FILE_EXTENSION}`);
-					try {
-						// If a `.openscreen` already exists for this id it's authoritative;
-						// drop the stale `.axcut`. Otherwise rename the legacy file across.
-						await fs.access(to);
-						await fs.unlink(from);
-					} catch {
-						await fs
-							.rename(from, to)
-							.catch((err) =>
-								console.warn(`[ai-edition] failed to migrate ${from} -> ${to}:`, err),
-							);
-					}
-				}),
-		);
+		// Sequential over the legacy spellings, newest first, so a project id that
+		// has more than one of them on disk resolves the same way every run: the
+		// newest spelling is renamed across, then the older ones lose the conflict
+		// check below against the file it just created. Running the whole list in
+		// one Promise.all would let readdir order pick the winner.
+		for (const legacyExtension of LEGACY_PROJECT_FILE_EXTENSIONS) {
+			await Promise.all(
+				entries
+					.filter((name) => name.endsWith(legacyExtension))
+					.map(async (name) => {
+						const from = path.join(this.projectsRoot, name);
+						const base = name.slice(0, -legacyExtension.length);
+						const to = path.join(this.projectsRoot, `${base}${PROJECT_FILE_EXTENSION}`);
+						try {
+							// If a `.capturia` already exists for this id it's authoritative;
+							// drop the stale legacy file. Otherwise rename the legacy file across.
+							await fs.access(to);
+							await fs.unlink(from);
+						} catch {
+							await fs
+								.rename(from, to)
+								.catch((err) =>
+									console.warn(`[ai-edition] failed to migrate ${from} -> ${to}:`, err),
+								);
+						}
+					}),
+			);
+		}
 	}
 
 	private fileFor(projectId: string): string {
@@ -221,15 +227,17 @@ export class DocumentService {
 		return path.join(this.projectsRoot, `${safe}${PROJECT_FILE_EXTENSION}`);
 	}
 
-	private legacyFileFor(projectId: string): string {
+	private legacyFilesFor(projectId: string): string[] {
 		const safe = safeProjectId(projectId);
-		return path.join(this.projectsRoot, `${safe}${LEGACY_PROJECT_FILE_EXTENSION}`);
+		return LEGACY_PROJECT_FILE_EXTENSIONS.map((extension) =>
+			path.join(this.projectsRoot, `${safe}${extension}`),
+		);
 	}
 
 	async listProjects(): Promise<ProjectSummary[]> {
 		await this.ensureProjectsDir();
 		const entries = await fs.readdir(this.projectsRoot);
-		// ensureProjectsDir (above) already migrated any legacy `.axcut` files.
+		// ensureProjectsDir (above) already migrated any legacy-extension files.
 		const projectFiles = entries.filter((name) => name.endsWith(PROJECT_FILE_EXTENSION));
 		const summaries: ProjectSummary[] = [];
 		for (const name of projectFiles) {
@@ -253,32 +261,32 @@ export class DocumentService {
 		return summaries;
 	}
 
-	async getProject(projectId: string): Promise<AxcutDocument> {
-		// Prefer the canonical `.openscreen` file, falling back to a not-yet-migrated
-		// legacy `.axcut` so a project opened before its migration pass still loads.
-		let raw: string;
-		try {
-			raw = await fs.readFile(this.fileFor(projectId), "utf8");
-		} catch (error) {
-			if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") {
-				throw new ProjectFileError(
-					`Failed to read project ${projectId}: ${error instanceof Error ? error.message : String(error)}`,
-					projectId,
-				);
-			}
+	/**
+	 * Read the project's JSON, preferring the canonical `.capturia` file and
+	 * falling back through the legacy spellings (newest first) so a project
+	 * opened before its migration pass still loads. Only ENOENT moves on to the
+	 * next candidate — a permission error or a bad disk must surface, not be
+	 * reported as "no such project".
+	 */
+	private async readProjectFile(projectId: string): Promise<string> {
+		for (const filePath of [this.fileFor(projectId), ...this.legacyFilesFor(projectId)]) {
 			try {
-				raw = await fs.readFile(this.legacyFileFor(projectId), "utf8");
-			} catch (legacyError) {
-				if ((legacyError as NodeJS.ErrnoException)?.code === "ENOENT") {
-					throw new DocumentNotFoundError(projectId);
+				return await fs.readFile(filePath, "utf8");
+			} catch (error) {
+				if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") {
+					throw new ProjectFileError(
+						`Failed to read project ${projectId}: ${error instanceof Error ? error.message : String(error)}`,
+						projectId,
+					);
 				}
-				throw new ProjectFileError(
-					`Failed to read project ${projectId}: ${legacyError instanceof Error ? legacyError.message : String(legacyError)}`,
-					projectId,
-				);
 			}
 		}
-		// Relink here rather than in the .openscreen import handlers, because this
+		throw new DocumentNotFoundError(projectId);
+	}
+
+	async getProject(projectId: string): Promise<AxcutDocument> {
+		const raw = await this.readProjectFile(projectId);
+		// Relink here rather than in the project-file import handlers, because this
 		// is the one place every open funnels through — the project picker, the
 		// agent, and the auto-load-last-project effect on launch. A document whose
 		// media moved (or that was authored on another machine, issue #212) is
@@ -321,8 +329,8 @@ export class DocumentService {
 	}
 
 	async deleteProject(projectId: string): Promise<void> {
-		// Remove the canonical file and any lingering legacy `.axcut` for this id.
-		for (const filePath of [this.fileFor(projectId), this.legacyFileFor(projectId)]) {
+		// Remove the canonical file and any lingering legacy spelling for this id.
+		for (const filePath of [this.fileFor(projectId), ...this.legacyFilesFor(projectId)]) {
 			try {
 				await fs.unlink(filePath);
 			} catch (error) {
@@ -463,7 +471,7 @@ export class DocumentService {
 		await this.ensureProjectsDir();
 		const filePath = this.fileFor(doc.project.id);
 		// The suffix goes AFTER the extension on purpose: listProjects matches on a
-		// trailing `.openscreen`, so an interrupted write's leftover is invisible to
+		// trailing `.capturia`, so an interrupted write's leftover is invisible to
 		// it rather than showing up as a corrupt project. Unique per write, so two
 		// queues (or two processes) never share a temp path.
 		const tempPath = `${filePath}.tmp-${process.pid}-${createId("w")}`;
@@ -496,8 +504,12 @@ export class DocumentService {
 			);
 		}
 
-		// A save supersedes any legacy `.axcut` for this id (ensureProjectsDir
+		// A save supersedes any legacy spelling for this id (ensureProjectsDir
 		// usually renamed it already; this is a belt-and-braces cleanup).
-		await fs.unlink(this.legacyFileFor(doc.project.id)).catch(() => undefined);
+		await Promise.all(
+			this.legacyFilesFor(doc.project.id).map((filePath) =>
+				fs.unlink(filePath).catch(() => undefined),
+			),
+		);
 	}
 }
