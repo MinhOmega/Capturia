@@ -201,7 +201,15 @@
 		"failedToWriteFile": "Falha ao gravar o arquivo",
 		"qualityUpscaleWarning": "Upscaling",
 		"exportedVideoOf": "de vídeo exportado em",
-		"nothingToExport": "Nada para exportar — a linha do tempo está vazia."
+		"nothingToExport": "Nada para exportar — a linha do tempo está vazia.",
+		"aspectRatios": "Proporções",
+		"aspectRatiosHint": "Um arquivo será exportado.",
+		"aspectRatiosBatchHint": "{{count}} arquivos serão exportados lado a lado.",
+		"pickAnAspectRatio": "Escolha pelo menos uma proporção.",
+		"batchProgress": "Arquivo {{current}} de {{total}} · {{ratio}}",
+		"batchExportedCount": "{{count}} arquivos exportados",
+		"batchCancelledAfter": "Cancelado — {{count}} arquivo(s) já concluídos foram mantidos.",
+		"batchPartial": "{{count}} já concluídos: {{files}}"
 	},
 	"inspector": {
 		"resetFocusPoint": "Redefinir ponto de foco",

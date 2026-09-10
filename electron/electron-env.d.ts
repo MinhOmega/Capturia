@@ -294,9 +294,16 @@ interface Window {
 		pickExportSavePath: (
 			fileName: string,
 			exportFolder?: string,
+			/** Aspect tokens for a multi-aspect batch. One approved sibling path comes
+			 *  back per token, in order; omit for a single-file export. */
+			aspectTokens?: string[],
 		) => Promise<{
 			success: boolean;
 			path?: string;
+			/** Every destination approved by this pick, in `aspectTokens` order.
+			 *  `[path]` when no tokens were sent. Use these verbatim — deriving the
+			 *  names renderer-side would fail approval and the file would never appear. */
+			paths?: string[];
 			message?: string;
 			canceled?: boolean;
 			error?: string;
