@@ -100,5 +100,27 @@
 		"about": "Hakkında",
 		"version": "Sürüm {{version}}",
 		"checkingForUpdates": "Denetleniyor…"
+	},
+	"permissions": {
+		"title": "İzinler",
+		"required": "Gerekli",
+		"row": {
+			"screen": "Ekran Kaydı",
+			"camera": "Kamera",
+			"microphone": "Mikrofon",
+			"accessibility": "Erişilebilirlik"
+		},
+		"status": {
+			"granted": "İzin verildi",
+			"denied": "Reddedildi",
+			"restricted": "Kısıtlı",
+			"not-determined": "Henüz sorulmadı",
+			"unknown": "Bilinmiyor"
+		},
+		"action": {
+			"request": "İste",
+			"open-settings": "Ayarları Aç"
+		},
+		"relaunchHint": "macOS yeni ekran kaydı iznini bir sonraki açılışta uygular — Capturia’yı kapatıp yeniden açın."
 	}
 }

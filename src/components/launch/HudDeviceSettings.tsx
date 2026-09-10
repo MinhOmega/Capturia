@@ -10,6 +10,7 @@ import { useAudioLevelMeter } from "../../hooks/useAudioLevelMeter";
 import type { CameraDevice } from "../../hooks/useCameraDevices";
 import { useCameraPreviewStream } from "../../hooks/useCameraPreviewStream";
 import type { MicrophoneDevice } from "../../hooks/useMicrophoneDevices";
+import { HudPermissions } from "./HudPermissions";
 import styles from "./LaunchWindow.module.css";
 
 const LEVEL_SEGMENTS = 12;
@@ -287,6 +288,13 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 				))}
 			</div>
 			<div className={styles.hudModalHint}>{labels.captureHint}</div>
+
+			{/* This panel is the app's only settings surface, so the permission list
+			    lives here rather than behind a window of its own: it is the same
+			    question as the device rows above — will the next recording actually
+			    get what it asks for — and it renders nothing at all on a platform
+			    that gates none of it. */}
+			<HudPermissions />
 
 			{/* The HUD has no other settings surface, and an app the user cannot ask "which
 			    version am I running?" is an app whose bug reports arrive without one. The

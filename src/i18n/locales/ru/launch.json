@@ -100,5 +100,27 @@
 		"about": "О программе",
 		"version": "Версия {{version}}",
 		"checkingForUpdates": "Проверка…"
+	},
+	"permissions": {
+		"title": "Разрешения",
+		"required": "Обязательно",
+		"row": {
+			"screen": "Запись экрана",
+			"camera": "Камера",
+			"microphone": "Микрофон",
+			"accessibility": "Универсальный доступ"
+		},
+		"status": {
+			"granted": "Разрешено",
+			"denied": "Отклонено",
+			"restricted": "Ограничено",
+			"not-determined": "Запрос не отправлен",
+			"unknown": "Неизвестно"
+		},
+		"action": {
+			"request": "Запросить",
+			"open-settings": "Открыть настройки"
+		},
+		"relaunchHint": "macOS применяет новое разрешение на запись экрана при следующем запуске — закройте и снова откройте Capturia."
 	}
 }

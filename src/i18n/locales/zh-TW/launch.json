@@ -100,5 +100,27 @@
 		"about": "關於",
 		"version": "版本 {{version}}",
 		"checkingForUpdates": "檢查中…"
+	},
+	"permissions": {
+		"title": "權限",
+		"required": "必要",
+		"row": {
+			"screen": "螢幕錄製",
+			"camera": "攝影機",
+			"microphone": "麥克風",
+			"accessibility": "輔助使用"
+		},
+		"status": {
+			"granted": "已允許",
+			"denied": "已拒絕",
+			"restricted": "受限制",
+			"not-determined": "尚未請求",
+			"unknown": "未知"
+		},
+		"action": {
+			"request": "請求",
+			"open-settings": "打開系統設定"
+		},
+		"relaunchHint": "macOS 會在下次啟動時才套用新授予的螢幕錄製權限，請結束並重新開啟 Capturia。"
 	}
 }

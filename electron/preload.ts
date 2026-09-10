@@ -158,6 +158,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	requestNativeMacCursorAccess: () => {
 		return ipcRenderer.invoke("request-native-mac-cursor-access");
 	},
+	getCapturePermissions: () => {
+		return ipcRenderer.invoke("get-capture-permissions");
+	},
+	requestCapturePermission: (key: string) => {
+		return ipcRenderer.invoke("request-capture-permission", key);
+	},
 	storeRecordedVideo: (videoData: ArrayBuffer, fileName: string) => {
 		return ipcRenderer.invoke("store-recorded-video", videoData, fileName);
 	},

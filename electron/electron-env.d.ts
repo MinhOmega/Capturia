@@ -83,6 +83,12 @@ interface Window {
 			status: string;
 			error?: string;
 		}>;
+		getCapturePermissions: () => Promise<
+			import("./permissions/capturePermissions").CapturePermissionRow[]
+		>;
+		requestCapturePermission: (
+			key: import("./permissions/capturePermissions").CapturePermissionKey,
+		) => Promise<{ success: boolean; openedSettings: boolean; error?: string }>;
 		requestNativeMacCursorAccess: () => Promise<{
 			success: boolean;
 			granted: boolean;

@@ -100,5 +100,27 @@
 		"about": "حول",
 		"version": "الإصدار {{version}}",
 		"checkingForUpdates": "جارٍ التحقق…"
+	},
+	"permissions": {
+		"title": "الأذونات",
+		"required": "مطلوب",
+		"row": {
+			"screen": "تسجيل الشاشة",
+			"camera": "الكاميرا",
+			"microphone": "الميكروفون",
+			"accessibility": "إمكانية الوصول"
+		},
+		"status": {
+			"granted": "مسموح",
+			"denied": "مرفوض",
+			"restricted": "مقيّد",
+			"not-determined": "لم يُطلب بعد",
+			"unknown": "غير معروف"
+		},
+		"action": {
+			"request": "طلب",
+			"open-settings": "فتح الإعدادات"
+		},
+		"relaunchHint": "يطبّق macOS إذن تسجيل الشاشة الجديد عند التشغيل التالي — أغلق Capturia وأعد فتحه."
 	}
 }
