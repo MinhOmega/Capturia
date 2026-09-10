@@ -57,6 +57,12 @@
 		"failed": "無法檢查更新。",
 		"downloadFailed": "無法下載更新。"
 	},
+	"errors": {
+		"unexpected": "發生問題",
+		"unexpectedBody": "Capturia 遇到非預期的錯誤。您的專案已儲存，重新載入是安全的。",
+		"reference": "參考編號：{{id}}",
+		"reportOpenFailed": "無法開啟錯誤回報頁面。"
+	},
 	"units": {
 		"pixelsPerSecond": "{{value}} 像素/秒",
 		"pixels": "{{value}} 像素"

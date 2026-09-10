@@ -57,6 +57,12 @@
 		"failed": "No se pudieron buscar actualizaciones.",
 		"downloadFailed": "No se pudo descargar la actualización."
 	},
+	"errors": {
+		"unexpected": "Algo salió mal",
+		"unexpectedBody": "Capturia encontró un error inesperado. Tu proyecto está guardado: puedes recargar sin problema.",
+		"reference": "Referencia: {{id}}",
+		"reportOpenFailed": "No se pudo abrir la página de informe de errores."
+	},
 	"units": {
 		"pixelsPerSecond": "{{value}} píxeles/s",
 		"pixels": "{{value}} píxeles"

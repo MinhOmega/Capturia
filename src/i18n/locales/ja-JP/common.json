@@ -57,6 +57,12 @@
 		"failed": "アップデートを確認できませんでした。",
 		"downloadFailed": "アップデートをダウンロードできませんでした。"
 	},
+	"errors": {
+		"unexpected": "問題が発生しました",
+		"unexpectedBody": "Capturia で予期しないエラーが発生しました。プロジェクトは保存されているため、再読み込みしても安全です。",
+		"reference": "参照 ID: {{id}}",
+		"reportOpenFailed": "バグ報告ページを開けませんでした。"
+	},
 	"units": {
 		"pixelsPerSecond": "{{value}} px/秒",
 		"pixels": "{{value}} px"
