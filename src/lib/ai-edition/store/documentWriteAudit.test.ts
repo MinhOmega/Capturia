@@ -242,6 +242,10 @@ const DECLARED: WritePath[] = [
 	w("src/lib/ai-edition/store/useTimeline.ts", "addCameraFullscreen", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "addSpeed", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "addTrim", "save", "gesture"),
+	// The offline dead-air pass, chosen from the auto-enhance menu. A suggester
+	// writes it, but the user asked for it by clicking — one undo step takes every
+	// cut back out, exactly like the auto-zoom bulk write above.
+	w("src/lib/ai-edition/store/useTimeline.ts", "addTrimsBulk", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "addZoom", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "addZoomsBulk", "save", "gesture"),
 	// The two drag commits. One undo step per gesture, recorded on release and only

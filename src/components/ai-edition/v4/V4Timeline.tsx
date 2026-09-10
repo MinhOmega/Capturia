@@ -61,6 +61,11 @@ import {
 	setTimelineScale,
 } from "@/lib/ai-edition/timeline/newRegionDuration";
 import { ventilateSpanAcrossClips } from "@/lib/ai-edition/timeline/region-ventilation";
+import {
+	dropTrimsAlreadyCovered,
+	generateRoughCutSuggestions,
+	roughCutsToTrimRanges,
+} from "@/lib/ai-edition/timeline/rough-cut";
 import { coalesceRegionsForRuler } from "@/lib/ai-edition/timeline/timelineMap";
 import {
 	coalescedTrimGroups,
@@ -629,6 +634,10 @@ export function V4Timeline({
 						: transcriptGate.reason === "failed"
 							? t("toolbar.smartCutsFailed")
 							: t("toolbar.smartCutsNeedsTranscript");
+	// The offline cut pass reads the same transcript, so it is blocked by the same
+	// gate and says the same thing while it waits. Only the ready state differs:
+	// what this one runs on is worth naming, and it is not the AI.
+	const roughCutHint = smartCutsBlocked ? smartCutsHint : t("toolbar.roughCutHint");
 
 	const clips = tl.clips;
 	// A camera-fullscreen region grows the webcam overlay, so on a project with no webcam
@@ -1565,6 +1574,52 @@ export function V4Timeline({
 		useChatPromptBus.getState().submit(AI_ENHANCE_PROMPT);
 	}, []);
 
+	// Auto-enhance option 3 — dead air, cut from the transcript's own word timings.
+	// Same gate as the AI pass above (both need a transcript) and a different
+	// engine: `generateRoughCutSuggestions` is a subtraction over timings, so there
+	// is no provider to configure, no round trip to pay for, and the transcript
+	// never leaves the machine. The two are complements, not rivals — the model
+	// knows a pause before a punchline is not dead air; this one is exact and free.
+	const runRoughCut = useCallback(async () => {
+		setAutoEnhanceOpen(false);
+		const onTimeline = new Set(clips.map((c) => c.assetId));
+		const suggested = tl.transcripts
+			.filter((transcript) => onTimeline.has(transcript.assetId))
+			.flatMap((transcript) => {
+				// Suggestions are clamped to the asset's length, so a missing duration
+				// would drop every one of them. An asset the probe never reached falls
+				// back to the last word that was heard.
+				const durationSec =
+					tl.assets.find((a) => a.id === transcript.assetId)?.durationSec ??
+					transcript.words.reduce((max, word) => Math.max(max, word.endSec), 0);
+				return roughCutsToTrimRanges(
+					generateRoughCutSuggestions(transcript.words, durationSec),
+					transcript.assetId,
+					() => createId("trim"),
+				);
+			});
+		// Reserve against the cuts the document already holds, the way the auto-zoom
+		// pass above reserves against existing zooms: running this twice must not
+		// stack a second identical trim on every pause.
+		const fresh = dropTrimsAlreadyCovered(suggested, tl.trimRanges);
+		if (fresh.length === 0) {
+			toast.info(t("toolbar.noRoughCuts"), { description: t("toolbar.noRoughCutsDescription") });
+			return;
+		}
+		setAutoBusy(true);
+		try {
+			const added = await tl.addTrimsBulk(fresh);
+			// A failed write returns 0 and has already said why; a success toast on top
+			// of it would claim cuts that are not there.
+			if (added === 0) return;
+			toast.success(
+				t(added === 1 ? "toolbar.addedRoughCut" : "toolbar.addedRoughCutPlural", { count: added }),
+			);
+		} finally {
+			setAutoBusy(false);
+		}
+	}, [clips, tl, t]);
+
 	const isPillSelected = (id: string) =>
 		tl.selection?.id === id || tl.multiSelection.some((m) => m.id === id);
 	// Optimistic preview: during a clip-reorder drag, slide each region pill by
@@ -1810,6 +1865,28 @@ export function V4Timeline({
 												<span style={{ fontSize: 11, color: "var(--muted)" }}>
 													{t("toolbar.automaticZoomsHint")}
 												</span>
+											</span>
+										</button>
+										<button
+											type="button"
+											className={styles.recMenuRow}
+											onClick={() => void runRoughCut()}
+											disabled={smartCutsBlocked}
+											title={
+												transcriptGate.reason === "failed" ? transcriptGate.message : undefined
+											}
+											style={
+												smartCutsBlocked ? { opacity: 0.55, cursor: "not-allowed" } : undefined
+											}
+										>
+											{transcriptGate.state === "pending" ? (
+												<Loader2 size={15} className="animate-spin" style={{ flexShrink: 0 }} />
+											) : (
+												<Scissors size={15} style={{ flexShrink: 0 }} />
+											)}
+											<span style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+												<span style={{ fontWeight: 600 }}>{t("toolbar.roughCut")}</span>
+												<span style={{ fontSize: 11, color: "var(--muted)" }}>{roughCutHint}</span>
 											</span>
 										</button>
 										<button

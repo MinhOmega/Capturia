@@ -612,6 +612,59 @@ describe("useTimeline.addAnnotation", () => {
 	});
 });
 
+describe("useTimeline.addTrimsBulk", () => {
+	beforeEach(() => {
+		useProjectStore.getState().clear();
+		for (const mock of Object.values(bridgeMocks)) mock.mockReset();
+		bridgeMocks.save.mockImplementation(async (doc: typeof sampleDoc) => ({
+			success: true,
+			document: doc,
+		}));
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document: sampleDoc,
+			currentTimeSec: 1,
+			revision: 1,
+			status: "ready",
+			error: null,
+		});
+	});
+
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
+	// The rough-cut pass writes a whole recording's worth of cuts. One save, so one
+	// Ctrl+Z takes all of them back out — the same contract as `addZoomsBulk`.
+	it("appends every range in a single write", async () => {
+		const { result } = renderTimeline();
+		let added: number | undefined;
+		await act(async () => {
+			added = await result.current.addTrimsBulk([
+				{
+					id: "trim_a",
+					assetId: "asset_1",
+					startSec: 1,
+					endSec: 2,
+					reason: "silence",
+					origin: "system",
+				},
+				{
+					id: "trim_b",
+					assetId: "asset_1",
+					startSec: 4,
+					endSec: 5,
+					reason: "filler",
+					origin: "system",
+				},
+			]);
+		});
+		expect(added).toBe(2);
+		expect(bridgeMocks.save).toHaveBeenCalledTimes(1);
+		expect(useProjectStore.getState().document?.timeline.trimRanges).toHaveLength(2);
+	});
+});
+
 describe("useTimeline zoom modifiers (rotation + focus mode)", () => {
 	const docWithZoom: AxcutDocument = {
 		...sampleDoc,

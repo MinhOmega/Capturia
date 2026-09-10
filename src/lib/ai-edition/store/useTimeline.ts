@@ -32,7 +32,12 @@ import {
 	setClipSourceRange,
 	withClipsChanged,
 } from "../document/timeline";
-import type { AxcutAudioTrack, AxcutClipCropRegion, AxcutDocument } from "../schema";
+import type {
+	AxcutAudioTrack,
+	AxcutClipCropRegion,
+	AxcutDocument,
+	AxcutTrimRange,
+} from "../schema";
 import { hasAnyClipWithCamera } from "../timeline/camera";
 import { probeAudioDuration, probeVideoDimensions, probeVideoDuration } from "../timeline/duration";
 import {
@@ -405,6 +410,28 @@ export function useTimeline() {
 				},
 			};
 			await saveDocument(next, { history: true });
+		},
+		[document, saveDocument],
+	);
+
+	// Many cuts, one undo step — the trim counterpart of `addZoomsBulk`, and what a
+	// suggester (rough-cut today) writes through. The ranges arrive in the asset's
+	// SOURCE seconds and already carry their own ids and `origin`, so nothing is
+	// resolved here: `resolveTimelineSpanToTrim` exists to turn a playhead position
+	// into source time, and a suggestion read off word timings is source time
+	// already. Returns how many landed, 0 if the save failed (which toasts itself).
+	const addTrimsBulk = useCallback(
+		async (ranges: AxcutTrimRange[]) => {
+			if (!document || ranges.length === 0) return 0;
+			const next: AxcutDocument = {
+				...document,
+				timeline: {
+					...document.timeline,
+					trimRanges: [...document.timeline.trimRanges, ...ranges],
+				},
+			};
+			if (!(await saveDocument(next, { history: true }))) return 0;
+			return ranges.length;
 		},
 		[document, saveDocument],
 	);
@@ -1502,6 +1529,7 @@ export function useTimeline() {
 		addZoom,
 		addZoomsBulk,
 		addTrim,
+		addTrimsBulk,
 		addAnnotation,
 		addSpeed,
 		addCameraFullscreen,
