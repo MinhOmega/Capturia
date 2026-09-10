@@ -1,5 +1,11 @@
 import { Check, X } from "lucide-react";
 import { memo, useEffect, useRef } from "react";
+import {
+	CAPTURE_FRAME_RATES,
+	CAPTURE_RESOLUTION_PRESETS,
+	type CaptureFrameRate,
+	type CaptureResolutionPreset,
+} from "@/lib/captureSettings";
 import { useAudioLevelMeter } from "../../hooks/useAudioLevelMeter";
 import type { CameraDevice } from "../../hooks/useCameraDevices";
 import { useCameraPreviewStream } from "../../hooks/useCameraPreviewStream";
@@ -16,6 +22,10 @@ export interface HudDeviceSettingsLabels {
 	camera: string;
 	micLevel: string;
 	micHint: string;
+	frameRate: string;
+	resolution: string;
+	resolutionAuto: string;
+	captureHint: string;
 	noMicrophones: string;
 	searching: string;
 	noCameras: string;
@@ -41,6 +51,29 @@ const LevelMeter = memo(function LevelMeter({ level }: { level: number }) {
 		</div>
 	);
 });
+
+/** One value in a capture-settings row. Four of these fit where four full-width rows would not. */
+function SegmentButton({
+	label,
+	active,
+	onSelect,
+}: {
+	label: string;
+	active: boolean;
+	onSelect: () => void;
+}) {
+	return (
+		<button
+			type="button"
+			role="menuitemradio"
+			aria-checked={active}
+			onClick={onSelect}
+			className={`${styles.languageMenuItem} ${styles.hudSegment} ${active ? styles.languageMenuItemActive : ""}`}
+		>
+			{label}
+		</button>
+	);
+}
 
 function CameraPreview({
 	stream,
@@ -89,6 +122,8 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	cameraDevices,
 	activeMicId,
 	activeCameraId,
+	captureFrameRate,
+	captureResolution,
 	cameraLoading,
 	cameraError,
 	labels,
@@ -97,6 +132,8 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	checkingForUpdates,
 	onSelectMic,
 	onSelectCamera,
+	onSelectFrameRate,
+	onSelectResolution,
 	onCheckForUpdates,
 	onClose,
 	panelRef,
@@ -105,6 +142,8 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	cameraDevices: CameraDevice[];
 	activeMicId: string | undefined;
 	activeCameraId: string | undefined;
+	captureFrameRate: CaptureFrameRate;
+	captureResolution: CaptureResolutionPreset;
 	cameraLoading: boolean;
 	cameraError: string | null;
 	labels: HudDeviceSettingsLabels;
@@ -115,6 +154,8 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	checkingForUpdates: boolean;
 	onSelectMic: (device: MicrophoneDevice) => void;
 	onSelectCamera: (device: CameraDevice) => void;
+	onSelectFrameRate: (fps: CaptureFrameRate) => void;
+	onSelectResolution: (preset: CaptureResolutionPreset) => void;
 	onCheckForUpdates: () => void;
 	onClose: () => void;
 	panelRef: (el: HTMLDivElement | null) => void;
@@ -217,6 +258,35 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 					/>
 				</>
 			) : null}
+
+			{/* Frame rate and size, the two knobs that decide whether the encoder can keep
+			    up. They live here because this panel is the app's only settings surface,
+			    and next to the devices because they are the same kind of choice: what the
+			    next recording is made of. Values are unlocalised numbers by design. */}
+			<div className={styles.hudMenuSectionLabel}>{labels.frameRate}</div>
+			<div className={styles.hudSegmentRow}>
+				{CAPTURE_FRAME_RATES.map((fps) => (
+					<SegmentButton
+						key={fps}
+						label={String(fps)}
+						active={fps === captureFrameRate}
+						onSelect={() => onSelectFrameRate(fps)}
+					/>
+				))}
+			</div>
+
+			<div className={styles.hudMenuSectionLabel}>{labels.resolution}</div>
+			<div className={styles.hudSegmentRow}>
+				{CAPTURE_RESOLUTION_PRESETS.map((preset) => (
+					<SegmentButton
+						key={preset}
+						label={preset === "auto" ? labels.resolutionAuto : preset}
+						active={preset === captureResolution}
+						onSelect={() => onSelectResolution(preset)}
+					/>
+				))}
+			</div>
+			<div className={styles.hudModalHint}>{labels.captureHint}</div>
 
 			{/* The HUD has no other settings surface, and an app the user cannot ask "which
 			    version am I running?" is an app whose bug reports arrive without one. The

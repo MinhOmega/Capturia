@@ -878,6 +878,7 @@ function captureSettingsOf(request: NativeLinuxRecordingRequest): string {
 	return JSON.stringify({
 		fps: request.video?.fps ?? null,
 		bitrate: request.video?.bitrate ?? null,
+		maxLongEdge: request.video?.maxLongEdge ?? null,
 		system: request.audio?.system?.enabled ?? false,
 		microphone: request.audio?.microphone?.enabled ?? false,
 		deviceName: request.audio?.microphone?.deviceName ?? null,
@@ -2307,6 +2308,7 @@ export function registerIpcHandlers(
 					cursorMode: portalCursorMode(cursorCaptureMode),
 					fps: request.video.fps,
 					...(request.video.bitrate ? { bitrate: request.video.bitrate } : {}),
+					...(request.video.maxLongEdge ? { maxLongEdge: request.video.maxLongEdge } : {}),
 					audio: {
 						system: { enabled: request.audio.system.enabled },
 						microphone: {
@@ -2392,6 +2394,7 @@ export function registerIpcHandlers(
 						cursorMode: portalCursorMode(cursorCaptureMode),
 						fps: request.video.fps,
 						...(request.video.bitrate ? { bitrate: request.video.bitrate } : {}),
+						...(request.video.maxLongEdge ? { maxLongEdge: request.video.maxLongEdge } : {}),
 						audio: {
 							system: { enabled: request.audio.system.enabled },
 							microphone: {

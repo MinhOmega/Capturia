@@ -148,8 +148,19 @@ extern "C" {
 }
 
 pub struct VideoParams {
+    /// The encoded size: what the file's video track will say.
     pub width: i32,
     pub height: i32,
+    /// The size frames ARRIVE at, which is the capture's own resolution.
+    ///
+    /// Equal to `width`/`height` unless the user capped the capture resolution,
+    /// in which case swscale downscales on its way to NV12 — retargeting the
+    /// context it already runs for the colour conversion rather than adding a
+    /// stage. Keeping them separate is what lets the source geometry stay the
+    /// truth for the incoming buffer's bounds while the encoder is sized to the
+    /// output.
+    pub src_width: i32,
+    pub src_height: i32,
     pub fps: i32,
     pub bitrate: i64,
 }
@@ -320,6 +331,8 @@ impl VideoEncoder {
                 params: VideoParams {
                     width: params.width,
                     height: params.height,
+                    src_width: params.src_width,
+                    src_height: params.src_height,
                     fps: params.fps,
                     bitrate: params.bitrate,
                 },
@@ -513,17 +526,17 @@ impl VideoEncoder {
         // window crop produces: `pixels` there starts partway into the buffer, so
         // the tail is short by the offset even though every row is complete.
         let needed = stride
-            .checked_mul(self.params.height.saturating_sub(1) as usize)
+            .checked_mul(self.params.src_height.saturating_sub(1) as usize)
             .and_then(|rows| {
-                rows.checked_add(self.params.width as usize * BYTES_PER_SOURCE_PIXEL)
+                rows.checked_add(self.params.src_width as usize * BYTES_PER_SOURCE_PIXEL)
             })
             .ok_or_else(|| "frame size overflows".to_owned())?;
         if pixels.len() < needed {
             return Err(format!(
                 "captured frame is truncated: {} bytes for {} rows of {} px at stride {stride}",
                 pixels.len(),
-                self.params.height,
-                self.params.width
+                self.params.src_height,
+                self.params.src_width
             ));
         }
 
@@ -551,7 +564,7 @@ impl VideoEncoder {
                 src_data.as_ptr(),
                 src_stride.as_ptr(),
                 0,
-                self.params.height,
+                self.params.src_height,
                 (*self.sw_frame).data.as_mut_ptr(),
                 (*self.sw_frame).linesize.as_mut_ptr(),
             );
@@ -725,23 +738,31 @@ impl VideoEncoder {
         // it. It is set to 1 by default; see [`sws_thread_count`] for the
         // measurement behind that.
         //
-        // Source and destination are the same size, so no resampling filter is
-        // involved and the cheapest kernel is the right one: this is a pure
-        // colour-space conversion, and a bilinear kernel would cost more for
-        // pixels it never moves.
+        // Kernel by job. Without a resolution cap source and destination are the
+        // same size, no resampling is involved, and the cheapest kernel is the
+        // right one: a bilinear kernel would cost more for pixels it never moves.
+        // A capped capture IS resampling, and there SWS_POINT is the wrong
+        // choice — nearest-neighbour on a downscale throws away three of every
+        // four pixels and aliases text into shimmer, which is the opposite of
+        // what someone lowering the resolution to keep up is asking for.
         self.sws = ff::sws_alloc_context();
         if self.sws.is_null() {
             return Err("sws_alloc_context returned null".to_owned());
         }
         let dst_format = self.backend.upload_format();
+        let scaling = self.params.src_width != self.params.width
+            || self.params.src_height != self.params.height;
         let options: [(&CStr, i64); 8] = [
-            (c"srcw", self.params.width as i64),
-            (c"srch", self.params.height as i64),
+            (c"srcw", self.params.src_width as i64),
+            (c"srch", self.params.src_height as i64),
             (c"src_format", src_format as i64),
             (c"dstw", self.params.width as i64),
             (c"dsth", self.params.height as i64),
             (c"dst_format", dst_format as i64),
-            (c"sws_flags", ff::SWS_POINT as i64),
+            (
+                c"sws_flags",
+                if scaling { ff::SWS_BILINEAR } else { ff::SWS_POINT } as i64,
+            ),
             (c"threads", sws_thread_count() as i64),
         ];
         for (name, value) in options {
@@ -1273,7 +1294,7 @@ mod tests {
         // The bottom of the ladder is the one rung that must never fail, on any
         // machine, with no GPU at all.
         let encoder = VideoEncoder::open(
-            VideoParams { width: 320, height: 240, fps: 30, bitrate: 1_000_000 },
+            VideoParams { width: 320, height: 240, src_width: 320, src_height: 240, fps: 30, bitrate: 1_000_000 },
             Some(Backend::Software),
             |_, _| {},
         )
@@ -1284,7 +1305,7 @@ mod tests {
     #[test]
     fn software_encodes_a_frame_into_packets() {
         let mut encoder = VideoEncoder::open(
-            VideoParams { width: 320, height: 240, fps: 30, bitrate: 1_000_000 },
+            VideoParams { width: 320, height: 240, src_width: 320, src_height: 240, fps: 30, bitrate: 1_000_000 },
             Some(Backend::Software),
             |_, _| {},
         )
@@ -1312,7 +1333,7 @@ mod tests {
     #[test]
     fn a_truncated_frame_is_refused_rather_than_read_past() {
         let mut encoder = VideoEncoder::open(
-            VideoParams { width: 320, height: 240, fps: 30, bitrate: 1_000_000 },
+            VideoParams { width: 320, height: 240, src_width: 320, src_height: 240, fps: 30, bitrate: 1_000_000 },
             Some(Backend::Software),
             |_, _| {},
         )
@@ -1352,7 +1373,7 @@ mod tests {
         let _ = std::fs::remove_file(&output);
 
         let mut encoder = VideoEncoder::open(
-            VideoParams { width, height, fps, bitrate: 8_000_000 },
+            VideoParams { width, height, src_width: width, src_height: height, fps, bitrate: 8_000_000 },
             forced_backend_from_env().expect("valid encoder override"),
             |backend, error| eprintln!("  {} unavailable: {error}", backend.as_str()),
         )

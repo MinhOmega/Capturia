@@ -183,6 +183,28 @@ fn default_bitrate(width: i32, height: i32, fps: i32) -> i64 {
     ((pixels_per_second * BITS_PER_PIXEL) as i64).clamp(2_000_000, 60_000_000)
 }
 
+/// The size to encode a `width`x`height` capture at, given the user's optional
+/// long-edge cap.
+///
+/// The LONG edge, so a portrait monitor and a tall window cap sensibly too, and
+/// the aspect ratio is preserved: this shrinks the picture, it does not reframe
+/// it. Returns the input unchanged when there is no cap or it is already met,
+/// which is what keeps an uncapped recording on exactly the code path — and the
+/// zero-copy dmabuf path — it had before the setting existed.
+pub fn scaled_size(width: i32, height: i32, max_long_edge: Option<i32>) -> (i32, i32) {
+    let Some(limit) = max_long_edge.filter(|limit| *limit > 0) else {
+        return (width, height);
+    };
+    let long_edge = width.max(height);
+    if long_edge <= limit || long_edge <= 0 {
+        return (width, height);
+    }
+    let scale = f64::from(limit) / f64::from(long_edge);
+    // Even, like the crop rectangle above: H.264 chroma is subsampled 2x2.
+    let even = |value: i32| ((f64::from(value) * scale).round() as i32).max(2) & !1;
+    (even(width), even(height))
+}
+
 pub struct Summary {
     pub path: PathBuf,
     pub duration_ms: u64,
@@ -225,6 +247,10 @@ pub struct Capture {
     /// through it rather than replacing it.
     committed_width: i32,
     committed_height: i32,
+    /// The size those committed pixels are ENCODED at. Equal to the committed
+    /// size unless a resolution cap is scaling the capture down.
+    encoded_width: i32,
+    encoded_height: i32,
 }
 
 /// The outcome of staging one captured frame.
@@ -244,6 +270,10 @@ impl Capture {
         path: &Path,
         width: i32,
         height: i32,
+        // The user's resolution cap, or `None` to encode at the captured size.
+        // Applied here rather than by the caller because on Wayland the captured
+        // size is not known until the first frame carrying a crop rectangle.
+        max_long_edge: Option<i32>,
         fps: i32,
         // `None` derives one from the negotiated size, which is almost always
         // what the caller wants — see `default_bitrate`.
@@ -254,7 +284,11 @@ impl Capture {
         // opened to consume the importer's NV12 pool directly (issue #507).
         dmabuf: Option<&shim::DmabufDesc>,
     ) -> Result<(Self, Selection), String> {
-        let bitrate = bitrate.unwrap_or_else(|| default_bitrate(width, height, fps));
+        let (out_width, out_height) = scaled_size(width, height, max_long_edge);
+        // From the ENCODED size: a capped capture writes fewer pixels per frame
+        // and paying for the uncapped ones would waste the disk the cap was meant
+        // to spare as well as the CPU.
+        let bitrate = bitrate.unwrap_or_else(|| default_bitrate(out_width, out_height, fps));
         let mut rejected = Vec::new();
         // Shared with the negotiation offer (`prefer_dmabuf` in main) so the two
         // never disagree: offering dmabuf that this then refuses to import is what
@@ -264,7 +298,9 @@ impl Capture {
             Some(desc) => {
                 // The importer maps the full stream (`desc`) and its VPP crops to
                 // the committed record size (`width`/`height`): equal to the source
-                // for a monitor, or the window's crop rectangle for a window. The
+                // for a monitor, or the window's crop rectangle for a window — then
+                // scales that to the encoded size, which differs only under a
+                // resolution cap. The
                 // encoder is FORCED to VAAPI — the only backend that can consume the
                 // mapped surface; a non-VAAPI machine never negotiates dmabuf.
                 let importer = crate::dmabuf_import::DmabufImporter::new(
@@ -272,6 +308,8 @@ impl Capture {
                     desc.height,
                     width,
                     height,
+                    out_width,
+                    out_height,
                     desc.drm_fourcc,
                 )?;
                 // SAFETY: the importer's device and NV12 frames context are live
@@ -279,7 +317,16 @@ impl Capture {
                 // alongside it below.
                 let encoder = unsafe {
                     VideoEncoder::open_importing(
-                        VideoParams { width, height, fps, bitrate },
+                        VideoParams {
+                            width: out_width,
+                            height: out_height,
+                            // The importer's VPP has already produced the encoded
+                            // size, so from the encoder's side nothing is scaled.
+                            src_width: out_width,
+                            src_height: out_height,
+                            fps,
+                            bitrate,
+                        },
                         importer.device(),
                         importer.output_frames_ctx(),
                     )?
@@ -288,7 +335,14 @@ impl Capture {
             }
             None => {
                 let encoder = VideoEncoder::open(
-                    VideoParams { width, height, fps, bitrate },
+                    VideoParams {
+                        width: out_width,
+                        height: out_height,
+                        src_width: width,
+                        src_height: height,
+                        fps,
+                        bitrate,
+                    },
                     forced,
                     |backend, error| rejected.push(format!("{}: {error}", backend.as_str())),
                 )?;
@@ -341,6 +395,8 @@ impl Capture {
                 frames_written: 0,
                 committed_width: width,
                 committed_height: height,
+                encoded_width: out_width,
+                encoded_height: out_height,
             },
             selection,
         ))
@@ -460,6 +516,11 @@ impl Capture {
                 input.pending.clear();
             }
         }
+    }
+
+    /// The size the file's video track is written at.
+    pub fn encoded_size(&self) -> (i32, i32) {
+        (self.encoded_width, self.encoded_height)
     }
 
     /// Whether a picture has been staged, which is also whether the timeline has
@@ -695,7 +756,7 @@ mod tests {
     fn the_timeline_does_not_start_until_the_first_frame_is_staged() {
         let output = std::env::temp_dir().join("openscreen-capture-epoch.mp4");
         let (mut capture, _) =
-            Capture::start(&output, 320, 240, 30, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
+            Capture::start(&output, 320, 240, None, 30, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
                 .expect("start");
         assert!(!capture.started());
         // Nothing staged: advance must not write a frame of uninitialised memory.
@@ -714,7 +775,7 @@ mod tests {
         // further arrivals, and the file must still fill with frames.
         let output = std::env::temp_dir().join("openscreen-capture-static.mp4");
         let (mut capture, _) =
-            Capture::start(&output, 320, 240, 30, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
+            Capture::start(&output, 320, 240, None, 30, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
                 .expect("start");
         capture
             .stage(&frame(320, 240, shim::constants().video_format_bgrx))
@@ -739,7 +800,7 @@ mod tests {
     fn a_window_is_staged_from_its_crop_inside_a_larger_frame() {
         let output = std::env::temp_dir().join("openscreen-capture-crop.mp4");
         let (mut capture, _) =
-            Capture::start(&output, 320, 240, 30, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
+            Capture::start(&output, 320, 240, None, 30, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
                 .expect("start");
 
         // A 1920x1080 stream carrying a 320x240 window at (100, 50).
@@ -763,6 +824,55 @@ mod tests {
         let _ = std::fs::remove_file(&output);
     }
 
+    #[test]
+    fn no_cap_and_a_cap_already_met_leave_the_size_alone() {
+        // The uncapped case must stay byte-identical: it is what keeps swscale on
+        // its point kernel and the dmabuf path on a pure crop.
+        assert_eq!(scaled_size(3840, 2160, None), (3840, 2160));
+        assert_eq!(scaled_size(1280, 720, Some(1920)), (1280, 720));
+    }
+
+    #[test]
+    fn a_cap_shrinks_the_long_edge_and_keeps_the_shape() {
+        assert_eq!(scaled_size(3840, 2160, Some(1920)), (1920, 1080));
+        // Portrait: the cap belongs to the HEIGHT here.
+        assert_eq!(scaled_size(1440, 2560, Some(1920)), (1080, 1920));
+        // 21:9 rounds to 803.7 and must land even, not odd.
+        assert_eq!(scaled_size(3440, 1440, Some(1920)), (1920, 804));
+    }
+
+    /// The capped path end to end: a full-size frame arrives, swscale converts
+    /// AND downscales it in the one pass, and the file is the smaller size. This
+    /// is the whole resolution cap — if the source and destination geometry ever
+    /// get conflated again, this either errors or writes garbage.
+    #[test]
+    fn a_capped_capture_encodes_at_the_smaller_size() {
+        let output = std::env::temp_dir().join("openscreen-capture-capped.mp4");
+        let (mut capture, _) = Capture::start(
+            &output,
+            320,
+            240,
+            Some(160),
+            30,
+            Some(1_000_000),
+            Some(Backend::Software),
+            Vec::new(),
+            None,
+        )
+        .expect("start");
+        assert_eq!(capture.encoded_size(), (160, 120));
+
+        capture
+            .stage(&frame(320, 240, shim::constants().video_format_bgrx))
+            .expect("a full-size frame must stage against a capped encoder");
+
+        std::thread::sleep(Duration::from_millis(120));
+        let written = capture.advance().expect("advance");
+        assert!(written >= 1, "the downscaled picture should have been encoded, wrote {written}");
+        capture.finish().expect("finish");
+        let _ = std::fs::remove_file(&output);
+    }
+
     /// A crop flush against the right edge leaves the last row short of a full
     /// stride. The old `stride * height` bounds check rejected exactly those —
     /// i.e. every window not touching the left edge.
@@ -770,7 +880,7 @@ mod tests {
     fn a_crop_against_the_right_edge_is_not_rejected_as_truncated() {
         let output = std::env::temp_dir().join("openscreen-capture-edge.mp4");
         let (mut capture, _) =
-            Capture::start(&output, 320, 240, 30, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
+            Capture::start(&output, 320, 240, None, 30, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
                 .expect("start");
 
         let staged = capture.stage(&cropped_frame(
@@ -793,7 +903,7 @@ mod tests {
     fn a_shrunken_window_is_read_from_inside_the_frame() {
         let output = std::env::temp_dir().join("openscreen-capture-shrunk.mp4");
         let (mut capture, _) =
-            Capture::start(&output, 320, 240, 30, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
+            Capture::start(&output, 320, 240, None, 30, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
                 .expect("start");
 
         // Origin so close to the edge that a 320x240 read from it would overrun.
@@ -819,7 +929,7 @@ mod tests {
         let output = std::env::temp_dir().join("openscreen-capture-odd.mp4");
         // 321x241 rounds to the 320x240 the encoder is opened at.
         let (mut capture, _) =
-            Capture::start(&output, 320, 240, 30, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
+            Capture::start(&output, 320, 240, None, 30, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
                 .expect("start");
 
         let frame = cropped_frame(
@@ -838,7 +948,7 @@ mod tests {
     fn an_uncropped_frame_reports_no_divergence() {
         let output = std::env::temp_dir().join("openscreen-capture-nocrop.mp4");
         let (mut capture, _) =
-            Capture::start(&output, 320, 240, 30, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
+            Capture::start(&output, 320, 240, None, 30, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
                 .expect("start");
 
         assert!(!capture.crop_diverged(&frame(320, 240, shim::constants().video_format_bgrx)));
@@ -850,7 +960,7 @@ mod tests {
     fn paused_time_does_not_advance_the_timeline() {
         let output = std::env::temp_dir().join("openscreen-capture-pause.mp4");
         let (mut capture, _) =
-            Capture::start(&output, 320, 240, 30, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
+            Capture::start(&output, 320, 240, None, 30, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
                 .expect("start");
         capture
             .stage(&frame(320, 240, shim::constants().video_format_bgrx))
@@ -886,6 +996,7 @@ mod tests {
             &output,
             320,
             240,
+            None,
             30,
             Some(1_000_000),
             Some(Backend::Software),
@@ -923,6 +1034,7 @@ mod tests {
             &output,
             320,
             240,
+            None,
             30,
             Some(1_000_000),
             Some(Backend::Software),
@@ -966,6 +1078,7 @@ mod tests {
             &output,
             320,
             240,
+            None,
             30,
             Some(1_000_000),
             Some(Backend::Software),
@@ -1003,6 +1116,7 @@ mod tests {
             &output,
             320,
             240,
+            None,
             30,
             Some(1_000_000),
             Some(Backend::Software),
@@ -1053,6 +1167,7 @@ mod tests {
             &output,
             320,
             240,
+            None,
             30,
             Some(1_000_000),
             Some(Backend::Software),
@@ -1084,7 +1199,7 @@ mod tests {
     fn catch_up_is_bounded_so_a_stall_cannot_block_stop() {
         let output = std::env::temp_dir().join("openscreen-capture-catchup.mp4");
         let (mut capture, _) =
-            Capture::start(&output, 320, 240, 60, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
+            Capture::start(&output, 320, 240, None, 60, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
                 .expect("start");
         capture
             .stage(&frame(320, 240, shim::constants().video_format_bgrx))

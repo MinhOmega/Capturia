@@ -105,6 +105,10 @@ export function LaunchWindow() {
 		setWebcamDeviceName,
 		cursorCaptureMode,
 		setCursorCaptureMode,
+		captureFrameRate,
+		setCaptureFrameRate,
+		captureResolution,
+		setCaptureResolution,
 		softwareEncoderFallbackNoticeVisible,
 		dismissSoftwareEncoderFallbackNotice,
 		addRecordingMarker,
@@ -893,6 +897,10 @@ export function LaunchWindow() {
 			camera: t("webcam.cameraDevice"),
 			micLevel: t("deviceSettings.micLevel"),
 			micHint: t("deviceSettings.micHint"),
+			frameRate: t("deviceSettings.frameRate"),
+			resolution: t("deviceSettings.resolution"),
+			resolutionAuto: t("deviceSettings.resolutionAuto"),
+			captureHint: t("deviceSettings.captureHint"),
 			noMicrophones: t("deviceSettings.noMicrophones"),
 			searching: t("webcam.searching"),
 			noCameras: t("webcam.noneFound"),
@@ -1104,6 +1112,8 @@ export function LaunchWindow() {
 								cameraDevices={cameraDevices}
 								activeMicId={microphoneDeviceId || selectedMicId}
 								activeCameraId={webcamDeviceId || selectedCameraId}
+								captureFrameRate={captureFrameRate}
+								captureResolution={captureResolution}
 								cameraLoading={isCameraDevicesLoading}
 								cameraError={cameraDevicesError}
 								labels={deviceSettingsLabels}
@@ -1116,6 +1126,8 @@ export function LaunchWindow() {
 								checkingForUpdates={isCheckingForUpdates}
 								onSelectMic={handleSelectMicDevice}
 								onSelectCamera={handleSelectCameraDevice}
+								onSelectFrameRate={setCaptureFrameRate}
+								onSelectResolution={setCaptureResolution}
 								onCheckForUpdates={handleCheckForUpdates}
 								onClose={closeDeviceSettings}
 								panelRef={setPopoverEl}

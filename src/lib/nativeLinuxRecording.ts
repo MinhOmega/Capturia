@@ -22,6 +22,16 @@ export type NativeLinuxRecordingRequest = {
 	video: {
 		fps: number;
 		bitrate?: number;
+		/**
+		 * The user's capture-resolution cap, as a long edge in pixels. Absent —
+		 * which is what "auto" sends — records whatever the portal negotiated.
+		 *
+		 * A long edge rather than a width and height, because this side does not
+		 * know either: the compositor chooses the source and the helper is the
+		 * first to see its size, or even its orientation. The helper scales the
+		 * captured picture to fit, preserving its aspect ratio.
+		 */
+		maxLongEdge?: number;
 	};
 	audio: {
 		system: {

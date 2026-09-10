@@ -4,6 +4,12 @@ import { toast } from "sonner";
 import { useScopedT } from "@/contexts/I18nContext";
 import { MIC_GAIN_BOOST, mixAudioTracks } from "@/lib/audioMix";
 import {
+	type CaptureFrameRate,
+	type CaptureResolutionPreset,
+	capCaptureSize,
+	captureLongEdge,
+} from "@/lib/captureSettings";
+import {
 	type NativeLinuxRecordingRequest,
 	portalOwnsSourceSelection,
 } from "@/lib/nativeLinuxRecording";
@@ -27,7 +33,12 @@ import { loadUserPreferences, saveUserPreferences } from "@/lib/userPreferences"
 import { createRecorderHandle, type RecorderHandle } from "./recorderHandle";
 import { webcamDeviceIdentityFrom } from "./webcamDeviceIdentity";
 
-const TARGET_FRAME_RATE = 60;
+/**
+ * Floor for the browser pipeline's `minFrameRate`, which asks Chromium not to
+ * throttle a static screen down to a slideshow. Clamped against the user's
+ * chosen rate below: asking for a minimum above the maximum is a contradictory
+ * constraint set, and 24 fps is a rate the user can now choose.
+ */
 const MIN_FRAME_RATE = 30;
 const TARGET_WIDTH = 3840;
 const TARGET_HEIGHT = 2160;
@@ -111,6 +122,10 @@ type UseScreenRecorderReturn = {
 	setWebcamEnabled: (enabled: boolean) => Promise<boolean>;
 	cursorCaptureMode: CursorCaptureMode;
 	setCursorCaptureMode: (mode: CursorCaptureMode) => void;
+	captureFrameRate: CaptureFrameRate;
+	setCaptureFrameRate: (fps: CaptureFrameRate) => void;
+	captureResolution: CaptureResolutionPreset;
+	setCaptureResolution: (preset: CaptureResolutionPreset) => void;
 	softwareEncoderFallbackNoticeVisible: boolean;
 	dismissSoftwareEncoderFallbackNotice: (dontShowAgain?: boolean) => void;
 	/** Flags this instant in the running capture. A no-op while paused or idle. */
@@ -251,6 +266,16 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const [systemAudioEnabled, setSystemAudioEnabled] = useState(false);
 	const [webcamEnabled, setWebcamEnabledState] = useState(false);
 	const [cursorCaptureMode, setCursorCaptureMode] = useState<CursorCaptureMode>("editable-overlay");
+	// Straight from localStorage rather than the main-process recording prefs the
+	// effect below seeds: those are per-run state shared with the editor's Rec
+	// stage and are forgotten when the app quits, whereas how fast and how large
+	// this machine can encode does not change between launches.
+	const [captureFrameRate, setCaptureFrameRateState] = useState<CaptureFrameRate>(
+		() => loadUserPreferences().captureFrameRate,
+	);
+	const [captureResolution, setCaptureResolutionState] = useState<CaptureResolutionPreset>(
+		() => loadUserPreferences().captureResolution,
+	);
 	const [softwareEncoderFallbackNoticeVisible, setSoftwareEncoderFallbackNoticeVisible] =
 		useState(false);
 
@@ -286,6 +311,16 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		return () => {
 			cancelled = true;
 		};
+	}, []);
+
+	const setCaptureFrameRate = useCallback((fps: CaptureFrameRate) => {
+		setCaptureFrameRateState(fps);
+		saveUserPreferences({ captureFrameRate: fps });
+	}, []);
+
+	const setCaptureResolution = useCallback((preset: CaptureResolutionPreset) => {
+		setCaptureResolutionState(preset);
+		saveUserPreferences({ captureResolution: preset });
 	}, []);
 
 	const screenRecorder = useRef<RecorderHandle | null>(null);
@@ -381,10 +416,12 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		return preferred.find((type) => MediaRecorder.isTypeSupported(type)) ?? "video/webm";
 	};
 
-	const computeBitrate = (width: number, height: number) => {
+	const computeBitrate = (width: number, height: number, fps: number) => {
 		const pixels = width * height;
-		const highFrameRateBoost =
-			TARGET_FRAME_RATE >= HIGH_FRAME_RATE_THRESHOLD ? HIGH_FRAME_RATE_BOOST : 1;
+		// The user's chosen rate, not a constant: a 30 fps take carries half the
+		// frames of a 60 fps one, and paying the high-frame-rate boost for it asks
+		// the encoder for 1.7x the bits it has any use for.
+		const highFrameRateBoost = fps >= HIGH_FRAME_RATE_THRESHOLD ? HIGH_FRAME_RATE_BOOST : 1;
 
 		if (pixels >= FOUR_K_PIXELS) {
 			return Math.round(BITRATE_4K * highFrameRateBoost);
@@ -1260,9 +1297,18 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					...(windowHandle ? { windowHandle } : {}),
 				},
 				video: {
-					fps: TARGET_FRAME_RATE,
-					width: TARGET_WIDTH,
-					height: TARGET_HEIGHT,
+					fps: captureFrameRate,
+					// TARGET_WIDTH/HEIGHT are the app's 4K ceiling; the cap lowers that
+					// ceiling rather than forcing a size, so a 1080p display recorded on
+					// "auto" or "2160p" is still captured at 1080p.
+					//
+					// The WGC helper currently READS these and encodes at the captured
+					// texture size anyway ("WGC owns the captured texture size ... until a
+					// dedicated GPU scaling pass is introduced", wgc-capture/src/main.cpp),
+					// so on the native Windows path the cap only takes effect once that
+					// pass exists. It is honoured today by the browser fallback below,
+					// which is Windows' path when the helper is missing.
+					...capCaptureSize(TARGET_WIDTH, TARGET_HEIGHT, captureResolution),
 				},
 				audio: {
 					system: {
@@ -1409,6 +1455,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			if (!isCountdownRunActive(countdownRunToken)) {
 				return true;
 			}
+			// Same 4K ceiling as Windows, lowered by the user's cap. The bitrate is
+			// derived from it, so both have to come from one call.
+			const macVideoSize = capCaptureSize(TARGET_WIDTH, TARGET_HEIGHT, captureResolution);
 			const request: NativeMacRecordingRequest = {
 				schemaVersion: 1,
 				recordingId: activeRecordingId,
@@ -1419,10 +1468,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					...(windowId ? { windowId } : {}),
 				},
 				video: {
-					fps: TARGET_FRAME_RATE,
-					width: TARGET_WIDTH,
-					height: TARGET_HEIGHT,
-					bitrate: computeBitrate(TARGET_WIDTH, TARGET_HEIGHT),
+					fps: captureFrameRate,
+					...macVideoSize,
+					bitrate: computeBitrate(macVideoSize.width, macVideoSize.height, captureFrameRate),
 					hideSystemCursor: cursorCaptureMode === "editable-overlay",
 				},
 				audio: {
@@ -1511,33 +1559,41 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	 * is the one negotiated at the start, so a divergence in audio or cursor
 	 * settings would record something the second call never asked for.
 	 */
-	const buildNativeLinuxRequest = (recordingId?: number): NativeLinuxRecordingRequest => ({
-		...(recordingId === undefined ? {} : { recordingId }),
-		video: {
-			// No bitrate on purpose. TARGET_WIDTH/HEIGHT are the app's 4K ceiling,
-			// not the capture size — on Wayland nobody knows that until the portal
-			// has negotiated it, and the user may well have picked a single window.
-			// Sending computeBitrate() of the ceiling asked for 76.5 Mbit/s for a
-			// 1080p capture. The helper derives it from the size it actually got.
-			fps: TARGET_FRAME_RATE,
-		},
-		audio: {
-			system: { enabled: systemAudioEnabled },
-			microphone: {
-				enabled: microphoneEnabled,
-				// The device LABEL, not the id. Chromium's deviceId is an opaque
-				// per-origin hash that means nothing to PipeWire, whereas on a
-				// PipeWire system the label IS the node's `node.description` — which
-				// is what the helper matches against the graph it enumerates.
-				// Sending nothing here is what made a user who picked their built-in
-				// microphone get the empty headphone jack recorded, because the
-				// helper then fell back to the session default source.
-				...(microphoneDeviceName ? { deviceName: microphoneDeviceName } : {}),
-				gain: MIC_GAIN_BOOST,
+	const buildNativeLinuxRequest = (recordingId?: number): NativeLinuxRecordingRequest => {
+		const maxLongEdge = captureLongEdge(captureResolution);
+		return {
+			...(recordingId === undefined ? {} : { recordingId }),
+			video: {
+				// No bitrate on purpose. TARGET_WIDTH/HEIGHT are the app's 4K ceiling,
+				// not the capture size — on Wayland nobody knows that until the portal
+				// has negotiated it, and the user may well have picked a single window.
+				// Sending computeBitrate() of the ceiling asked for 76.5 Mbit/s for a
+				// 1080p capture. The helper derives it from the size it actually got.
+				fps: captureFrameRate,
+				// For the same reason the cap travels as a long edge rather than a size:
+				// the helper is the first place that knows what the portal handed over.
+				// Omitted entirely on "auto", which is what keeps the helper's zero-copy
+				// dmabuf path free of a scale it did not ask for.
+				...(maxLongEdge === null ? {} : { maxLongEdge }),
 			},
-		},
-		cursor: { mode: cursorCaptureMode },
-	});
+			audio: {
+				system: { enabled: systemAudioEnabled },
+				microphone: {
+					enabled: microphoneEnabled,
+					// The device LABEL, not the id. Chromium's deviceId is an opaque
+					// per-origin hash that means nothing to PipeWire, whereas on a
+					// PipeWire system the label IS the node's `node.description` — which
+					// is what the helper matches against the graph it enumerates.
+					// Sending nothing here is what made a user who picked their built-in
+					// microphone get the empty headphone jack recorded, because the
+					// helper then fell back to the session default source.
+					...(microphoneDeviceName ? { deviceName: microphoneDeviceName } : {}),
+					gain: MIC_GAIN_BOOST,
+				},
+			},
+			cursor: { mode: cursorCaptureMode },
+		};
+	};
 
 	const startNativeLinuxRecordingIfAvailable = async (
 		countdownRunToken?: number,
@@ -1873,6 +1929,11 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				return;
 			}
 
+			// The 4K ceiling the browser pipeline asks for, lowered by the user's
+			// resolution cap. A ceiling, not a demand: getUserMedia hands back the
+			// display's own size when it is smaller.
+			const browserSize = capCaptureSize(TARGET_WIDTH, TARGET_HEIGHT, captureResolution);
+
 			// Capture screen + microphone in parallel: the gap between the two
 			// `getUserMedia` calls is the dominant source of the mic-vs-video lag at the
 			// start of the recording (issue #57).
@@ -1884,9 +1945,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					return navigator.mediaDevices.getDisplayMedia({
 						video: {
 							cursor: cursorCaptureMode === "editable-overlay" ? "never" : "always",
-							width: { max: TARGET_WIDTH },
-							height: { max: TARGET_HEIGHT },
-							frameRate: { ideal: TARGET_FRAME_RATE },
+							width: { max: browserSize.width },
+							height: { max: browserSize.height },
+							frameRate: { ideal: captureFrameRate },
 						} as MediaTrackConstraints,
 						audio: systemAudioEnabled,
 					} as DisplayMediaStreamOptions);
@@ -1896,10 +1957,10 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					mandatory: {
 						chromeMediaSource: CHROME_MEDIA_SOURCE,
 						chromeMediaSourceId: selectedSource.id,
-						maxWidth: TARGET_WIDTH,
-						maxHeight: TARGET_HEIGHT,
-						maxFrameRate: TARGET_FRAME_RATE,
-						minFrameRate: MIN_FRAME_RATE,
+						maxWidth: browserSize.width,
+						maxHeight: browserSize.height,
+						maxFrameRate: captureFrameRate,
+						minFrameRate: Math.min(MIN_FRAME_RATE, captureFrameRate),
 					},
 				};
 
@@ -2032,13 +2093,13 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
 			try {
 				await videoTrack.applyConstraints({
-					frameRate: { ideal: TARGET_FRAME_RATE, max: TARGET_FRAME_RATE },
-					width: { ideal: TARGET_WIDTH, max: TARGET_WIDTH },
-					height: { ideal: TARGET_HEIGHT, max: TARGET_HEIGHT },
+					frameRate: { ideal: captureFrameRate, max: captureFrameRate },
+					width: { ideal: browserSize.width, max: browserSize.width },
+					height: { ideal: browserSize.height, max: browserSize.height },
 				});
 			} catch (constraintError) {
 				console.warn(
-					"Unable to lock 4K/60fps constraints, using best available track settings.",
+					"Unable to lock the requested size/frame rate, using best available track settings.",
 					constraintError,
 				);
 			}
@@ -2051,17 +2112,17 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			let {
 				width = DEFAULT_WIDTH,
 				height = DEFAULT_HEIGHT,
-				frameRate = TARGET_FRAME_RATE,
+				frameRate = captureFrameRate,
 			} = videoTrack.getSettings();
 
 			width = Math.floor(width / CODEC_ALIGNMENT) * CODEC_ALIGNMENT;
 			height = Math.floor(height / CODEC_ALIGNMENT) * CODEC_ALIGNMENT;
 
-			const videoBitsPerSecond = computeBitrate(width, height);
+			const videoBitsPerSecond = computeBitrate(width, height, frameRate ?? captureFrameRate);
 			const mimeType = selectMimeType();
 
 			console.log(
-				`Recording at ${width}x${height} @ ${frameRate ?? TARGET_FRAME_RATE}fps using ${mimeType} / ${Math.round(
+				`Recording at ${width}x${height} @ ${frameRate ?? captureFrameRate}fps using ${mimeType} / ${Math.round(
 					videoBitsPerSecond / BITS_PER_MEGABIT,
 				)} Mbps`,
 			);
@@ -2486,6 +2547,10 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		setWebcamEnabled,
 		cursorCaptureMode,
 		setCursorCaptureMode,
+		captureFrameRate,
+		setCaptureFrameRate,
+		captureResolution,
+		setCaptureResolution,
 		softwareEncoderFallbackNoticeVisible,
 		dismissSoftwareEncoderFallbackNotice,
 		addRecordingMarker,
