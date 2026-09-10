@@ -7,6 +7,7 @@ export const SHORTCUT_ACTIONS = [
 	"addAnnotation",
 	"addAudio",
 	"addVoiceover",
+	"splitAtPlayhead",
 	"deleteSelected",
 	"playPause",
 	"copySelected",
@@ -83,6 +84,21 @@ export const FIXED_SHORTCUTS: FixedShortcut[] = [
 		bindings: [],
 	},
 	{ i18nKey: "zoomTimeline", label: "Zoom Timeline", display: "Ctrl + Scroll", bindings: [] },
+	// The keyboard half of the same gesture. Unlike the wheel it has no cursor to zoom
+	// around, so it zooms around the PLAYHEAD — which is also the moment you are about to
+	// cut, and the reason a keyboard zoom is worth having at all.
+	{
+		i18nKey: "zoomTimelineIn",
+		label: "Zoom Timeline In",
+		display: "Ctrl + =",
+		bindings: [{ key: "=", ctrl: true }],
+	},
+	{
+		i18nKey: "zoomTimelineOut",
+		label: "Zoom Timeline Out",
+		display: "Ctrl + -",
+		bindings: [{ key: "-", ctrl: true }],
+	},
 	{ i18nKey: "frameBack", label: "Frame Back", display: "←", bindings: [{ key: "arrowleft" }] },
 	{
 		i18nKey: "frameForward",
@@ -90,6 +106,14 @@ export const FIXED_SHORTCUTS: FixedShortcut[] = [
 		display: "→",
 		bindings: [{ key: "arrowright" }],
 	},
+	// Review speed — how fast you WATCH, not a speed region. See timeline/transport.ts.
+	{
+		i18nKey: "reviewSpeedDown",
+		label: "Review Speed Down",
+		display: "[",
+		bindings: [{ key: "[" }],
+	},
+	{ i18nKey: "reviewSpeedUp", label: "Review Speed Up", display: "]", bindings: [{ key: "]" }] },
 ];
 
 export type ShortcutConflict =
@@ -133,6 +157,9 @@ export const DEFAULT_SHORTCUTS: ShortcutsConfig = {
 	addAudio: { key: "m" },
 	// Record a voiceover over the timeline from the playhead.
 	addVoiceover: { key: "v" },
+	// Not the bare `S` the old fork used for its scissors mode: `S` is Add Speed here, and
+	// a default that has to steal a key from an existing default is not a default.
+	splitAtPlayhead: { key: "k", ctrl: true },
 	deleteSelected: { key: "d", ctrl: true },
 	playPause: { key: " " },
 	copySelected: { key: "c", ctrl: true },
@@ -148,6 +175,7 @@ export const SHORTCUT_LABELS: Record<ShortcutAction, string> = {
 	addAnnotation: "Add Annotation",
 	addAudio: "Add Audio",
 	addVoiceover: "Record Voiceover",
+	splitAtPlayhead: "Split at Playhead",
 	deleteSelected: "Delete Selected",
 	playPause: "Play / Pause",
 	copySelected: "Copy Selected",
@@ -168,6 +196,23 @@ export function matchesShortcut(
 	if (e.altKey !== !!binding.alt) return false;
 
 	return true;
+}
+
+/**
+ * Does `e` match any binding of the FIXED shortcut named `i18nKey`?
+ *
+ * So a handler and the dialog's conflict table read the same row instead of holding two
+ * copies of one key. The configurable actions already had that through `shortcuts[action]`;
+ * the fixed ones were being re-typed at their handlers, which is how a key can end up
+ * reserved in the dialog and dead in the editor.
+ */
+export function matchesFixedShortcut(
+	e: KeyboardEvent,
+	i18nKey: string,
+	isMacPlatform: boolean,
+): boolean {
+	const fixed = FIXED_SHORTCUTS.find((f) => f.i18nKey === i18nKey);
+	return !!fixed?.bindings.some((binding) => matchesShortcut(e, binding, isMacPlatform));
 }
 
 /** True when the event target is a text-editing surface where shortcuts should not fire. */

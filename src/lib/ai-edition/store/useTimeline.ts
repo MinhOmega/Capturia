@@ -29,6 +29,7 @@ import {
 	removeRegion as removeRegionInDocument,
 	resequenceClips,
 	setClipSourceRange,
+	splitClipAt as splitClipAtInDocument,
 	withClipsChanged,
 } from "../document/timeline";
 import type {
@@ -112,6 +113,7 @@ function playheadSec(): number {
 
 export function useTimeline() {
 	const ts = useScopedT("settings");
+	const tt = useScopedT("timeline");
 	const document = useProjectStore((s) => s.document);
 	const projectId = useProjectStore((s) => s.projectId);
 	const saveDocument = useProjectStore((s) => s.saveDocument);
@@ -1270,6 +1272,29 @@ export function useTimeline() {
 		[document, saveDocument],
 	);
 
+	// Cut the clip under the playhead in two. Undoable like every other edit: one pure
+	// document→document transform (`splitClipAt`, shared with any future façade) and one
+	// history-recording save, no optimistic write to roll back.
+	//
+	// The document is read from the store rather than off the render closure, for the same
+	// reason `applyClipEdit` does: queued behind another timeline write, it still sees what
+	// that write committed.
+	//
+	// Says so rather than doing nothing when the playhead sits outside every clip or on a
+	// clip edge: a button that is silent half the time reads as broken. Both ways in — the
+	// toolbar and the shortcut — go through here, so neither has to carry the message.
+	const splitAtPlayhead = useCallback(async () => {
+		const doc = useProjectStore.getState().document;
+		if (!doc) return;
+		const next = splitClipAtInDocument(doc, playheadSec());
+		if (next === doc) {
+			toast.info(tt("toolbar.splitNothingHere"));
+			return;
+		}
+		// A failed write has already said why (see saveDocument) — nothing to add.
+		await saveDocument(next, { history: true });
+	}, [saveDocument, tt]);
+
 	const removeClip = useCallback(
 		async (clipId: string) => {
 			if (!document) return;
@@ -1540,6 +1565,7 @@ export function useTimeline() {
 		moveClip,
 		duplicateClip,
 		removeClip,
+		splitAtPlayhead,
 		selectClip,
 		updateTrim,
 		setTrimEntries,

@@ -27,7 +27,7 @@ import {
 	isGeneratedAssetId,
 } from "../timeline/clip-parts";
 import { createId } from "./ids";
-import { rederiveRegionMs, removeClip, resequenceClips } from "./timeline";
+import { fanOutAnchors, rederiveRegionMs, removeClip, resequenceClips } from "./timeline";
 
 /** Where a new word goes relative to the word the caret was resting on. */
 export type InsertSide = "before" | "after";
@@ -113,32 +113,6 @@ export function generatedTranscript(
 		words: [
 			{ id: wordId, segmentId: "seg_1", startSec: 0, endSec: durationSec, text, source: "synth" },
 		],
-	};
-}
-
-/**
- * Every row anchored to the clip that was just cut, copied onto BOTH halves.
- *
- * Not "decide which half each row belongs to" — that is interval arithmetic this file has no
- * business owning. One copy per half, and `rederiveRegionMs` clamps each to its own clip's
- * source window and drops what has nothing left. A row wholly on one side survives once; one
- * straddling the cut survives on both, which is what a zoom drawn across the moment a word
- * was typed into actually means.
- */
-function fanOutAnchors(document: AxcutDocument, from: string, to: string): AxcutDocument {
-	// `?? []` for the reason every other collection walk here has one: these keys are
-	// additive, so a document written before one of them — or hand-built, never through the
-	// schema — simply has none, and the schema defaults it back to an empty array anyway.
-	const both = <T extends { id: string; clipId?: string }>(rows: readonly T[] | undefined): T[] =>
-		(rows ?? []).flatMap((row) =>
-			row.clipId === from ? [row, { ...row, id: createId("frag"), clipId: to }] : [row],
-		);
-	return {
-		...document,
-		timeline: { ...document.timeline, trimRanges: both(document.timeline.trimRanges) },
-		zoomRanges: both(document.zoomRanges),
-		annotations: both(document.annotations),
-		audioTracks: both(document.audioTracks),
 	};
 }
 

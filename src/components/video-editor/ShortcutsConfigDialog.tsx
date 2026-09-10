@@ -12,6 +12,13 @@ import {
 import { useScopedT } from "@/contexts/I18nContext";
 import { useShortcuts } from "@/contexts/ShortcutsContext";
 import {
+	DEFAULT_SEEK_STEP,
+	loadSeekStep,
+	SEEK_STEPS,
+	type SeekStep,
+	saveSeekStep,
+} from "@/lib/ai-edition/timeline/transport";
+import {
 	DEFAULT_SHORTCUTS,
 	FIXED_SHORTCUTS,
 	findConflict,
@@ -43,6 +50,11 @@ export function ShortcutsConfigDialog() {
 	const tc = useScopedT("common");
 
 	const [draft, setDraft] = useState<ShortcutsConfig>(shortcuts);
+	// How far the arrow keys move the playhead. Not a BINDING — the keys are fixed — so it
+	// is not part of `draft`, but it rides the same open/Save/Cancel lifecycle: a select
+	// that took effect immediately would be the one control in this dialog that Cancel
+	// could not undo.
+	const [seekStep, setSeekStep] = useState<SeekStep>(DEFAULT_SEEK_STEP);
 	const [captureFor, setCaptureFor] = useState<ShortcutAction | null>(null);
 	const [conflict, setConflict] = useState<{
 		forAction: ShortcutAction;
@@ -53,6 +65,7 @@ export function ShortcutsConfigDialog() {
 	useEffect(() => {
 		if (isConfigOpen) {
 			setDraft(shortcuts);
+			setSeekStep(loadSeekStep());
 			setCaptureFor(null);
 			setConflict(null);
 		}
@@ -113,6 +126,7 @@ export function ShortcutsConfigDialog() {
 	const handleCancelConflict = useCallback(() => setConflict(null), []);
 
 	const handleSave = useCallback(async () => {
+		saveSeekStep(seekStep);
 		const status = await persistShortcuts(draft);
 
 		// Only a conflict is the user's to fix, so only a conflict holds the dialog
@@ -129,7 +143,7 @@ export function ShortcutsConfigDialog() {
 		if (status === "unavailable") toast.warning(t("globalShortcutUnavailable"));
 		else toast.success(t("savedToast"));
 		closeConfig();
-	}, [draft, setShortcuts, persistShortcuts, closeConfig, t]);
+	}, [draft, seekStep, setShortcuts, persistShortcuts, closeConfig, t]);
 
 	const handleReset = useCallback(() => {
 		setDraft({ ...DEFAULT_SHORTCUTS });
@@ -259,6 +273,30 @@ export function ShortcutsConfigDialog() {
 								</kbd>
 							</div>
 						))}
+					</div>
+
+					<div className="space-y-0.5 mt-2">
+						<p className="text-[10px] text-[var(--muted)] mb-2 uppercase tracking-wide font-semibold">
+							{t("options")}
+						</p>
+						<div className="flex items-center justify-between py-1.5 px-1">
+							<span className="text-sm text-[var(--fg-2)]">{t("seekStep.label")}</span>
+							{/* A native select rather than a custom menu: three options, no search, no
+							    multi-select — the platform control is already keyboard- and
+							    screen-reader-correct and needs no code to stay that way. */}
+							<select
+								value={seekStep}
+								onChange={(e) => setSeekStep(e.target.value as SeekStep)}
+								aria-label={t("seekStep.label")}
+								className="px-2 py-1 rounded text-xs border bg-[var(--surface-2)] border-[var(--border)] text-[var(--fg-2)] min-w-[90px] hover:border-[var(--brand)] cursor-pointer"
+							>
+								{SEEK_STEPS.map((step) => (
+									<option key={step} value={step}>
+										{t(`seekStep.${step}`)}
+									</option>
+								))}
+							</select>
+						</div>
 					</div>
 
 					<p className="text-[10px] text-[var(--muted)] mt-1">{t("helpText")}</p>

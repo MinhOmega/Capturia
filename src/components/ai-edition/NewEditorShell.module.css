@@ -770,6 +770,16 @@
 }
 .transport .time .sep { color: var(--meta); margin-inline: 4px; }
 .transport .time .total { color: var(--muted); }
+/* Review speed (`[` / `]`). Only rendered while it is NOT 1x, so it is both the reminder
+   that playback is off normal speed and the button that puts it back — a transport that
+   silently plays at a quarter speed reads as a broken preview. */
+.transport .reviewRate {
+	width: auto;
+	padding-inline: 7px;
+	font-family: var(--font-mono);
+	font-size: var(--fs-app-sm);
+	background: var(--surface-3);
+}
 .transport .spacer { flex: 1; }
 
 /* ─── right panel-stack (one pane visible at a time) ──────────── */

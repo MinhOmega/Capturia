@@ -5,6 +5,7 @@ import { setUiProbeScrubbing } from "@/lib/ai-edition/perf/uiFrameProbe";
 import type { AxcutClip } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { formatSec } from "@/lib/ai-edition/timeline/format";
+import { DEFAULT_PREVIEW_RATE } from "@/lib/ai-edition/timeline/transport";
 import styles from "./NewEditorShell.module.css";
 
 interface TransportBarProps {
@@ -35,6 +36,11 @@ export const TransportBar = memo(function TransportBar({
 	// directly instead of forcing V4Timeline — and the whole editor shell above it —
 	// to re-render once per frame to hand it down as a prop.
 	const storeTimeSec = useProjectStore((s) => s.currentTimeSec);
+	// Une vitesse de RELECTURE, pas une région de vitesse : elle ne touche jamais le document
+	// et n'atteint jamais l'export (voir timeline/transport.ts). Souscrite ici parce qu'elle
+	// change deux fois par session, pas soixante fois par seconde.
+	const previewRate = useProjectStore((s) => s.previewRate);
+	const setPreviewRate = useProjectStore((s) => s.setPreviewRate);
 	const currentTimeSec = overrideTimeSec ?? storeTimeSec;
 	const virtualDurationSec = clips.reduce(
 		(acc, c) => acc + (c.timelineEndSec - c.timelineStartSec),
@@ -170,6 +176,17 @@ export const TransportBar = memo(function TransportBar({
 			>
 				<SkipForward size={13} />
 			</button>
+			{previewRate === DEFAULT_PREVIEW_RATE ? null : (
+				<button
+					type="button"
+					className={`${styles.tbtn} ${styles.reviewRate}`}
+					title={te("transport.reviewSpeedReset")}
+					aria-label={te("transport.reviewSpeedReset")}
+					onClick={() => setPreviewRate(DEFAULT_PREVIEW_RATE)}
+				>
+					{previewRate}×
+				</button>
+			)}
 			<span className={styles.time}>
 				<span>{formatSec(currentTimeSec)}</span>
 				<span className={styles.sep}>/</span>

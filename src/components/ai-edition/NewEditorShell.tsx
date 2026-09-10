@@ -39,12 +39,13 @@ import { useSequentialTimelineOps } from "@/lib/ai-edition/store/useSequentialTi
 import { useTimeline } from "@/lib/ai-edition/store/useTimeline";
 import { isGeneratedAssetId } from "@/lib/ai-edition/timeline/clip-parts";
 import { newRegionDurationSec } from "@/lib/ai-edition/timeline/newRegionDuration";
+import { loadSeekStep, seekStepSec, stepPreviewRate } from "@/lib/ai-edition/timeline/transport";
 import {
 	dropTrimPillsByIds,
 	ventilateTimelineSpanToTrims,
 } from "@/lib/ai-edition/timeline/trim-mapping";
 import { firstTimelineBusyView } from "@/lib/ai-edition/transcription/status";
-import { matchesShortcut } from "@/lib/shortcuts";
+import { matchesFixedShortcut, matchesShortcut } from "@/lib/shortcuts";
 import { nativeBridgeClient } from "@/native";
 import type { AiEditionProjectSummary } from "@/native/contracts";
 import { resolveVisibleClips } from "@/native/sceneDescription";
@@ -1356,6 +1357,14 @@ export function NewEditorShell() {
 				void tl.addCameraFullscreen(newRegionDurationSec());
 				return;
 			}
+			// Unlike its neighbours this changes the film's structure rather than laying a
+			// region over it, but it is the same one call: `splitAtPlayhead` owns the "nothing
+			// to cut here" message so the toolbar button and this key cannot disagree.
+			if (matchesShortcut(e, shortcuts.splitAtPlayhead, isMac)) {
+				e.preventDefault();
+				void tl.splitAtPlayhead();
+				return;
+			}
 
 			// Fixed (non-configurable) shortcuts advertised in the shortcuts dialog.
 			if (e.key === "Tab") {
@@ -1377,10 +1386,30 @@ export function NewEditorShell() {
 			}
 			if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
 				e.preventDefault();
-				const frameStepSec = 1 / 60;
+				// Read at PRESS time, not captured: the step is a user setting, changed from a
+				// dialog that does not re-mount this handler.
+				const stepSec = seekStepSec(loadSeekStep());
 				const direction = e.key === "ArrowLeft" ? -1 : 1;
 				const playhead = useProjectStore.getState().currentTimeSec;
-				handleSeek(Math.max(0, playhead + direction * frameStepSec));
+				handleSeek(Math.max(0, playhead + direction * stepSec));
+				return;
+			}
+			// Review speed. A preview transport control, NOT a speed region: it never touches
+			// the document and never reaches the export (see timeline/transport.ts).
+			if (
+				matchesFixedShortcut(e, "reviewSpeedDown", isMac) ||
+				matchesFixedShortcut(e, "reviewSpeedUp", isMac)
+			) {
+				e.preventDefault();
+				const store = useProjectStore.getState();
+				const next = stepPreviewRate(
+					store.previewRate,
+					matchesFixedShortcut(e, "reviewSpeedUp", isMac) ? 1 : -1,
+				);
+				if (next !== store.previewRate) {
+					store.setPreviewRate(next);
+					toast.info(te("transport.reviewSpeedSet", { rate: next }));
+				}
 				return;
 			}
 		};
@@ -1400,6 +1429,7 @@ export function NewEditorShell() {
 		isMac,
 		togglePlay,
 		handleSeek,
+		te,
 	]);
 
 	const showTimeline = mode !== "rec";

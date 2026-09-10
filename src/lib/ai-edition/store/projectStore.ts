@@ -8,6 +8,7 @@ import { createId } from "../document/ids";
 import { type Interval, replaceTimeline as replaceTimelineOp } from "../document/timeline";
 import { type AxcutAsset, type AxcutDocument, createAudioTrack, documentSchema } from "../schema";
 import { probeAudioDuration, probeVideoDimensions } from "../timeline/duration";
+import { DEFAULT_PREVIEW_RATE } from "../timeline/transport";
 import { clearHistory, currentWriteEpoch, pushHistory } from "./undoStack";
 
 // ponytail: thin Zustand wrapper over the native-bridge client. Keeps the
@@ -70,6 +71,12 @@ export interface ProjectState {
 	 *  independently wired to the same raw <video> DOM events, which let one advance
 	 *  a clip boundary while the other unconditionally stopped playback. */
 	playing: boolean;
+	/** How fast the preview PLAYS, `[` / `]`. A review control, not an edit: it never
+	 *  reaches the document, never reaches the export, and is not undoable — which is
+	 *  exactly what separates it from a speed region. Multiplies whatever speed region is
+	 *  under the playhead (see VirtualPreview). Session-only on purpose: coming back to a
+	 *  project at 0.25× with no memory of having asked for it is a bug report. */
+	previewRate: number;
 	/** True when the in-memory document has local changes that haven't been written to disk yet. */
 	dirty: boolean;
 	/** Timestamp of the most recent successful save (used by the titlebar indicator). */
@@ -148,6 +155,7 @@ export interface ProjectState {
 	setSourceDuration: (sec: number) => void;
 	setCurrentTime: (sec: number) => void;
 	setPlaying: (playing: boolean) => void;
+	setPreviewRate: (rate: number) => void;
 	markClean: () => void;
 	/**
 	 * Drop the open project. Clears the undo history and supersedes every in-flight
@@ -199,6 +207,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	currentTimeSec: 0,
 	selectedAudioTrackId: null,
 	playing: false,
+	previewRate: DEFAULT_PREVIEW_RATE,
 	dirty: false,
 	lastSavedAt: null,
 
@@ -557,6 +566,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 		set({ playing });
 	},
 
+	setPreviewRate(rate) {
+		set({ previewRate: rate });
+	},
+
 	clear() {
 		// The epoch bump inside `clearHistory` is the load-bearing half, not the stack
 		// drop. `clear()`'s one production caller deletes the project that is open
@@ -583,6 +596,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 			currentTimeSec: 0,
 			selectedAudioTrackId: null,
 			playing: false,
+			previewRate: DEFAULT_PREVIEW_RATE,
 			dirty: false,
 			lastSavedAt: null,
 		});
