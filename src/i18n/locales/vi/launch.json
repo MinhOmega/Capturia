@@ -58,8 +58,8 @@
 		"screens": "Màn hình ({{count}})",
 		"windows": "Cửa sổ ({{count}})",
 		"emptyTitle": "Không tìm thấy màn hình hoặc cửa sổ nào",
-		"emptyDescription": "Nếu bạn vừa cấp quyền ghi màn hình, hãy tải lại bộ chọn này. Trên macOS, bạn có thể cần mở lại OpenScreen.",
-		"loadFailedDescription": "OpenScreen không thể tải các nguồn ghi hình. Hãy tải lại bộ chọn này và thử lại.",
+		"emptyDescription": "Nếu bạn vừa cấp quyền ghi màn hình, hãy tải lại bộ chọn này. Trên macOS, bạn có thể cần mở lại Capturia.",
+		"loadFailedDescription": "Capturia không thể tải các nguồn ghi hình. Hãy tải lại bộ chọn này và thử lại.",
 		"defaultSourceName": "Màn hình"
 	},
 	"recording": {
@@ -71,7 +71,7 @@
 	"language": "Ngôn ngữ",
 	"systemLanguagePrompt": {
 		"title": "Sử dụng ngôn ngữ hệ thống của bạn?",
-		"description": "Chúng tôi phát hiện {{language}} là ngôn ngữ hệ thống của bạn. Bạn có muốn chuyển OpenScreen sang {{language}} không?",
+		"description": "Chúng tôi phát hiện {{language}} là ngôn ngữ hệ thống của bạn. Bạn có muốn chuyển Capturia sang {{language}} không?",
 		"switch": "Chuyển sang {{language}}",
 		"keepDefault": "Giữ ngôn ngữ hiện tại"
 	},
@@ -81,7 +81,7 @@
 	},
 	"softwareEncoderFallback": {
 		"title": "Đã chuyển sang mã hóa bằng phần mềm",
-		"description": "Bộ mã hóa GPU mặc định không khởi động được, nên OpenScreen đã chuyển sang mã hóa H.264 bằng phần mềm. Quá trình ghi vẫn tiếp tục bình thường, nhưng mức sử dụng CPU có thể cao hơn.",
+		"description": "Bộ mã hóa GPU mặc định không khởi động được, nên Capturia đã chuyển sang mã hóa H.264 bằng phần mềm. Quá trình ghi vẫn tiếp tục bình thường, nhưng mức sử dụng CPU có thể cao hơn.",
 		"dismiss": "Đã hiểu",
 		"dontShowAgain": "Không hiển thị lại"
 	},

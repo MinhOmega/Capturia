@@ -52,7 +52,7 @@
 		"cameraCaptureUnavailable": "تعذّر فتح الكاميرا. يجري التسجيل بدون كاميرا.",
 		"microphoneDefaulted": "تعذّر تحديد الميكروفون المحدَّد؛ يجري التسجيل من الإدخال الافتراضي.",
 		"permissionDenied": "تم رفض إذن التسجيل. يرجى السماح بتسجيل الشاشة.",
-		"accessibilityAllowAndRetry": "اسمح بوصول تسهيلات الاستخدام لـ OpenScreen، ثم اضغط على التسجيل مرة أخرى لبدء العد التنازلي.",
+		"accessibilityAllowAndRetry": "اسمح بوصول تسهيلات الاستخدام لـ Capturia، ثم اضغط على التسجيل مرة أخرى لبدء العد التنازلي.",
 		"selectSource": "يرجى تحديد مصدر للتسجيل"
 	},
 	"emptyState": {
@@ -265,7 +265,7 @@
 			"disclaimer": "سيُرسَل نصّ فيديوك إلى المزوّد الذي تختاره. لا يُشارَك شيء قبل أن تربط مزوّداً."
 		},
 		"authorUser": "أنت",
-		"authorAssistant": "OpenScreen",
+		"authorAssistant": "Capturia",
 		"rewindToMessage": "إعادة الضبط إلى هذه الرسالة",
 		"copyMessage": "نسخ الرسالة",
 		"copiedToClipboard": "تم النسخ إلى الحافظة",

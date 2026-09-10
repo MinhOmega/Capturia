@@ -50,7 +50,7 @@
 		"cameraCaptureUnavailable": "Impossible d'ouvrir la caméra. Enregistrement sans elle.",
 		"microphoneDefaulted": "Micro choisi non identifié. Enregistrement de l'entrée par défaut.",
 		"permissionDenied": "Permission d'enregistrement refusée. Veuillez autoriser l'enregistrement d'écran.",
-		"accessibilityAllowAndRetry": "Autorisez l'accès Accessibilité pour OpenScreen, puis appuyez de nouveau sur enregistrer pour lancer le compte à rebours.",
+		"accessibilityAllowAndRetry": "Autorisez l'accès Accessibilité pour Capturia, puis appuyez de nouveau sur enregistrer pour lancer le compte à rebours.",
 		"selectSource": "Veuillez sélectionner une source à enregistrer"
 	},
 	"loadingVideo": "Chargement de la vidéo...",
@@ -265,7 +265,7 @@
 			"disclaimer": "La transcription de votre vidéo sera envoyée au fournisseur que vous choisissez. Rien n'est partagé tant que vous n'en connectez pas un."
 		},
 		"authorUser": "Vous",
-		"authorAssistant": "OpenScreen",
+		"authorAssistant": "Capturia",
 		"rewindToMessage": "Revenir à ce message",
 		"copyMessage": "Copier le message",
 		"copiedToClipboard": "Copié dans le presse-papiers",

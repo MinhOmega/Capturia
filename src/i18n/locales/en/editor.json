@@ -52,7 +52,7 @@
 		"cameraCaptureUnavailable": "The camera could not be opened. Recording without it.",
 		"microphoneDefaulted": "The chosen microphone could not be identified. Recording the default input.",
 		"permissionDenied": "Recording permission denied. Please allow screen recording.",
-		"accessibilityAllowAndRetry": "Allow Accessibility access for OpenScreen, then press record again to start the countdown.",
+		"accessibilityAllowAndRetry": "Allow Accessibility access for Capturia, then press record again to start the countdown.",
 		"selectSource": "Please select a source to record"
 	},
 	"emptyState": {
@@ -265,7 +265,7 @@
 			"disclaimer": "Your video's transcript will be sent to the provider you choose. Nothing is shared until you connect one."
 		},
 		"authorUser": "You",
-		"authorAssistant": "OpenScreen",
+		"authorAssistant": "Capturia",
 		"rewindToMessage": "Rewind to this message",
 		"copyMessage": "Copy message",
 		"copiedToClipboard": "Copied to clipboard",

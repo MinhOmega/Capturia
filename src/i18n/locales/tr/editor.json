@@ -44,7 +44,7 @@
 		"helperExited": "Kayıt durduruldu: ekran kayıt işlemi beklenmedik şekilde sonlandı. Şu ana kadar kaydedilenler saklanıyor.",
 		"cameraCaptureUnavailable": "Kamera açılamadı. Kamerasız kaydediliyor.",
 		"microphoneDefaulted": "Seçilen mikrofon belirlenemedi. Varsayılan giriş kaydediliyor.",
-		"accessibilityAllowAndRetry": "OpenScreen için Erişilebilirlik erişimine izin verin, ardından geri sayımı başlatmak için tekrar kayda basın.",
+		"accessibilityAllowAndRetry": "Capturia için Erişilebilirlik erişimine izin verin, ardından geri sayımı başlatmak için tekrar kayda basın.",
 		"selectSource": "Lütfen kayıt için bir kaynak seçin"
 	},
 	"loadingVideo": "Video yükleniyor...",
@@ -265,7 +265,7 @@
 			"disclaimer": "Videonuzun transkripsiyonu seçtiğiniz sağlayıcıya gönderilecek. Bir sağlayıcı bağlamadan hiçbir şey paylaşılmaz."
 		},
 		"authorUser": "Siz",
-		"authorAssistant": "OpenScreen",
+		"authorAssistant": "Capturia",
 		"rewindToMessage": "Bu mesaja geri sar",
 		"copyMessage": "Mesajı kopyala",
 		"copiedToClipboard": "Panoya kopyalandı",
