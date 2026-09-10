@@ -36,6 +36,7 @@ use crate::audio::{
 use crate::audio_jobs::{decode_and_stretch_clip_audio, ClipAudioJobs};
 use crate::compositor::Compositor;
 use crate::d3d::Gpu;
+use crate::partial_output::discard_partial_output;
 use crate::timeline_walk::NextFrameTime;
 use anyhow::{anyhow, bail, Result};
 use std::ffi::{c_void, CString};
@@ -1079,7 +1080,24 @@ pub fn run_composited(
 /// First-pass : l'audio AAC est ignoré (sera câblé par un commit dédié sur le module
 /// `audio.rs` qui est pour l'instant toujours Windows-only via la même cfg-re-export).
 /// Le mux MP4 est écrit, les paquets vidéo sont encodés.
+///
+/// Façade de nettoyage : un échec ne doit pas laisser de MP4 tronqué à la destination
+/// choisie par l'utilisateur. Voir `partial_output::discard_partial_output`.
 pub fn run_composited_multi(
+    clips: &[ClipSource],
+    out: &str,
+    gpu: &Gpu,
+    comp: &crate::compositor::Compositor,
+    cfg: &crate::config::Cfg,
+    params: &ExportParams,
+    progress: &mut dyn FnMut(u64),
+) -> Result<Stats> {
+    discard_partial_output(out, || {
+        run_composited_multi_inner(clips, out, gpu, comp, cfg, params, progress)
+    })
+}
+
+fn run_composited_multi_inner(
     clips: &[ClipSource],
     out: &str,
     gpu: &Gpu,

@@ -35,6 +35,9 @@ pub mod export_probe;
 pub mod ffi;
 pub mod frame_geometry;
 pub mod gif_export;
+// Nettoyage du fichier de sortie sur export raté. Multiplateforme : `pipeline_linux`,
+// `pipeline_macos`, `pipeline_windows` et `gif_export` en partagent la seule copie.
+pub mod partial_output;
 pub mod regions;
 // Multiplateforme à dessein : n'utilise que libavformat (liée sur les trois
 // cibles) et le shim C. Seul Linux l'appelle aujourd'hui, parce que c'est la
