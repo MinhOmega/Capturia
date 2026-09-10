@@ -47,7 +47,7 @@ export interface AboutFacts {
 	node: string;
 }
 
-/** The block under "Openscreen <version>". Untranslated on purpose: every line is a version
+/** The block under "Capturia <version>". Untranslated on purpose: every line is a version
  *  number, a platform identifier or a URL, and a pasted bug report reads the same whatever
  *  locale the reporter runs.
  *

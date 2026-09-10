@@ -52,7 +52,7 @@
 		"cameraCaptureUnavailable": "Không thể mở máy ảnh. Đang ghi mà không có máy ảnh.",
 		"microphoneDefaulted": "Không xác định được micrô đã chọn. Đang ghi từ đầu vào mặc định.",
 		"permissionDenied": "Quyền ghi hình bị từ chối. Vui lòng cho phép ghi màn hình.",
-		"accessibilityAllowAndRetry": "Cho phép OpenScreen truy cập Trợ năng, sau đó nhấn ghi lại để bắt đầu đếm ngược.",
+		"accessibilityAllowAndRetry": "Cho phép Capturia truy cập Trợ năng, sau đó nhấn ghi lại để bắt đầu đếm ngược.",
 		"selectSource": "Vui lòng chọn một nguồn để ghi"
 	},
 	"emptyState": {
@@ -64,11 +64,11 @@
 		"importVideoButton": "Nhập video",
 		"loadProjectButton": "Mở dự án",
 		"supportedFormats": "Định dạng được hỗ trợ: MP4, MOV, WebM, MKV, AVI, M4V, WMV",
-		"dragDropHint": "hoặc kéo và thả tệp dự án .openscreen vào đây",
+		"dragDropHint": "hoặc kéo và thả tệp dự án Capturia vào đây",
 		"dropOverlay": "Thả tệp dự án để mở",
 		"dropErrors": {
 			"unsupportedFormatTitle": "Định dạng không được hỗ trợ",
-			"unsupportedFormatMessage": "Chỉ có thể thả các tệp dự án .openscreen vào đây. Để nhập video, hãy sử dụng nút \"Nhập tệp video...\" thay thế.",
+			"unsupportedFormatMessage": "Chỉ có thể thả các tệp dự án Capturia (.capturia) vào đây. Để nhập video, hãy sử dụng nút \"Nhập tệp video...\" thay thế.",
 			"couldNotOpenTitle": "Không thể mở tệp",
 			"couldNotOpenMessage": "Không thể mở tệp dự án. Video mà nó tham chiếu có thể đã bị di chuyển hoặc xóa."
 		}
@@ -265,7 +265,7 @@
 			"disclaimer": "Bản chép lời video sẽ được gửi đến nhà cung cấp bạn chọn. Không có gì được chia sẻ cho đến khi bạn kết nối một nhà cung cấp."
 		},
 		"authorUser": "Bạn",
-		"authorAssistant": "OpenScreen",
+		"authorAssistant": "Capturia",
 		"rewindToMessage": "Tua lại đến tin nhắn này",
 		"copyMessage": "Sao chép tin nhắn",
 		"copiedToClipboard": "Đã sao chép vào bộ nhớ tạm",

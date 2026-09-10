@@ -234,7 +234,7 @@ function setupApplicationMenu() {
 			submenu: [
 				{
 					role: "about",
-					label: mainT("common", "actions.about") || "About OpenScreen",
+					label: mainT("common", "actions.about") || `About ${PRODUCT_NAME}`,
 				},
 				{ type: "separator" as const },
 				{
@@ -260,7 +260,7 @@ function setupApplicationMenu() {
 				{ type: "separator" },
 				{
 					role: "hide",
-					label: mainT("common", "actions.hide") || "Hide OpenScreen",
+					label: mainT("common", "actions.hide") || `Hide ${PRODUCT_NAME}`,
 				},
 				{
 					role: "hideOthers",
@@ -396,7 +396,7 @@ function setupApplicationMenu() {
 						]
 					: []),
 				{
-					label: mainT("common", "actions.about") || "About OpenScreen",
+					label: mainT("common", "actions.about") || `About ${PRODUCT_NAME}`,
 					click: runAboutDialog,
 				},
 				{ type: "separator" as const },
@@ -525,7 +525,7 @@ async function presentAboutDialog() {
 	const heading = `${PRODUCT_NAME} ${facts.version}`;
 	const choice = await showMessageBox({
 		type: "info",
-		title: mainT("common", "actions.about") || "About OpenScreen",
+		title: mainT("common", "actions.about") || `About ${PRODUCT_NAME}`,
 		message: heading,
 		detail,
 		buttons: [
@@ -918,10 +918,10 @@ function updateTrayMenu(recording: boolean = false) {
 				isMac
 					? {
 							role: "about" as const,
-							label: mainT("common", "actions.about") || "About OpenScreen",
+							label: mainT("common", "actions.about") || `About ${PRODUCT_NAME}`,
 						}
 					: {
-							label: mainT("common", "actions.about") || "About OpenScreen",
+							label: mainT("common", "actions.about") || `About ${PRODUCT_NAME}`,
 							click: runAboutDialog,
 						},
 				// Right next to About, and reachable without opening any window: this is the

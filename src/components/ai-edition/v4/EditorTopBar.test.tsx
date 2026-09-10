@@ -145,7 +145,7 @@ describe("ProjectNameField (issue #180)", () => {
 describe("AppMenu", () => {
 	it("hangs the menu on the brand rather than adding a control to the bar", () => {
 		renderTopBar("Demo Project");
-		const trigger = screen.getByRole("button", { name: /OpenScreen/ });
+		const trigger = screen.getByRole("button", { name: /Capturia/ });
 		expect(trigger).toHaveAttribute("aria-haspopup", "menu");
 		expect(trigger).toHaveAttribute("aria-expanded", "false");
 		// The whole point of the wordmark-as-trigger: no menu until asked for.
@@ -158,14 +158,14 @@ describe("AppMenu", () => {
 		// on the window-drag region and the OS eats the click — the #180 failure, one control
 		// over. Same reason `all: unset` is banned here.
 		renderTopBar("Demo Project");
-		const trigger = screen.getByRole("button", { name: /OpenScreen/ });
+		const trigger = screen.getByRole("button", { name: /Capturia/ });
 		expect(trigger.tagName).toBe("BUTTON");
 		expect(trigger.getAttribute("style") ?? "").not.toMatch(/all\s*:\s*unset/);
 	});
 
 	it("opens on click and offers shortcuts, AI settings and about", () => {
 		renderTopBar("Demo Project");
-		fireEvent.click(screen.getByRole("button", { name: /OpenScreen/ }));
+		fireEvent.click(screen.getByRole("button", { name: /Capturia/ }));
 		expect(screen.getByRole("menu")).toBeInTheDocument();
 		// Exact names: the translator echoes keys, and both settings rows are labelled with a
 		// `…title` key, so a /title/ match would hit two items and pin neither.
@@ -179,7 +179,7 @@ describe("AppMenu", () => {
 	// in App.tsx, above every mode — so the menu does not lie in Media and Rec.
 	it("opens the AI settings dialog and closes behind itself", () => {
 		const { onOpenProviderSettings, onOpenSettings } = renderTopBar("Demo Project");
-		fireEvent.click(screen.getByRole("button", { name: /OpenScreen/ }));
+		fireEvent.click(screen.getByRole("button", { name: /Capturia/ }));
 		fireEvent.click(screen.getByRole("menuitem", { name: "providerSettings.title" }));
 		expect(onOpenProviderSettings).toHaveBeenCalledTimes(1);
 		// Distinct from the shortcuts row above it, which is the dialog it would be confused with.
@@ -189,7 +189,7 @@ describe("AppMenu", () => {
 
 	it("routes About to the main process and closes behind itself", () => {
 		const { onShowAbout } = renderTopBar("Demo Project");
-		fireEvent.click(screen.getByRole("button", { name: /OpenScreen/ }));
+		fireEvent.click(screen.getByRole("button", { name: /Capturia/ }));
 		fireEvent.click(screen.getByRole("menuitem", { name: /actions\.about/ }));
 		expect(onShowAbout).toHaveBeenCalledTimes(1);
 		expect(screen.queryByRole("menu")).not.toBeInTheDocument();
@@ -197,7 +197,7 @@ describe("AppMenu", () => {
 
 	it("closes on Escape", () => {
 		renderTopBar("Demo Project");
-		fireEvent.click(screen.getByRole("button", { name: /OpenScreen/ }));
+		fireEvent.click(screen.getByRole("button", { name: /Capturia/ }));
 		fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
 		expect(screen.queryByRole("menu")).not.toBeInTheDocument();
 	});
@@ -207,7 +207,7 @@ describe("AppMenu", () => {
 		// build answering false, and as a check refused mid-take: no item, rather than a button
 		// that silently does nothing.
 		renderTopBar("Demo Project");
-		fireEvent.click(screen.getByRole("button", { name: /OpenScreen/ }));
+		fireEvent.click(screen.getByRole("button", { name: /Capturia/ }));
 		expect(
 			screen.queryByRole("menuitem", { name: /actions\.checkForUpdates/ }),
 		).not.toBeInTheDocument();
@@ -217,7 +217,7 @@ describe("AppMenu", () => {
 		const restore = stubElectronAPI({ version: "9.9.9", canCheckForUpdates: true });
 		try {
 			const { onCheckForUpdates } = renderTopBar("Demo Project");
-			fireEvent.click(screen.getByRole("button", { name: /OpenScreen/ }));
+			fireEvent.click(screen.getByRole("button", { name: /Capturia/ }));
 			const item = await screen.findByRole("menuitem", { name: /actions\.checkForUpdates/ });
 			fireEvent.click(item);
 			expect(onCheckForUpdates).toHaveBeenCalledTimes(1);
@@ -230,7 +230,7 @@ describe("AppMenu", () => {
 		const restore = stubElectronAPI({ version: "9.9.9", canCheckForUpdates: false });
 		try {
 			renderTopBar("Demo Project");
-			fireEvent.click(screen.getByRole("button", { name: /OpenScreen/ }));
+			fireEvent.click(screen.getByRole("button", { name: /Capturia/ }));
 			expect(await screen.findByText("9.9.9")).toBeInTheDocument();
 		} finally {
 			restore();
@@ -264,9 +264,9 @@ describe("EditorTopBar responsive affordances and tooltips", () => {
 
 	it("keeps the brand trigger accessible by label and title even when text collapses", () => {
 		renderTopBar("Demo Project");
-		const brandBtn = screen.getByRole("button", { name: "OpenScreen" });
-		expect(brandBtn).toHaveAttribute("title", "OpenScreen");
-		expect(brandBtn).toHaveAttribute("aria-label", "OpenScreen");
+		const brandBtn = screen.getByRole("button", { name: "Capturia" });
+		expect(brandBtn).toHaveAttribute("title", "Capturia");
+		expect(brandBtn).toHaveAttribute("aria-label", "Capturia");
 	});
 
 	it("provides accessible language toggle with short code and options", () => {

@@ -1,21 +1,7 @@
 Fonts in this directory were downloaded from Google Fonts by scripts/fetch-fonts.mjs.
 All of them are licensed under the SIL Open Font License, Version 1.1
-(https://openfontlicense.org/). Each family's own OFL text and copyright
-notice is available from its Google Fonts page (https://fonts.google.com/).
+(https://openfontlicense.org/). The OFL requires the licence text and copyright
+notice to travel WITH the font files, not merely to be linked, so each family's
+own OFL.txt is committed beside its woff2 in the directory named below.
 
-- Inter (src/assets/fonts/annotation/inter/)
-- Plus Jakarta Sans (src/assets/fonts/annotation/plus-jakarta-sans/)
-- Space Grotesk (src/assets/fonts/annotation/space-grotesk/)
-- DM Sans (src/assets/fonts/annotation/dm-sans/)
-- Sora (src/assets/fonts/annotation/sora/)
-- Manrope (src/assets/fonts/annotation/manrope/)
-- IBM Plex Sans (src/assets/fonts/annotation/ibm-plex-sans/)
-- Playfair Display (src/assets/fonts/annotation/playfair-display/)
-- Merriweather (src/assets/fonts/annotation/merriweather/)
-- Lora (src/assets/fonts/annotation/lora/)
-- IBM Plex Mono (src/assets/fonts/annotation/ibm-plex-mono/)
-- Fira Code (src/assets/fonts/annotation/fira-code/)
-- Bebas Neue (src/assets/fonts/annotation/bebas-neue/)
-- Oswald (src/assets/fonts/annotation/oswald/)
-- Caveat (src/assets/fonts/annotation/caveat/)
-- Permanent Marker (src/assets/fonts/annotation/permanent-marker/)
+- Inter -- src/assets/fonts/annotation/inter/OFL.txt

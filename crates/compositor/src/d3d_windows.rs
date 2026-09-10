@@ -122,7 +122,7 @@ fn diagnose(err: &windows::core::Error) -> String {
     // (`DXGI_ERROR_SDK_COMPONENT_MISSING`), il n'a pas besoin de sa propre branche.
     if try_create(D3D_DRIVER_TYPE_HARDWARE, D3D11_CREATE_DEVICE_BGRA_SUPPORT).is_ok() {
         return format!(
-            "this display adapter has no D3D11 video decoder ({err}). OpenScreen decodes \
+            "this display adapter has no D3D11 video decoder ({err}). Capturia decodes \
              every preview and export frame with D3D11VA on the same device it composites \
              with, so the decoder is not optional and there is no CPU path behind it. \
              Remote Desktop sessions and VMs without GPU passthrough land here: run on the \
@@ -130,7 +130,7 @@ fn diagnose(err: &windows::core::Error) -> String {
         );
     }
     format!(
-        "no Direct3D 11 feature level 11_1 display adapter ({err}). OpenScreen's compositor \
+        "no Direct3D 11 feature level 11_1 display adapter ({err}). Capturia's compositor \
          requires one for both preview and export. Update the display driver, or run on a \
          machine with a GPU that reaches feature level 11_1."
     )

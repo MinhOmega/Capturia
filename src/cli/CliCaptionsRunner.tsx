@@ -36,7 +36,7 @@ async function runCaptions(request: CliCaptionsRequest): Promise<CliDoneResult> 
 		throw new Error(loaded.error ?? loaded.message ?? "Failed to load project file");
 	}
 	if (!validateProjectData(loaded.project)) {
-		throw new Error("Project file is not a valid .openscreen project");
+		throw new Error("Project file is not a valid project file");
 	}
 	const project = loaded.project;
 	const media = resolveProjectMedia(project);

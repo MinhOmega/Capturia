@@ -1,4 +1,5 @@
 import nodePath from "node:path";
+import { PROJECT_FILE_EXTENSION_PATTERN } from "../src/lib/projectFileExtension";
 
 /**
  * Where an export may be written.
@@ -88,14 +89,6 @@ export class ApprovedExportPaths {
 		// skip the `.mp4` append and then fail approval outright.
 		return this.files.has(canonicalize(trimmed, this.platformPath));
 	}
-
-	clear(): void {
-		this.files.clear();
-	}
-
-	get size(): number {
-		return this.files.size;
-	}
 }
 
 /** Process-wide registry behind `write-export-to-path`. */
@@ -109,10 +102,11 @@ export const approvedExportPaths = new ApprovedExportPaths();
  * is only resolved renderer-side (it can come from the project itself), so both
  * candidates are approved rather than duplicating that resolution here.
  *
- * Kept in lock-step with `replaceExtension` in `src/cli/CliExportRunner.tsx`:
- * it strips a trailing `.openscreen`/`.json` and nothing else, so `path.parse`
- * — which would strip any final extension — is deliberately not used. A
- * destination this misses is one the export cannot write.
+ * In lock-step with `replaceExtension` in `src/cli/CliExportRunner.tsx` by
+ * construction — both strip `PROJECT_FILE_EXTENSION_PATTERN` and nothing else,
+ * so `path.parse` (which would strip any final extension) is deliberately not
+ * used. A destination this misses is one the export cannot write, which is why
+ * the pattern is shared rather than copied.
  */
 export function cliExportDestinations(request: {
 	readonly projectPath?: string | null;
@@ -121,7 +115,7 @@ export function cliExportDestinations(request: {
 	if (request.outPath) return [request.outPath];
 	const projectPath = request.projectPath;
 	if (!projectPath) return [];
-	const stem = projectPath.replace(/\.(openscreen|json)$/i, "");
+	const stem = projectPath.replace(PROJECT_FILE_EXTENSION_PATTERN, "");
 	if (!stem) return [];
 	return [...ALLOWED_EXPORT_EXTENSIONS].map((extension) => `${stem}${extension}`);
 }

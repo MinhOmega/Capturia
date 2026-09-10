@@ -80,13 +80,13 @@
 		"saveVideo": "Guardar video exportado",
 		"selectVideo": "Seleccionar archivo de video",
 		"selectAudio": "Seleccionar archivo de audio",
-		"saveProject": "Guardar proyecto OpenScreen",
-		"openProject": "Abrir proyecto OpenScreen",
+		"saveProject": "Guardar proyecto Capturia",
+		"openProject": "Abrir proyecto Capturia",
 		"gifImage": "Imagen GIF",
 		"mp4Video": "Video MP4",
 		"videoFiles": "Archivos de video",
 		"audioFiles": "Archivos de audio",
-		"openscreenProject": "Proyecto OpenScreen",
+		"openscreenProject": "Proyecto Capturia",
 		"allFiles": "Todos los archivos"
 	}
 }

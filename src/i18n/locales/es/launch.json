@@ -62,8 +62,8 @@
 		"screens": "Pantallas ({{count}})",
 		"windows": "Ventanas ({{count}})",
 		"emptyTitle": "No se encontraron pantallas ni ventanas",
-		"emptyDescription": "Si acabas de conceder permiso de grabación de pantalla, recarga este selector. En macOS puede que debas volver a abrir OpenScreen.",
-		"loadFailedDescription": "OpenScreen no pudo cargar las fuentes de captura. Recarga este selector e inténtalo de nuevo.",
+		"emptyDescription": "Si acabas de conceder permiso de grabación de pantalla, recarga este selector. En macOS puede que debas volver a abrir Capturia.",
+		"loadFailedDescription": "Capturia no pudo cargar las fuentes de captura. Recarga este selector e inténtalo de nuevo.",
 		"defaultSourceName": "Pantalla"
 	},
 	"recording": {
@@ -75,13 +75,13 @@
 	"language": "Idioma",
 	"systemLanguagePrompt": {
 		"title": "¿Usar el idioma del sistema?",
-		"description": "Detectamos {{language}} como idioma de tu sistema. ¿Quieres cambiar OpenScreen a {{language}}?",
+		"description": "Detectamos {{language}} como idioma de tu sistema. ¿Quieres cambiar Capturia a {{language}}?",
 		"switch": "Cambiar a {{language}}",
 		"keepDefault": "Mantener idioma actual"
 	},
 	"softwareEncoderFallback": {
 		"title": "Se cambió a codificación por software",
-		"description": "El codificador GPU predeterminado no pudo iniciarse, por lo que OpenScreen pasó a la codificación H.264 por software. La grabación debería continuar con normalidad, pero el uso de CPU puede ser mayor.",
+		"description": "El codificador GPU predeterminado no pudo iniciarse, por lo que Capturia pasó a la codificación H.264 por software. La grabación debería continuar con normalidad, pero el uso de CPU puede ser mayor.",
 		"dismiss": "Entendido",
 		"dontShowAgain": "No volver a mostrar"
 	},

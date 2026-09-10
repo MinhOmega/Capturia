@@ -81,7 +81,7 @@ function renderEditorChrome(locale: string, mode: EditorMode = "edit") {
 
 /** Open the app menu (the wordmark) and click its AI settings row. */
 function openAiSettingsFromAppMenu() {
-	fireEvent.click(screen.getByRole("button", { name: /OpenScreen/ }));
+	fireEvent.click(screen.getByRole("button", { name: /Capturia/ }));
 	fireEvent.click(screen.getByRole("menuitem", { name: /ai settings/i }));
 }
 
@@ -123,7 +123,7 @@ describe("ProviderSettings, reached from the app menu", () => {
 		// something else after a copy edit, and the menu would start lying about where it goes.
 		// Compared as text rather than asserted against a literal, so a copy edit moves both.
 		renderEditorChrome("en");
-		fireEvent.click(screen.getByRole("button", { name: /OpenScreen/ }));
+		fireEvent.click(screen.getByRole("button", { name: /Capturia/ }));
 		const rowLabel = screen.getByRole("menuitem", { name: /ai settings/i }).textContent;
 
 		fireEvent.click(screen.getByRole("menuitem", { name: /ai settings/i }));
@@ -142,7 +142,7 @@ describe("ProviderSettings, reached from the app menu", () => {
 
 	it("translates the row with the dialog, not separately", () => {
 		renderEditorChrome("fr");
-		fireEvent.click(screen.getByRole("button", { name: /OpenScreen/ }));
+		fireEvent.click(screen.getByRole("button", { name: /Capturia/ }));
 		const row = screen.getByRole("menuitem", { name: /paramètres ia/i });
 
 		fireEvent.click(row);

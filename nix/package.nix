@@ -91,6 +91,17 @@ buildNpmPackage {
     mkdir -p "$out/lib/openscreen/public"
     cp -r public/wallpapers "$out/lib/openscreen/public/wallpapers"
 
+    # SIL OFL: the licence text has to travel with the font binaries. The woff2
+    # reach dist/assets/ because the CSS references them by url(), but nothing
+    # imports the OFL.txt beside them, so Vite never emits it -- copying dist
+    # alone ships the fonts with no terms. electron-builder covers this with an
+    # extraResources entry, which does not run on this path (see the comment on
+    # npmFlags above: we wrap system electron directly).
+    mkdir -p "$out/share/licenses/openscreen"
+    cp src/assets/fonts/annotation/inter/OFL.txt \
+      "$out/share/licenses/openscreen/Inter-OFL.txt"
+    cp src/assets/fonts/OFL.txt "$out/share/licenses/openscreen/Geist-OFL.txt"
+
     # Wrap system electron with the app directory.
     #
     # OPENSCREEN_FFMPEG_PATH is checked before every other candidate in

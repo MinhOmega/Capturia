@@ -62,8 +62,8 @@
 		"screens": "画面 ({{count}})",
 		"windows": "ウィンドウ ({{count}})",
 		"emptyTitle": "画面またはウィンドウが見つかりません",
-		"emptyDescription": "画面収録の権限を許可したばかりの場合は、このピッカーを再読み込みしてください。macOSではOpenScreenの再起動が必要な場合があります。",
-		"loadFailedDescription": "OpenScreenはキャプチャソースを読み込めませんでした。このピッカーを再読み込みしてもう一度お試しください。",
+		"emptyDescription": "画面収録の権限を許可したばかりの場合は、このピッカーを再読み込みしてください。macOSではCapturiaの再起動が必要な場合があります。",
+		"loadFailedDescription": "Capturiaはキャプチャソースを読み込めませんでした。このピッカーを再読み込みしてもう一度お試しください。",
 		"defaultSourceName": "画面"
 	},
 	"recording": {
@@ -75,13 +75,13 @@
 	"language": "言語",
 	"systemLanguagePrompt": {
 		"title": "システム言語を使用しますか？",
-		"description": "システム言語として{{language}}が検出されました。OpenScreenを{{language}}に切り替えますか？",
+		"description": "システム言語として{{language}}が検出されました。Capturiaを{{language}}に切り替えますか？",
 		"switch": "{{language}}に切り替え",
 		"keepDefault": "現在の言語を保持"
 	},
 	"softwareEncoderFallback": {
 		"title": "ソフトウェアエンコードに切り替えました",
-		"description": "既定のGPUエンコーダーを開始できなかったため、OpenScreenはソフトウェアH.264エンコードに切り替えました。録画はそのまま続行されますが、CPU使用率が高くなる場合があります。",
+		"description": "既定のGPUエンコーダーを開始できなかったため、CapturiaはソフトウェアH.264エンコードに切り替えました。録画はそのまま続行されますが、CPU使用率が高くなる場合があります。",
 		"dismiss": "OK",
 		"dontShowAgain": "今後表示しない"
 	},

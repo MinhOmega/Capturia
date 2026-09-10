@@ -62,8 +62,8 @@
 		"screens": "螢幕 ({{count}})",
 		"windows": "視窗 ({{count}})",
 		"emptyTitle": "找不到螢幕或視窗",
-		"emptyDescription": "如果您剛授予螢幕錄製權限，請重新載入此選擇器。在 macOS 上，您可能需要重新開啟 OpenScreen。",
-		"loadFailedDescription": "OpenScreen 無法載入擷取來源。請重新載入此選擇器並再試一次。",
+		"emptyDescription": "如果您剛授予螢幕錄製權限，請重新載入此選擇器。在 macOS 上，您可能需要重新開啟 Capturia。",
+		"loadFailedDescription": "Capturia 無法載入擷取來源。請重新載入此選擇器並再試一次。",
 		"defaultSourceName": "螢幕"
 	},
 	"recording": {
@@ -75,13 +75,13 @@
 	"language": "語言",
 	"systemLanguagePrompt": {
 		"title": "要使用系統語言嗎？",
-		"description": "偵測到系統語言為 {{language}}。要將 OpenScreen 切換為 {{language}} 嗎？",
+		"description": "偵測到系統語言為 {{language}}。要將 Capturia 切換為 {{language}} 嗎？",
 		"switch": "切換為 {{language}}",
 		"keepDefault": "保持目前語言"
 	},
 	"softwareEncoderFallback": {
 		"title": "已切換至軟體編碼",
-		"description": "預設 GPU 編碼器啟動失敗，OpenScreen 已改用軟體 H.264 編碼。錄製會照常繼續，但 CPU 使用率可能較高。",
+		"description": "預設 GPU 編碼器啟動失敗，Capturia 已改用軟體 H.264 編碼。錄製會照常繼續，但 CPU 使用率可能較高。",
 		"dismiss": "知道了",
 		"dontShowAgain": "不再顯示"
 	},

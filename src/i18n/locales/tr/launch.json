@@ -62,8 +62,8 @@
 		"screens": "Ekranlar ({{count}})",
 		"windows": "Pencereler ({{count}})",
 		"emptyTitle": "Ekran veya pencere bulunamadı",
-		"emptyDescription": "Ekran kaydı iznini az önce verdiyseniz bu seçiciyi yeniden yükleyin. macOS'ta OpenScreen'i yeniden açmanız gerekebilir.",
-		"loadFailedDescription": "OpenScreen yakalama kaynaklarını yükleyemedi. Bu seçiciyi yeniden yükleyip tekrar deneyin.",
+		"emptyDescription": "Ekran kaydı iznini az önce verdiyseniz bu seçiciyi yeniden yükleyin. macOS'ta Capturia'yı yeniden açmanız gerekebilir.",
+		"loadFailedDescription": "Capturia yakalama kaynaklarını yükleyemedi. Bu seçiciyi yeniden yükleyip tekrar deneyin.",
 		"defaultSourceName": "Ekran"
 	},
 	"recording": {
@@ -75,13 +75,13 @@
 	"language": "Dil",
 	"systemLanguagePrompt": {
 		"title": "Sistem dilinizi kullanmak ister misiniz?",
-		"description": "Sistem diliniz {{language}} olarak algılandı. OpenScreen i {{language}} diline geçirmek ister misiniz?",
+		"description": "Sistem diliniz {{language}} olarak algılandı. Capturia'yı {{language}} diline geçirmek ister misiniz?",
 		"switch": "{{language}} diline geç",
 		"keepDefault": "Mevcut dili koru"
 	},
 	"softwareEncoderFallback": {
 		"title": "Yazılım kodlamasına geçildi",
-		"description": "Varsayılan GPU kodlayıcı başlatılamadığı için OpenScreen yazılım tabanlı H.264 kodlamasına geçti. Kayıt normal şekilde devam eder, ancak CPU kullanımı daha yüksek olabilir.",
+		"description": "Varsayılan GPU kodlayıcı başlatılamadığı için Capturia yazılım tabanlı H.264 kodlamasına geçti. Kayıt normal şekilde devam eder, ancak CPU kullanımı daha yüksek olabilir.",
 		"dismiss": "Anladım",
 		"dontShowAgain": "Bir daha gösterme"
 	},

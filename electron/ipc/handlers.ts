@@ -24,6 +24,11 @@ import {
 import type { NativeMacRecordingRequest } from "../../src/lib/nativeMacRecording";
 import type { NativeWindowsRecordingRequest } from "../../src/lib/nativeWindowsRecording";
 import {
+	isProjectFilePath,
+	PROJECT_FILE_EXTENSION,
+	PROJECT_FILE_EXTENSIONS,
+} from "../../src/lib/projectFileExtension";
+import {
 	type CursorCaptureMode,
 	normalizeCursorCaptureMode,
 	normalizeProjectMedia,
@@ -96,7 +101,6 @@ import { settingsPaneUrl } from "../windowPermissions";
 import { registerNativeBridgeHandlers } from "./nativeBridge";
 import { RecordingStreamRegistry, registerRecordingStreamHandlers } from "./recordingStream";
 
-const PROJECT_FILE_EXTENSION = "openscreen";
 export const SHORTCUTS_FILE = path.join(app.getPath("userData"), "shortcuts.json");
 const RECORDING_FILE_PREFIX = "recording-";
 const RECORDING_SESSION_SUFFIX = ".session.json";
@@ -2078,7 +2082,7 @@ export function registerIpcHandlers(
 
 			const mainWin = getMainWindow();
 			const detail =
-				"Allow OpenScreen under System Settings → Privacy & Security → Accessibility, then press record again to start the countdown.";
+				"Allow Capturia under System Settings → Privacy & Security → Accessibility, then press record again to start the countdown.";
 			const messageOptions = {
 				type: "warning",
 				buttons: ["Open Accessibility Settings", "Cancel"],
@@ -2126,7 +2130,7 @@ export function registerIpcHandlers(
 					cancelId: 1,
 					message: "Screen Recording permission is required",
 					detail:
-						"Allow OpenScreen in macOS System Settings, then come back and choose a screen or window.",
+						"Allow Capturia in macOS System Settings, then come back and choose a screen or window.",
 				} satisfies Electron.MessageBoxOptions;
 				const result =
 					mainWin && !mainWin.isDestroyed()
@@ -4122,9 +4126,9 @@ export function registerIpcHandlers(
 			}
 
 			const safeName = (suggestedName || `project-${Date.now()}`).replace(/[^a-zA-Z0-9-_]/g, "_");
-			const defaultName = safeName.endsWith(`.${PROJECT_FILE_EXTENSION}`)
+			const defaultName = safeName.endsWith(PROJECT_FILE_EXTENSION)
 				? safeName
-				: `${safeName}.${PROJECT_FILE_EXTENSION}`;
+				: `${safeName}${PROJECT_FILE_EXTENSION}`;
 
 			const dialogOptions = buildDialogOptions(
 				{
@@ -4133,7 +4137,8 @@ export function registerIpcHandlers(
 					filters: [
 						{
 							name: mainT("dialogs", "fileDialogs.openscreenProject"),
-							extensions: [PROJECT_FILE_EXTENSION],
+							// Dialog filters want the extension without its dot.
+							extensions: [PROJECT_FILE_EXTENSION.slice(1)],
 						},
 						{ name: "JSON", extensions: ["json"] },
 					],
@@ -4176,7 +4181,7 @@ export function registerIpcHandlers(
 	async function loadProjectFile(projectFolder?: string): Promise<ProjectFileResult> {
 		try {
 			// Default to the projects directory, where the editor actually stores
-			// openable project files (one `.openscreen` per project). Prefer the user's
+			// openable project files (one `.capturia` per project). Prefer the user's
 			// last opened-project folder if given and still valid; only fall back to
 			// RECORDINGS_DIR if the projects dir doesn't exist yet (fresh install).
 			// Validate here because the renderer can't stat the filesystem.
@@ -4210,9 +4215,10 @@ export function registerIpcHandlers(
 					filters: [
 						{
 							name: mainT("dialogs", "fileDialogs.openscreenProject"),
-							// All projects are `.openscreen`; `.axcut` is kept only so files
-							// written by older builds (pre-migration) still show up.
-							extensions: [PROJECT_FILE_EXTENSION, "axcut"],
+							// New projects are `.capturia`; the older spellings are kept only
+							// so files written by pre-migration builds still show up in the
+							// picker instead of looking lost.
+							extensions: PROJECT_FILE_EXTENSIONS.map((extension) => extension.slice(1)),
 						},
 						{ name: "JSON", extensions: ["json"] },
 						{ name: mainT("dialogs", "fileDialogs.allFiles"), extensions: ["*"] },
@@ -4267,8 +4273,12 @@ export function registerIpcHandlers(
 				return { success: false, message: "Invalid file path" };
 			}
 			// Validate extension and readability
-			if (path.extname(filePath).toLowerCase() !== `.${PROJECT_FILE_EXTENSION}`) {
-				return { success: false, message: "Not an Openscreen project file" };
+			// Every legacy spelling, not just the canonical one: this is the gate the
+			// CLI (`export`, `captions`) and the renderer's drag-and-drop both load
+			// through, so narrowing it to `.capturia` would refuse to open every
+			// project the user saved before this build.
+			if (!isProjectFilePath(filePath)) {
+				return { success: false, message: "Not a Capturia project file" };
 			}
 			const stats = await fs.stat(filePath).catch(() => null);
 			if (!stats?.isFile()) {

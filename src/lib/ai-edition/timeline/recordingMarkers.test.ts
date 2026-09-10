@@ -4,10 +4,8 @@
 //
 // The claim these hold is the two-clock split. `sourceSec` never moves — it is
 // what the sidecar stores. `rulerSec` follows the clip that carries the moment,
-// so a reorder moves the marker with its content. `outputSec` additionally
-// compresses trims out and scales by speed, so it is where the marker lands in
-// the exported film. Getting `outputSec` from `sourceSec` directly, or storing a
-// ruler position, is exactly the bug this shape exists to prevent.
+// so a reorder moves the marker with its content. Storing a ruler position
+// instead is exactly the bug this shape exists to prevent.
 
 import { describe, expect, it } from "vitest";
 import type { AxcutClip, AxcutDocument, AxcutTrimRange } from "../schema";
@@ -52,11 +50,7 @@ function twoClips(): AxcutClip[] {
 	];
 }
 
-function doc(over: {
-	clips?: AxcutClip[];
-	trimRanges?: AxcutTrimRange[];
-	speedRegions?: unknown;
-}): AxcutDocument {
+function doc(over: { clips?: AxcutClip[]; trimRanges?: AxcutTrimRange[] }): AxcutDocument {
 	return {
 		timeline: {
 			clips: over.clips ?? twoClips(),
@@ -66,7 +60,6 @@ function doc(over: {
 			speedRanges: [],
 			captionRanges: [],
 		},
-		legacyEditor: over.speedRegions === undefined ? null : { speedRegions: over.speedRegions },
 	} as unknown as AxcutDocument;
 }
 
@@ -75,8 +68,8 @@ describe("resolveRecordingMarkers", () => {
 		const markers = resolveRecordingMarkers(doc({}), "a1", [3_000, 14_500]);
 
 		expect(markers).toEqual([
-			{ clipId: "c1", sourceSec: 3, rulerSec: 3, outputSec: 3, removed: false },
-			{ clipId: "c2", sourceSec: 14.5, rulerSec: 14.5, outputSec: 14.5, removed: false },
+			{ clipId: "c1", sourceSec: 3, rulerSec: 3, removed: false },
+			{ clipId: "c2", sourceSec: 14.5, rulerSec: 14.5, removed: false },
 		]);
 	});
 
@@ -103,21 +96,21 @@ describe("resolveRecordingMarkers", () => {
 
 		// Source is untouched; ruler and output followed the content.
 		expect(markers).toEqual([
-			{ clipId: "c2", sourceSec: 14.5, rulerSec: 4.5, outputSec: 4.5, removed: false },
-			{ clipId: "c1", sourceSec: 3, rulerSec: 13, outputSec: 13, removed: false },
+			{ clipId: "c2", sourceSec: 14.5, rulerSec: 4.5, removed: false },
+			{ clipId: "c1", sourceSec: 3, rulerSec: 13, removed: false },
 		]);
 	});
 
-	it("shifts output time by the trims that precede it, and leaves the ruler alone", () => {
+	it("leaves the ruler alone through a trim that precedes the marker", () => {
 		// A trim is a hole in playback, not a shortening of the raw ruler.
 		const trims = [trim({ id: "t1", startSec: 2, endSec: 5 })];
 
 		const markers = resolveRecordingMarkers(doc({ trimRanges: trims }), "a1", [1_000, 8_000]);
 
 		expect(markers).toEqual([
-			{ clipId: "c1", sourceSec: 1, rulerSec: 1, outputSec: 1, removed: false },
-			// 3s of film removed before it: ruler still 8, output 5.
-			{ clipId: "c1", sourceSec: 8, rulerSec: 8, outputSec: 5, removed: false },
+			{ clipId: "c1", sourceSec: 1, rulerSec: 1, removed: false },
+			// 3s of film removed before it, and the ruler position is still 8.
+			{ clipId: "c1", sourceSec: 8, rulerSec: 8, removed: false },
 		]);
 	});
 
@@ -129,37 +122,6 @@ describe("resolveRecordingMarkers", () => {
 		expect(marker.removed).toBe(true);
 		// The raw axis is not compacted, so the ruler position is still honest.
 		expect(marker.rulerSec).toBe(3.5);
-		// Output collapses to the edge the film jumps to, so a seek still lands.
-		expect(marker.outputSec).toBe(2);
-	});
-
-	it("scales output time through a speed region while source and ruler stand still", () => {
-		// 0-4s of raw ruler played at 2x: 4s of content takes 2s to play.
-		const speedRegions = [{ id: "s1", startMs: 0, endMs: 4_000, speed: 2 }];
-
-		const markers = resolveRecordingMarkers(doc({ speedRegions }), "a1", [2_000, 6_000]);
-
-		expect(markers).toEqual([
-			{ clipId: "c1", sourceSec: 2, rulerSec: 2, outputSec: 1, removed: false },
-			// 4s at 2x = 2s, plus the 2s after the region at 1x.
-			{ clipId: "c1", sourceSec: 6, rulerSec: 6, outputSec: 4, removed: false },
-		]);
-	});
-
-	it("composes a trim and a speed region on the same marker", () => {
-		const trims = [trim({ id: "t1", startSec: 1, endSec: 2 })];
-		const speedRegions = [{ id: "s1", startMs: 0, endMs: 4_000, speed: 2 }];
-
-		const [marker] = resolveRecordingMarkers(
-			doc({ trimRanges: trims, speedRegions }),
-			"a1",
-			[6_000],
-		);
-
-		// Kept raw before it: [0,1) and [2,6). The first 4s of ruler run at 2x, so
-		// [0,1) costs 0.5 and [2,4) costs 1; [4,6) is 1x and costs 2.
-		expect(marker.rulerSec).toBe(6);
-		expect(marker.outputSec).toBeCloseTo(3.5, 6);
 	});
 
 	// The case neither this suite nor zoom-suggestions' had, which is why the two
@@ -178,9 +140,9 @@ describe("resolveRecordingMarkers", () => {
 		const markers = resolveRecordingMarkers(doc({ clips: duplicated }), "a1", [4_000]);
 
 		expect(markers).toEqual([
-			{ clipId: "c1", sourceSec: 4, rulerSec: 4, outputSec: 4, removed: false },
+			{ clipId: "c1", sourceSec: 4, rulerSec: 4, removed: false },
 			// The SAME flagged instant, on the copy that replays it.
-			{ clipId: "c2", sourceSec: 4, rulerSec: 14, outputSec: 14, removed: false },
+			{ clipId: "c2", sourceSec: 4, rulerSec: 14, removed: false },
 		]);
 	});
 
@@ -212,10 +174,5 @@ describe("resolveRecordingMarkers", () => {
 		expect(resolveRecordingMarkers(null, "a1", [1_000])).toEqual([]);
 		expect(resolveRecordingMarkers(doc({}), undefined, [1_000])).toEqual([]);
 		expect(resolveRecordingMarkers(doc({ clips: [] }), "a1", [1_000])).toEqual([]);
-		// A non-array speedRegions is a real shape on disk: `legacyEditor` is a
-		// passthrough blob zod does not validate.
-		expect(resolveRecordingMarkers(doc({ speedRegions: "nope" }), "a1", [3_000])).toEqual([
-			{ clipId: "c1", sourceSec: 3, rulerSec: 3, outputSec: 3, removed: false },
-		]);
 	});
 });

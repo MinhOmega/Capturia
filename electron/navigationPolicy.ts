@@ -67,11 +67,9 @@ export function normalizeExternalUrl(rawUrl: unknown): string | null {
 }
 
 export type NavigationVerdict =
-	| { readonly action: "allow"; readonly reason: AllowReason }
+	| { readonly action: "allow" }
 	| { readonly action: "external"; readonly url: string; readonly reason: "externalised" }
 	| { readonly action: "deny"; readonly reason: DenyReason };
-
-export type AllowReason = "same-document" | "devtools";
 
 export type DenyReason =
 	| "no-trusted-document"
@@ -145,7 +143,7 @@ export function decideNavigation(input: NavigationDecisionInput): NavigationVerd
 	// DevTools drives its own WebContents; there is no app policy to apply there.
 	if (trusted.protocol === "devtools:") {
 		return target.protocol === "devtools:"
-			? { action: "allow", reason: "devtools" }
+			? { action: "allow" }
 			: { action: "deny", reason: "unsupported-scheme" };
 	}
 
@@ -154,7 +152,7 @@ export function decideNavigation(input: NavigationDecisionInput): NavigationVerd
 		target.host === trusted.host &&
 		samePath(target.pathname, trusted.pathname, platform) &&
 		target.search === trusted.search;
-	if (sameDocument) return { action: "allow", reason: "same-document" };
+	if (sameDocument) return { action: "allow" };
 
 	// Schemes that can carry a document get the origin comparison. Opaque
 	// schemes (`javascript:`, `mailto:`, `data:`) have an empty host and must not

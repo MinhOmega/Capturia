@@ -22,23 +22,22 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
+// PROJECT_FILE_EXTENSIONS is imported, never re-spelled here: this list must
+// stay a superset of what `DocumentService` opens. A project this scan cannot
+// see is a project whose recordings look unreferenced, and unreferenced media is
+// exactly what this file deletes — an extension rename that missed this line
+// would silently delete real takes.
+import { PROJECT_FILE_EXTENSIONS } from "../src/lib/projectFileExtension";
 import {
-	createRecordingCleanupPolicy,
 	planRecordingCleanup,
 	type RecordingArtifactEntry,
 	type RecordingCleanupPolicy,
-	recordingGroupKeyFromFileName,
 } from "../src/lib/recordingsCleanupPolicy";
 
 export type RecordingsCleanupOptions = {
 	recordingsDir: string;
 	/** `<userData>`: holds `projects/`, which says which recordings are still needed. */
 	userDataDir: string;
-	/**
-	 * Recordings that are not in a project YET — the take being recorded right
-	 * now, and the one parked in the hand-off slot waiting for the editor to open.
-	 */
-	excludePaths?: string[];
 	reason: "startup" | "post-recording";
 	policy?: Partial<RecordingCleanupPolicy>;
 };
@@ -47,9 +46,6 @@ type ProtectedMediaScan =
 	| { ok: true; fileNames: Set<string>; projectCount: number }
 	/** Something the scan needed could not be read; the caller must not delete. */
 	| { ok: false; reason: string };
-
-/** Written by `DocumentService`; `.axcut` is the pre-rename spelling it still opens. */
-const PROJECT_FILE_EXTENSIONS = [".openscreen", ".axcut"];
 
 // Projects are the ONLY protection source, deliberately. `media-links.registry.json`
 // looks like a second one, but `registerRecordingMediaLinks` writes an entry for
@@ -178,23 +174,15 @@ export async function runRecordingsCleanup(options: RecordingsCleanupOptions): P
 
 	const entries = await readRecordingEntries(normalizedDir);
 	const plan = planRecordingCleanup(entries, {
-		policy: createRecordingCleanupPolicy(options.policy),
+		policy: options.policy,
 		protectedFileNames: protectedMedia.fileNames,
 	});
 	if (plan.filesToDelete.length === 0) return;
-
-	const excludedGroupKeys = new Set(
-		(options.excludePaths ?? [])
-			.map((filePath) => recordingGroupKeyFromFileName(path.basename(filePath)))
-			.filter((key): key is string => Boolean(key)),
-	);
 
 	const sizeByName = new Map(entries.map((entry) => [entry.name, entry.size]));
 	let deletedCount = 0;
 	let deletedBytes = 0;
 	for (const fileName of plan.filesToDelete) {
-		const groupKey = recordingGroupKeyFromFileName(fileName);
-		if (groupKey && excludedGroupKeys.has(groupKey)) continue;
 		// The plan only ever names basenames; anything else means the plan (or the
 		// directory listing behind it) is not what this believes it is.
 		if (path.basename(fileName) !== fileName) continue;

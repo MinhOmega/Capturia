@@ -26,18 +26,6 @@ export {
 	getCaptionSettings,
 	patchCaptionSettings,
 } from "./settings";
-export type { SubtitleSidecarFormat } from "./subtitles";
-export {
-	buildSubtitleSidecar,
-	cuesToSrt,
-	cuesToVtt,
-	escapeVttText,
-	formatSrtTimestamp,
-	formatVttTimestamp,
-	projectCuesToOutputTime,
-	SUBTITLE_SIDECAR_FORMATS,
-	subtitleSidecarPath,
-} from "./subtitles";
 export type {
 	CaptionTranslation,
 	CaptionTranslations,

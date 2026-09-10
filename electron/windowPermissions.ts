@@ -39,24 +39,12 @@
  * guards lock each other in.
  */
 
-export type OpenScreenWindowType =
-	| "hud-overlay"
-	| "editor"
-	| "bench"
-	| "source-selector"
-	| "countdown-overlay"
-	| "notes"
-	| "cli-record"
-	| "cli-export"
-	| "cli-sources"
-	| "cli-captions";
-
 /**
  * Every window the main process builds. Exported so the test can assert its
  * call-site mapping covers all of them: a new window type added here without an
  * entry there fails the suite rather than silently inheriting "no capture".
  */
-export const WINDOW_TYPES: ReadonlySet<string> = new Set<OpenScreenWindowType>([
+const WINDOW_TYPE_LIST = [
 	"hud-overlay",
 	"editor",
 	"bench",
@@ -67,7 +55,10 @@ export const WINDOW_TYPES: ReadonlySet<string> = new Set<OpenScreenWindowType>([
 	"cli-export",
 	"cli-sources",
 	"cli-captions",
-]);
+] as const;
+
+export type OpenScreenWindowType = (typeof WINDOW_TYPE_LIST)[number];
+export const WINDOW_TYPES: ReadonlySet<string> = new Set(WINDOW_TYPE_LIST);
 
 /** The media kinds the policy distinguishes. */
 export type CaptureKind = "screen" | "camera" | "microphone";
@@ -196,25 +187,15 @@ export function windowTypeForContents(
  * and macOS exposes no pane for input monitoring separate from Accessibility on
  * older releases).
  */
-export type PermissionSettingsTarget =
-	| "screen-capture"
-	| "camera"
-	| "microphone"
-	| "accessibility"
-	| "input-monitoring";
+export type PermissionSettingsTarget = "screen-capture" | "accessibility";
 
 const MACOS_PANES: Record<PermissionSettingsTarget, string> = {
 	"screen-capture": "Privacy_ScreenCapture",
-	camera: "Privacy_Camera",
-	microphone: "Privacy_Microphone",
 	accessibility: "Privacy_Accessibility",
-	"input-monitoring": "Privacy_ListenEvent",
 };
 
 const WINDOWS_PANES: Partial<Record<PermissionSettingsTarget, string>> = {
 	"screen-capture": "ms-settings:privacy-general",
-	camera: "ms-settings:privacy-webcam",
-	microphone: "ms-settings:privacy-microphone",
 };
 
 export function settingsPaneUrl(

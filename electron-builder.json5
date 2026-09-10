@@ -104,6 +104,22 @@
       "from": "LICENSE",
       "to": "LICENSE"
     },
+    // The SIL OFL obliges the licence text to travel WITH the font binaries, and
+    // `files` above ships only `dist` — which splits the two. Vite emits the woff2
+    // into `dist/assets/` because annotation-fonts.css / fonts.css reference them by
+    // url(), but nothing imports the OFL.txt beside them, so Vite drops it and the
+    // installer carries the fonts with no terms attached. THIRD-PARTY-NOTICES.md
+    // above links the OFL rather than containing it, so it does not close this.
+    // Hence a copy of each licence body, by reference — not duplicated into the
+    // notices file, where two copies would drift.
+    {
+      "from": "src/assets/fonts/annotation/inter/OFL.txt",
+      "to": "font-licenses/Inter-OFL.txt"
+    },
+    {
+      "from": "src/assets/fonts/OFL.txt",
+      "to": "font-licenses/Geist-OFL.txt"
+    },
     {
       "from": "public/wallpapers",
       "to": "wallpapers"

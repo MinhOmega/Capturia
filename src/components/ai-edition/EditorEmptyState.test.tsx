@@ -210,7 +210,36 @@ describe("EditorEmptyState (new editor)", () => {
 		});
 	});
 
-	it("opens a .openscreen project file via the load button", async () => {
+	// The drop zone is where a rename orphans projects most visibly: the user drags
+	// in the file they saved last year and gets "unsupported format" for a file the
+	// app can still read perfectly well.
+	it.each([
+		["demo.capturia"],
+		["demo.openscreen"],
+		["demo.axcut"],
+	])("opens a dropped %s project", async (fileName) => {
+		bridgeMocks.getPathForFile.mockReturnValue(`/tmp/${fileName}`);
+		bridgeMocks.loadProjectFileFromPath.mockResolvedValue({
+			success: true,
+			project: { id: "dropped", title: "Dropped" },
+		});
+		bridgeMocks.save.mockResolvedValue({ success: true, document: sampleDoc });
+
+		renderWithI18n(<EditorEmptyState hasProject={false} />);
+		const dropZone = screen.getByText(/no project open/i).parentElement?.parentElement
+			?.parentElement as HTMLElement;
+
+		fireEvent.drop(dropZone, {
+			dataTransfer: { files: [new File([new Uint8Array([1])], fileName)] },
+		});
+
+		await waitFor(() => {
+			expect(bridgeMocks.loadProjectFileFromPath).toHaveBeenCalledWith(`/tmp/${fileName}`);
+		});
+		expect(screen.queryByText(/unsupported format/i)).not.toBeInTheDocument();
+	});
+
+	it("opens a project file via the load button", async () => {
 		bridgeMocks.loadProjectFile.mockResolvedValue({
 			success: true,
 			project: { id: "loaded", title: "Loaded" },
@@ -229,7 +258,7 @@ describe("EditorEmptyState (new editor)", () => {
 		});
 	});
 
-	it("shows the unsupported-format dialog when a non-.openscreen file is dropped", async () => {
+	it("shows the unsupported-format dialog when a non-project file is dropped", async () => {
 		renderWithI18n(<EditorEmptyState hasProject={false} />);
 
 		const file = new File([new Uint8Array([0, 1, 2])], "recording.mp4", { type: "video/mp4" });

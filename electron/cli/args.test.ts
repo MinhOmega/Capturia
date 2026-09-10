@@ -137,6 +137,18 @@ describe("parseCliArgs", () => {
 		});
 	});
 
+	it("accepts every project spelling for --project, so pinned scripts survive the rename", () => {
+		// `--project out.openscreen` is baked into wrapper scripts written before the
+		// extension was renamed. Rejecting it would break them for nothing:
+		// DocumentService migrates whatever name the file carries on first open.
+		for (const name of ["out.capturia", "out.openscreen", "out.axcut", "OUT.CAPTURIA"]) {
+			expect(parse(["record", "--project", name])).toMatchObject({
+				kind: "record",
+				projectOut: inCwd(name),
+			});
+		}
+	});
+
 	it("rejects invalid record values", () => {
 		expect(parse(["record", "--duration", "0"])).toMatchObject({ kind: "error" });
 		expect(parse(["record", "--cursor", "off"])).toMatchObject({ kind: "error" });

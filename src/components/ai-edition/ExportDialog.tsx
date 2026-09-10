@@ -255,7 +255,7 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 			return;
 		}
 
-		const safeName = (document.project.title || "OpenScreen")
+		const safeName = (document.project.title || "Capturia")
 			.replace(/[^a-z0-9-_]+/gi, "_")
 			.replace(/^_+|_+$/g, "")
 			.slice(0, 60);

@@ -1225,7 +1225,7 @@ export function executeAgentTool(
 						assetId: load.assetId,
 						note:
 							"Checked: this asset has no cursor-telemetry sidecar. That normally means it " +
-							"was imported rather than recorded with OpenScreen's cursor recorder. This is " +
+							"was imported rather than recorded with Capturia's cursor recorder. This is " +
 							"a fact about the asset, not a limit of yours.",
 					}),
 				};

@@ -44,7 +44,7 @@
 		"cameraCaptureUnavailable": "No se pudo abrir la cámara. Grabando sin ella.",
 		"microphoneDefaulted": "No se pudo identificar el micrófono elegido. Grabando la entrada predeterminada.",
 		"permissionDenied": "Permiso de grabación denegado. Por favor permite la grabación de pantalla.",
-		"accessibilityAllowAndRetry": "Permite el acceso de accesibilidad para OpenScreen y luego pulsa grabar de nuevo para iniciar la cuenta atrás.",
+		"accessibilityAllowAndRetry": "Permite el acceso de accesibilidad para Capturia y luego pulsa grabar de nuevo para iniciar la cuenta atrás.",
 		"selectSource": "Por favor selecciona una fuente para grabar"
 	},
 	"loadingVideo": "Cargando video...",
@@ -64,11 +64,11 @@
 		"importVideoButton": "Importar vídeo",
 		"loadProjectButton": "Abrir proyecto",
 		"supportedFormats": "Formatos compatibles: MP4, MOV, WebM, MKV, AVI, M4V, WMV",
-		"dragDropHint": "o arrastra y suelta un archivo .openscreen aquí",
+		"dragDropHint": "o arrastra y suelta un archivo de proyecto Capturia aquí",
 		"dropOverlay": "Suelta el archivo de proyecto para abrirlo",
 		"dropErrors": {
 			"unsupportedFormatTitle": "Formato no compatible",
-			"unsupportedFormatMessage": "Solo se pueden soltar aquí archivos de proyecto .openscreen. Para importar un video, usa el botón \"Importar archivo de video...\" en su lugar.",
+			"unsupportedFormatMessage": "Solo se pueden soltar aquí archivos de proyecto Capturia (.capturia). Para importar un video, usa el botón \"Importar archivo de video...\" en su lugar.",
 			"couldNotOpenTitle": "No se pudo abrir el archivo",
 			"couldNotOpenMessage": "No se pudo abrir el archivo de proyecto. El video al que hace referencia puede haber sido movido o eliminado."
 		}
@@ -265,7 +265,7 @@
 			"disclaimer": "La transcripción de tu vídeo se enviará al proveedor que elijas. No se comparte nada hasta que conectes uno."
 		},
 		"authorUser": "Tú",
-		"authorAssistant": "OpenScreen",
+		"authorAssistant": "Capturia",
 		"rewindToMessage": "Rebobinar a este mensaje",
 		"copyMessage": "Copiar mensaje",
 		"copiedToClipboard": "Copiado al portapapeles",

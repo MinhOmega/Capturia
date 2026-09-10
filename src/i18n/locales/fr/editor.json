@@ -50,7 +50,7 @@
 		"cameraCaptureUnavailable": "Impossible d'ouvrir la caméra. Enregistrement sans elle.",
 		"microphoneDefaulted": "Micro choisi non identifié. Enregistrement de l'entrée par défaut.",
 		"permissionDenied": "Permission d'enregistrement refusée. Veuillez autoriser l'enregistrement d'écran.",
-		"accessibilityAllowAndRetry": "Autorisez l'accès Accessibilité pour OpenScreen, puis appuyez de nouveau sur enregistrer pour lancer le compte à rebours.",
+		"accessibilityAllowAndRetry": "Autorisez l'accès Accessibilité pour Capturia, puis appuyez de nouveau sur enregistrer pour lancer le compte à rebours.",
 		"selectSource": "Veuillez sélectionner une source à enregistrer"
 	},
 	"loadingVideo": "Chargement de la vidéo...",
@@ -64,11 +64,11 @@
 		"importVideoButton": "Importer une vidéo",
 		"loadProjectButton": "Ouvrir un projet",
 		"supportedFormats": "Formats pris en charge : MP4, MOV, WebM, MKV, AVI, M4V, WMV",
-		"dragDropHint": "ou glissez-déposez un fichier .openscreen ici",
+		"dragDropHint": "ou glissez-déposez un fichier de projet Capturia ici",
 		"dropOverlay": "Déposez le fichier de projet pour l'ouvrir",
 		"dropErrors": {
 			"unsupportedFormatTitle": "Format non pris en charge",
-			"unsupportedFormatMessage": "Seuls les fichiers .openscreen peuvent être déposés ici. Pour importer une vidéo, utilisez plutôt le bouton \"Importer un fichier vidéo...\".",
+			"unsupportedFormatMessage": "Seuls les fichiers de projet Capturia (.capturia) peuvent être déposés ici. Pour importer une vidéo, utilisez plutôt le bouton \"Importer un fichier vidéo...\".",
 			"couldNotOpenTitle": "Impossible d'ouvrir le fichier",
 			"couldNotOpenMessage": "Le fichier de projet n'a pas pu être ouvert. La vidéo qu'il référence a peut-être été déplacée ou supprimée."
 		}
@@ -265,7 +265,7 @@
 			"disclaimer": "La transcription de votre vidéo sera envoyée au fournisseur que vous choisissez. Rien n'est partagé tant que vous n'en connectez pas un."
 		},
 		"authorUser": "Vous",
-		"authorAssistant": "OpenScreen",
+		"authorAssistant": "Capturia",
 		"rewindToMessage": "Revenir à ce message",
 		"copyMessage": "Copier le message",
 		"copiedToClipboard": "Copié dans le presse-papiers",

@@ -50,7 +50,8 @@ describe("ApprovedExportPaths", () => {
 		expect(registry.approve("")).toBeNull();
 		expect(registry.approve(null)).toBeNull();
 		expect(registry.approve(42)).toBeNull();
-		expect(registry.size).toBe(0);
+		// Rejected at approval means never registered, not merely not resolved.
+		expect(registry.isApproved("/home/me/.ssh/config")).toBe(false);
 	});
 
 	it("never approves a path that only looks right", () => {
@@ -67,13 +68,6 @@ describe("ApprovedExportPaths", () => {
 		expect(registry.isApproved("c:\\users\\me\\videos\\take.mp4")).toBe(true);
 		expect(registry.isApproved("C:\\Users\\Me\\Videos\\Other.mp4")).toBe(false);
 	});
-
-	it("forgets everything on clear", () => {
-		const registry = new ApprovedExportPaths(posix);
-		registry.approve("/home/me/Movies/take.mp4");
-		registry.clear();
-		expect(registry.isApproved("/home/me/Movies/take.mp4")).toBe(false);
-	});
 });
 
 describe("cliExportDestinations", () => {
@@ -86,7 +80,7 @@ describe("cliExportDestinations", () => {
 	it("covers both containers the runner may derive when --out is omitted", () => {
 		// The format can come from the project file, which only the renderer reads,
 		// so both candidates are approved rather than resolving the format twice.
-		expect(cliExportDestinations({ projectPath: "/w/demo.openscreen", outPath: null })).toEqual([
+		expect(cliExportDestinations({ projectPath: "/w/demo.capturia", outPath: null })).toEqual([
 			"/w/demo.mp4",
 			"/w/demo.gif",
 		]);
@@ -94,11 +88,20 @@ describe("cliExportDestinations", () => {
 			"/w/demo.mp4",
 			"/w/demo.gif",
 		]);
+		// The legacy spellings too. The CLI still opens them, so it still derives an
+		// output path from them, and a destination this misses is an export the
+		// write policy refuses — the user's `--out`-less export just fails.
+		for (const legacyPath of ["/w/demo.openscreen", "/w/demo.axcut"]) {
+			expect(cliExportDestinations({ projectPath: legacyPath, outPath: null })).toEqual([
+				"/w/demo.mp4",
+				"/w/demo.gif",
+			]);
+		}
 	});
 
 	it("strips exactly what CliExportRunner.replaceExtension strips", () => {
 		// `path.parse` would drop the ".demo" here and miss the real destination.
-		expect(cliExportDestinations({ projectPath: "/w/my.demo.openscreen", outPath: null })).toEqual([
+		expect(cliExportDestinations({ projectPath: "/w/my.demo.capturia", outPath: null })).toEqual([
 			"/w/my.demo.mp4",
 			"/w/my.demo.gif",
 		]);
