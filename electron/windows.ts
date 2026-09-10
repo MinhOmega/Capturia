@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { app, BrowserWindow, ipcMain, screen } from "electron";
+import { PRODUCT_NAME } from "./about";
 import {
 	clampRectToWorkArea,
 	loadEditorWindowState,
@@ -427,7 +428,7 @@ export function createEditorWindow(query: Record<string, string> = {}): BrowserW
 		resizable: true,
 		alwaysOnTop: false,
 		skipTaskbar: false,
-		title: "OpenScreen",
+		title: PRODUCT_NAME,
 		backgroundColor: "#09090b",
 		show: false, // shown via ready-to-show to avoid white flash on first load
 		webPreferences: {
@@ -605,7 +606,7 @@ export function createNotesWindow(): BrowserWindow {
 		minHeight: 400,
 		maxWidth: 640,
 		maxHeight: 720,
-		title: "OpenScreen - Notes",
+		title: `${PRODUCT_NAME} - Notes`,
 		backgroundColor: "#09090b",
 		resizable: true,
 		alwaysOnTop: true,
