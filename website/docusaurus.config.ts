@@ -291,7 +291,10 @@ export default async function createConfig(): Promise<Config> {
 						className: "navbar-link-strong",
 					},
 					{
-						href: `${REPO_URL}/blob/main/ROADMAP.md`,
+						// The roadmap is a real route now (src/pages/roadmap.mdx renders
+						// the repo-root ROADMAP.md), so this is a router link rather than
+						// an href that bounced visitors out to a raw file on GitHub.
+						to: "/roadmap",
 						label: "Roadmap",
 						position: "left",
 					},
