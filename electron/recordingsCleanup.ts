@@ -22,6 +22,12 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
+// PROJECT_FILE_EXTENSIONS is imported, never re-spelled here: this list must
+// stay a superset of what `DocumentService` opens. A project this scan cannot
+// see is a project whose recordings look unreferenced, and unreferenced media is
+// exactly what this file deletes — an extension rename that missed this line
+// would silently delete real takes.
+import { PROJECT_FILE_EXTENSIONS } from "../src/lib/projectFileExtension";
 import {
 	createRecordingCleanupPolicy,
 	planRecordingCleanup,
@@ -47,9 +53,6 @@ type ProtectedMediaScan =
 	| { ok: true; fileNames: Set<string>; projectCount: number }
 	/** Something the scan needed could not be read; the caller must not delete. */
 	| { ok: false; reason: string };
-
-/** Written by `DocumentService`; `.axcut` is the pre-rename spelling it still opens. */
-const PROJECT_FILE_EXTENSIONS = [".openscreen", ".axcut"];
 
 // Projects are the ONLY protection source, deliberately. `media-links.registry.json`
 // looks like a second one, but `registerRecordingMediaLinks` writes an entry for

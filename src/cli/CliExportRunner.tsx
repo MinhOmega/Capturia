@@ -1,4 +1,4 @@
-// Hidden-window runner for `openscreen export`. Loads an .openscreen project,
+// Hidden-window runner for `openscreen export`. Loads a .capturia project,
 // migrates it to the AxcutDocument the native Rust compositor consumes, and
 // drives exportMultiNative/exportGifNative — mirroring the v4 ExportDialog so
 // CLI exports and GUI exports stay pixel-identical. The hidden window does no
@@ -32,6 +32,7 @@ import { GIF_SIZE_PRESETS, type GifSizePreset } from "@/lib/exporter";
 import { calculateMp4ExportSettings } from "@/lib/exporter/mp4ExportSettings";
 import { outputFrameCount } from "@/lib/exporter/outputFrameCount";
 import { mixVoiceoverIntoVideo } from "@/lib/exporter/voiceoverMix";
+import { PROJECT_FILE_EXTENSION_PATTERN } from "@/lib/projectFileExtension";
 import { exportGifNative, exportMultiNative, nativeBridgeClient } from "@/native";
 import type { CompositorClipInput, CursorRecordingSample } from "@/native/contracts";
 import { buildSceneDescription, resolveVisibleClips } from "@/native/sceneDescription";
@@ -71,8 +72,11 @@ function probeVideoDimensions(
 	});
 }
 
+/** In lock-step with `cliExportDestinations` in `electron/exportPolicy.ts` via
+ * the shared pattern: a path this derives that the policy did not approve is an
+ * export the main process refuses to write. */
 function replaceExtension(filePath: string, newExtension: string): string {
-	return filePath.replace(/\.(openscreen|json)$/i, "") + newExtension;
+	return filePath.replace(PROJECT_FILE_EXTENSION_PATTERN, "") + newExtension;
 }
 
 /** Mirrors ExportDialog.buildNativeClipList: trim-narrowed visible clips mapped
@@ -148,7 +152,7 @@ async function runExport(request: CliExportRequest): Promise<CliDoneResult> {
 		throw new Error(loaded.error ?? loaded.message ?? "Failed to load project file");
 	}
 	if (!validateProjectData(loaded.project)) {
-		throw new Error("Project file is not a valid .openscreen project");
+		throw new Error("Project file is not a valid project file");
 	}
 	const project = loaded.project;
 	const media = resolveProjectMedia(project);
@@ -201,7 +205,7 @@ async function runExport(request: CliExportRequest): Promise<CliDoneResult> {
 
 	const probed = await probeVideoDimensions(toFileUrl(media.screenVideoPath));
 
-	// Migrate the .openscreen project onto the AxcutDocument the native
+	// Migrate the .capturia project onto the AxcutDocument the native
 	// compositor consumes. The migration is pure and carries zooms, annotations,
 	// trims and the legacy editor settings; the clip's duration is unknown until
 	// probed, so applyProbedDuration must run or the export is a single frame.

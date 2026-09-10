@@ -1,5 +1,5 @@
 // CLI-only: the v4 editor renders captions natively, but `openscreen captions`
-// still writes caption *annotations* into .openscreen projects. Only the
+// still writes caption *annotations* into .capturia projects. Only the
 // annotation conversion lives here — the segment grouping/dedupe helpers come
 // from the live captioning module so the CLI can't drift from the editor.
 

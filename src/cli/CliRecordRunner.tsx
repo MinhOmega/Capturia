@@ -77,7 +77,7 @@ async function resolveMicDeviceId(deviceNameFilter: string | null): Promise<{
 	}
 }
 
-/** A minimal .openscreen project referencing the finished recording, with all
+/** A minimal .capturia project referencing the finished recording, with all
  * editor settings at their defaults — ready for `openscreen export` or the GUI. */
 function buildDefaultProject(session: {
 	screenVideoPath: string;

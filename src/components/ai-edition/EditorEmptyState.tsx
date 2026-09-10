@@ -3,7 +3,7 @@
 // Import video + load project + drag/drop on top of the project store: a
 // "no project" branch offers `createProject` + `loadProject`, and a
 // "has project, no asset" branch offers the file picker + load (for the rare
-// user who already has a .openscreen project without media attached).
+// user who already has a project file without media attached).
 //
 // ponytail: the actions map to project-store operations rather than the
 // `nativeBridgeClient.project.*` ones, which this shell no longer uses. The
@@ -20,6 +20,7 @@ import {
 } from "@/lib/ai-edition/document/migrate";
 import { documentSchema } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
+import { isProjectFilePath } from "@/lib/projectFileExtension";
 import { nativeBridgeClient } from "@/native";
 import styles from "./NewEditorShell.module.css";
 
@@ -123,7 +124,9 @@ export function EditorEmptyState({
 			setIsDraggingOver(false);
 			const files = Array.from(e.dataTransfer.files);
 			if (files.length === 0) return;
-			const projectFile = files.find((f) => f.name.endsWith(".openscreen"));
+			// Legacy spellings too: a user who drags in the project they saved last
+			// year should get it opened, not an "unsupported format" dialog.
+			const projectFile = files.find((f) => isProjectFilePath(f.name));
 			if (!projectFile) {
 				setDropError("unsupported-format");
 				return;

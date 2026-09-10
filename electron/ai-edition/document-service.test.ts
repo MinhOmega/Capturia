@@ -36,7 +36,7 @@ describe("DocumentService", () => {
 			expect(doc.project.id).toMatch(/^proj_/);
 			expect(doc.assets).toEqual([]);
 
-			const filePath = path.join(tempDir, `${doc.project.id}.openscreen`);
+			const filePath = path.join(tempDir, `${doc.project.id}.capturia`);
 			const raw = await fs.readFile(filePath, "utf8");
 			expect(JSON.parse(raw)).toMatchObject({
 				schemaVersion: axcutSchemaVersion,
@@ -220,28 +220,156 @@ describe("DocumentService", () => {
 
 		it("skips files that fail to parse rather than throwing", async () => {
 			const a = await service.createProject("OK");
-			await fs.writeFile(path.join(tempDir, "garbage.openscreen"), "not json", "utf8");
+			await fs.writeFile(path.join(tempDir, "garbage.capturia"), "not json", "utf8");
 			const summaries = await service.listProjects();
 			expect(summaries.map((s) => s.id)).toEqual([a.project.id]);
 		});
+	});
 
-		it("migrates a legacy .axcut project to .openscreen on access", async () => {
-			// A project written by an older build: same document bytes, `.axcut` name.
-			const created = await service.createProject("Legacy");
-			const openscreenPath = path.join(tempDir, `${created.project.id}.openscreen`);
-			const axcutPath = path.join(tempDir, `${created.project.id}.axcut`);
-			await fs.rename(openscreenPath, axcutPath);
+	// The project-file extension has been renamed twice (`.axcut` -> `.openscreen`
+	// -> `.capturia`). Each rename is the same hazard: a build that only looks for
+	// the newest spelling shows an empty project list to a user whose work is
+	// sitting right there on disk, and `recordingsCleanup` then reads their takes
+	// as unreferenced media and deletes it. These tests are the guard on that, and
+	// must survive any future rename with the old name moved into the legacy list.
+	describe("legacy extension migration", () => {
+		/** Re-file the project under `extension`, as the build that wrote it would have. */
+		async function renameToLegacy(projectId: string, extension: string): Promise<string> {
+			const legacyPath = path.join(tempDir, `${projectId}${extension}`);
+			await fs.rename(path.join(tempDir, `${projectId}.capturia`), legacyPath);
+			return legacyPath;
+		}
 
-			// A fresh service (new process) must still surface and load it, renaming
-			// the file across in the process.
-			const fresh = new DocumentService(tempDir, mediaDir);
-			const summaries = await fresh.listProjects();
-			expect(summaries.map((s) => s.id)).toEqual([created.project.id]);
-			await expect(fresh.getProject(created.project.id)).resolves.toMatchObject({
-				project: { id: created.project.id, title: "Legacy" },
+		async function exists(filePath: string): Promise<boolean> {
+			return fs
+				.access(filePath)
+				.then(() => true)
+				.catch(() => false);
+		}
+
+		function projectFiles(): Promise<string[]> {
+			return fs.readdir(tempDir);
+		}
+
+		// Both spellings, same assertions: whichever build wrote the file, the user
+		// gets their project back and it ends up canonically named.
+		for (const legacyExtension of [".openscreen", ".axcut"]) {
+			it(`lists, opens and renames a legacy ${legacyExtension} project`, async () => {
+				const created = await service.createProject("Legacy");
+				const legacyPath = await renameToLegacy(created.project.id, legacyExtension);
+				const canonicalPath = path.join(tempDir, `${created.project.id}.capturia`);
+
+				// A fresh service stands in for the next launch: the migration flag is
+				// per-instance, so this is the first pass over an upgraded install.
+				const fresh = new DocumentService(tempDir, mediaDir);
+				const summaries = await fresh.listProjects();
+				expect(summaries.map((entry) => entry.id)).toEqual([created.project.id]);
+				await expect(fresh.getProject(created.project.id)).resolves.toMatchObject({
+					project: { id: created.project.id, title: "Legacy" },
+				});
+
+				expect(await exists(legacyPath)).toBe(false);
+				expect(await exists(canonicalPath)).toBe(true);
 			});
-			await expect(fs.access(axcutPath)).rejects.toBeTruthy();
-			await expect(fs.access(openscreenPath)).resolves.toBeUndefined();
+
+			it(`opens a ${legacyExtension} project the migration pass has not reached`, async () => {
+				// getProject can run before any sweep: the CLI opens a project by id
+				// without listing first. The read must fall through to the legacy name
+				// rather than report the project missing.
+				const created = await service.createProject("Not swept yet");
+				await renameToLegacy(created.project.id, legacyExtension);
+
+				const fresh = new DocumentService(tempDir, mediaDir);
+				await expect(fresh.getProject(created.project.id)).resolves.toMatchObject({
+					project: { id: created.project.id, title: "Not swept yet" },
+				});
+			});
+
+			it(`drops a stale ${legacyExtension} when a .capturia exists for the same id`, async () => {
+				// The conflict case: an install that ran a newer build, dropped back to
+				// an older one that wrote the legacy name again, and now has both for
+				// one id. The `.capturia` is authoritative — migrating the legacy file
+				// over it would silently restore the older document's edits.
+				const created = await service.createProject("Authoritative");
+				const canonicalPath = path.join(tempDir, `${created.project.id}.capturia`);
+				const legacyPath = path.join(tempDir, `${created.project.id}${legacyExtension}`);
+				const current = await service.saveProject({
+					...created,
+					project: { ...created.project, title: "Current" },
+				});
+				// Written AFTER the save, so it is the migration pass's conflict rule
+				// under test here and not writeProjectNow's legacy cleanup.
+				await fs.writeFile(
+					legacyPath,
+					JSON.stringify({ ...current, project: { ...current.project, title: "Stale" } }),
+					"utf8",
+				);
+
+				const fresh = new DocumentService(tempDir, mediaDir);
+				await fresh.ensureProjectsDir();
+				await expect(fresh.getProject(created.project.id)).resolves.toMatchObject({
+					project: { title: "Current" },
+				});
+				expect(await exists(canonicalPath)).toBe(true);
+				// Exactly one file for the id, so the next sweep has nothing to decide.
+				expect(await projectFiles()).toEqual([`${created.project.id}.capturia`]);
+			});
+		}
+
+		it("prefers the newer legacy spelling when one id has both", async () => {
+			// `.openscreen` is newer than `.axcut`, so its contents win. Readdir order
+			// must not be what decides this.
+			const created = await service.createProject("Seed");
+			const canonicalPath = path.join(tempDir, `${created.project.id}.capturia`);
+			const raw = await fs.readFile(canonicalPath, "utf8");
+			await fs.writeFile(
+				path.join(tempDir, `${created.project.id}.axcut`),
+				raw.replace('"Seed"', '"Oldest"'),
+				"utf8",
+			);
+			await fs.writeFile(
+				path.join(tempDir, `${created.project.id}.openscreen`),
+				raw.replace('"Seed"', '"Newer"'),
+				"utf8",
+			);
+			await fs.unlink(canonicalPath);
+
+			const fresh = new DocumentService(tempDir, mediaDir);
+			await fresh.ensureProjectsDir();
+			await expect(fresh.getProject(created.project.id)).resolves.toMatchObject({
+				project: { title: "Newer" },
+			});
+			expect(await projectFiles()).toEqual([`${created.project.id}.capturia`]);
+		});
+
+		it("a save supersedes every legacy spelling for the id", async () => {
+			// writeProjectNow's belt-and-braces cleanup: a legacy file that appears
+			// AFTER the startup sweep (a sync client, a restored backup) must not
+			// survive to be re-migrated over the user's newer document next launch.
+			const created = await service.createProject("Saved");
+			const raw = await fs.readFile(path.join(tempDir, `${created.project.id}.capturia`), "utf8");
+			for (const extension of [".openscreen", ".axcut"]) {
+				await fs.writeFile(path.join(tempDir, `${created.project.id}${extension}`), raw, "utf8");
+			}
+
+			await service.saveProject(created);
+
+			expect(await projectFiles()).toEqual([`${created.project.id}.capturia`]);
+		});
+
+		it("deleteProject removes every spelling, so a delete cannot resurrect", async () => {
+			const created = await service.createProject("Doomed");
+			const raw = await fs.readFile(path.join(tempDir, `${created.project.id}.capturia`), "utf8");
+			for (const extension of [".openscreen", ".axcut"]) {
+				await fs.writeFile(path.join(tempDir, `${created.project.id}${extension}`), raw, "utf8");
+			}
+
+			await service.deleteProject(created.project.id);
+
+			expect(await projectFiles()).toEqual([]);
+			await expect(service.getProject(created.project.id)).rejects.toBeInstanceOf(
+				DocumentNotFoundError,
+			);
 		});
 	});
 
@@ -641,7 +769,7 @@ describe("DocumentService", () => {
 		it("leaves valid JSON when a long and a short save race", async () => {
 			for (let round = 0; round < 12; round++) {
 				const doc = await service.createProject(`Race ${round}`);
-				const file = path.join(tempDir, `${doc.project.id}.openscreen`);
+				const file = path.join(tempDir, `${doc.project.id}.capturia`);
 
 				// Unawaited on purpose: this is the exact shape of the real failure —
 				// two saves of one project in flight at once.
