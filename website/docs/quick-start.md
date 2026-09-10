@@ -2,7 +2,7 @@
 id: quick-start
 title: Quick start
 sidebar_position: 3
-description: "Record, trim, and export your first video with OpenScreen in six steps — from opening the recording HUD to exporting a finished MP4."
+description: "Record, trim, and export your first video with Capturia in six steps — from opening the recording HUD to exporting a finished MP4."
 keywords:
   - screen recording tutorial
   - quick start
@@ -13,11 +13,11 @@ keywords:
 
 # Quick start
 
-This walks through recording, trimming, and exporting your first video. See [Installation](./installation.md) first if you haven't installed OpenScreen yet.
+This walks through recording, trimming, and exporting your first video. See [Installation](./installation.md) first if you haven't installed Capturia yet.
 
 ## 1. Open the recording HUD
 
-Launching OpenScreen shows a small floating pill (the HUD) docked at the bottom of your screen. It stays on top of everything and doesn't intercept clicks until you interact with it.
+Launching Capturia shows a small floating pill (the HUD) docked at the bottom of your screen. It stays on top of everything and doesn't intercept clicks until you interact with it.
 
 ## 2. Pick what to record
 
@@ -56,5 +56,5 @@ The top bar switches the editor between three modes: **Media** (your clips), **E
 :::
 
 :::tip
-Save your work as a project (`⌘/Ctrl S`) before exporting if you want to come back and keep editing later — `.openscreen` project files keep every layer editable, unlike the exported video.
+Save your work as a project (`⌘/Ctrl S`) before exporting if you want to come back and keep editing later — `.capturia` project files keep every layer editable, unlike the exported video.
 :::

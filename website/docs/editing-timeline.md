@@ -2,7 +2,7 @@
 id: editing-timeline
 title: Editing & timeline
 sidebar_position: 6
-description: "Edit in OpenScreen's timeline: zoom, trim, and speed regions, Full Camera segments, annotations, cursor styling, and the floating inspector."
+description: "Edit in Capturia's timeline: zoom, trim, and speed regions, Full Camera segments, annotations, cursor styling, and the floating inspector."
 keywords:
   - video timeline editor
   - zoom regions
@@ -125,10 +125,12 @@ Fixed (not reassignable):
 
 ## Saving your work
 
-Edits live in a `.openscreen` project file — separate from any exported video, and fully re-editable:
+Edits live in a `.capturia` project file — separate from any exported video, and fully re-editable:
 
 - **Save Project** (`Ctrl/Cmd + S`) — saves in place, or prompts for a location the first time.
-- **Load Project** (`Ctrl/Cmd + O`) — opens an existing `.openscreen` file.
+- **Load Project** (`Ctrl/Cmd + O`) — opens an existing `.capturia` file. Projects from older
+  builds (`.openscreen`, `.axcut`) still open; the app renames them to `.capturia` the first
+  time it lists them.
 - **New Project** (`Ctrl/Cmd + N`) — clears the current project.
 
 The top bar shows a **Saved** / **Unsaved** indicator, and closing with unsaved changes prompts you to save, discard, or cancel.

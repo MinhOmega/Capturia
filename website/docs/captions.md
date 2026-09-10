@@ -14,7 +14,7 @@ keywords:
 
 # Captions & transcript
 
-OpenScreen transcribes your recording's audio **entirely on-device** — your audio is never uploaded, and once the model is on disk it works offline. That one transcript is then the source for two things: the captions burned into your video, and a text view you can edit your recording from.
+Capturia transcribes your recording's audio **entirely on-device** — your audio is never uploaded, and once the model is on disk it works offline. That one transcript is then the source for two things: the captions burned into your video, and a text view you can edit your recording from.
 
 ## Transcribing
 

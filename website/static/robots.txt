@@ -1,8 +1,12 @@
-# https://getopenscreen.com
+# https://minhomega.github.io/Capturia/
 # Docusaurus does not emit a robots.txt, so without this file the sitemap is
 # only discoverable by submitting it in Search Console by hand.
+#
+# Note this file is inert while the site is a project page: crawlers only read
+# /robots.txt at the origin, and static/ is served under /Capturia/. It is kept
+# correct so it starts working the moment a custom domain is pointed here.
 
 User-agent: *
 Allow: /
 
-Sitemap: https://getopenscreen.com/sitemap.xml
+Sitemap: https://minhomega.github.io/Capturia/sitemap.xml

@@ -362,7 +362,7 @@ export const CHAT = {
 	conversationTitle: "Conversation 1",
 	emptyState: "No messages yet. Ask the agent to cut silences, tighten pauses, or add captions.",
 	authorUser: "You",
-	authorAssistant: "OpenScreen",
+	authorAssistant: "Capturia",
 	userPrompt: "Cut the dead time in this recording: long pauses, silences, and idle stretches where nothing is being said or done. Keep the pacing tight and natural, and do not cut anything a viewer needs. Apply the edits directly to the timeline.",
 	agentReply: [
 		{
@@ -775,7 +775,7 @@ export const PROVENANCE: ProvenanceEntry[] = [
 	{ shown: "Conversation 1", source: "computed: editor.json chat.untitledConversation + the session index, as LeftPanel.tsx:1184 renders it" },
 	{ shown: "No messages yet. Ask the agent to cut silences, tighten pauses, or add captions.", source: "editor.json chat.emptyState" },
 	{ shown: "You", source: "editor.json chat.authorUser" },
-	{ shown: "OpenScreen", source: "editor.json chat.authorAssistant" },
+	{ shown: "Capturia", source: "editor.json chat.authorAssistant" },
 	{ shown: "Cut the dead time in this recording: long pauses, silences, and idle stretches where nothing is being said or done. Keep the pacing tight and natural, and do not cut anything a viewer needs. Apply the edits directly to the timeline.", source: "src/components/ai-edition/v4/V4Timeline.tsx AI_ENHANCE_PROMPT, lifted verbatim as source text" },
 	{ shown: "Here's what I found and cut:\n\n**Finding:** The speech itself is nearly gapless — every pause between spoken words is well under a second, so there were no internal silences to remove. The only silences over 1s were at the two ends:\n\n**Cuts applied (both on your single placed clip, which is untouched otherwise):**\n\n- **0–2.19s** — the 2.2s dead lead-in before \"Hi,\" (cut)\n- **35.12–40.03s** — the ~4.9s dead tail after \"think.\" (cut)\n\nThe video now runs from \"Hi,\" straight through to \"think.\" — about **7 seconds shorter** (40.0s → 33.0s of playable footage).\n\nYour zooms (incl. the manual 1.8×/2.2× punches) stay anchored to the same moments in the narration.\n\nOne note: the cut starts the video right at the first word with no lead-in. If you'd rather keep a half-second of breathing room before \"Hi,\" say the word and I'll restore a short lead.", source: "photograph: static/img/walkthrough/04-agent-a.jpg — hand-transcribed; the conversation is in no store on disk and this photograph is its only existence. THE WEAKEST PROVENANCE ON THE PAGE. Every timecode, duration, quoted word and cut total in it is regenerated from timeline.trimRanges and transcript.words, not transcribed. Two figures are transcribed as the model wrote them and disagree with this file's arithmetic on purpose: \"33.0s\" (recomputed: 32.93s) and \"1.8×/2.2×\" (the pills read 1.80×/2.20×). The page is quoting a message, not drawing a readout." },
 	{ shown: "applied: added 2 trims", source: "computed: editor.json chat.appliedPrefix + the bulk-add tool's own wording (electron/ai-edition/agent-tools.ts: added ${n} ${noun}s) with n = 2, the trimRanges whose origin is \"agent\"" },

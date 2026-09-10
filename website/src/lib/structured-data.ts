@@ -12,7 +12,9 @@
 
 import type { LatestRelease } from "./release";
 
-const SITE_URL = "https://getopenscreen.com";
+// Host + base path: this is a project page, so the base path is part of every
+// canonical URL and every @id. Keep in step with docusaurus.config.ts.
+const SITE_URL = "https://minhomega.github.io/Capturia";
 
 /** Minted to match the @ids in docusaurus.config.ts; keep the two in step. */
 export const ORGANIZATION_ID = `${SITE_URL}/#organization`;
@@ -22,7 +24,7 @@ export const SOFTWARE_ID = `${SITE_URL}/#software`;
 const SOFTWARE_APPLICATION_LD = {
 	"@type": "SoftwareApplication",
 	"@id": SOFTWARE_ID,
-	name: "OpenScreen",
+	name: "Capturia",
 	applicationCategory: "MultimediaApplication",
 	applicationSubCategory: "Screen Recorder",
 	operatingSystem: "Windows, macOS, Linux",
@@ -30,9 +32,9 @@ const SOFTWARE_APPLICATION_LD = {
 		"Free, open-source screen recorder and video editor. Native capture on macOS and Windows, multi-track timeline editing, on-device Whisper captions, and MP4/GIF export — no watermarks, no subscription, no account.",
 	url: SITE_URL,
 	// Our own page rather than the Releases list: it is the URL we want ranking
-	// for "openscreen download", and it routes to GitHub from there anyway.
+	// for "capturia download", and it routes to GitHub from there anyway.
 	downloadUrl: `${SITE_URL}/download/`,
-	installUrl: "https://github.com/getopenscreen/openscreen/releases",
+	installUrl: "https://github.com/MinhOmega/Capturia/releases",
 	softwareHelp: `${SITE_URL}/docs/intro/`,
 	// No `screenshot`. It pointed at the establishing plate the landing page used
 	// to open with; that page is the scroll recreation now and the plate went with
@@ -46,7 +48,7 @@ const SOFTWARE_APPLICATION_LD = {
 	// five-second fragments with no standalone playback page, which is not what
 	// that rich result describes, and declaring a video the page never presents
 	// as one is a manual-action risk.
-	license: "https://github.com/getopenscreen/openscreen/blob/main/LICENSE",
+	license: "https://github.com/MinhOmega/Capturia/blob/main/LICENSE",
 	isAccessibleForFree: true,
 	// `offers` at price 0 is what lets a result carry a "Free" annotation;
 	// omitting it on a free app just forfeits the label.

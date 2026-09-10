@@ -1,4 +1,4 @@
-# OpenScreen docs site
+# Capturia docs site
 
 Docusaurus 3 site. Lives in `website/` inside the monorepo. Deployed to GitHub Pages via `.github/workflows/docs.yml`.
 
@@ -7,7 +7,7 @@ Docusaurus 3 site. Lives in `website/` inside the monorepo. Deployed to GitHub P
 ```sh
 cd website
 npm install
-npm run dev      # http://localhost:3000/openscreen/
+npm run dev      # http://localhost:3000/Capturia/
 ```
 
 ## Build
@@ -25,6 +25,8 @@ npm run typecheck
 
 ## Notes
 
-- Site URL: <https://getopenscreen.github.io/openscreen/>
-- The base URL is `/openscreen/` because the org-level Pages site hosts multiple projects.
+- Site URL: <https://minhomega.github.io/Capturia/>
+- The base URL is `/Capturia/` because this is a GitHub Pages *project* page, served
+  from a path rather than a domain root. Anything Docusaurus resolves itself picks that
+  up; a hand-written absolute href does not and will 404 against the user page.
 - Docs migration from `docs/` (root) → `website/docs/` happens in a follow-up PR. For now only the intro page is published.

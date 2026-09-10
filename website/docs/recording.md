@@ -3,7 +3,7 @@ id: recording
 title: Screen recording
 sidebar_position: 4
 sidebar_label: Recording
-description: "Record a window, screen, or region with OpenScreen's HUD — system audio, microphone, webcam, cursor modes, countdown, and native vs. browser capture."
+description: "Record a window, screen, or region with Capturia's HUD — system audio, microphone, webcam, cursor modes, countdown, and native vs. browser capture."
 keywords:
   - record screen
   - window capture
@@ -24,7 +24,7 @@ The source picker button shows the currently selected screen or window (truncate
 - **Screens** — one card per display.
 - **Windows** — one card per open window, with its app icon.
 
-Pick a thumbnail and hit **Share**. If no source is selected when you hit record, OpenScreen opens the picker first and starts recording automatically once you choose one.
+Pick a thumbnail and hit **Share**. If no source is selected when you hit record, Capturia opens the picker first and starts recording automatically once you choose one.
 
 ## Audio
 
@@ -39,7 +39,7 @@ System audio support depends on your OS — see [platform differences](./install
 ## Cursor mode
 
 On macOS and Windows only, a cursor-mode toggle switches between:
-- **Editable overlay** (default) — OpenScreen draws a stylized cursor you can theme, resize, and animate in the editor.
+- **Editable overlay** (default) — Capturia draws a stylized cursor you can theme, resize, and animate in the editor.
 - **System** — records the OS cursor as-is, unedited.
 
 This toggle isn't available on Linux, where only cursor *position* is captured (used for auto-zoom, not for a themed overlay).
@@ -61,7 +61,7 @@ Hitting record triggers a 3‑2‑1 countdown, rendered as a full-desktop overla
 - **Layout toggle** — switches the HUD between horizontal and vertical, persisted across sessions.
 - **Settings** — device settings for the selected mic and camera without leaving the HUD.
 - **Notes** — opens a small rich-text scratchpad window, handy for a script or cue sheet while you record. It's saved locally between sessions.
-- **Language** — a locale picker (13 languages) that only affects the OpenScreen UI, not your recording.
+- **Language** — a locale picker (13 languages) that only affects the Capturia UI, not your recording.
 - Window controls to hide the HUD or quit the app.
 
 ## Recording from the editor (Rec mode)

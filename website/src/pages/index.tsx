@@ -13,7 +13,7 @@ export default function Home() {
 	return (
 		<Layout
 			title="Free open-source screen recorder & video editor"
-			description="OpenScreen is a free, open-source screen recorder and video editor for Windows, macOS, and Linux — native capture, on-device captions, no watermarks."
+			description="Capturia is a free, open-source screen recorder and video editor for Windows, macOS, and Linux — native capture, on-device captions, no watermarks."
 		>
 			<Head>
 				{/* The product entity, distinct from the Organization/WebSite pair
@@ -33,7 +33,7 @@ export default function Home() {
 					    proves nothing. It also left the strongest on-page signal there is
 					    without the word people search once they have heard of us. */}
 					<Heading as="h1" className={styles.title}>
-						OpenScreen
+						Capturia
 						<span className={styles.titleTagline}>
 							A free, open-source screen recorder and video editor
 						</span>
@@ -135,10 +135,10 @@ export default function Home() {
 								<span className={styles.artifactChip}>.dmg</span>
 							</div>
 							<pre className={styles.terminalBody}>
-								<span className={styles.meta}># drag OpenScreen to Applications, then</span>
+								<span className={styles.meta}># drag Capturia to Applications, then</span>
 								{"\n"}
 								<span className={styles.accentText}>xattr</span> -rd com.apple.quarantine
-								/Applications/Openscreen.app
+								/Applications/Capturia.app
 							</pre>
 							<p className={styles.paneFoot}>
 								ScreenCaptureKit native capture, real cursor + click effects, native webcam.
@@ -170,7 +170,7 @@ export default function Home() {
 							<pre className={styles.terminalBody}>
 								<span className={styles.meta}># download the .deb from Releases, then</span>
 								{"\n"}
-								<span className={styles.accentText}>sudo</span> apt install ./Openscreen-Linux-*.deb
+								<span className={styles.accentText}>sudo</span> apt install ./Capturia-Linux-*.deb
 							</pre>
 							<p className={styles.paneFoot}>
 								Browser-pipeline capture; needs PipeWire for system audio.
@@ -181,9 +181,8 @@ export default function Home() {
 					<p className={styles.quickStartNote}>
 						The macOS line is only needed if Gatekeeper blocks the app. Linux also ships{" "}
 						<code>.rpm</code>, <code>.pacman</code>, an AppImage, and a Nix flake — every artifact
-						is on the{" "}
-						<a href="https://github.com/getopenscreen/openscreen/releases">Releases page</a>, and{" "}
-						<Link to="/docs/installation">Installation</Link> has the full steps.
+						is on the <a href="https://github.com/MinhOmega/Capturia/releases">Releases page</a>,
+						and <Link to="/docs/installation">Installation</Link> has the full steps.
 					</p>
 				</div>
 			</section>

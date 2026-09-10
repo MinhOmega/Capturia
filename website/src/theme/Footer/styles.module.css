@@ -85,15 +85,3 @@
 .bottomBar p {
 	margin: 0;
 }
-
-.lineageLink {
-	color: var(--os-muted);
-	text-decoration: underline;
-	text-underline-offset: 2px;
-	text-decoration-color: var(--os-border-hi);
-}
-
-.lineageLink:hover {
-	color: var(--os-accent);
-	text-decoration-color: var(--os-accent-border);
-}

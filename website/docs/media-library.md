@@ -2,7 +2,7 @@
 id: media-library
 title: Media library & clips
 sidebar_position: 5
-description: "Manage sources and clips in OpenScreen: import media, then trim, crop, split, and reorder clips on one timeline, and set the project output size."
+description: "Manage sources and clips in Capturia: import media, then trim, crop, split, and reorder clips on one timeline, and set the project output size."
 keywords:
   - media library
   - video clips
@@ -36,7 +36,7 @@ The bottom row of the timeline is the clip strip. Each clip shows its own wavefo
 - **Drag to reorder.** The regions on top follow their clip — a zoom you placed on a clip stays on that clip when it moves.
 - **Double-click** (or the pencil on a clip) opens **Edit clip**: in/out points with a scrubbable range, and a crop rectangle with draggable handles, numeric X/Y/W/H, and ratio presets. Crop is per clip.
 - **Delete clip** removes it from the timeline; the source stays in the media library.
-- **Drop a source onto an existing clip** and OpenScreen asks where it goes: **Add before**, **Add after**, or **Split here and insert** — which cuts the target clip at the drop point and drops the new source in between.
+- **Drop a source onto an existing clip** and Capturia asks where it goes: **Add before**, **Add after**, or **Split here and insert** — which cuts the target clip at the drop point and drops the new source in between.
 
 Clips are always contiguous — no gaps, no overlaps. Removing or reordering one closes the ruler up behind it.
 
@@ -51,4 +51,4 @@ The aspect-ratio picker in the timeline toolbar sets the shape of the frame; **O
 - **Screen recording** — jumps straight into [Rec mode](./recording.md#recording-from-the-editor-rec-mode).
 - **Import media** — opens the file picker.
 
-**Open project** lists your recent `.openscreen` files with a search box, keyboard navigation, and a **Browse files…** escape hatch. You can also drop a `.openscreen` file onto the empty editor.
+**Open project** lists your recent `.capturia` files with a search box, keyboard navigation, and a **Browse files…** escape hatch. You can also drop a `.capturia` file onto the empty editor.

@@ -2,7 +2,7 @@
 id: intro
 title: Introduction
 sidebar_position: 1
-description: "OpenScreen is a free, open-source screen recorder and video editor for Windows, macOS, and Linux. Native capture, GPU compositing, MIT licensed."
+description: "Capturia is a free, open-source screen recorder and video editor for Windows, macOS, and Linux. Native capture, GPU compositing, MIT licensed."
 keywords:
   - screen recorder
   - open source screen recorder
@@ -13,12 +13,12 @@ keywords:
   - Linux
 ---
 
-# Welcome to OpenScreen
+# Welcome to Capturia
 
-OpenScreen is a **free, open-source screen recorder and editor**. It uses native capture APIs (ScreenCaptureKit on macOS, Windows Graphics Capture on Windows) for low-overhead recording, and composites both the live preview and the final export on the GPU through a native Rust renderer (Direct3D 11 on Windows, Metal on macOS, wgpu on Linux) — one path, so what you see in the editor is what comes out of the export.
+Capturia is a **free, open-source screen recorder and editor**. It uses native capture APIs (ScreenCaptureKit on macOS, Windows Graphics Capture on Windows) for low-overhead recording, and composites both the live preview and the final export on the GPU through a native Rust renderer (Direct3D 11 on Windows, Metal on macOS, wgpu on Linux) — one path, so what you see in the editor is what comes out of the export.
 
 :::warning
-OpenScreen is **not production-grade**. The project is in active development and rough edges are expected.
+Capturia is **not production-grade**. The project is in active development and rough edges are expected.
 :::
 
 ## What you can do
@@ -39,14 +39,14 @@ Recording, editing, transcription, captions, and export all work offline with no
 | | |
 |---|---|
 | **License** | MIT — free forever |
-| **Platforms** | Windows, macOS, Linux ([see the roadmap](https://github.com/getopenscreen/openscreen/blob/main/ROADMAP.md) for packaging status) |
-| **Repo** | [github.com/getopenscreen/openscreen](https://github.com/getopenscreen/openscreen) |
+| **Platforms** | Windows, macOS, Linux ([see the roadmap](https://github.com/MinhOmega/Capturia/blob/main/ROADMAP.md) for packaging status) |
+| **Repo** | [github.com/MinhOmega/Capturia](https://github.com/MinhOmega/Capturia) |
 
 ## Status of this site
 
 Everything under **Features** in the sidebar documents what's actually shipped in the app today, not the roadmap. The deeper internal specs this site is built from — architecture notes, engineering docs, test plans — still live in the repo and aren't migrated here yet:
 
-- [`README.md`](https://github.com/getopenscreen/openscreen/blob/main/README.md)
-- [`CONTRIBUTING.md`](https://github.com/getopenscreen/openscreen/blob/main/CONTRIBUTING.md)
-- [`AGENTS.md`](https://github.com/getopenscreen/openscreen/blob/main/AGENTS.md)
-- [`docs/`](https://github.com/getopenscreen/openscreen/tree/main/docs)
+- [`README.md`](https://github.com/MinhOmega/Capturia/blob/main/README.md)
+- [`CONTRIBUTING.md`](https://github.com/MinhOmega/Capturia/blob/main/CONTRIBUTING.md)
+- [`AGENTS.md`](https://github.com/MinhOmega/Capturia/blob/main/AGENTS.md)
+- [`docs/`](https://github.com/MinhOmega/Capturia/tree/main/docs)

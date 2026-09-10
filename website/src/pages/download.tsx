@@ -17,16 +17,19 @@ import { type AssetKind, findAsset, formatSize, type LatestRelease } from "../li
 import { jsonLd, SOFTWARE_ID, softwareApplicationLd, WEBSITE_ID } from "../lib/structured-data";
 import styles from "./download.module.css";
 
-const REPO_URL = "https://github.com/getopenscreen/openscreen";
+const REPO_URL = "https://github.com/MinhOmega/Capturia";
 const RELEASES_URL = `${REPO_URL}/releases`;
+// 404s on a repo with no published release, unlike RELEASES_URL, which renders
+// its own empty state — so this is only ever used when a release is known to exist.
 const LATEST_URL = `${RELEASES_URL}/latest`;
-const PAGE_URL = "https://getopenscreen.com/download/";
+const SOURCE_URL = `${REPO_URL}/blob/main/README.md#development`;
+const PAGE_URL = "https://minhomega.github.io/Capturia/download/";
 
 // Shared by <Layout> and the WebPage node below so the two cannot drift: a
 // structured-data description that contradicts the meta one is worse than none.
 const PAGE_TITLE = "Download for Windows, macOS & Linux";
 const PAGE_DESCRIPTION =
-	"Download OpenScreen free for Windows, macOS, and Linux — .dmg, .exe, .deb, .rpm, .pacman, AppImage, and a Nix flake. Open source, no account, no watermark.";
+	"Download Capturia free for Windows, macOS, and Linux — .dmg, .exe, .deb, .rpm, .pacman, AppImage, and a Nix flake. Open source, no account, no watermark.";
 
 type PlatformSpec = {
 	id: string;
@@ -81,7 +84,7 @@ const PLATFORMS: PlatformSpec[] = [
  * entity itself under its canonical @id. Emitting the SoftwareApplication here
  * as well as on the landing page is not duplication — the shared @id makes both
  * copies one entity — and it is what lets this page, the one we want ranking for
- * "openscreen download", carry the app's category, platforms, price, and version.
+ * "capturia download", carry the app's category, platforms, price, and version.
  */
 function downloadPageLd(release: LatestRelease): string {
 	return jsonLd(
@@ -115,13 +118,22 @@ export default function DownloadPage() {
 						{release ? `${release.tag} · MIT licensed` : "MIT licensed · free forever"}
 					</span>
 					<Heading as="h1" className={styles.title}>
-						Download OpenScreen
+						Download Capturia
 					</Heading>
 					<p className={styles.tagline}>
 						A free, open-source screen recorder and video editor. No account, no watermark, no
 						subscription.
 					</p>
-					{release?.published ? (
+					{!release ? (
+						// Worded for both ways the build-time lookup comes back empty —
+						// no release published yet, or a rate-limited runner — because the
+						// page cannot tell them apart and only one of them means there is
+						// nothing to download.
+						<p className={styles.releaseMeta}>
+							No release assets to link yet — <a href={RELEASES_URL}>browse GitHub Releases</a>, or{" "}
+							<a href={SOURCE_URL}>build from source</a>.
+						</p>
+					) : release.published ? (
 						<p className={styles.releaseMeta}>
 							Latest stable release, published {release.published}
 						</p>
@@ -141,12 +153,15 @@ export default function DownloadPage() {
 								<div className={styles.cardBody}>
 									{options.map(({ kind, label, sublabel }) => {
 										const asset = findAsset(release, kind);
-										// No build-time asset data (rate-limited runner, or a
-										// release that dropped this artifact) degrades to the
-										// releases list rather than rendering a dead link.
+										// No build-time asset data degrades to a link rather than a
+										// dead file: /releases/latest when a release exists but dropped
+										// this artifact, and the releases list when no release resolved
+										// at all — /latest itself 404s on a repo that has never
+										// published one.
 										const size = asset ? formatSize(asset.size) : "";
+										const href = asset?.url ?? (release ? LATEST_URL : RELEASES_URL);
 										return (
-											<a key={kind} className={styles.option} href={asset?.url ?? LATEST_URL}>
+											<a key={kind} className={styles.option} href={href}>
 												<span className={styles.optionText}>
 													<span className={styles.optionLabel}>{label}</span>
 													<span className={styles.optionSub}>{sublabel}</span>
@@ -170,7 +185,7 @@ export default function DownloadPage() {
 							</div>
 							<pre className={styles.code}>
 								<span className={styles.accentText}>xattr</span> -rd com.apple.quarantine
-								/Applications/Openscreen.app
+								/Applications/Capturia.app
 							</pre>
 							<p className={styles.panelFoot}>
 								Give your terminal Full Disk Access in System Settings first, then run it.
@@ -183,7 +198,7 @@ export default function DownloadPage() {
 								<span>Nix: run it without installing</span>
 							</div>
 							<pre className={styles.code}>
-								<span className={styles.accentText}>nix</span> run github:getopenscreen/openscreen
+								<span className={styles.accentText}>nix</span> run github:MinhOmega/Capturia
 							</pre>
 							<p className={styles.panelFoot}>
 								Per-distribution steps are in the{" "}
