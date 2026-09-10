@@ -62,7 +62,7 @@ import { transcriptionBusyLabel } from "./transcriptionBusyLabel";
  * `CTFontManagerRegisterFontsForURL`, `fontdb::load_font_data`) AND ttf/otf copies of
  * these files — the bundled woff2 is a web-only container none of the three can parse.
  */
-const CAPTION_FONTS = ["Inter", "Geist"] as const;
+export const CAPTION_FONTS = ["Inter", "Geist"] as const;
 
 /** Offered as translation targets. Codes double as the storage key. */
 const TRANSLATION_LANGUAGES: ReadonlyArray<{ code: string; label: string }> = [
