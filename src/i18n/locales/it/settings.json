@@ -17,25 +17,6 @@
 		"color": "Colore",
 		"colorWheel": "Ruota dei colori"
 	},
-	"customFont": {
-		"namePlaceholder": "Il mio font personalizzato",
-		"failedToAdd": "Impossibile aggiungere il font",
-		"addingButton": "Aggiunta in corso...",
-		"errorInvalidUrl": "Inserisci un URL Google Fonts valido",
-		"urlHelp": "Ottieni questo da Google Fonts: Seleziona un font → Clicca \"Ottieni font\" → Copia l'URL @import",
-		"urlLabel": "URL importazione Google Fonts",
-		"successMessage": "Font \"{{fontName}}\" aggiunto con successo",
-		"nameLabel": "Nome visualizzato",
-		"errorEmptyName": "Inserisci un nome per il font",
-		"nameHelp": "Così apparirà il font nel selettore",
-		"errorEmptyUrl": "Inserisci un URL di importazione Google Fonts",
-		"errorExtractFailed": "Impossibile estrarre la famiglia di font dall'URL",
-		"urlPlaceholder": "https://fonts.googleapis.com/css2?family=Roboto&display=swap",
-		"dialogTitle": "Aggiungi font Google",
-		"errorTimeout": "Il font ha impiegato troppo tempo a caricarsi. Controlla l'URL e riprova.",
-		"errorLoadFailed": "Impossibile caricare il font. Verifica che l'URL di Google Fonts sia corretto.",
-		"addButton": "Aggiungi font"
-	},
 	"imageUpload": {
 		"invalidFileType": "Tipo di file non valido",
 		"failedToUpload": "Impossibile caricare l'immagine",
@@ -69,7 +50,6 @@
 		"typeArrow": "Freccia",
 		"none": "Nessuno",
 		"blurColor": "Colore sfocatura",
-		"customFonts": "Caratteri personalizzati",
 		"imageUploadSuccess": "Immagine caricata con successo!",
 		"type": "Tipo",
 		"arrowColor": "Colore freccia",

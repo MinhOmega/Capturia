@@ -17,25 +17,6 @@
 		"color": "لون",
 		"colorWheel": "عجلة الألوان"
 	},
-	"customFont": {
-		"namePlaceholder": "خطي المخصص",
-		"failedToAdd": "فشل في إضافة الخط",
-		"addingButton": "جاري الإضافة...",
-		"errorInvalidUrl": "يرجى إدخال رابط صحيح لخطوط Google",
-		"urlHelp": "احصل على هذا من خطوط Google: حدد خطًا → انقر على \"احصل على الخط\" → انسخ رابط `@import`",
-		"urlLabel": "رابط استيراد خطوط Google",
-		"successMessage": "تم إضافة الخط \"{{fontName}}\" بنجاح",
-		"nameLabel": "اسم العرض",
-		"errorEmptyName": "يرجى إدخال اسم الخط",
-		"nameHelp": "هكذا سيظهر الخط في محدد الخطوط",
-		"errorEmptyUrl": "يرجى إدخال رابط استيراد لخطوط Google",
-		"errorExtractFailed": "تعذر استخراج عائلة الخط من الرابط",
-		"urlPlaceholder": "https://fonts.googleapis.com/css2?family=Roboto&display=swap",
-		"dialogTitle": "إضافة خط Google",
-		"errorTimeout": "استغرق تحميل الخط وقتًا طويلاً. يرجى التحقق من الرابط والمحاولة مرة أخرى.",
-		"errorLoadFailed": "تعذر تحميل الخط. يرجى التحقق من صحة رابط خطوط Google.",
-		"addButton": "إضافة خط"
-	},
 	"imageUpload": {
 		"invalidFileType": "نوع ملف غير صالح",
 		"failedToUpload": "فشل رفع الصورة",
@@ -69,7 +50,6 @@
 		"typeArrow": "سهم",
 		"none": "بدون",
 		"blurColor": "لون التمويه",
-		"customFonts": "خطوط مخصصة",
 		"imageUploadSuccess": "تم رفع الصورة بنجاح!",
 		"type": "النوع",
 		"arrowColor": "لون السهم",

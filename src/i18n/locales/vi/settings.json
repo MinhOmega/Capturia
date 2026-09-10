@@ -17,25 +17,6 @@
 		"color": "Màu sắc",
 		"colorWheel": "Vòng màu"
 	},
-	"customFont": {
-		"namePlaceholder": "Phông chữ tùy chỉnh của tôi",
-		"failedToAdd": "Thêm phông chữ thất bại",
-		"addingButton": "Đang thêm...",
-		"errorInvalidUrl": "Vui lòng nhập URL Google Fonts hợp lệ",
-		"urlHelp": "Lấy từ Google Fonts: Chọn một phông chữ → Nhấp \"Get font\" → Sao chép URL @import",
-		"urlLabel": "URL nhập Google Fonts",
-		"successMessage": "Thêm phông chữ \"{{fontName}}\" thành công",
-		"nameLabel": "Tên hiển thị",
-		"errorEmptyName": "Vui lòng nhập tên phông chữ",
-		"nameHelp": "Đây là cách phông chữ sẽ xuất hiện trong bộ chọn phông chữ",
-		"errorEmptyUrl": "Vui lòng nhập URL nhập Google Fonts",
-		"errorExtractFailed": "Không thể trích xuất họ phông chữ từ URL",
-		"urlPlaceholder": "https://fonts.googleapis.com/css2?family=Roboto&display=swap",
-		"dialogTitle": "Thêm Google Font",
-		"errorTimeout": "Tải phông chữ mất quá nhiều thời gian. Vui lòng kiểm tra URL và thử lại.",
-		"errorLoadFailed": "Không thể tải phông chữ. Vui lòng xác minh URL Google Fonts là chính xác.",
-		"addButton": "Thêm phông chữ"
-	},
 	"imageUpload": {
 		"invalidFileType": "Loại tệp không hợp lệ",
 		"failedToUpload": "Tải lên hình ảnh thất bại",
@@ -69,7 +50,6 @@
 		"typeArrow": "Mũi tên",
 		"none": "Không có",
 		"blurColor": "Màu làm mờ",
-		"customFonts": "Phông chữ tùy chỉnh",
 		"imageUploadSuccess": "Tải lên hình ảnh thành công!",
 		"type": "Loại",
 		"arrowColor": "Màu mũi tên",

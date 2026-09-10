@@ -17,25 +17,6 @@
 		"color": "Color",
 		"colorWheel": "Rueda de colores"
 	},
-	"customFont": {
-		"namePlaceholder": "Mi fuente personalizada",
-		"failedToAdd": "Error al agregar la fuente",
-		"addingButton": "Agregando...",
-		"errorInvalidUrl": "Por favor ingresa una URL válida de Google Fonts",
-		"urlHelp": "Obtén esto de Google Fonts: Selecciona una fuente → Haz clic en \"Get font\" → Copia la URL de @import",
-		"urlLabel": "URL de importación de Google Fonts",
-		"successMessage": "Fuente \"{{fontName}}\" agregada exitosamente",
-		"nameLabel": "Nombre para mostrar",
-		"errorEmptyName": "Por favor ingresa un nombre de fuente",
-		"nameHelp": "Así aparecerá la fuente en el selector de fuentes",
-		"errorEmptyUrl": "Por favor ingresa una URL de importación de Google Fonts",
-		"errorExtractFailed": "No se pudo extraer la familia de fuentes de la URL",
-		"urlPlaceholder": "https://fonts.googleapis.com/css2?family=Roboto&display=swap",
-		"dialogTitle": "Agregar fuente de Google",
-		"errorTimeout": "La fuente tardó demasiado en cargarse. Por favor verifica la URL e intenta de nuevo.",
-		"errorLoadFailed": "No se pudo cargar la fuente. Por favor verifica que la URL de Google Fonts sea correcta.",
-		"addButton": "Agregar fuente"
-	},
 	"imageUpload": {
 		"invalidFileType": "Tipo de archivo no válido",
 		"failedToUpload": "Error al subir la imagen",
@@ -69,7 +50,6 @@
 		"typeArrow": "Flecha",
 		"none": "Ninguno",
 		"blurColor": "Color del desenfoque",
-		"customFonts": "Fuentes personalizadas",
 		"imageUploadSuccess": "¡Imagen subida exitosamente!",
 		"type": "Tipo",
 		"arrowColor": "Color de la flecha",

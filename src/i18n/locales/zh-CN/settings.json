@@ -17,25 +17,6 @@
 		"color": "颜色",
 		"colorWheel": "颜色轮"
 	},
-	"customFont": {
-		"namePlaceholder": "我的自定义字体",
-		"failedToAdd": "添加字体失败",
-		"addingButton": "添加中...",
-		"errorInvalidUrl": "请输入有效的 Google Fonts URL",
-		"urlHelp": "从 Google Fonts 获取：选择字体 → 点击 \"Get font\" → 复制 @import URL",
-		"urlLabel": "Google Fonts 导入 URL",
-		"successMessage": "字体 \"{{fontName}}\" 添加成功",
-		"nameLabel": "显示名称",
-		"errorEmptyName": "请输入字体名称",
-		"nameHelp": "这是字体在字体选择器中显示的名称",
-		"errorEmptyUrl": "请输入 Google Fonts 导入 URL",
-		"errorExtractFailed": "无法从 URL 中提取字体系列",
-		"urlPlaceholder": "https://fonts.googleapis.com/css2?family=Roboto&display=swap",
-		"dialogTitle": "添加 Google 字体",
-		"errorTimeout": "字体加载时间过长。请检查 URL 并重试。",
-		"errorLoadFailed": "无法加载该字体。请确认 Google Fonts URL 是否正确。",
-		"addButton": "添加字体"
-	},
 	"imageUpload": {
 		"invalidFileType": "无效的文件类型",
 		"failedToUpload": "上传图片失败",
@@ -69,7 +50,6 @@
 		"typeArrow": "箭头",
 		"none": "无",
 		"blurColor": "模糊颜色",
-		"customFonts": "自定义字体",
 		"imageUploadSuccess": "图片上传成功！",
 		"type": "类型",
 		"arrowColor": "箭头颜色",

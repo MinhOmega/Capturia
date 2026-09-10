@@ -17,25 +17,6 @@
 		"color": "Color",
 		"colorWheel": "Color Wheel"
 	},
-	"customFont": {
-		"namePlaceholder": "My Custom Font",
-		"failedToAdd": "Failed to add font",
-		"addingButton": "Adding...",
-		"errorInvalidUrl": "Please enter a valid Google Fonts URL",
-		"urlHelp": "Get this from Google Fonts: Select a font → Click \"Get font\" → Copy the @import URL",
-		"urlLabel": "Google Fonts Import URL",
-		"successMessage": "Font \"{{fontName}}\" added successfully",
-		"nameLabel": "Display Name",
-		"errorEmptyName": "Please enter a font name",
-		"nameHelp": "This is how the font will appear in the font selector",
-		"errorEmptyUrl": "Please enter a Google Fonts import URL",
-		"errorExtractFailed": "Could not extract font family from URL",
-		"urlPlaceholder": "https://fonts.googleapis.com/css2?family=Roboto&display=swap",
-		"dialogTitle": "Add Google Font",
-		"errorTimeout": "Font took too long to load. Please check the URL and try again.",
-		"errorLoadFailed": "The font could not be loaded. Please verify the Google Fonts URL is correct.",
-		"addButton": "Add Font"
-	},
 	"imageUpload": {
 		"invalidFileType": "Invalid file type",
 		"failedToUpload": "Failed to upload image",
@@ -69,7 +50,6 @@
 		"typeArrow": "Arrow",
 		"none": "None",
 		"blurColor": "Blur Color",
-		"customFonts": "Custom Fonts",
 		"imageUploadSuccess": "Image uploaded successfully!",
 		"type": "Type",
 		"arrowColor": "Arrow Color",
