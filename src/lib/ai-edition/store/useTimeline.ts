@@ -9,8 +9,7 @@ import { toFileUrl } from "@/components/video-editor/projectPersistence";
 import {
 	type AnnotationRegion,
 	type AnnotationType,
-	DEFAULT_BLUR_BLOCK_SIZE,
-	DEFAULT_BLUR_INTENSITY,
+	DEFAULT_BLUR_DATA,
 } from "@/components/video-editor/types";
 import { useScopedT } from "@/contexts/I18nContext";
 import {
@@ -484,17 +483,7 @@ export function useTimeline() {
 				// refuses to offer freehand on a new region (its capture is broken and
 				// the compositor masks only the bounding box), and a half-reliable
 				// privacy tool is worse than none.
-				...(type === "blur"
-					? {
-							blurData: {
-								type: "mosaic" as const,
-								shape: "rectangle" as const,
-								color: "white" as const,
-								intensity: DEFAULT_BLUR_INTENSITY,
-								blockSize: DEFAULT_BLUR_BLOCK_SIZE,
-							},
-						}
-					: {}),
+				...(type === "blur" ? { blurData: DEFAULT_BLUR_DATA } : {}),
 			};
 			const created = anchorRegionsWithDerivedMs([ann], document.timeline.clips, () =>
 				createId("ann"),
