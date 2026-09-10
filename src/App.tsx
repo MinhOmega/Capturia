@@ -15,7 +15,6 @@ import { TooltipProvider } from "./components/ui/tooltip";
 import { EditorDialogsProvider } from "./contexts/EditorDialogsContext";
 import { useScopedT } from "./contexts/I18nContext";
 import { ShortcutsProvider } from "./contexts/ShortcutsContext";
-import { loadAllCustomFonts } from "./lib/customFonts";
 
 const VideoEditorEntry = lazy(() =>
 	import("./components/ai-edition/AiEditionShell").then((module) => ({
@@ -71,13 +70,6 @@ export default function App() {
 			root?.style.setProperty("overflow", "hidden");
 		}
 	}, [windowType]);
-
-	useEffect(() => {
-		// Load custom fonts on app initialization
-		loadAllCustomFonts().catch((error) => {
-			console.error("Failed to load custom fonts:", error);
-		});
-	}, []);
 
 	const content = (() => {
 		switch (windowType) {

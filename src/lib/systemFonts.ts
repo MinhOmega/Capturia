@@ -8,13 +8,14 @@
 // fontdb calls `load_system_fonts()`, on Linux. A family the OS holds is
 // therefore resolvable at export on every platform.
 //
-// A family the OS does NOT hold is not. `src/lib/customFonts.ts` pulls Google
-// Fonts into the DOM with an @import; those faces live in Chromium's memory,
-// which the compositor cannot see. Offering one here would preview correctly and
-// then export in a substitute face, with nothing raised -- the old fork could do
-// it safely because it exported through a canvas in the renderer, and this app
-// cannot. That is why this module enumerates the OS and why nothing in it takes
-// a URL.
+// A family the OS does NOT hold is not. A web font pulled into the DOM with an
+// @import lives in Chromium's memory, which the compositor cannot see, so
+// offering one here would preview correctly and then export in a substitute
+// face, with nothing raised. The app used to carry exactly that: a Google Fonts
+// importer, inherited from a fork that exported through a canvas in the renderer
+// where those faces genuinely did reach the output. Native export ended that,
+// and the importer was deleted. This module enumerates the OS instead, and
+// nothing in it takes a URL.
 
 /** The subset of the Local Font Access API's `FontData` we use. */
 interface LocalFontData {
