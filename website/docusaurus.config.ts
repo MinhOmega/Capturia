@@ -4,13 +4,13 @@ import { themes as prismThemes } from "prism-react-renderer";
 
 import type { LatestRelease } from "./src/lib/release";
 
-const SITE_HOST = "https://minhomega.github.io";
+const SITE_HOST = "https://minhvo.is-a.dev";
 const BASE_URL = "/Capturia/";
 // Host and base path joined, without the trailing slash: the canonical root that
 // every absolute URL we mint ourselves hangs off (structured-data @ids, the
 // sitemap comparisons below). Docusaurus keeps `url` and `baseUrl` apart, so on a
 // project page dropping the path here is what silently points those at
-// minhomega.github.io — a user page that is not this site.
+// minhvo.is-a.dev — a user page that is not this site.
 const SITE_URL = `${SITE_HOST}${BASE_URL.replace(/\/$/, "")}`;
 const REPO_SLUG = "MinhOmega/Capturia";
 const REPO_URL = `https://github.com/${REPO_SLUG}`;
@@ -156,7 +156,8 @@ export default async function createConfig(): Promise<Config> {
 		tagline: "A free, open-source screen recorder and editor.",
 		favicon: "img/logo-icon.png",
 
-		// A project page, served from minhomega.github.io/Capturia/ rather than a
+		// A project page, served from minhvo.is-a.dev/Capturia/ (the account's custom
+		// domain, so minhomega.github.io/Capturia/ 301s here) rather than a
 		// domain root, so `url` is the bare host and every asset URL has to carry the
 		// /Capturia/ prefix. Docusaurus adds it to anything it resolves itself
 		// (favicon, themeConfig.image, navbar logo, router links); a raw href written

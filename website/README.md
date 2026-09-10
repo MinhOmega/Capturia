@@ -25,7 +25,7 @@ npm run typecheck
 
 ## Notes
 
-- Site URL: <https://minhomega.github.io/Capturia/>
+- Site URL: <https://minhvo.is-a.dev/Capturia/>
 - The base URL is `/Capturia/` because this is a GitHub Pages *project* page, served
   from a path rather than a domain root. Anything Docusaurus resolves itself picks that
   up; a hand-written absolute href does not and will 404 against the user page.

@@ -23,7 +23,7 @@ const RELEASES_URL = `${REPO_URL}/releases`;
 // its own empty state — so this is only ever used when a release is known to exist.
 const LATEST_URL = `${RELEASES_URL}/latest`;
 const SOURCE_URL = `${REPO_URL}/blob/main/README.md#development`;
-const PAGE_URL = "https://minhomega.github.io/Capturia/download/";
+const PAGE_URL = "https://minhvo.is-a.dev/Capturia/download/";
 
 // Shared by <Layout> and the WebPage node below so the two cannot drift: a
 // structured-data description that contradicts the meta one is worse than none.

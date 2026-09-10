@@ -14,7 +14,7 @@ import type { LatestRelease } from "./release";
 
 // Host + base path: this is a project page, so the base path is part of every
 // canonical URL and every @id. Keep in step with docusaurus.config.ts.
-const SITE_URL = "https://minhomega.github.io/Capturia";
+const SITE_URL = "https://minhvo.is-a.dev/Capturia";
 
 /** Minted to match the @ids in docusaurus.config.ts; keep the two in step. */
 export const ORGANIZATION_ID = `${SITE_URL}/#organization`;
