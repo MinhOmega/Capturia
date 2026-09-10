@@ -57,6 +57,12 @@
 		"failed": "Không thể kiểm tra bản cập nhật.",
 		"downloadFailed": "Không thể tải xuống bản cập nhật."
 	},
+	"errors": {
+		"unexpected": "Đã xảy ra lỗi",
+		"unexpectedBody": "Capturia gặp lỗi không mong muốn. Dự án của bạn đã được lưu — tải lại là an toàn.",
+		"reference": "Mã tham chiếu: {{id}}",
+		"reportOpenFailed": "Không thể mở trang báo lỗi."
+	},
 	"units": {
 		"pixelsPerSecond": "{{value}} px/giây",
 		"pixels": "{{value}} px"

@@ -57,6 +57,12 @@
 		"failed": "Impossibile controllare gli aggiornamenti.",
 		"downloadFailed": "Impossibile scaricare l'aggiornamento."
 	},
+	"errors": {
+		"unexpected": "Qualcosa è andato storto",
+		"unexpectedBody": "Capturia ha riscontrato un errore imprevisto. Il tuo progetto è salvato: puoi ricaricare senza rischi.",
+		"reference": "Riferimento: {{id}}",
+		"reportOpenFailed": "Impossibile aprire la pagina di segnalazione dei bug."
+	},
 	"units": {
 		"pixelsPerSecond": "{{value}} pixel/s",
 		"pixels": "{{value}} pixel"

@@ -6,6 +6,8 @@ import { installBrowserShims } from "./native/browserShim";
 
 installBrowserShims();
 
+import { AppErrorBoundary } from "./components/app/AppErrorBoundary";
+import { GlobalErrorObserver } from "./components/app/GlobalErrorObserver";
 import { CountdownOverlay } from "./components/launch/CountdownOverlay.tsx";
 import { LaunchWindow } from "./components/launch/LaunchWindow";
 import { NotesWindow } from "./components/launch/NotesWindow.tsx";
@@ -164,7 +166,11 @@ export default function App() {
 
 	return (
 		<TooltipProvider>
-			{showNotes ? <NotesWindow /> : content}
+			{/* The boundary wraps only the content, so a render crash inside it still
+			    leaves the Toaster mounted to carry the report -- and the observer
+			    mounted to catch whatever throws next. */}
+			<AppErrorBoundary>{showNotes ? <NotesWindow /> : content}</AppErrorBoundary>
+			<GlobalErrorObserver />
 			<Toaster theme="dark" />
 		</TooltipProvider>
 	);

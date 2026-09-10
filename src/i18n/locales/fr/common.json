@@ -57,6 +57,12 @@
 		"failed": "Impossible de rechercher les mises à jour.",
 		"downloadFailed": "Impossible de télécharger la mise à jour."
 	},
+	"errors": {
+		"unexpected": "Une erreur est survenue",
+		"unexpectedBody": "Capturia a rencontré une erreur inattendue. Votre projet est enregistré — vous pouvez recharger sans risque.",
+		"reference": "Référence : {{id}}",
+		"reportOpenFailed": "Impossible d'ouvrir la page de signalement de bogue."
+	},
 	"units": {
 		"pixelsPerSecond": "{{value}} pixels/s",
 		"pixels": "{{value}} pixels"

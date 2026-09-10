@@ -57,6 +57,12 @@
 		"failed": "Could not check for updates.",
 		"downloadFailed": "Could not download the update."
 	},
+	"errors": {
+		"unexpected": "Something went wrong",
+		"unexpectedBody": "Capturia hit an unexpected error. Your project is saved — reloading is safe.",
+		"reference": "Reference: {{id}}",
+		"reportOpenFailed": "Could not open the bug report page."
+	},
 	"units": {
 		"pixelsPerSecond": "{{value}} px/s",
 		"pixels": "{{value}} px"

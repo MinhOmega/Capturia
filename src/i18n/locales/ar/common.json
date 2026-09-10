@@ -57,6 +57,12 @@
 		"failed": "تعذّر التحقق من وجود تحديثات.",
 		"downloadFailed": "تعذّر تنزيل التحديث."
 	},
+	"errors": {
+		"unexpected": "حدث خطأ ما",
+		"unexpectedBody": "واجه Capturia خطأ غير متوقع. تم حفظ مشروعك — إعادة التحميل آمنة.",
+		"reference": "المرجع: {{id}}",
+		"reportOpenFailed": "تعذّر فتح صفحة الإبلاغ عن الأخطاء."
+	},
 	"units": {
 		"pixelsPerSecond": "{{value}} بكسل/ثانية",
 		"pixels": "{{value}} بكسل"
