@@ -165,12 +165,13 @@ note at the top of this file.
   that a Reserved Font Name not be reused by a modified version. Nothing here is
   modified — the files are the upstream binaries, subset by Google Fonts' own
   service to latin / latin-ext / vietnamese — so no renaming obligation arises.
-- **On-canvas faces** (`src/assets/fonts/annotation/`, ~143 KB total): Inter, Plus Jakarta Sans,
-  Space Grotesk, DM Sans, Sora, Manrope, IBM Plex Sans, Playfair Display,
-  Merriweather, Lora, IBM Plex Mono, Fira Code, Bebas Neue, Oswald, Caveat and
-  Permanent Marker. Fetched from Google Fonts by `scripts/fetch-fonts.mjs`, which
-  also writes a `LICENSES.txt` beside them listing each family and its source.
-  Each family's own copyright notice and OFL text is on its Google Fonts page.
+- **On-canvas faces** (`src/assets/fonts/annotation/`, ~582 KB total): Inter. Fetched
+  from Google Fonts by `scripts/fetch-fonts.mjs`, which also writes a `LICENSES.txt`
+  beside it listing the family and its source. Its copyright notice and OFL text is on
+  its Google Fonts page. Fifteen further families (Plus Jakarta Sans, Space Grotesk,
+  DM Sans, Sora, Manrope, IBM Plex Sans, Playfair Display, Merriweather, Lora, IBM Plex
+  Mono, Fira Code, Bebas Neue, Oswald, Caveat, Permanent Marker) were bundled up to
+  v2.1 and are no longer redistributed.
 - **UI faces** (`src/assets/fonts/`): Geist and Geist Mono —
   <https://github.com/vercel/geist-font>. `src/assets/fonts/OFL.txt` ships next to
   the woff2 as the licence requires. These were already bundled and were simply

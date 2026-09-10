@@ -33,9 +33,13 @@ import { useTranscriptionLabel } from "./TranscriptionStatus";
 import { transcriptionBusyLabel } from "./transcriptionBusyLabel";
 
 /**
- * The families bundled in `src/styles/annotation-fonts.css` (plus Geist, from
- * `styles/fonts.css`). Adding a name here that is not in one of those two sheets gets
- * you a preview drawn in a fallback face.
+ * Every family the caption picker offers. Inter is bundled in
+ * `src/styles/annotation-fonts.css`, Geist in `styles/fonts.css`. Adding a name here
+ * that is not in one of those two sheets gets you a preview drawn in a fallback face.
+ *
+ * The list used to hold seventeen families; fifteen display/serif/mono faces were cut
+ * in v2.1 because nothing shipped as a default used them and they cost ~3 MB of
+ * committed woff2.
  *
  * KNOWN GAP, and it is not fixable from this file. Bundling a font makes it available
  * to the DOM, and the DOM is only the PREVIEW. Export text is rasterised natively and
@@ -49,31 +53,16 @@ import { transcriptionBusyLabel } from "./transcriptionBusyLabel";
  *   - `text_linux.rs` builds `FontSystem::new()`, whose fontdb is seeded from the system
  *     font directories; nothing calls `load_font_data`.
  *
- * So a caption set to a family the viewer's machine lacks previews correctly and exports
- * in a substitute face. Closing it needs a native change per platform (a DirectWrite
- * custom font collection, `CTFontManagerRegisterFontsForURL`, `fontdb::load_font_data`)
- * AND ttf/otf copies of these files — the bundled woff2 is a web-only container none of
- * the three can parse.
+ * Cutting the list did NOT close that gap, and it is important not to read it as having
+ * done so: neither Inter nor Geist is a system font on Windows, macOS or a stock Linux
+ * desktop, so BOTH remaining families are still substituted at export on any machine
+ * that does not happen to have them installed. Every caption this app can produce is
+ * exposed to it — there is no safe choice in the picker. Closing it needs a native
+ * change per platform (a DirectWrite custom font collection,
+ * `CTFontManagerRegisterFontsForURL`, `fontdb::load_font_data`) AND ttf/otf copies of
+ * these files — the bundled woff2 is a web-only container none of the three can parse.
  */
-const CAPTION_FONTS = [
-	"Inter",
-	"Geist",
-	"DM Sans",
-	"Plus Jakarta Sans",
-	"Manrope",
-	"Space Grotesk",
-	"Sora",
-	"IBM Plex Sans",
-	"Oswald",
-	"Bebas Neue",
-	"Lora",
-	"Merriweather",
-	"Playfair Display",
-	"Caveat",
-	"Permanent Marker",
-	"Fira Code",
-	"IBM Plex Mono",
-] as const;
+const CAPTION_FONTS = ["Inter", "Geist"] as const;
 
 /** Offered as translation targets. Codes double as the storage key. */
 const TRANSLATION_LANGUAGES: ReadonlyArray<{ code: string; label: string }> = [
