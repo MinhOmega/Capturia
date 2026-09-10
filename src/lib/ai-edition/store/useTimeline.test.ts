@@ -593,6 +593,23 @@ describe("useTimeline.addAnnotation", () => {
 			id: (annotations[0] as { id: string }).id,
 		});
 	});
+
+	// The blur tool's entire creation path. Everything downstream of the region —
+	// the mask, the inspector, the exporter, the compositor — already shipped; what
+	// was missing was any caller that could ask for `type: "blur"`.
+	it("creates a blur region with settings the inspector can read back", async () => {
+		const { result } = renderTimeline();
+		await act(async () => {
+			await result.current.addAnnotation(2, "blur");
+		});
+		const annotations = useProjectStore.getState().document?.annotations ?? [];
+		expect(annotations[0]).toMatchObject({
+			type: "blur",
+			// No default text: a blur covers pixels and shows none.
+			content: "",
+			blurData: { type: "mosaic", shape: "rectangle", color: "white" },
+		});
+	});
 });
 
 describe("useTimeline zoom modifiers (rotation + focus mode)", () => {

@@ -6,7 +6,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { toFileUrl } from "@/components/video-editor/projectPersistence";
-import type { AnnotationRegion, AnnotationType } from "@/components/video-editor/types";
+import {
+	type AnnotationRegion,
+	type AnnotationType,
+	DEFAULT_BLUR_BLOCK_SIZE,
+	DEFAULT_BLUR_INTENSITY,
+} from "@/components/video-editor/types";
 import { useScopedT } from "@/contexts/I18nContext";
 import {
 	collapseTracksToPills,
@@ -404,22 +409,29 @@ export function useTimeline() {
 		[document, saveDocument],
 	);
 
+	// `type` defaults to "text" so every existing caller (the toolbar's comment
+	// button, the `A` shortcut, paste) keeps creating exactly what it did. The
+	// parameter is what gives the other annotation kinds a creation path: blur is
+	// rendered, inspected, exported and composited, and until now the only way to
+	// reach one was to convert a text region in the inspector.
 	const addAnnotation = useCallback(
-		async (durationSec = DEFAULT_NEW_REGION_SEC) => {
+		async (durationSec = DEFAULT_NEW_REGION_SEC, type: AnnotationType = "text") => {
 			if (!document) return;
 			const timeMs = Math.round(playheadSec() * 1000);
 			const ann: AnnotationRegion = {
 				id: createId("ann"),
 				startMs: timeMs,
 				endMs: timeMs + Math.round(durationSec * 1000),
-				type: "text" as AnnotationType,
+				type,
 				// Real, localised text rather than an empty field. An empty annotation
 				// renders nothing at all, so the user added a region and saw no change
 				// on the canvas; the inspector's placeholder is CSS ghost text that
 				// never reaches `content`, so it never reached the compositor either.
 				// `textContent` stays empty because the render path reads
 				// `content || textContent` and seeding both would just duplicate it.
-				content: ts("annotation.defaultText"),
+				// Only text has content to seed: a blur covers pixels and carries none,
+				// which is why `convertAnnotationKind` blanks the field on the way in.
+				content: type === "text" ? ts("annotation.defaultText") : "",
 				textContent: "",
 				position: { x: 50, y: 50 },
 				size: { width: 30, height: 20 },
@@ -435,6 +447,27 @@ export function useTimeline() {
 					textAnimation: "none",
 				},
 				zIndex: document.annotations.length + 1,
+				// A blur with no `blurData` already renders — every reader (schema
+				// default, inspector, sceneDescription) falls back to the same
+				// mosaic/rectangle values — but then the inspector shows settings the
+				// document does not hold. Seed them so what is stored is what is shown.
+				// Mosaic over gaussian: it is what all three of those fallbacks pick,
+				// and a pixel grid reads as deliberately redacted where a soft blur
+				// reads as an accident. Rectangle over freehand: the inspector already
+				// refuses to offer freehand on a new region (its capture is broken and
+				// the compositor masks only the bounding box), and a half-reliable
+				// privacy tool is worse than none.
+				...(type === "blur"
+					? {
+							blurData: {
+								type: "mosaic" as const,
+								shape: "rectangle" as const,
+								color: "white" as const,
+								intensity: DEFAULT_BLUR_INTENSITY,
+								blockSize: DEFAULT_BLUR_BLOCK_SIZE,
+							},
+						}
+					: {}),
 			};
 			const created = anchorRegionsWithDerivedMs([ann], document.timeline.clips, () =>
 				createId("ann"),
@@ -448,7 +481,8 @@ export function useTimeline() {
 			};
 			if (!(await saveDocument(next, { history: true }))) return;
 			// Select the freshly added annotation so its inspector opens and it shows a
-			// selection box on the canvas, ready to be retyped over.
+			// selection box on the canvas — ready to be retyped over, or (for a blur)
+			// dragged onto whatever it has to cover.
 			const newId = created[0]?.id ?? ann.id;
 			setMultiSelection([{ kind: "annotation", id: newId }]);
 			setSelection({ kind: "annotation", id: newId });
