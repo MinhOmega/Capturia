@@ -1717,7 +1717,12 @@ export function NewEditorShell() {
 				action={unsavedPrompt?.action ?? "new"}
 				onChoose={handleConfirmUnsaved}
 			/>
-			<ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} document={document} />
+			<ExportDialog
+				open={exportOpen}
+				onClose={() => setExportOpen(false)}
+				onReopen={() => setExportOpen(true)}
+				document={document}
+			/>
 			<AddAudioLayerDialog
 				open={voiceoverFlow !== null}
 				maxDurationSec={voiceoverFlow?.maxDurationSec ?? 0}

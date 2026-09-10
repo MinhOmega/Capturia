@@ -193,6 +193,19 @@ export interface CompositorViewAddon {
 		onProgress?: (frames: number) => void,
 	): Promise<GifExportStats>;
 
+	/** Ask the running export to stop. Returns immediately — the export itself ends a frame
+	 *  later, by REJECTING the `exportMulti`/`exportGif` promise with `EXPORT_CANCELLED`.
+	 *  That rejection is the completion signal; this call is only the request.
+	 *
+	 *  Rejecting rather than resolving is deliberate: the compositor's cleanup facades
+	 *  delete a partially written output only on failure, so a cancel drops the truncated
+	 *  file on the same path a crash would.
+	 *
+	 *  Optional at the type level for the same reason as `remuxSeekable` — a stale locally
+	 *  built `.node` predates it, and the caller degrades to "cancel does nothing" rather
+	 *  than throwing. */
+	exportCancel?(): void;
+
 	/** Stream-copy `inputPath` to `outputPath` through the matroska muxer, rebuilding the
 	 *  container (real `Duration` computed from the packet timestamps, plus `Cues` and
 	 *  `SeekHead`) without re-encoding a single frame.

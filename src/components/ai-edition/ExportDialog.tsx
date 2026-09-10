@@ -9,7 +9,7 @@
 // the new shell's modal style.
 
 import { Download, FileVideo, FolderOpen, Loader2 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useScopedT } from "@/contexts/I18nContext";
 import { writeSubtitleSidecars } from "@/lib/ai-edition/captions";
@@ -38,6 +38,7 @@ import { outputFrameCount } from "@/lib/exporter/outputFrameCount";
 import { exportGifNative, exportMultiNative, useIsCpuCompositor } from "@/native";
 import type { CompositorClipInput } from "@/native/contracts";
 import { buildSceneDescription, resolveVisibleClips } from "@/native/sceneDescription";
+import { ExportProgressFloat } from "./ExportProgressFloat";
 import { ModalShell } from "./Modals";
 import styles from "./NewEditorShell.module.css";
 
@@ -121,12 +122,16 @@ const QUALITY_OPTIONS: Array<{
 interface ExportDialogProps {
 	open: boolean;
 	onClose: () => void;
+	/** Reopens the dialog from the minimized pill. Without it the pill is not rendered,
+	 *  and closing mid-export keeps its old meaning of "no way back". */
+	onReopen?: () => void;
 	document: AxcutDocument | null;
 }
 
-export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
+export function ExportDialog({ open, onClose, onReopen, document }: ExportDialogProps) {
 	const t = useScopedT("editor");
 	const ts = useScopedT("settings");
+	const td = useScopedT("dialogs");
 	// No usable GPU: the export still applies every effect (output is identical), it
 	// just runs on the software encoder and takes minutes instead of seconds.
 	const cpuCompositor = useIsCpuCompositor();
@@ -145,7 +150,9 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 	const [progress, setProgress] = useState<ExportProgress | null>(null);
 	const [error, setError] = useState<string | null>(null);
 	const [savedPath, setSavedPath] = useState<string | null>(null);
-	const cancelRef = useRef<{ cancel: () => void } | null>(null);
+	// Latched between "user asked to cancel" and the export promise actually rejecting —
+	// a frame's worth of time, but enough for a second click to fire a second request.
+	const [cancelling, setCancelling] = useState(false);
 
 	// (Old behavior: the native compositor overlay used to be a top-level OS window outside the
 	//  Chromium surface, so we'd hide it here to put this modal in front. The compositor now
@@ -231,19 +238,29 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 				})
 			: null;
 
-	useEffect(() => {
-		if (!open) {
+	// Deliberately NOT reset when `open` goes false. Closing mid-export now means
+	// "minimize": the dialog component itself never unmounts (`NewEditorShell` renders it
+	// unconditionally), so keeping the state here is all it takes for the floating pill to
+	// go on reporting a run the user has clicked away from.
+
+	const handleClose = () => {
+		// A finished or failed run is cleared on the way out, so the next open starts on the
+		// form. Skipping this would also strand the pill: it renders for any non-idle phase,
+		// so a "done" state closed but not cleared would reopen and re-minimize forever.
+		if (phase === "done" || phase === "error") {
 			setPhase("idle");
 			setProgress(null);
 			setError(null);
 			setSavedPath(null);
-			cancelRef.current = null;
 		}
-	}, [open]);
-
-	const handleClose = () => {
-		if (phase === "rendering" || phase === "writing") return;
 		onClose();
+	};
+
+	// Asks the native side to stop; the export's own promise is what actually settles, so
+	// the phase is left alone here and moved back to idle in `handleStart`'s catch.
+	const handleCancel = () => {
+		setCancelling(true);
+		void window.electronAPI?.exportCancel?.();
 	};
 
 	const handleStart = async () => {
@@ -262,6 +279,7 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 		const suggested = `${safeName || "export"}${format === "gif" ? ".gif" : ".mp4"}`;
 
 		setPhase("configuring");
+		setCancelling(false);
 		setError(null);
 		setProgress(null);
 		setSavedPath(null);
@@ -356,12 +374,24 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 					},
 				});
 			} catch (err) {
-				setError(err instanceof Error ? err.message : String(err));
-				setPhase("error");
-				toast.error(t("exportDialog.exportFailed"), {
-					description: err instanceof Error ? err.message : String(err),
-				});
+				const message = err instanceof Error ? err.message : String(err);
+				// The compositor rejects with this token when the walk saw the cancel flag.
+				// Matched on the message because that is all that survives the napi -> IPC
+				// hops; the token is untranslated precisely so this test is language-proof.
+				// A cancel is a user decision, not a failure: back to the form, no error
+				// panel, no toast. The partial file is already gone — the compositor's
+				// cleanup facade removes it on any `Err`, including this one.
+				if (message.includes("EXPORT_CANCELLED")) {
+					setPhase("idle");
+					setProgress(null);
+					setSavedPath(null);
+				} else {
+					setError(message);
+					setPhase("error");
+					toast.error(t("exportDialog.exportFailed"), { description: message });
+				}
 			} finally {
+				setCancelling(false);
 				unsubscribeProgress?.();
 			}
 			return;
@@ -371,6 +401,16 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 	const isBusy = phase === "rendering" || phase === "writing" || phase === "configuring";
 	const pct = progress?.percentage ?? 0;
 	const gifSizeLabel = GIF_SIZE_PRESETS[gifSize].label;
+
+	// The minimized form, rendered INSTEAD of the modal: `ModalShell` renders nothing while
+	// closed, and "closed" is exactly when the pill has to be on screen. Safe as an early
+	// return because every hook above it has already run — none follow.
+	// No `onReopen` means the host has nowhere to reopen to, so there is no pill.
+	if (!open && onReopen && phase !== "idle") {
+		return (
+			<ExportProgressFloat phase={phase} progress={progress} format={format} onClick={onReopen} />
+		);
+	}
 
 	return (
 		<ModalShell
@@ -675,10 +715,16 @@ export function ExportDialog({ open, onClose, document }: ExportDialogProps) {
 					<button
 						type="button"
 						className={`${styles.btn} ${styles.btnSecondary}`}
-						onClick={handleClose}
-						disabled={isBusy}
+						// Enabled during the render — being unable to stop a running export was
+						// the whole defect. Only a cancel already in flight disables it.
+						onClick={isBusy ? handleCancel : handleClose}
+						disabled={isBusy && cancelling}
 					>
-						{phase === "done" ? t("exportDialog.close") : t("exportDialog.cancel")}
+						{isBusy
+							? td("export.cancelExport")
+							: phase === "done"
+								? t("exportDialog.close")
+								: t("exportDialog.cancel")}
 					</button>
 					<button
 						type="button"
