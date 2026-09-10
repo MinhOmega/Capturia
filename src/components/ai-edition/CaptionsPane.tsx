@@ -25,54 +25,13 @@ import {
 } from "@/lib/ai-edition/store/transcriptionStore";
 import { useCaptions } from "@/lib/ai-edition/store/useCaptions";
 import { firstTimelineBusyView } from "@/lib/ai-edition/transcription/status";
-import { listSystemFontFamilies } from "@/lib/systemFonts";
 import { nativeBridgeClient } from "@/native";
 import { ColorField } from "./ColorField";
+import { FontFamilyField } from "./FontFamilyField";
 import styles from "./NewEditorShell.module.css";
 import { SliderCell, Toggle } from "./RightPanes";
 import { useTranscriptionLabel } from "./TranscriptionStatus";
 import { transcriptionBusyLabel } from "./transcriptionBusyLabel";
-
-/**
- * The two families this app BUNDLES, always offered. The picker also offers every
- * font installed on the machine -- see `listSystemFontFamilies` in
- * `src/lib/systemFonts.ts` -- so this constant is the floor of the list, not the
- * list. Inter is bundled in `src/styles/annotation-fonts.css`, Geist in
- * `styles/fonts.css`.
- *
- * The two halves of that list have OPPOSITE export behaviour, and it is the
- * bundled half that is the weak one:
- *
- *   - An installed family is safe. Export text is rasterised natively, and all
- *     three backends resolve a family name against the system font collection:
- *     `text_windows.rs` calls `CreateTextFormat(family, None, ...)` where the
- *     `None` is the `IDWriteFontCollection` and NULL means the system one;
- *     `text_macos.rs` calls `CTFontCreateWithName`; `text_linux.rs` builds
- *     `FontSystem::new()`, whose fontdb calls `load_system_fonts()`. What the OS
- *     has, the compositor can resolve.
- *   - The bundled two are NOT safe, and shipping them is what makes them unsafe.
- *     Bundling a font reaches the DOM, and the DOM is only the PREVIEW; none of
- *     the three backends can load a file we ship (nothing calls
- *     `CTFontManagerRegisterFontsForURL`, `fontdb::load_font_data`, or builds a
- *     DirectWrite custom collection), and the bundled woff2 is a web-only
- *     container none of them could parse anyway. Neither Inter nor Geist is a
- *     system font on Windows, macOS or a stock Linux desktop, so BOTH are still
- *     substituted at export on a machine that lacks them. Closing that needs a
- *     native change per platform AND ttf/otf copies of these files.
- *
- * An unresolvable family never fails loudly. All three backends substitute
- * silently: DirectWrite and CoreText fall back internally, and cosmic-text builds
- * its match list from every installed face, so an unmatched name simply leaves
- * that list unreordered and shapes against another face. Text always renders, in
- * the wrong type, with nothing raised -- which is why the picker offers only what
- * `systemFonts.ts` enumerated, and why a project carried to a machine that lacks
- * the family it names degrades quietly rather than warning. That last case is not
- * handled here on purpose; it applies equally to the bundled two.
- */
-export const CAPTION_FONTS = ["Inter", "Geist"] as const;
-
-/** Ties the font input to its <datalist>. */
-const FONT_LIST_ID = "caption-font-families";
 
 /** Offered as translation targets. Codes double as the storage key. */
 const TRANSLATION_LANGUAGES: ReadonlyArray<{ code: string; label: string }> = [
@@ -111,21 +70,6 @@ export function CaptionsPane({ onClose }: { onClose?: () => void } = {}) {
 	} = useCaptions();
 	const document = useProjectStore((s) => s.document);
 	const saveDocument = useProjectStore((s) => s.saveDocument);
-	const [systemFonts, setSystemFonts] = useState<readonly string[]>([]);
-	// What the user has typed into the font box while it does not yet name a
-	// family we can resolve. Null means "show the stored value".
-	const [fontDraft, setFontDraft] = useState<string | null>(null);
-	const fontOptions = useMemo(
-		() => [...new Set<string>([...CAPTION_FONTS, ...systemFonts])],
-		[systemFonts],
-	);
-	// Enumerated on first focus rather than on mount, because the Local Font
-	// Access permission prompt needs a user gesture -- a pane that asked as it
-	// opened would be refused, and the user would never see the wider list.
-	const loadSystemFonts = () => {
-		if (systemFonts.length > 0) return;
-		void listSystemFontFamilies().then(setSystemFonts);
-	};
 	// Captions are a view of the transcript, and the transcript arrives on its
 	// own (transcriptionStore's background pass). The pane reads that state
 	// straight from the store rather than being handed a busy flag: it is the
@@ -462,37 +406,13 @@ export function CaptionsPane({ onClose }: { onClose?: () => void } = {}) {
 				<div className={styles.sectionLabel}>{t("captions.text")}</div>
 				<div className={styles.paneRow}>
 					<span className={styles.label}>{t("captions.font")}</span>
-					{/* A datalist, not a select: the installed-font list runs to hundreds of
-					    entries on a normal machine and the native control filters as you type
-					    for free. The input itself renders in the chosen family, which is the
-					    preview the per-option styling used to give. */}
-					<input
-						list={FONT_LIST_ID}
-						// The sibling span is not a <label>, and an input needs a name of its
-						// own. Reuses the row's existing key rather than adding a locale entry.
-						aria-label={t("captions.font")}
-						value={fontDraft ?? settings.fontFamily}
+					<FontFamilyField
+						value={settings.fontFamily}
+						onChange={(family) => void set({ fontFamily: family })}
+						label={t("captions.font")}
 						disabled={disabled}
-						onFocus={loadSystemFonts}
-						onChange={(e) => {
-							const next = e.target.value;
-							// Only a family the compositor can resolve is ever stored. Anything
-							// else stays local to the input until it matches or is abandoned.
-							if (fontOptions.includes(next)) {
-								setFontDraft(null);
-								void set({ fontFamily: next });
-							} else {
-								setFontDraft(next);
-							}
-						}}
-						onBlur={() => setFontDraft(null)}
-						style={{ ...selectStyle, fontFamily: settings.fontFamily }}
+						style={selectStyle}
 					/>
-					<datalist id={FONT_LIST_ID}>
-						{fontOptions.map((font) => (
-							<option key={font} value={font} />
-						))}
-					</datalist>
 				</div>
 				<div className={styles.paneRow}>
 					<span className={styles.label}>{t("captions.bold")}</span>

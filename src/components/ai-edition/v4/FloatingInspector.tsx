@@ -42,8 +42,8 @@ import { useEditorSettings } from "@/lib/ai-edition/store/useEditorSettings";
 import type { useTimeline } from "@/lib/ai-edition/store/useTimeline";
 import { formatSeconds } from "@/lib/ai-edition/timeline/format";
 import { coalescedTrimGroups } from "@/lib/ai-edition/timeline/trim-mapping";
-import { CAPTION_FONTS } from "../CaptionsPane";
 import { ColorField } from "../ColorField";
+import { FontFamilyField } from "../FontFamilyField";
 import {
 	AudioPane,
 	AudioTrackPane,
@@ -939,27 +939,24 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 					{/* Graisse, italique, soulignement et alignement suivaient déjà le même chemin que
 					    la taille — schéma, `sceneDescription`, puis `text_*.rs` — sans que rien ici ne
 					    les écrive : une annotation sortait donc toujours dans les valeurs par défaut.
-					    Les familles sont celles de CaptionsPane, la seule liste embarquée. */}
+					    La famille passe par le même champ que les sous-titres : les deux polices
+					    embarquées plus celles installées sur la machine, seules familles que le
+					    compositor sait résoudre. */}
 					{region.type === "text" ? (
 						<>
 							{paneRow(
 								ts("captions.font"),
-								<select
+								<FontFamilyField
 									value={region.style?.fontFamily ?? "Inter"}
-									onChange={(e) => {
+									onChange={(family) => {
 										tl.updateAnnotationLive(region.id, {
-											style: { ...region.style, fontFamily: e.target.value },
+											style: { ...region.style, fontFamily: family },
 										});
 										void tl.commitAnnotationChange();
 									}}
+									label={ts("captions.font")}
 									style={selectStyle}
-								>
-									{CAPTION_FONTS.map((font) => (
-										<option key={font} value={font} style={{ fontFamily: font }}>
-											{font}
-										</option>
-									))}
-								</select>,
+								/>,
 							)}
 							{paneRow(
 								ts("captions.bold"),
