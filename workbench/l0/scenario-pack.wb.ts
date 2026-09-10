@@ -37,7 +37,7 @@ import { effectiveReps } from "../cli";
 import { multipleModifiers, singleClip, twoClipsWithTrim } from "../lib/fixtures";
 import { statedDurations, statedMultipliers } from "../lib/language";
 import { buildEvalContext } from "../lib/oracles";
-import { OPENSCREEN_TOOLS, PHANTOM_TOOLS } from "../lib/prompts";
+import { CAPTURIA_TOOLS, PHANTOM_TOOLS } from "../lib/prompts";
 import type { Check, EvalContext, Scenario } from "../lib/scenario";
 import type { WireCall, WireTranscript } from "../lib/wire";
 import { allScenarios, getScenario } from "../scenarios/registry";
@@ -514,7 +514,7 @@ describe("les demoScripts ne peuvent nommer qu'un outil qui existe", () => {
 	// que ce banc tenait à la main (`execute`, que seul un backend sandbox ferait
 	// réapparaître), et une exemption dont la taille est recopiée en prose dérive
 	// exactement comme le roster a dérivé.
-	const KNOWN = new Set<string>([...OPENSCREEN_TOOLS, ...PHANTOM_TOOLS]);
+	const KNOWN = new Set<string>([...CAPTURIA_TOOLS, ...PHANTOM_TOOLS]);
 
 	for (const scenario of allScenarios()) {
 		it(`${scenario.id} n'appelle que des noms connus`, () => {

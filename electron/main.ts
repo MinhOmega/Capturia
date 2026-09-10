@@ -1144,7 +1144,7 @@ const appReady = !cliCommand && hasSingleInstanceLock ? app.whenReady() : null;
 appReady?.then(async () => {
 	if (isDiagnosticModeEnabled()) {
 		mainLogBuffer.install();
-		console.info("[diagnostic] OPENSCREEN_DIAGNOSTIC=1, capturing console.* into ring buffer");
+		console.info("[diagnostic] CAPTURIA_DIAGNOSTIC=1, capturing console.* into ring buffer");
 	}
 
 	// Force "regular" activation policy so the Dock icon appears. The HUD overlay

@@ -278,7 +278,7 @@ await run("cargo", ["build", "-p", "compositor-view-napi", "--release"], {
 	env: {
 		...process.env,
 		FFMPEG_DIR: stagedFfmpegDir,
-		OPENSCREEN_FFMPEG_SYMBOL_PREFIX: SYMBOL_PREFIX,
+		CAPTURIA_FFMPEG_SYMBOL_PREFIX: SYMBOL_PREFIX,
 		LIBCLANG_PATH: resolveLibclangDir(),
 		// `$ORIGIN` is resolved by the dynamic linker against the directory the
 		// .node itself lives in, so the ffmpeg copies below are found wherever the

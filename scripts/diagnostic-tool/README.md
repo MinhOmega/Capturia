@@ -14,7 +14,7 @@ data without installing or rebuilding the full app.
   - the same directory as `diagnostic.mjs` (`wgc-capture.exe` on Windows,
     `openscreen-screencapturekit-helper` on macOS)
   - `helpers/<platform>-<arch>/<helper-name>` (CI artifact layout)
-  - `$OPENSCREEN_HELPER_EXE` env var
+  - `$CAPTURIA_HELPER_EXE` env var
 
 Linux is not currently supported — OpenScreen has no Linux native helper.
 

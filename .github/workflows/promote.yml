@@ -55,13 +55,13 @@ jobs:
 
       - name: Close versioned milestone
         env:
-          TOKEN: ${{ secrets.OPENSCREEN_RELEASE_TOKEN }}
+          TOKEN: ${{ secrets.CAPTURIA_RELEASE_TOKEN }}
           STABLE_VERSION: ${{ steps.version.outputs.stable_version }}
         run: node .github/scripts/release-milestone-close.mjs
 
       - name: Bump the version to stable on the release branch
         env:
-          TOKEN: ${{ secrets.OPENSCREEN_RELEASE_TOKEN }}
+          TOKEN: ${{ secrets.CAPTURIA_RELEASE_TOKEN }}
           STABLE_VERSION: ${{ steps.version.outputs.stable_version }}
         run: |
           set -euo pipefail
@@ -110,7 +110,7 @@ jobs:
       # hand minutes later) and without a #releases announcement.
       - name: Trigger build workflow
         env:
-          GH_TOKEN: ${{ secrets.OPENSCREEN_RELEASE_TOKEN }}
+          GH_TOKEN: ${{ secrets.CAPTURIA_RELEASE_TOKEN }}
           STABLE_TAG: ${{ steps.version.outputs.stable_tag }}
         run: |
           set -euo pipefail
@@ -144,7 +144,7 @@ jobs:
         id: sync_main
         continue-on-error: true
         env:
-          GH_TOKEN: ${{ secrets.OPENSCREEN_RELEASE_TOKEN }}
+          GH_TOKEN: ${{ secrets.CAPTURIA_RELEASE_TOKEN }}
           STABLE_VERSION: ${{ steps.version.outputs.stable_version }}
         run: |
           set -euo pipefail
@@ -222,7 +222,7 @@ jobs:
             echo ""
             echo "- Stable tag: \`${{ steps.version.outputs.stable_tag }}\`"
             echo "- Promoted from: \`${{ steps.version.outputs.rc_tag }}\`"
-            echo "- Tier 3 (homebrew/winget/nix/aur) will fire on the published release via OPENSCREEN_RELEASE_TOKEN."
+            echo "- Tier 3 (homebrew/winget/nix/aur) will fire on the published release via CAPTURIA_RELEASE_TOKEN."
             if [[ "${{ steps.sync_main.outcome }}" != "success" ]]; then
               echo ""
               echo "> [!WARNING]"

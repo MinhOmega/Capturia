@@ -49,7 +49,7 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
 
-const PLAY_AT_MS = Number(process.env.OPENSCREEN_PW_TEST_PLAY_AT_MS ?? 4000);
+const PLAY_AT_MS = Number(process.env.CAPTURIA_PW_TEST_PLAY_AT_MS ?? 4000);
 const TONE_MS = 3000;
 /** Silence after the tone, so the trailing half of the timeline is exercised too. */
 const TAIL_MS = 3000;
@@ -67,7 +67,7 @@ const WINDOW_MS = 20;
  * dialog. The wait has no honest upper bound; this one only exists so an abandoned run
  * eventually stops instead of holding a portal session open forever.
  */
-const PICKER_TIMEOUT_MS = Number(process.env.OPENSCREEN_PW_TEST_PICKER_TIMEOUT_MS ?? 180_000);
+const PICKER_TIMEOUT_MS = Number(process.env.CAPTURIA_PW_TEST_PICKER_TIMEOUT_MS ?? 180_000);
 
 if (process.platform !== "linux") {
 	console.log("Linux only — skipping.");
@@ -88,7 +88,7 @@ const VENDORED_FFMPEG = path.join(ROOT, "crates", "thirdparty", "ffmpeg-linux64-
  * own libraries, hence the explicit lib directory.
  */
 function resolveTool(name) {
-	const fromEnv = process.env[`OPENSCREEN_${name.toUpperCase().replaceAll("-", "_")}`];
+	const fromEnv = process.env[`CAPTURIA_${name.toUpperCase().replaceAll("-", "_")}`];
 	if (fromEnv && fs.existsSync(fromEnv)) return { bin: fromEnv, env: null };
 
 	const staticCli = path.join(ROOT, "electron", "native", "bin", ARCH_TAG, name);
@@ -118,7 +118,7 @@ function runTool(tool, args, options = {}) {
 function resolveHelper() {
 	const name = "openscreen-pipewire-helper";
 	const candidates = [
-		process.env.OPENSCREEN_LINUX_CURSOR_HELPER_EXE,
+		process.env.CAPTURIA_LINUX_CURSOR_HELPER_EXE,
 		path.join(ROOT, "electron", "native", "pipewire-capture", "build", name),
 		path.join(ROOT, "electron", "native", "bin", ARCH_TAG, name),
 	];
@@ -145,7 +145,7 @@ const PLAYERS = [
 ];
 
 function resolvePlayer() {
-	const forced = process.env.OPENSCREEN_PW_TEST_PLAYER?.trim();
+	const forced = process.env.CAPTURIA_PW_TEST_PLAYER?.trim();
 	// A player named by hand still gets the argument list its basename is known for, so
 	// pointing at a specific ffplay does not silently lose `-nodisp`.
 	const known = PLAYERS.find((player) => player.name === path.basename(forced ?? ""));
@@ -168,7 +168,7 @@ if (!HELPER) {
 if (!FFMPEG || !FFPROBE) {
 	console.error(
 		"No ffmpeg/ffprobe found. Run `npm run fetch:ffmpeg:sdk`, which vendors both beside the\n" +
-			"libraries the helper links, or point OPENSCREEN_FFMPEG and OPENSCREEN_FFPROBE at binaries.",
+			"libraries the helper links, or point CAPTURIA_FFMPEG and CAPTURIA_FFPROBE at binaries.",
 	);
 	process.exit(1);
 }
@@ -176,7 +176,7 @@ if (!PLAYER) {
 	console.error(
 		`Nothing here can play a WAV. Install one of ${PLAYERS.map((player) => player.name).join(", ")}\n` +
 			"(pw-play ships with pipewire, paplay with pulseaudio-utils), or point\n" +
-			"OPENSCREEN_PW_TEST_PLAYER at a player that takes a file path.",
+			"CAPTURIA_PW_TEST_PLAYER at a player that takes a file path.",
 	);
 	process.exit(1);
 }

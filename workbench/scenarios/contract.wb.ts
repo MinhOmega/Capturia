@@ -106,7 +106,7 @@ describe("workbench credential contract", () => {
 		const saved = process.env[ENV_KEYS.apiKey];
 		process.env[ENV_KEYS.apiKey] = "";
 		try {
-			expect(() => requireLiveEnv()).toThrow(/OPENSCREEN_WORKBENCH_API_KEY manquant/);
+			expect(() => requireLiveEnv()).toThrow(/CAPTURIA_WORKBENCH_API_KEY manquant/);
 		} finally {
 			if (saved === undefined) delete process.env[ENV_KEYS.apiKey];
 			else process.env[ENV_KEYS.apiKey] = saved;

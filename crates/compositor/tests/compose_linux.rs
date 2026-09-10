@@ -4,7 +4,7 @@
 //! `plan_frame`) -> `readback_direct`. Bypass le render-thread de `live.rs`
 //! pour isoler la chaine de rendu elle-meme.
 //!
-//! Opt-in (rend sur GPU) : `OPENSCREEN_LINUX_COMPOSE=1` + la fixture
+//! Opt-in (rend sur GPU) : `CAPTURIA_LINUX_COMPOSE=1` + la fixture
 //! `crates/fixture/screen.mp4`. Sinon skip (le teardown Vulkan/Mesa segfault a
 //! l'exit apres le rendu -- verifier via la sortie, pas l'exit code).
 
@@ -30,10 +30,10 @@ const FIXTURE: &str = "../fixture/screen.mp4";
 const W: u32 = 960;
 const H: u32 = 540;
 
-/// Ecrit un PPM P6 dans `OPENSCREEN_VK_OUT` (defaut `target`) pour inspection.
+/// Ecrit un PPM P6 dans `CAPTURIA_VK_OUT` (defaut `target`) pour inspection.
 fn write_ppm(name: &str, w: u32, h: u32, rgba: &[u8]) {
     use std::io::Write;
-    let out = std::env::var("OPENSCREEN_VK_OUT").unwrap_or_else(|_| "target".into());
+    let out = std::env::var("CAPTURIA_VK_OUT").unwrap_or_else(|_| "target".into());
     let _ = std::fs::create_dir_all(&out);
     let path = format!("{out}/{name}.ppm");
     let mut f = std::fs::File::create(&path).expect("create ppm");
@@ -48,8 +48,8 @@ fn write_ppm(name: &str, w: u32, h: u32, rgba: &[u8]) {
 
 #[test]
 fn compose_linux_rend_une_frame() {
-    if std::env::var("OPENSCREEN_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
-        eprintln!("compose_linux: opt-in (OPENSCREEN_LINUX_COMPOSE=1 + fixture). Skip.");
+    if std::env::var("CAPTURIA_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
+        eprintln!("compose_linux: opt-in (CAPTURIA_LINUX_COMPOSE=1 + fixture). Skip.");
         return;
     }
 
@@ -80,7 +80,7 @@ fn compose_linux_rend_une_frame() {
     println!("compose_linux : {w}x{h} bytes={} mean_R={:.1}", rgba.len(), mean_r);
 
     // PPM P6 pour inspection visuelle.
-    let out = std::env::var("OPENSCREEN_VK_OUT").unwrap_or_else(|_| "target".into());
+    let out = std::env::var("CAPTURIA_VK_OUT").unwrap_or_else(|_| "target".into());
     let _ = std::fs::create_dir_all(&out);
     let ppm = format!("{out}/compose_linux.ppm");
     {
@@ -158,8 +158,8 @@ fn top_edge_swing(edge: &[Option<u32>]) -> u32 {
 /// casse l'une des trois bornes.
 #[test]
 fn compose_linux_ecran_tilte() {
-    if std::env::var("OPENSCREEN_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
-        eprintln!("compose_linux tilt: opt-in (OPENSCREEN_LINUX_COMPOSE=1 + fixture). Skip.");
+    if std::env::var("CAPTURIA_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
+        eprintln!("compose_linux tilt: opt-in (CAPTURIA_LINUX_COMPOSE=1 + fixture). Skip.");
         return;
     }
 
@@ -235,7 +235,7 @@ fn compose_linux_ecran_tilte() {
 /// ombre, puis on mesure la pente de la bordure de la zone assombrie.
 #[test]
 fn compose_linux_ombre_du_quad_tilte() {
-    if std::env::var("OPENSCREEN_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
+    if std::env::var("CAPTURIA_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
         eprintln!("compose_linux ombre tiltee: opt-in. Skip.");
         return;
     }
@@ -298,7 +298,7 @@ fn compose_linux_ombre_du_quad_tilte() {
 /// mode 13 absent ferait disparaitre le curseur (compte a zero).
 #[test]
 fn compose_linux_curseur_sur_ecran_tilte() {
-    if std::env::var("OPENSCREEN_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
+    if std::env::var("CAPTURIA_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
         eprintln!("compose_linux curseur tilte: opt-in. Skip.");
         return;
     }
@@ -376,8 +376,8 @@ fn compose_linux_curseur_sur_ecran_tilte() {
 /// PNG) distinct du fond sombre et de l'ecran, pour l'affirmer sans ambiguite.
 #[test]
 fn compose_linux_dessine_le_curseur() {
-    if std::env::var("OPENSCREEN_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
-        eprintln!("compose_linux curseur: opt-in (OPENSCREEN_LINUX_COMPOSE=1 + fixture). Skip.");
+    if std::env::var("CAPTURIA_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
+        eprintln!("compose_linux curseur: opt-in (CAPTURIA_LINUX_COMPOSE=1 + fixture). Skip.");
         return;
     }
 
@@ -419,7 +419,7 @@ fn compose_linux_dessine_le_curseur() {
         .count();
     println!("compose_linux curseur : {w}x{h} pixels verts={green}");
 
-    let out = std::env::var("OPENSCREEN_VK_OUT").unwrap_or_else(|_| "target".into());
+    let out = std::env::var("CAPTURIA_VK_OUT").unwrap_or_else(|_| "target".into());
     let _ = std::fs::create_dir_all(&out);
     let ppm = format!("{out}/compose_linux_cursor.ppm");
     {
@@ -442,7 +442,7 @@ fn compose_linux_dessine_le_curseur() {
 /// gris par defaut, pour l'affirmer sans ambiguite.
 #[test]
 fn compose_linux_fond_image() {
-    if std::env::var("OPENSCREEN_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
+    if std::env::var("CAPTURIA_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
         eprintln!("compose_linux fond image: opt-in. Skip.");
         return;
     }
@@ -474,7 +474,7 @@ fn compose_linux_fond_image() {
         .count();
     println!("compose_linux fond image : {w}x{h} pixels orange={orange}");
 
-    let out = std::env::var("OPENSCREEN_VK_OUT").unwrap_or_else(|_| "target".into());
+    let out = std::env::var("CAPTURIA_VK_OUT").unwrap_or_else(|_| "target".into());
     let _ = std::fs::create_dir_all(&out);
     {
         use std::io::Write;
@@ -503,7 +503,7 @@ fn compose_linux_fond_image() {
 /// les images, mais pas forcement dans ce sens-la.
 #[test]
 fn compose_linux_flou_de_velocite_ecran() {
-    if std::env::var("OPENSCREEN_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
+    if std::env::var("CAPTURIA_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
         eprintln!("compose_linux flou de velocite: opt-in. Skip.");
         return;
     }
@@ -586,7 +586,7 @@ fn compose_linux_flou_de_velocite_ecran() {
 /// l'assertion sur le coin haut-gauche (hors boite) le verifie explicitement.
 #[test]
 fn compose_linux_flou_de_velocite_camera() {
-    if std::env::var("OPENSCREEN_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
+    if std::env::var("CAPTURIA_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
         eprintln!("compose_linux flou de velocite camera: opt-in. Skip.");
         return;
     }
@@ -676,7 +676,7 @@ fn compose_linux_flou_de_velocite_camera() {
 /// serait invisible.
 #[test]
 fn compose_linux_trainee_de_curseur() {
-    if std::env::var("OPENSCREEN_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
+    if std::env::var("CAPTURIA_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
         eprintln!("compose_linux trainee curseur: opt-in. Skip.");
         return;
     }
@@ -774,8 +774,8 @@ fn compose_linux_trainee_de_curseur() {
 /// contenu est re-validable par ffprobe (cf. la commande dans le run manuel).
 #[test]
 fn export_linux_mp4() {
-    if std::env::var("OPENSCREEN_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
-        eprintln!("export_linux: opt-in (OPENSCREEN_LINUX_COMPOSE=1 + fixture). Skip.");
+    if std::env::var("CAPTURIA_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
+        eprintln!("export_linux: opt-in (CAPTURIA_LINUX_COMPOSE=1 + fixture). Skip.");
         return;
     }
 
@@ -783,7 +783,7 @@ fn export_linux_mp4() {
     // Petite sortie : l'export est un smoke test, pas un bench.
     let comp = Compositor::new_sized(&gpu, 640, 360).expect("Compositor::new_sized");
 
-    let out = std::env::var("OPENSCREEN_EXPORT_OUT")
+    let out = std::env::var("CAPTURIA_EXPORT_OUT")
         .unwrap_or_else(|_| std::env::temp_dir().join("os_export_linux.mp4").to_string_lossy().into());
     let clips = vec![ClipSource {
         screen: FIXTURE.to_string(),
@@ -830,7 +830,7 @@ fn export_linux_mp4() {
 /// Opt-in comme les autres tests de ce fichier ; ecrit un PPM a inspecter.
 #[test]
 fn compose_linux_ombre_webcam_ronde_et_texte() {
-    if std::env::var("OPENSCREEN_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
+    if std::env::var("CAPTURIA_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
         eprintln!("compose_linux ombre/webcam/texte: opt-in. Skip.");
         return;
     }
@@ -862,7 +862,7 @@ fn compose_linux_ombre_webcam_ronde_et_texte() {
         comp.readback_direct().expect("readback_direct")
     };
 
-    let out = std::env::var("OPENSCREEN_VK_OUT").unwrap_or_else(|_| "target".into());
+    let out = std::env::var("CAPTURIA_VK_OUT").unwrap_or_else(|_| "target".into());
     let _ = std::fs::create_dir_all(&out);
     let ppm = format!("{out}/compose_linux_shadow_webcam_text.ppm");
     {
@@ -910,7 +910,7 @@ fn compose_linux_ombre_webcam_ronde_et_texte() {
 /// remplit entierement : le taux de remplissage separe les deux sans ambiguite.
 #[test]
 fn compose_linux_forme_webcam_cercle() {
-    if std::env::var("OPENSCREEN_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
+    if std::env::var("CAPTURIA_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
         eprintln!("compose_linux forme webcam: opt-in. Skip.");
         return;
     }
@@ -1010,7 +1010,7 @@ fn compose_linux_forme_webcam_cercle() {
 /// de verifier qu'il n'y en a aucune.
 #[test]
 fn compose_linux_sans_camera_ne_dessine_pas_de_vignette() {
-    if std::env::var("OPENSCREEN_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
+    if std::env::var("CAPTURIA_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
         eprintln!("compose_linux sans camera: opt-in. Skip.");
         return;
     }
@@ -1158,7 +1158,7 @@ fn bbox(px: &[usize], w: u32) -> (u32, u32, u32, u32) {
 /// remplir la moitie de leur boite.
 #[test]
 fn compose_linux_annotation_fleche() {
-    if std::env::var("OPENSCREEN_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
+    if std::env::var("CAPTURIA_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
         eprintln!("compose_linux annotation fleche: opt-in. Skip.");
         return;
     }
@@ -1236,7 +1236,7 @@ fn compose_linux_annotation_fleche() {
 /// DISPARU — c'est la seule propriete qui rend l'annotation utile.
 #[test]
 fn compose_linux_annotation_flou_et_mosaique() {
-    if std::env::var("OPENSCREEN_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
+    if std::env::var("CAPTURIA_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
         eprintln!("compose_linux annotation flou: opt-in. Skip.");
         return;
     }
@@ -1338,7 +1338,7 @@ fn compose_linux_annotation_flou_et_mosaique() {
 /// — il doit rester 4:1, quelle que soit la boite.
 #[test]
 fn compose_linux_annotation_image() {
-    if std::env::var("OPENSCREEN_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
+    if std::env::var("CAPTURIA_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
         eprintln!("compose_linux annotation image: opt-in. Skip.");
         return;
     }
@@ -1412,7 +1412,7 @@ fn compose_linux_annotation_image() {
 /// deux rendus est donc l'animation elle-meme.
 #[test]
 fn compose_linux_animation_texte() {
-    if std::env::var("OPENSCREEN_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
+    if std::env::var("CAPTURIA_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
         eprintln!("compose_linux animation texte: opt-in. Skip.");
         return;
     }
@@ -1502,7 +1502,7 @@ fn compose_linux_animation_texte() {
 /// les sous-titres partaient avec elle sans pour autant suivre le plan incline.
 #[test]
 fn compose_linux_annotation_ancree_hors_zoom() {
-    if std::env::var("OPENSCREEN_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
+    if std::env::var("CAPTURIA_LINUX_COMPOSE").is_err() || !Path::new(FIXTURE).is_file() {
         eprintln!("compose_linux annotation hors zoom: opt-in. Skip.");
         return;
     }

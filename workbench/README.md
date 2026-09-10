@@ -63,9 +63,9 @@ Elle vient **exclusivement** de `.env.workbench` à la racine du worktree (gitig
 par `node --env-file`. Aucun parseur maison, jamais `dotenv`.
 
 ```
-OPENSCREEN_WORKBENCH_API_KEY=…
-OPENSCREEN_WORKBENCH_BASE_URL=…
-OPENSCREEN_WORKBENCH_MODEL=…
+CAPTURIA_WORKBENCH_API_KEY=…
+CAPTURIA_WORKBENCH_BASE_URL=…
+CAPTURIA_WORKBENCH_MODEL=…
 ```
 
 `workbench/lib/env.ts` est le **seul** fichier autorisé à nommer ces variables. Si l'une manque,
@@ -89,7 +89,7 @@ Les rapports vont dans `workbench/reports/` (gitignoré), en JSON et en Markdown
    seule une différence énorme est lisible. Un check qui passe de 2/3 à 3/3 n'est pas une
    amélioration, c'est du bruit.
 2. **L'empreinte du run** : `systemSha256` (le message système réellement envoyé), `toolsSha256`,
-   `toolNames[]` (exactement `OPENSCREEN_TOOL_NAMES` — aucun compte n'est écrit ici : le roster
+   `toolNames[]` (exactement `CAPTURIA_TOOL_NAMES` — aucun compte n'est écrit ici : le roster
    est épinglé en CI par `deep-agent/service.test.ts` contre ce que `buildTools` construit
    vraiment, et un nombre recopié en prose est précisément ce qui a laissé ce banc en annoncer
    19 pendant que le produit en livrait 21), l'id du modèle, le sha git. Deux rapports

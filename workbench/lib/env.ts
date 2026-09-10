@@ -14,9 +14,9 @@
 
 /** Env var names, in one place so the ban-list test can quote them. */
 export const ENV_KEYS = {
-	apiKey: "OPENSCREEN_WORKBENCH_API_KEY",
-	baseUrl: "OPENSCREEN_WORKBENCH_BASE_URL",
-	model: "OPENSCREEN_WORKBENCH_MODEL",
+	apiKey: "CAPTURIA_WORKBENCH_API_KEY",
+	baseUrl: "CAPTURIA_WORKBENCH_BASE_URL",
+	model: "CAPTURIA_WORKBENCH_MODEL",
 } as const;
 
 export interface LiveEnv {

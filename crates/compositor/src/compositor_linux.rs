@@ -4196,8 +4196,8 @@ mod tests {
     //
     // ```
     // ORT_DYLIB_PATH=/chemin/libonnxruntime.so \
-    // OPENSCREEN_SEG_CAM=camera.png \
-    // OPENSCREEN_SEG_VISUAL=target/seg \
+    // CAPTURIA_SEG_CAM=camera.png \
+    // CAPTURIA_SEG_VISUAL=target/seg \
     //   cargo test -p openscreen-compositor --lib seg_visual -- --nocapture
     // ```
     // -----------------------------------------------------------------------
@@ -4257,11 +4257,11 @@ mod tests {
     #[test]
     fn seg_visual_renders_the_four_modes_from_a_real_photo() {
         let (Ok(out_dir), Ok(cam)) = (
-            std::env::var("OPENSCREEN_SEG_VISUAL"),
-            std::env::var("OPENSCREEN_SEG_CAM"),
+            std::env::var("CAPTURIA_SEG_VISUAL"),
+            std::env::var("CAPTURIA_SEG_CAM"),
         ) else {
             eprintln!(
-                "harnais visuel : OPENSCREEN_SEG_VISUAL + OPENSCREEN_SEG_CAM absents — saute"
+                "harnais visuel : CAPTURIA_SEG_VISUAL + CAPTURIA_SEG_CAM absents — saute"
             );
             return;
         };
@@ -4277,7 +4277,7 @@ mod tests {
         let (rw, rh) = (1280u32, 720u32);
         let comp = Compositor::new_sized(&gpu, rw, rh).expect("Compositor::new_sized");
         let webcam = frame_from_png(&gpu, std::path::Path::new(&cam));
-        let screen = match std::env::var("OPENSCREEN_SEG_SCREEN") {
+        let screen = match std::env::var("CAPTURIA_SEG_SCREEN") {
             Ok(p) => frame_from_png(&gpu, std::path::Path::new(&p)),
             // Sans capture d'ecran sous la main, un damier : il rend le detourage
             // lisible, la ou un aplat laisserait croire a un fond simplement peint.

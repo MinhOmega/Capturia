@@ -71,13 +71,13 @@ jobs:
 
       - name: Migrate issues from "Next Release" to versioned milestone
         env:
-          TOKEN: ${{ secrets.OPENSCREEN_RELEASE_TOKEN }}
+          TOKEN: ${{ secrets.CAPTURIA_RELEASE_TOKEN }}
           NEXT: ${{ steps.version.outputs.next }}
         run: node .github/scripts/release-milestone-migrate.mjs
 
       - name: Create or reuse the release branch and bump package.json
         env:
-          TOKEN: ${{ secrets.OPENSCREEN_RELEASE_TOKEN }}
+          TOKEN: ${{ secrets.CAPTURIA_RELEASE_TOKEN }}
           PRERELEASE: ${{ steps.version.outputs.prerelease }}
           NEXT: ${{ steps.version.outputs.next }}
         run: |
@@ -122,7 +122,7 @@ jobs:
           # build trigger and the Discord announce below.
           # Note: GITHUB_TOKEN tag pushes do NOT trigger build.yml in this org's setup,
           # so we explicitly trigger it via gh workflow run right after.
-          TOKEN: ${{ secrets.OPENSCREEN_RELEASE_TOKEN }}
+          TOKEN: ${{ secrets.CAPTURIA_RELEASE_TOKEN }}
           RC_TAG: ${{ steps.version.outputs.rc_tag }}
           NEXT: ${{ steps.version.outputs.next }}
         run: |
@@ -140,7 +140,7 @@ jobs:
 
       - name: Trigger build workflow
         env:
-          GH_TOKEN: ${{ secrets.OPENSCREEN_RELEASE_TOKEN }}
+          GH_TOKEN: ${{ secrets.CAPTURIA_RELEASE_TOKEN }}
           RC_TAG: ${{ steps.version.outputs.rc_tag }}
         run: |
           set -euo pipefail

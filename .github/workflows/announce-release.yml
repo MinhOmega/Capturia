@@ -15,7 +15,7 @@
 #
 # `release: published` fires for both, and `github.event.release.prerelease`
 # already carries the stable/rc distinction that was previously hand-passed. This
-# works only because build.yml creates the release with OPENSCREEN_RELEASE_TOKEN:
+# works only because build.yml creates the release with CAPTURIA_RELEASE_TOKEN:
 # releases created with the default GITHUB_TOKEN trigger no workflows at all.
 #
 # The dispatch inputs stay, for the case this was extracted for — a missed
@@ -81,7 +81,7 @@ jobs:
           DISCORD_RC_TESTING_CHANNEL_ID: ${{ steps.ctx.outputs.kind == 'rc' && vars.DISCORD_RC_TESTING_CHANNEL_ID || '' }}
           # Only used to list the closed issues of the matching milestone; the
           # announcement still posts without it, just without that section.
-          GITHUB_TOKEN: ${{ secrets.OPENSCREEN_RELEASE_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.CAPTURIA_RELEASE_TOKEN }}
           STABLE_TAG: ${{ steps.ctx.outputs.tag }}
           EXTRA: ${{ inputs.release_notes_extra }}
           KIND: ${{ steps.ctx.outputs.kind }}

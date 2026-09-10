@@ -12,8 +12,8 @@
  * consumed by the C compiler that also compiled libpipewire's own users.
  */
 
-#ifndef OPENSCREEN_PW_SHIM_H
-#define OPENSCREEN_PW_SHIM_H
+#ifndef CAPTURIA_PW_SHIM_H
+#define CAPTURIA_PW_SHIM_H
 
 #include <stddef.h>
 #include <stdint.h>
@@ -313,4 +313,4 @@ int osc_pw_list_audio_sources(char *out, size_t out_len, char *err, size_t err_l
 }
 #endif
 
-#endif /* OPENSCREEN_PW_SHIM_H */
+#endif /* CAPTURIA_PW_SHIM_H */

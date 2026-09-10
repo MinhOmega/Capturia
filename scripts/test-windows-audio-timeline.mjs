@@ -30,10 +30,10 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
 const HELPER =
-	process.env.OPENSCREEN_WGC_CAPTURE_EXE ??
+	process.env.CAPTURIA_WGC_CAPTURE_EXE ??
 	path.join(ROOT, "electron", "native", "bin", "win32-x64", "wgc-capture.exe");
 const FFMPEG = path.join(ROOT, "electron", "native", "bin", "win32-x64", "ffmpeg.exe");
-const PLAY_AT_MS = Number(process.env.OPENSCREEN_WGC_TEST_PLAY_AT_MS ?? 4000);
+const PLAY_AT_MS = Number(process.env.CAPTURIA_WGC_TEST_PLAY_AT_MS ?? 4000);
 const TONE_MS = 6000;
 /** How far the tone may sit from where it was played before this is a failure. */
 const TOLERANCE_S = 1.0;

@@ -85,7 +85,7 @@ jobs:
           # — it did exactly that on v1.7.0, after pushing the branch, and #136
           # had to be opened by hand. The PAT every other release workflow
           # already uses has no such restriction, and its PRs trigger CI.
-          GH_TOKEN: ${{ secrets.OPENSCREEN_RELEASE_TOKEN }}
+          GH_TOKEN: ${{ secrets.CAPTURIA_RELEASE_TOKEN }}
           VERSION: ${{ steps.meta.outputs.version }}
           HASH: ${{ steps.hash.outputs.hash }}
           BRANCH: ${{ steps.meta.outputs.branch }}

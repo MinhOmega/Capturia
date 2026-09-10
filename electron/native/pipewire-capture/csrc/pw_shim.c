@@ -696,7 +696,7 @@ static void osc_on_param_changed(void *userdata, uint32_t id, const struct spa_p
      * Not "every Smithay/wlroots compositor", as this comment used to claim:
      * sway 1.9 through xdg-desktop-portal-wlr negotiates WL_SHM here and takes
      * the memfd path like GNOME does (measured 2026-08-09). Reproducing the
-     * DMA-BUF path locally needs OPENSCREEN_PIPEWIRE_FORCE_DMABUF below.
+     * DMA-BUF path locally needs CAPTURIA_PIPEWIRE_FORCE_DMABUF below.
      *
      * pw_stream still does not map dmabuf itself even with
      * PW_STREAM_FLAG_MAP_BUFFERS, so `datas[0].data` stays NULL and the mapping
@@ -752,7 +752,7 @@ static void osc_on_param_changed(void *userdata, uint32_t id, const struct spa_p
  * and the caller turns that into a visible error rather than a black recording.
  */
 /*
- * Opt-in tracing for the DMA-BUF path, off unless OPENSCREEN_PIPEWIRE_DEBUG is
+ * Opt-in tracing for the DMA-BUF path, off unless CAPTURIA_PIPEWIRE_DEBUG is
  * set. This path never runs under mutter, which hands out memfd, so on a GNOME
  * machine there is otherwise no way to tell whether a capture exercised it at
  * all — the helper reports the same success either way.
@@ -762,7 +762,7 @@ static int osc_debug_enabled(void)
     static int cached = -1;
 
     if (cached < 0) {
-        const char *value = getenv("OPENSCREEN_PIPEWIRE_DEBUG");
+        const char *value = getenv("CAPTURIA_PIPEWIRE_DEBUG");
         cached = (value != NULL && value[0] != '\0') ? 1 : 0;
     }
     return cached;
@@ -1543,7 +1543,7 @@ struct osc_pw_session *osc_pw_start(int fd, uint32_t node_id, int want_video,
      * Without either, the ordering is unchanged — shm first — so nothing moves on
      * a build or driver without the VAAPI import.
      */
-    if (session->prefer_dmabuf || getenv("OPENSCREEN_PIPEWIRE_FORCE_DMABUF") != NULL) {
+    if (session->prefer_dmabuf || getenv("CAPTURIA_PIPEWIRE_FORCE_DMABUF") != NULL) {
         const struct spa_pod *shm = params[0];
         params[0] = params[1];
         params[1] = shm;

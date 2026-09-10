@@ -257,7 +257,7 @@ HRESULT createSinkWriter(
         // when one was registered and working: every "default" recording
         // landed on the same software encoder forceSoftwareEncoder asks for
         // explicitly, on any machine that had not separately opted into
-        // OPENSCREEN_WGC_ENABLE_DXGI_INPUT (getopenscreen/openscreen#460,
+        // CAPTURIA_WGC_ENABLE_DXGI_INPUT (getopenscreen/openscreen#460,
         // confirmed by videoEncoderRuntime on real hardware: "default" read
         // back "software" until the DXGI path was turned on, on a machine
         // whose encoder is hardware-capable either way).

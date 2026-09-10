@@ -35,7 +35,7 @@
 // defect in a file someone keeps, so none of its sizing carries over here.
 //
 // The old FrameArrived-callback path (setFrameCallback/onFrameArrived) is
-// kept alongside it, selected by OPENSCREEN_WGC_LEGACY_FRAME_CALLBACK (see
+// kept alongside it, selected by CAPTURIA_WGC_LEGACY_FRAME_CALLBACK (see
 // main.cpp), as a rollback lever: if the pull-based path regresses on some
 // hardware/driver combination this was not tested against, a user or
 // maintainer can force the previously-shipped behavior back on without
@@ -62,7 +62,7 @@ public:
     // setFrameCallback() on the same session.
     bool tryGetNextFrame(ID3D11Texture2D** outTexture, int64_t* outTimestampHns);
 
-    // Legacy push-based path (OPENSCREEN_WGC_LEGACY_FRAME_CALLBACK=1 only).
+    // Legacy push-based path (CAPTURIA_WGC_LEGACY_FRAME_CALLBACK=1 only).
     // callback runs on a WGC-owned thread inside FrameArrived and may be
     // invoked concurrently with stop()/quiesceLegacyCallback() from the
     // caller's thread -- see onFrameArrived's locking. Do not mix with

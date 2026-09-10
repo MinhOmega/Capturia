@@ -211,7 +211,7 @@ unsafe fn seek_pair(
 /// pool la paire qu'on QUITTE (au lieu de la fermer), dédupliquée par clé et bornée en LRU.
 /// Le vidage du cache de SRV reste à la charge de l'appelant (comme avant) — over-clear est
 /// sûr et bon marché, ce qui écarte tout risque « image du clip précédent ».
-/// `OPENSCREEN_CLIPSWITCH_TIMING=1` journalise hit/miss + durée.
+/// `CAPTURIA_CLIPSWITCH_TIMING=1` journalise hit/miss + durée.
 unsafe fn swap_clip_pooled(
     player: &mut Player,
     pool: &mut Vec<PooledClip>,
@@ -220,7 +220,7 @@ unsafe fn swap_clip_pooled(
     active_webcam: &str,
     active_webcam_offset_sec: f64,
 ) -> Result<()> {
-    let timing = std::env::var("OPENSCREEN_CLIPSWITCH_TIMING").is_ok();
+    let timing = std::env::var("CAPTURIA_CLIPSWITCH_TIMING").is_ok();
     let t0 = std::time::Instant::now();
     let t = request.source_time_sec.max(0.0);
     let matches = |p: &PooledClip| {

@@ -10,10 +10,10 @@ const ROOT = path.join(__dirname, "..");
 const MAIN_JS = path.join(ROOT, "dist-electron", "main.js");
 const TEST_VIDEO = path.join(ROOT, "tests", "fixtures", "sample.webm");
 const OUTPUT_DIR =
-	process.env.OPENSCREEN_PREVIEW_OUTPUT_DIR ??
+	process.env.CAPTURIA_PREVIEW_OUTPUT_DIR ??
 	path.join(os.tmpdir(), `openscreen-real-preview-${Date.now()}`);
-const FRAME_COUNT = Number(process.env.OPENSCREEN_PREVIEW_FRAME_COUNT ?? 90);
-const FPS = Number(process.env.OPENSCREEN_PREVIEW_FPS ?? 30);
+const FRAME_COUNT = Number(process.env.CAPTURIA_PREVIEW_FRAME_COUNT ?? 90);
+const FPS = Number(process.env.CAPTURIA_PREVIEW_FPS ?? 30);
 
 function findLatestCursorRecordingData() {
 	const explicit = process.env.CURSOR_RECORDING_DATA_PATH;
@@ -73,7 +73,7 @@ function ensureBuildExists() {
 }
 
 function runNpmBuildViteIfRequested() {
-	if (process.env.OPENSCREEN_PREVIEW_SKIP_BUILD === "true") {
+	if (process.env.CAPTURIA_PREVIEW_SKIP_BUILD === "true") {
 		ensureBuildExists();
 		return Promise.resolve();
 	}

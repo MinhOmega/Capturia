@@ -37,7 +37,7 @@ import {
 	parseJudgeReply,
 } from "../lib/judge";
 import { buildEvalContext } from "../lib/oracles";
-import { OPENSCREEN_TOOLS } from "../lib/prompts";
+import { CAPTURIA_TOOLS } from "../lib/prompts";
 import { renderMarkdown, summarizeScenario } from "../lib/report";
 import { SAYS_IT_CANNOT } from "../lib/rubrics";
 import type { EvalContext, JudgedCheck, Scenario } from "../lib/scenario";
@@ -286,7 +286,7 @@ describe("judge / aucun rubric ne recopie les réponses du banc", () => {
 					expect(text, `nomme le check ${check.id}`).not.toContain(check.id.toLowerCase());
 				}
 			}
-			for (const tool of OPENSCREEN_TOOLS) {
+			for (const tool of CAPTURIA_TOOLS) {
 				expect(text, `nomme l'outil ${tool}`).not.toContain(tool.toLowerCase());
 			}
 		});

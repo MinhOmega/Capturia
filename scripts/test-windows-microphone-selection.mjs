@@ -15,7 +15,7 @@
  *   npm run test:wgc-mic-selection:win
  *
  * Case 4 needs a real microphone name; pass one that exists on this machine
- * through OPENSCREEN_WGC_TEST_MICROPHONE_DEVICE_NAME, or it is skipped.
+ * through CAPTURIA_WGC_TEST_MICROPHONE_DEVICE_NAME, or it is skipped.
  */
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -26,10 +26,10 @@ import { fileURLToPath } from "node:url";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, "..");
 const HELPER =
-	process.env.OPENSCREEN_WGC_CAPTURE_EXE ??
+	process.env.CAPTURIA_WGC_CAPTURE_EXE ??
 	path.join(ROOT, "electron", "native", "bin", "win32-x64", "wgc-capture.exe");
-const REAL_MIC_NAME = process.env.OPENSCREEN_WGC_TEST_MICROPHONE_DEVICE_NAME ?? "";
-const RECORD_MS = Number(process.env.OPENSCREEN_WGC_TEST_DURATION_MS ?? 2500);
+const REAL_MIC_NAME = process.env.CAPTURIA_WGC_TEST_MICROPHONE_DEVICE_NAME ?? "";
+const RECORD_MS = Number(process.env.CAPTURIA_WGC_TEST_DURATION_MS ?? 2500);
 
 if (process.platform !== "win32") {
 	console.log("Windows only — skipping.");
@@ -162,7 +162,7 @@ if (REAL_MIC_NAME) {
 	});
 } else {
 	console.log(
-		"NOTE: set OPENSCREEN_WGC_TEST_MICROPHONE_DEVICE_NAME to a real microphone to cover the happy path.\n",
+		"NOTE: set CAPTURIA_WGC_TEST_MICROPHONE_DEVICE_NAME to a real microphone to cover the happy path.\n",
 	);
 }
 

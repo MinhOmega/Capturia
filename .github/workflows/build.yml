@@ -330,7 +330,7 @@ jobs:
       - name: Build native macOS helpers
         run: npm run build:native:mac
         env:
-          OPENSCREEN_MAC_HELPER_ARCHS: ${{ matrix.arch }}
+          CAPTURIA_MAC_HELPER_ARCHS: ${{ matrix.arch }}
 
       # The two steps below are what `npm run build:mac` does and this job did not.
       # Windows gets them for free because its job just runs `npm run build:win`,
@@ -919,7 +919,7 @@ jobs:
 
       - name: Publish release assets
         env:
-          GH_TOKEN: ${{ secrets.OPENSCREEN_RELEASE_TOKEN }}
+          GH_TOKEN: ${{ secrets.CAPTURIA_RELEASE_TOKEN }}
           TAG: ${{ steps.release.outputs.tag }}
           PRERELEASE_FLAG: ${{ steps.release.outputs.prerelease_flag }}
           NOTES_START_TAG: ${{ steps.release.outputs.notes_start_tag }}
@@ -1018,7 +1018,7 @@ jobs:
         # to fail so a flaky docs deploy never blocks a downstream publish step.
         continue-on-error: true
         env:
-          GH_TOKEN: ${{ secrets.OPENSCREEN_RELEASE_TOKEN }}
+          GH_TOKEN: ${{ secrets.CAPTURIA_RELEASE_TOKEN }}
         run: |
           latest_dispatch() {
             gh run list \

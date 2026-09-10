@@ -17,7 +17,7 @@
 //! `/dev/input/event*` node to inspect its capability bits, but any node that
 //! does not advertise `BTN_LEFT` is dropped immediately, without a single event
 //! ever being read from it — only `BTN_LEFT` devices get a reader. Set
-//! `OPENSCREEN_DISABLE_CLICK_CAPTURE=1` to turn it off entirely even where the
+//! `CAPTURIA_DISABLE_CLICK_CAPTURE=1` to turn it off entirely even where the
 //! permission exists.
 
 use std::collections::HashSet;
@@ -33,7 +33,7 @@ use evdev::{Device, EventType, KeyCode};
 use crate::events::timestamp_ms;
 use crate::Message;
 
-const DISABLE_ENV: &str = "OPENSCREEN_DISABLE_CLICK_CAPTURE";
+const DISABLE_ENV: &str = "CAPTURIA_DISABLE_CLICK_CAPTURE";
 
 /// How often the hotplug watcher re-scans `/dev/input` for pointer devices that
 /// appeared after startup. A few seconds is imperceptible for a device the user
@@ -58,7 +58,7 @@ pub fn is_left_button_press(event_type: EventType, code: u16, value: i32) -> boo
 /// a question nobody asked.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClickCapture {
-    /// Turned off by `OPENSCREEN_DISABLE_CLICK_CAPTURE`; nothing was opened.
+    /// Turned off by `CAPTURIA_DISABLE_CLICK_CAPTURE`; nothing was opened.
     Disabled,
     /// No readable `/dev/input` node reports `BTN_LEFT` — the common case, when
     /// the user is not in the `input` group.

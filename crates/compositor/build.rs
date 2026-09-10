@@ -168,7 +168,7 @@ fn main() {
     // avant l'édition de liens (cf. scripts/build-linux-compositor-addon.mjs). Il faut
     // donc que CES déclarations importent les noms préfixés — sinon l'éditeur de liens
     // ne trouve rien, ou pire, l'addon se rattache au ffmpeg de Chromium au runtime.
-    if let Ok(prefix) = env::var("OPENSCREEN_FFMPEG_SYMBOL_PREFIX") {
+    if let Ok(prefix) = env::var("CAPTURIA_FFMPEG_SYMBOL_PREFIX") {
         prefix_ffmpeg_symbols(&ffi_path, &prefix);
     }
 }
@@ -261,7 +261,7 @@ fn prefix_ffmpeg_symbols(ffi_path: &Path, prefix: &str) {
 
     assert!(
         renamed > 0,
-        "OPENSCREEN_FFMPEG_SYMBOL_PREFIX est posé mais aucune fonction ffmpeg n'a été \
+        "CAPTURIA_FFMPEG_SYMBOL_PREFIX est posé mais aucune fonction ffmpeg n'a été \
          trouvée dans ffi.rs — le format de sortie de bindgen a changé, et l'addon se \
          lierait silencieusement au ffmpeg de Chromium."
     );

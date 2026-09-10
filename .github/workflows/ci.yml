@@ -293,7 +293,7 @@ jobs:
           ORT_DYLIB_PATH: ${{ github.workspace }}/electron/native/bin/linux-x64/libonnxruntime.so
           # Fait ECHOUER `cpu_backend_linux.rs` s'il n'obtient pas le backend CPU,
           # au lieu de le sauter en silence comme sur un poste sans lavapipe.
-          OPENSCREEN_REQUIRE_CPU_BACKEND: "1"
+          CAPTURIA_REQUIRE_CPU_BACKEND: "1"
         run: |
           cd crates
           cargo test -p openscreen-compositor --lib --tests

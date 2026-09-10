@@ -24,14 +24,14 @@ const localCursorHelperPath = path.join(buildDir, cursorHelperName);
 // Build a separate single-arch binary per requested arch and place each in its own
 // electron/native/bin/darwin-<arch> folder (the runtime resolves that folder by the running app's
 // arch). No universal/fat binary. Defaults to the host arch for local builds; CI sets
-// OPENSCREEN_MAC_HELPER_ARCHS per matrix entry (accepts arm64, x64, or x86_64).
+// CAPTURIA_MAC_HELPER_ARCHS per matrix entry (accepts arm64, x64, or x86_64).
 function normalizeArch(value) {
 	return value === "x64" || value === "x86_64"
 		? { swift: "x86_64", tag: "darwin-x64" }
 		: { swift: "arm64", tag: "darwin-arm64" };
 }
 const hostArch = process.arch === "arm64" ? "arm64" : "x86_64";
-const archs = (process.env.OPENSCREEN_MAC_HELPER_ARCHS ?? hostArch)
+const archs = (process.env.CAPTURIA_MAC_HELPER_ARCHS ?? hostArch)
 	.split(",")
 	.map((a) => a.trim())
 	.filter(Boolean)

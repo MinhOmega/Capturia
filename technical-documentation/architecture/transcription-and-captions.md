@@ -290,7 +290,7 @@ bash scripts/build-whisper-stt.sh
 # issues inside whisper.cpp's vulkan-shaders-gen sub-project.
 
 # Run the helper directly for manual testing
-set OPENSCREEN_WHISPER_MODEL=%APPDATA%\Electron\stt-models\whisper-ggml\ggml-small-q8_0.bin
+set CAPTURIA_WHISPER_MODEL=%APPDATA%\Electron\stt-models\whisper-ggml\ggml-small-q8_0.bin
 electron\native\bin\win32-x64\whisper-stt-server.exe --port 20199 --threads 8
 
 # Test

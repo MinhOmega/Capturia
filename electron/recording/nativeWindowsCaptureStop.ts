@@ -17,7 +17,7 @@ import { type ChildProcessWithoutNullStreams, execFile } from "node:child_proces
  * a parent that gave up first would kill a working save.
  *
  * It must stay above the helper's own shutdown ceiling
- * (`OPENSCREEN_WGC_STOP_BUDGET_MS`, 50s — see the stop sequence in
+ * (`CAPTURIA_WGC_STOP_BUDGET_MS`, 50s — see the stop sequence in
  * `electron/native/wgc-capture/src/main.cpp`), which is what guarantees the
  * helper always ends itself rather than being killed mid-finalize from here.
  * Raise one and raise the other.

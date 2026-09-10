@@ -213,7 +213,7 @@ unsafe impl Send for VideoEncoder {}
 
 impl VideoEncoder {
     /// Encodeurs software candidats du build LGPL, par codec. La premiere qui
-    /// ouvre gagne ; `OPENSCREEN_EXPORT_ENCODER=<name>` force un choix.
+    /// ouvre gagne ; `CAPTURIA_EXPORT_ENCODER=<name>` force un choix.
     fn candidate_names(codec: &ExportCodec) -> &'static [&'static str] {
         match codec {
             ExportCodec::H264 => &["libopenh264"],
@@ -222,7 +222,7 @@ impl VideoEncoder {
     }
 
     pub fn open(codec: &ExportCodec, w: i32, h: i32, fps: i32, bit_rate: i64) -> Result<VideoEncoder> {
-        let forced = std::env::var("OPENSCREEN_EXPORT_ENCODER").ok();
+        let forced = std::env::var("CAPTURIA_EXPORT_ENCODER").ok();
         let mut refused: Vec<String> = Vec::new();
         // Liste par defaut, plus l'encodeur force s'il n'y figure pas (ex. h264_vaapi).
         let defaults = Self::candidate_names(codec);
@@ -244,7 +244,7 @@ impl VideoEncoder {
             }
         }
         match forced {
-            Some(name) => bail!("OPENSCREEN_EXPORT_ENCODER={name} inutilisable : {}", refused.join(" ; ")),
+            Some(name) => bail!("CAPTURIA_EXPORT_ENCODER={name} inutilisable : {}", refused.join(" ; ")),
             None => bail!("aucun encodeur video utilisable : {}", refused.join(" ; ")),
         }
     }
@@ -399,7 +399,7 @@ impl VideoEncoder {
         }
         // REND LA FRAME ECRIVABLE AVANT DE LA REECRIRE. `avcodec_send_frame`
         // prend une reference sur le buffer ; un encodeur qui garde la frame —
-        // parce qu'il a du delai, ou parce que `OPENSCREEN_EXPORT_ENCODER` en a
+        // parce qu'il a du delai, ou parce que `CAPTURIA_EXPORT_ENCODER` en a
         // choisi un autre — la tiendrait encore quand le pool la recycle, et on
         // ecrirait dans une image en cours d'encodage.
         //
@@ -890,11 +890,11 @@ fn run_composited_multi_inner(
     // un pilote sans VAAPI, un device wgpu ouvert sans les extensions de memoire
     // externe. Aucun de ces cas n'est une erreur — l'export doit juste rester
     // celui d'avant.
-    // L'ECHAPPATOIRE DOIT AUSSI COUVRIR CE CHOIX. `OPENSCREEN_EXPORT_ENCODER`
+    // L'ECHAPPATOIRE DOIT AUSSI COUVRIR CE CHOIX. `CAPTURIA_EXPORT_ENCODER`
     // existe pour forcer un encodeur ; si le chemin materiel l'ignorait, demander
     // `libopenh264` donnerait quand meme du VAAPI — et le reglage servirait
     // surtout a diagnostiquer, donc mentir ici est pire qu'ailleurs.
-    let forced = std::env::var("OPENSCREEN_EXPORT_ENCODER").ok();
+    let forced = std::env::var("CAPTURIA_EXPORT_ENCODER").ok();
     let hw_allowed = match forced.as_deref() {
         None => true,
         Some(name) => name.contains("vaapi"),
@@ -1579,7 +1579,7 @@ mod tests {
     fn encode(fps: i32, n: usize) -> Option<Encoded> {
         // Un dev qui force un autre encodeur ne doit pas voir ce test rougir : il ne
         // décrit que `libopenh264`.
-        match std::env::var("OPENSCREEN_EXPORT_ENCODER") {
+        match std::env::var("CAPTURIA_EXPORT_ENCODER") {
             Ok(name) if name != "libopenh264" => return None,
             _ => {}
         }

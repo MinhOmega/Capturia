@@ -53,7 +53,7 @@ function platformArchTag() {
 }
 
 function helperCandidates() {
-	const envPath = process.env.OPENSCREEN_LINUX_CURSOR_HELPER_EXE?.trim();
+	const envPath = process.env.CAPTURIA_LINUX_CURSOR_HELPER_EXE?.trim();
 	const appRoot = process.env.APP_ROOT ? path.resolve(process.env.APP_ROOT) : process.cwd();
 	const archTag = platformArchTag();
 	const resourceRoot =

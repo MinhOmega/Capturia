@@ -1362,7 +1362,7 @@ impl VideoEncoder {
     /// Retient le premier candidat que cette machine accepte d'ouvrir, et dit lequel dans les
     /// logs. `hw_frames` : le pool D3D11 dans lequel le compositeur rend.
     ///
-    /// `OPENSCREEN_EXPORT_ENCODER=<nom>` n'essaie que celui-là. C'est le seul moyen d'exercer
+    /// `CAPTURIA_EXPORT_ENCODER=<nom>` n'essaie que celui-là. C'est le seul moyen d'exercer
     /// les chemins non-AMD depuis une machine AMD, où `h264_amf` gagne toujours au premier tour
     /// et laisse la descente mémoire système de `send` jamais exécutée. Le forçage ne retombe
     /// délibérément sur rien : un repli silencieux sur AMF ferait croire au test d'être passé.
@@ -1374,7 +1374,7 @@ impl VideoEncoder {
         bit_rate: i64,
         hw_frames: *mut AVBufferRef,
     ) -> Result<VideoEncoder> {
-        let forced = std::env::var("OPENSCREEN_EXPORT_ENCODER").ok();
+        let forced = std::env::var("CAPTURIA_EXPORT_ENCODER").ok();
         let mut refused: Vec<String> = Vec::new();
         for &candidate in codec.candidates() {
             let (name, pix_fmt) = candidate;
@@ -1412,9 +1412,9 @@ impl VideoEncoder {
             // le message serait un « aucun encodeur : » suivi de rien, et on chercherait le
             // problème du côté du driver plutôt que du côté de la faute de frappe.
             Some(name) if refused.is_empty() => {
-                bail!("OPENSCREEN_EXPORT_ENCODER={name} ne nomme aucun candidat de ce codec")
+                bail!("CAPTURIA_EXPORT_ENCODER={name} ne nomme aucun candidat de ce codec")
             }
-            Some(name) => bail!("OPENSCREEN_EXPORT_ENCODER={name} inutilisable ici : {}", refused[0]),
+            Some(name) => bail!("CAPTURIA_EXPORT_ENCODER={name} inutilisable ici : {}", refused[0]),
             None => bail!(
                 "aucun encodeur vidéo utilisable sur cette machine : {}",
                 refused.join(" ; "),
@@ -2644,7 +2644,7 @@ mod tests {
             "ffprobe stderr: {stderr}"
         );
 
-        if let Some(out) = std::env::var_os("OPENSCREEN_554_FIXTURE_OUT") {
+        if let Some(out) = std::env::var_os("CAPTURIA_554_FIXTURE_OUT") {
             let out = std::path::PathBuf::from(out);
             if let Some(parent) = out.parent() {
                 std::fs::create_dir_all(parent).expect("create fixture output directory");
