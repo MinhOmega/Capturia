@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CursorTelemetryPoint } from "@/components/video-editor/types";
 import type { AxcutClip } from "../schema";
+import type { ClipAnchored, MigratedRegion } from "./timelineMap";
 import { anchorRegionsWithDerivedMs } from "./timelineMap";
 import {
 	buildAutoZoomSuggestions,
@@ -23,6 +24,21 @@ function dwell(
 		cx,
 		cy,
 	}));
+}
+
+/**
+ * `anchorRegionsWithDerivedMs` returns `T | (ClipAnchored<T> & ...)`: a region that
+ * overlaps no clip comes back un-anchored. These tests are about where a suggestion
+ * LANDS, so an un-anchored result is a failure, not a variant to handle -- narrow it
+ * here rather than at four call sites.
+ */
+function expectAnchored<T extends { id: string; startMs: number; endMs: number }>(
+	region: MigratedRegion<T>,
+): ClipAnchored<T> & { startMs: number; endMs: number } {
+	if (!("clipId" in region)) {
+		throw new Error(`region ${region.id} anchored to no clip`);
+	}
+	return region as ClipAnchored<T> & { startMs: number; endMs: number };
 }
 
 describe("detectZoomDwellCandidates", () => {
@@ -427,9 +443,10 @@ describe("source-time to clip-anchored round trip", () => {
 		);
 		// And back down to source time: the same 23.78-25.60s of the recording the
 		// pre-roll and hold were measured against.
-		expect(anchored.clipId).toBe("clip_early");
-		expect(anchored.sourceStartSec).toBeCloseTo(23.78, 5);
-		expect(anchored.sourceEndSec).toBeCloseTo(25.6, 5);
+		const landed = expectAnchored(anchored);
+		expect(landed.clipId).toBe("clip_early");
+		expect(landed.sourceStartSec).toBeCloseTo(23.78, 5);
+		expect(landed.sourceEndSec).toBeCloseTo(25.6, 5);
 	});
 
 	// Speed is a modifier laid OVER the ruler, not geometry baked into it: a raw
@@ -458,6 +475,6 @@ describe("source-time to clip-anchored round trip", () => {
 			clips,
 			() => "zoom_extra",
 		);
-		expect(anchored.sourceStartSec).toBeCloseTo(19.78, 5);
+		expect(expectAnchored(anchored).sourceStartSec).toBeCloseTo(19.78, 5);
 	});
 });
