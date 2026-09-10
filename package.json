@@ -2,7 +2,7 @@
 	"name": "capturia",
 	"private": true,
 	"version": "2.0.0",
-	"description": "Free, open-source screen recorder & editor with intelligent cursor tracking, zoom effects, and cinematic output",
+	"description": "Free, open-source screen recorder and editor with intelligent cursor tracking, zoom effects, and cinematic output",
 	"homepage": "https://github.com/MinhOmega/Capturia",
 	"license": "MIT",
 	"type": "module",
