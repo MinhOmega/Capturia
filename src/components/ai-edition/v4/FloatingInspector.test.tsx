@@ -29,7 +29,6 @@ vi.mock("../RightPanes", () => ({
 
 vi.mock("../CaptionsPane", () => ({
 	CaptionsPane: () => <div data-testid="captions-pane">CaptionsPane</div>,
-	CAPTION_FONTS: ["Inter", "Geist"],
 }));
 
 import { FloatingInspector } from "./FloatingInspector";
