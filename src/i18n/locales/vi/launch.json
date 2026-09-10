@@ -103,5 +103,27 @@
 		"about": "Giới thiệu",
 		"version": "Phiên bản {{version}}",
 		"checkingForUpdates": "Đang kiểm tra…"
+	},
+	"permissions": {
+		"title": "Quyền truy cập",
+		"required": "Bắt buộc",
+		"row": {
+			"screen": "Ghi màn hình",
+			"camera": "Máy ảnh",
+			"microphone": "Micrô",
+			"accessibility": "Trợ năng"
+		},
+		"status": {
+			"granted": "Đã cho phép",
+			"denied": "Bị từ chối",
+			"restricted": "Bị hạn chế",
+			"not-determined": "Chưa hỏi",
+			"unknown": "Không rõ"
+		},
+		"action": {
+			"request": "Yêu cầu",
+			"open-settings": "Mở Cài đặt"
+		},
+		"relaunchHint": "macOS chỉ áp dụng quyền Ghi màn hình mới từ lần khởi động sau — hãy thoát và mở lại Capturia."
 	}
 }

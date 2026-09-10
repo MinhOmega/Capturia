@@ -103,5 +103,27 @@
 		"about": "About",
 		"version": "Version {{version}}",
 		"checkingForUpdates": "Checking…"
+	},
+	"permissions": {
+		"title": "Permissions",
+		"required": "Required",
+		"row": {
+			"screen": "Screen Recording",
+			"camera": "Camera",
+			"microphone": "Microphone",
+			"accessibility": "Accessibility"
+		},
+		"status": {
+			"granted": "Allowed",
+			"denied": "Denied",
+			"restricted": "Restricted",
+			"not-determined": "Not asked yet",
+			"unknown": "Unknown"
+		},
+		"action": {
+			"request": "Ask",
+			"open-settings": "Open Settings"
+		},
+		"relaunchHint": "macOS applies a new Screen Recording grant on the next launch — quit and reopen Capturia."
 	}
 }

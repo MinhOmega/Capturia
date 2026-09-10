@@ -85,6 +85,14 @@ import { findPipeWireCursorHelperPath } from "../native-bridge/cursor/recording/
 import type { CursorRecordingSession } from "../native-bridge/cursor/recording/session";
 import { toHelperRect } from "../native-bridge/helperCoordinates";
 import { normalizeExternalUrl } from "../navigationPolicy";
+import {
+	buildCapturePermissions,
+	type CapturePermissionProbe,
+	capturePermissionAction,
+	capturePermissionKeys,
+	PERMISSION_SETTINGS_TARGETS,
+	readCapturePermissionStatus,
+} from "../permissions/capturePermissions";
 import { scoreDeviceNameMatch } from "../recording/deviceNameMatching";
 import {
 	isSalvageableFragmentedCapture,
@@ -2104,6 +2112,57 @@ export function registerIpcHandlers(
 		}
 
 		return access;
+	});
+
+	/**
+	 * The permissions panel's two channels.
+	 *
+	 * They exist rather than the panel calling `request-camera-access` and
+	 * friends per row because neither the microphone request nor a privacy pane
+	 * had a channel at all: `normalizeExternalUrl` refuses the
+	 * `x-apple.systempreferences:`/`ms-settings:` schemes on purpose, so
+	 * `open-external-url` can never open one. One dispatching channel is a
+	 * smaller surface than a mic-request channel plus an open-pane channel, and
+	 * it keeps the pane table in the main process where `windowPermissions.ts`
+	 * requires it to stay.
+	 */
+	const permissionProbe: CapturePermissionProbe = {
+		mediaAccessStatus: (kind) => systemPreferences.getMediaAccessStatus(kind),
+		accessibilityTrusted: () => systemPreferences.isTrustedAccessibilityClient(false),
+	};
+
+	ipcMain.handle("get-capture-permissions", () => buildCapturePermissions(permissionProbe));
+
+	ipcMain.handle("request-capture-permission", async (_, rawKey: unknown) => {
+		// The key arrives from a renderer, so it is checked against what THIS
+		// platform lists rather than against the key union: a valid-looking
+		// "accessibility" on Windows must not reach `settingsPaneUrl`.
+		const key = capturePermissionKeys().find((each) => each === rawKey);
+		if (!key) return { success: false, openedSettings: false, error: "unsupported-permission" };
+
+		try {
+			// Re-read rather than trusting the action the panel last rendered: the
+			// user may have changed it in System Settings since that snapshot.
+			const action = capturePermissionAction(readCapturePermissionStatus(key, permissionProbe));
+			if (action === "granted") return { success: true, openedSettings: false };
+
+			if (action === "request") {
+				// Screen recording has no `askForMediaAccess`; `requestScreenAccess`
+				// already knows how to provoke its TCC prompt.
+				if (key === "screen") await requestScreenAccess();
+				else if (key !== "accessibility") await systemPreferences.askForMediaAccess(key);
+				return { success: true, openedSettings: false };
+			}
+
+			const pane = settingsPaneUrl(PERMISSION_SETTINGS_TARGETS[key]);
+			// Built from a fixed table, never from renderer input — see windowPermissions.ts.
+			if (!pane) return { success: false, openedSettings: false, error: "no-settings-pane" };
+			await shell.openExternal(pane);
+			return { success: true, openedSettings: true };
+		} catch (error) {
+			console.error(`Failed to act on ${key} permission:`, error);
+			return { success: false, openedSettings: false, error: String(error) };
+		}
 	});
 
 	ipcMain.handle("open-source-selector", async () => {

@@ -103,5 +103,27 @@
 		"about": "정보",
 		"version": "버전 {{version}}",
 		"checkingForUpdates": "확인 중…"
+	},
+	"permissions": {
+		"title": "권한",
+		"required": "필수",
+		"row": {
+			"screen": "화면 기록",
+			"camera": "카메라",
+			"microphone": "마이크",
+			"accessibility": "손쉬운 사용"
+		},
+		"status": {
+			"granted": "허용됨",
+			"denied": "거부됨",
+			"restricted": "제한됨",
+			"not-determined": "요청 전",
+			"unknown": "알 수 없음"
+		},
+		"action": {
+			"request": "요청",
+			"open-settings": "설정 열기"
+		},
+		"relaunchHint": "macOS는 새로 허용한 화면 기록 권한을 다음 실행부터 적용합니다. Capturia를 종료한 뒤 다시 열어 주세요."
 	}
 }

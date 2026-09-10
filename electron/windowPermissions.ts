@@ -199,19 +199,24 @@ export function windowTypeForContents(
  * `shell.openExternal` is the only way to open these, and the URLs are built
  * from this fixed table rather than from anything a renderer supplies — which is
  * why they are exempt from `normalizeExternalUrl`'s http/https/mailto allowlist.
- * Returns null where the platform has no deep link (Linux has no single answer,
- * and macOS exposes no pane for input monitoring separate from Accessibility on
- * older releases).
+ * Returns null where the platform has no deep link: Linux has no single answer,
+ * and Windows has no pane for screen capture or accessibility trust because it
+ * gates neither. `capturePermissions.ts` only offers a target its platform
+ * lists, so a null here is never reachable from the permissions panel.
  */
-export type PermissionSettingsTarget = "screen-capture" | "accessibility";
+export type PermissionSettingsTarget = "screen-capture" | "camera" | "microphone" | "accessibility";
 
 const MACOS_PANES: Record<PermissionSettingsTarget, string> = {
 	"screen-capture": "Privacy_ScreenCapture",
+	camera: "Privacy_Camera",
+	microphone: "Privacy_Microphone",
 	accessibility: "Privacy_Accessibility",
 };
 
 const WINDOWS_PANES: Partial<Record<PermissionSettingsTarget, string>> = {
 	"screen-capture": "ms-settings:privacy-general",
+	camera: "ms-settings:privacy-webcam",
+	microphone: "ms-settings:privacy-microphone",
 };
 
 export function settingsPaneUrl(

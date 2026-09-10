@@ -103,5 +103,27 @@
 		"about": "关于",
 		"version": "版本 {{version}}",
 		"checkingForUpdates": "正在检查…"
+	},
+	"permissions": {
+		"title": "权限",
+		"required": "必需",
+		"row": {
+			"screen": "屏幕录制",
+			"camera": "摄像头",
+			"microphone": "麦克风",
+			"accessibility": "辅助功能"
+		},
+		"status": {
+			"granted": "已允许",
+			"denied": "已拒绝",
+			"restricted": "受限",
+			"not-determined": "尚未请求",
+			"unknown": "未知"
+		},
+		"action": {
+			"request": "请求",
+			"open-settings": "打开系统设置"
+		},
+		"relaunchHint": "macOS 会在下次启动时才应用新授予的屏幕录制权限，请退出并重新打开 Capturia。"
 	}
 }

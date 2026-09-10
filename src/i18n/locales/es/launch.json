@@ -103,5 +103,27 @@
 		"about": "Acerca de",
 		"version": "Versión {{version}}",
 		"checkingForUpdates": "Buscando…"
+	},
+	"permissions": {
+		"title": "Permisos",
+		"required": "Obligatorio",
+		"row": {
+			"screen": "Grabación de pantalla",
+			"camera": "Cámara",
+			"microphone": "Micrófono",
+			"accessibility": "Accesibilidad"
+		},
+		"status": {
+			"granted": "Permitido",
+			"denied": "Denegado",
+			"restricted": "Restringido",
+			"not-determined": "Sin solicitar",
+			"unknown": "Desconocido"
+		},
+		"action": {
+			"request": "Solicitar",
+			"open-settings": "Abrir Ajustes"
+		},
+		"relaunchHint": "macOS aplica un nuevo permiso de grabación de pantalla en el próximo inicio: cierra y vuelve a abrir Capturia."
 	}
 }
