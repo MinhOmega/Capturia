@@ -32,33 +32,25 @@ export interface RoughCutSuggestion {
 	confidence: number;
 }
 
-export interface RoughCutOptions {
-	/** Gaps at least this long between two spoken words are dead air. */
-	minSilenceSec: number;
-	/** A filler run shorter than this is not worth a cut. */
-	minFillerSec: number;
-	/** Compared against words lowercased and stripped of punctuation. */
-	fillerWords: string[];
-}
-
 /**
+ * Gaps at least this long between two spoken words are dead air.
+ *
  * 0.8s. Below roughly 0.5s a gap is the rhythm of ordinary speech and cutting it
  * makes the speaker sound rushed; `SILENCE_THRESHOLD_SEC` (0.2) exists to DRAW
  * silence in the transcript pane, which is a much lower bar than removing it.
+ */
+const MIN_SILENCE_SEC = 0.8;
+/** A filler run shorter than this is not worth a cut. */
+const MIN_FILLER_SEC = 0.26;
+/**
+ * Compared against words lowercased and stripped of punctuation.
  *
  * The filler list is deliberately short and covers the hesitation sounds that
  * carry no meaning in any register. It is not a disfluency dictionary: "like"
  * and "you know" are filler in one sentence and content in the next, and a
  * deterministic pass cannot tell which, so it does not try.
  */
-export function defaultRoughCutOptions(): RoughCutOptions {
-	return {
-		minSilenceSec: 0.8,
-		minFillerSec: 0.26,
-		fillerWords: ["um", "uh", "erm", "emm", "ah", "er", "hmm", "呃", "嗯"],
-	};
-}
-
+const FILLER_WORDS = ["um", "uh", "erm", "emm", "ah", "er", "hmm", "呃", "嗯"];
 /** Two suggestions closer than this are one cut. */
 const MERGE_GAP_SEC = 0.04;
 /** A run of fillers survives a gap this small between them. */
@@ -93,7 +85,7 @@ function spokenWords(words: AxcutWord[]): AxcutWord[] {
  * a filler run inside a long pause reads as "filler", which is the more specific
  * of the two things true about that stretch.
  */
-export function normalizeRoughCutSuggestions(
+function normalizeRoughCutSuggestions(
 	input: RoughCutSuggestion[],
 	durationSec: number,
 ): RoughCutSuggestion[] {
@@ -139,7 +131,6 @@ export function normalizeRoughCutSuggestions(
 export function generateRoughCutSuggestions(
 	words: AxcutWord[],
 	durationSec: number,
-	options: RoughCutOptions = defaultRoughCutOptions(),
 ): RoughCutSuggestion[] {
 	const spoken = spokenWords(words);
 	if (spoken.length === 0) return [];
@@ -148,7 +139,7 @@ export function generateRoughCutSuggestions(
 
 	for (let index = 1; index < spoken.length; index += 1) {
 		const gap = spoken[index].startSec - spoken[index - 1].endSec;
-		if (gap < options.minSilenceSec) continue;
+		if (gap < MIN_SILENCE_SEC) continue;
 		suggestions.push({
 			startSec: spoken[index - 1].endSec,
 			endSec: spoken[index].startSec,
@@ -157,14 +148,14 @@ export function generateRoughCutSuggestions(
 		});
 	}
 
-	const fillerSet = new Set(options.fillerWords.map(normalizeTextToken).filter(Boolean));
+	const fillerSet = new Set(FILLER_WORDS.map(normalizeTextToken).filter(Boolean));
 	let runStart: AxcutWord | null = null;
 	let runEnd: AxcutWord | null = null;
 
 	const flushFillerRun = (): void => {
 		if (!runStart || !runEnd) return;
 		const duration = runEnd.endSec - runStart.startSec;
-		if (duration >= options.minFillerSec) {
+		if (duration >= MIN_FILLER_SEC) {
 			suggestions.push({
 				startSec: runStart.startSec,
 				endSec: runEnd.endSec,

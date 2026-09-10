@@ -2,18 +2,15 @@
 //
 // The sidecar stores each marker in SOURCE time — the recorded file's own clock,
 // with pauses already collapsed out, measured from the first captured frame. The
-// editor draws two other clocks: the RAW ruler (where the playhead lives, and
-// where trims are holes rather than shortenings) and the OUTPUT programme (the
-// finished film, trims removed and speed applied). A marker therefore has to
-// travel the same two hops every other source-anchored thing travels, and it has
-// to survive a clip being moved, split, retimed or trimmed underneath it.
+// editor draws the RAW ruler (where the playhead lives, and where trims are
+// holes rather than shortenings). A marker therefore has to travel the same hop
+// every other source-anchored thing travels, and it has to survive a clip being
+// moved, split, retimed or trimmed underneath it.
 //
 // Nothing here is new machinery. `placementRawSec` is the existing source→raw
-// shift (exact, because trims do not compact the raw axis);
-// `projectRawTimelineSecToPlayback` is the existing raw→output projection, the
-// same one the exporter and the audio mixer use; `removedRawSpans`/`removalAt`
-// are the existing "is this moment in the film at all" test. This module only
-// composes them and says what to do when they disagree.
+// shift (exact, because trims do not compact the raw axis); `removedRawSpans`/
+// `removalAt` are the existing "is this moment in the film at all" test. This
+// module only composes them and says what to do when they disagree.
 //
 // It does NOT use `locateSourcePosition`, which is the obvious-looking choice
 // and the wrong one: that is a `findIndex` built for a playhead, which is in
@@ -26,7 +23,6 @@
 // version to migrate. It also means the editor cannot author them — flagging a
 // moment is something you do while recording, which is the whole feature.
 
-import { type PlaybackSpeedRegion, projectRawTimelineSecToPlayback } from "../document/timeline";
 import type { AxcutDocument } from "../schema";
 import { placementRawSec } from "./aggregated-transcript";
 import { removalAt, removedRawSpans } from "./programme-time";
@@ -45,34 +41,14 @@ export interface ResolvedRecordingMarker {
 	sourceSec: number;
 	/** Where it sits on the RAW ruler — the coordinate the playhead seeks to. */
 	rulerSec: number;
-	/** Where it sits in the finished programme, trims removed and speed applied. */
-	outputSec: number;
 	/**
 	 * A trim, or a gap between two clips, cuts this moment out of playback.
 	 *
 	 * Kept rather than dropped: the marker still has an honest ruler position
 	 * (the raw axis is not compacted by trims), and a flag the user set and then
 	 * trimmed over should read as "you cut this" rather than silently vanish.
-	 * `outputSec` for a removed marker is the output edge just before the cut,
-	 * which is where the film jumps — so seeking to it still lands somewhere
-	 * meaningful.
 	 */
 	removed: boolean;
-}
-
-/** `legacyEditor.speedRegions` is a passthrough blob; zod validates nothing inside it. */
-function speedRegionsOf(document: AxcutDocument): PlaybackSpeedRegion[] {
-	const regions = (document.legacyEditor as { speedRegions?: unknown } | null)?.speedRegions;
-	if (!Array.isArray(regions)) return [];
-	return regions.filter(
-		(region): region is PlaybackSpeedRegion =>
-			Boolean(region) &&
-			typeof region === "object" &&
-			typeof (region as PlaybackSpeedRegion).startMs === "number" &&
-			typeof (region as PlaybackSpeedRegion).endMs === "number" &&
-			typeof (region as PlaybackSpeedRegion).speed === "number" &&
-			(region as PlaybackSpeedRegion).speed > 0,
-	);
 }
 
 /**
@@ -109,7 +85,6 @@ export function resolveRecordingMarkers(
 	const { clips, trimRanges } = document.timeline;
 	if (clips.length === 0) return [];
 
-	const speedRegions = speedRegionsOf(document);
 	const removed = removedRawSpans(clips, trimRanges);
 	const resolved: ResolvedRecordingMarker[] = [];
 
@@ -130,7 +105,6 @@ export function resolveRecordingMarkers(
 				clipId: clip.id,
 				sourceSec,
 				rulerSec,
-				outputSec: projectRawTimelineSecToPlayback(clips, trimRanges, rulerSec, speedRegions),
 				removed: removalAt(removed, rulerSec) !== null,
 			});
 		}

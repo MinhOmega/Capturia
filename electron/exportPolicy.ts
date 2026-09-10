@@ -89,14 +89,6 @@ export class ApprovedExportPaths {
 		// skip the `.mp4` append and then fail approval outright.
 		return this.files.has(canonicalize(trimmed, this.platformPath));
 	}
-
-	clear(): void {
-		this.files.clear();
-	}
-
-	get size(): number {
-		return this.files.size;
-	}
 }
 
 /** Process-wide registry behind `write-export-to-path`. */

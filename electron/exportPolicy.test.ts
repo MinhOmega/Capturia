@@ -50,7 +50,8 @@ describe("ApprovedExportPaths", () => {
 		expect(registry.approve("")).toBeNull();
 		expect(registry.approve(null)).toBeNull();
 		expect(registry.approve(42)).toBeNull();
-		expect(registry.size).toBe(0);
+		// Rejected at approval means never registered, not merely not resolved.
+		expect(registry.isApproved("/home/me/.ssh/config")).toBe(false);
 	});
 
 	it("never approves a path that only looks right", () => {
@@ -66,13 +67,6 @@ describe("ApprovedExportPaths", () => {
 		registry.approve("C:\\Users\\Me\\Videos\\Take.mp4");
 		expect(registry.isApproved("c:\\users\\me\\videos\\take.mp4")).toBe(true);
 		expect(registry.isApproved("C:\\Users\\Me\\Videos\\Other.mp4")).toBe(false);
-	});
-
-	it("forgets everything on clear", () => {
-		const registry = new ApprovedExportPaths(posix);
-		registry.approve("/home/me/Movies/take.mp4");
-		registry.clear();
-		expect(registry.isApproved("/home/me/Movies/take.mp4")).toBe(false);
 	});
 });
 

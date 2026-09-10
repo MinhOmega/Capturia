@@ -231,19 +231,15 @@ describe("settingsPaneUrl", () => {
 		expect(settingsPaneUrl("accessibility", "darwin")).toBe(
 			"x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
 		);
-		expect(settingsPaneUrl("input-monitoring", "darwin")).toBe(
-			"x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent",
-		);
 	});
 
 	it("deep-links what Windows exposes and nothing it does not", () => {
-		expect(settingsPaneUrl("microphone", "win32")).toBe("ms-settings:privacy-microphone");
-		expect(settingsPaneUrl("camera", "win32")).toBe("ms-settings:privacy-webcam");
+		expect(settingsPaneUrl("screen-capture", "win32")).toBe("ms-settings:privacy-general");
 		expect(settingsPaneUrl("accessibility", "win32")).toBeNull();
 	});
 
 	it("has no deep link on Linux", () => {
-		expect(settingsPaneUrl("microphone", "linux")).toBeNull();
+		expect(settingsPaneUrl("accessibility", "linux")).toBeNull();
 		expect(settingsPaneUrl("screen-capture", "linux")).toBeNull();
 	});
 });

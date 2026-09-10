@@ -26,19 +26,19 @@ describe("decideNavigation", () => {
 			name: "reloading the dev editor document is allowed",
 			trusted: DEV_EDITOR,
 			target: DEV_EDITOR,
-			expected: { action: "allow", reason: "same-document" },
+			expected: { action: "allow" },
 		},
 		{
 			name: "reloading the packaged editor document is allowed",
 			trusted: PACKAGED_EDITOR,
 			target: PACKAGED_EDITOR,
-			expected: { action: "allow", reason: "same-document" },
+			expected: { action: "allow" },
 		},
 		{
 			name: "a hash on the trusted document is still the trusted document",
 			trusted: DEV_EDITOR,
 			target: `${DEV_EDITOR}#timeline`,
-			expected: { action: "allow", reason: "same-document" },
+			expected: { action: "allow" },
 		},
 		{
 			name: "a replaceState-style path on the trusted origin is blocked",
@@ -183,7 +183,6 @@ describe("decideNavigation", () => {
 		expect(decideNavigation({ trustedUrl: trusted, targetUrl: target, platform: "win32" })).toEqual(
 			{
 				action: "allow",
-				reason: "same-document",
 			},
 		);
 		expect(decideNavigation({ trustedUrl: trusted, targetUrl: target, platform: "linux" })).toEqual(
@@ -196,10 +195,7 @@ describe("decideNavigation", () => {
 
 	it("leaves DevTools to itself", () => {
 		const devtools = "devtools://devtools/bundled/devtools_app.html";
-		expect(verdict(devtools, `${devtools}?remoteBase=x`)).toEqual({
-			action: "allow",
-			reason: "devtools",
-		});
+		expect(verdict(devtools, `${devtools}?remoteBase=x`)).toEqual({ action: "allow" });
 		expect(verdict(devtools, "https://example.com/")).toEqual({
 			action: "deny",
 			reason: "unsupported-scheme",

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-	createRecordingCleanupPolicy,
 	planRecordingCleanup,
 	type RecordingArtifactEntry,
 	type RecordingCleanupPolicy,
@@ -11,15 +10,14 @@ function entry(name: string, size: number, mtimeMs: number): RecordingArtifactEn
 	return { name, size, mtimeMs };
 }
 
-const policy = (over: Partial<RecordingCleanupPolicy>) =>
-	createRecordingCleanupPolicy({
-		maxTotalBytes: 420,
-		targetTotalBytes: 220,
-		maxVideoAgeMs: 1_000_000,
-		minKeepVideoGroups: 2,
-		orphanSidecarAgeMs: 1_000_000,
-		...over,
-	});
+const policy = (over: Partial<RecordingCleanupPolicy>): RecordingCleanupPolicy => ({
+	maxTotalBytes: 420,
+	targetTotalBytes: 220,
+	maxVideoAgeMs: 1_000_000,
+	minKeepVideoGroups: 2,
+	orphanSidecarAgeMs: 1_000_000,
+	...over,
+});
 
 describe("naming", () => {
 	it("recognises every artefact one take leaves behind", () => {
@@ -102,7 +100,6 @@ describe("planRecordingCleanup", () => {
 				"recording-1.session.json",
 			]),
 		);
-		expect(plan.estimatedBytesFreed).toBe(176);
 	});
 
 	it("keeps the newest N takes however old or large they are", () => {

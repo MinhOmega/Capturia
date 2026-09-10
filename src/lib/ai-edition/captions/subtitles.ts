@@ -54,30 +54,20 @@ export function subtitleSidecarPath(videoPath: string, format: SubtitleSidecarFo
 	return `${videoPath.replace(VIDEO_EXTENSION, "")}.${format}`;
 }
 
-function pad(value: number, length: number): string {
-	return String(Math.max(0, Math.floor(value))).padStart(length, "0");
-}
-
-function splitTimestamp(msInput: number): [number, number, number, number] {
+/** `HH:MM:SS.mmm`, hours uncapped — a 25-hour recording must not wrap to 01. */
+function stamp(msInput: number): string {
 	const total = Math.max(0, Math.round(Number.isFinite(msInput) ? msInput : 0));
-	return [
-		Math.floor(total / 3_600_000),
-		Math.floor(total / 60_000) % 60,
-		Math.floor(total / 1000) % 60,
-		total % 1000,
-	];
+	return `${String(Math.floor(total / 3_600_000)).padStart(2, "0")}:${new Date(total % 3_600_000).toISOString().slice(14, 23)}`;
 }
 
 /** `HH:MM:SS,mmm` — SubRip separates the milliseconds with a comma. */
 export function formatSrtTimestamp(ms: number): string {
-	const [h, m, s, ms3] = splitTimestamp(ms);
-	return `${pad(h, 2)}:${pad(m, 2)}:${pad(s, 2)},${pad(ms3, 3)}`;
+	return stamp(ms).replace(".", ",");
 }
 
 /** `HH:MM:SS.mmm` — WebVTT uses a dot, and the two are not interchangeable. */
 export function formatVttTimestamp(ms: number): string {
-	const [h, m, s, ms3] = splitTimestamp(ms);
-	return `${pad(h, 2)}:${pad(m, 2)}:${pad(s, 2)}.${pad(ms3, 3)}`;
+	return stamp(ms);
 }
 
 /**

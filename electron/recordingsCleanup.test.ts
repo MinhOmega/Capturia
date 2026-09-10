@@ -115,21 +115,4 @@ describe("runRecordingsCleanup", () => {
 		expect(await remaining()).toContain("media-links.registry.json");
 		expect(await remaining()).toContain("someone-elses-notes.txt");
 	});
-
-	it("spares a take named in excludePaths, project or no project", async () => {
-		await aged("recording-1.mp4", 400);
-		await aged("recording-2.mp4", 300);
-		await aged("recording-3.mp4", 200);
-
-		await runRecordingsCleanup({
-			recordingsDir,
-			userDataDir,
-			reason: "post-recording",
-			policy: { minKeepVideoGroups: 1, maxVideoAgeMs: 1_000 },
-			// The take being recorded right now is in no project yet.
-			excludePaths: [path.join(recordingsDir, "recording-1.mp4")],
-		});
-
-		expect(await remaining()).toContain("recording-1.mp4");
-	});
 });

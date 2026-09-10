@@ -49,9 +49,7 @@ export interface RecordingCleanupPolicy {
 
 export interface RecordingCleanupPlan {
 	filesToDelete: string[];
-	managedTotalBytes: number;
 	managedGroupCount: number;
-	estimatedBytesFreed: number;
 }
 
 type ManagedKind = "video" | "sidecar" | "session" | "scratch";
@@ -66,7 +64,7 @@ interface RecordingGroup {
 	latestMtimeMs: number;
 }
 
-export const DEFAULT_RECORDING_CLEANUP_POLICY: RecordingCleanupPolicy = {
+const DEFAULT_RECORDING_CLEANUP_POLICY: RecordingCleanupPolicy = {
 	maxTotalBytes: 8 * 1024 * 1024 * 1024,
 	targetTotalBytes: Math.floor(8 * 1024 * 1024 * 1024 * 0.8),
 	maxVideoAgeMs: 30 * 24 * 60 * 60 * 1000,
@@ -120,12 +118,6 @@ function parseManagedArtifactName(fileName: string): { key: string; kind: Manage
 /** The take a file belongs to, or null when this cleanup does not own the file. */
 export function recordingGroupKeyFromFileName(fileName: string): string | null {
 	return parseManagedArtifactName(fileName)?.key ?? null;
-}
-
-export function createRecordingCleanupPolicy(
-	input?: Partial<RecordingCleanupPolicy>,
-): RecordingCleanupPolicy {
-	return normalizePolicy(input);
 }
 
 function toValidEntry(entry: RecordingArtifactEntry): RecordingArtifactEntry | null {
@@ -200,7 +192,6 @@ export function planRecordingCleanup(
 	const policy = normalizePolicy(options?.policy);
 	const nowMs = Number.isFinite(options?.nowMs) ? Number(options?.nowMs) : Date.now();
 	const groups = groupManagedArtifacts(normalizedEntries);
-	const managedTotalBytes = groups.reduce((sum, group) => sum + group.totalBytes, 0);
 
 	const protectedFileNames = new Set(options?.protectedFileNames ?? []);
 	const protectedKeys = new Set<string>();
@@ -248,7 +239,6 @@ export function planRecordingCleanup(
 	}
 
 	const filesToDelete: string[] = [];
-	let estimatedBytesFreed = 0;
 	for (const group of groupsByNewest) {
 		if (deletedKeys.has(group.key)) {
 			for (const file of group.files) {
@@ -256,7 +246,6 @@ export function planRecordingCleanup(
 				// rule put its group in the delete set.
 				if (protectedFileNames.has(file.name)) continue;
 				filesToDelete.push(file.name);
-				estimatedBytesFreed += file.size;
 			}
 			continue;
 		}
@@ -268,16 +257,10 @@ export function planRecordingCleanup(
 			if (file.mtimeMs > orphanThreshold) continue;
 			if (protectedFileNames.has(file.name)) continue;
 			filesToDelete.push(file.name);
-			estimatedBytesFreed += file.size;
 		}
 	}
 
 	filesToDelete.sort((a, b) => a.localeCompare(b));
 
-	return {
-		filesToDelete,
-		managedTotalBytes,
-		managedGroupCount: groups.length,
-		estimatedBytesFreed,
-	};
+	return { filesToDelete, managedGroupCount: groups.length };
 }
