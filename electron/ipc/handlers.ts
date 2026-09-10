@@ -59,7 +59,7 @@ import type { CursorTelemetryReader } from "../ai-edition/deep-agent/service";
 import { DocumentService } from "../ai-edition/document-service";
 import { LlmConfigStore } from "../ai-edition/llm-config-store";
 import { isDiagnosticModeEnabled, mainLogBuffer } from "../diagnostics/main-log-buffer";
-import { approvedExportPaths, hasAllowedExportExtension } from "../exportPolicy";
+import { approvedExportPaths, batchExportPaths, hasAllowedExportExtension } from "../exportPolicy";
 import { mainT } from "../i18n";
 import { getInstallChannel } from "../install-channel";
 import { RECORDINGS_DIR } from "../main";
@@ -3772,68 +3772,91 @@ export function registerIpcHandlers(
 		return resolveAssetBasePath();
 	});
 
-	ipcMain.handle("pick-export-save-path", async (_, fileName: string, exportFolder?: string) => {
-		try {
-			const isGif = fileName.toLowerCase().endsWith(".gif");
-			const filters = isGif
-				? [{ name: mainT("dialogs", "fileDialogs.gifImage"), extensions: ["gif"] }]
-				: [{ name: mainT("dialogs", "fileDialogs.mp4Video"), extensions: ["mp4"] }];
+	ipcMain.handle(
+		"pick-export-save-path",
+		async (_, fileName: string, exportFolder?: string, aspectTokens?: unknown) => {
+			try {
+				const isGif = fileName.toLowerCase().endsWith(".gif");
+				const filters = isGif
+					? [{ name: mainT("dialogs", "fileDialogs.gifImage"), extensions: ["gif"] }]
+					: [{ name: mainT("dialogs", "fileDialogs.mp4Video"), extensions: ["mp4"] }];
 
-			// Prefer the user's last export folder if it still exists, else ~/Downloads.
-			// Validate here because the renderer can't stat the filesystem.
-			let defaultDir = app.getPath("downloads");
-			if (exportFolder) {
-				try {
-					const stats = await fs.stat(exportFolder);
-					if (stats.isDirectory()) {
-						defaultDir = exportFolder;
+				// Prefer the user's last export folder if it still exists, else ~/Downloads.
+				// Validate here because the renderer can't stat the filesystem.
+				let defaultDir = app.getPath("downloads");
+				if (exportFolder) {
+					try {
+						const stats = await fs.stat(exportFolder);
+						if (stats.isDirectory()) {
+							defaultDir = exportFolder;
+						}
+					} catch (err) {
+						console.warn(
+							`Could not access remembered export folder "${exportFolder}", falling back to Downloads:`,
+							err,
+						);
 					}
-				} catch (err) {
-					console.warn(
-						`Could not access remembered export folder "${exportFolder}", falling back to Downloads:`,
-						err,
-					);
 				}
-			}
-			const dialogOptions = buildDialogOptions(
-				{
-					title: isGif
-						? mainT("dialogs", "fileDialogs.saveGif")
-						: mainT("dialogs", "fileDialogs.saveVideo"),
-					defaultPath: path.join(defaultDir, fileName),
-					filters,
-					properties: ["createDirectory", "showOverwriteConfirmation"],
-				},
-				getMainWindow(),
-			);
-			const result = await dialog.showSaveDialog(dialogOptions);
+				const dialogOptions = buildDialogOptions(
+					{
+						title: isGif
+							? mainT("dialogs", "fileDialogs.saveGif")
+							: mainT("dialogs", "fileDialogs.saveVideo"),
+						defaultPath: path.join(defaultDir, fileName),
+						filters,
+						properties: ["createDirectory", "showOverwriteConfirmation"],
+					},
+					getMainWindow(),
+				);
+				const result = await dialog.showSaveDialog(dialogOptions);
 
-			if (result.canceled || !result.filePath) {
-				return { success: false, canceled: true, message: "Export canceled" };
-			}
+				if (result.canceled || !result.filePath) {
+					return { success: false, canceled: true, message: "Export canceled" };
+				}
 
-			// GTK save dialogs do not append the filter's extension, so a name typed
-			// without one would otherwise reach the writer as an extension-less path.
-			const chosenPath = hasAllowedExportExtension(result.filePath)
-				? result.filePath
-				: `${result.filePath}${isGif ? ".gif" : ".mp4"}`;
+				// GTK save dialogs do not append the filter's extension, so a name typed
+				// without one would otherwise reach the writer as an extension-less path.
+				const chosenPath = hasAllowedExportExtension(result.filePath)
+					? result.filePath
+					: `${result.filePath}${isGif ? ".gif" : ".mp4"}`;
 
-			// The user just named this destination, so it becomes writable. Nothing
-			// else does — see exportPolicy.ts.
-			const approved = approvedExportPaths.approve(chosenPath);
-			if (!approved) {
-				return { success: false, message: "Invalid export destination" };
+				// The user just named this destination, so it becomes writable. Nothing
+				// else does — see exportPolicy.ts.
+				const approved = approvedExportPaths.approve(chosenPath);
+				if (!approved) {
+					return { success: false, message: "Invalid export destination" };
+				}
+
+				// A multi-aspect batch writes one sibling file per ratio next to the file the
+				// user just named. They are derived and approved HERE, in the same breath as
+				// the dialog, and handed back so the renderer writes exactly the paths that
+				// were approved — deriving the same names on both sides would be two copies of
+				// one rule, and the moment they disagreed the export would vanish silently.
+				const tokens = Array.isArray(aspectTokens) ? (aspectTokens as string[]) : [];
+				if (tokens.length === 0) {
+					return { success: true, path: approved, paths: [approved] };
+				}
+				const batch = batchExportPaths(approved, tokens);
+				const approvedBatch = batch
+					.map((candidate) => approvedExportPaths.approve(candidate))
+					.filter((entry): entry is string => entry !== null);
+				// A token that is not a `W:H` shape drops out of `batchExportPaths`, so a short
+				// list means the renderer sent something this handler will not name a file after.
+				// Refusing the whole export beats quietly writing a subset the user never chose.
+				if (approvedBatch.length !== tokens.length) {
+					return { success: false, message: "Invalid export aspect ratio" };
+				}
+				return { success: true, path: approved, paths: approvedBatch };
+			} catch (error) {
+				console.error("Failed to show save dialog:", error);
+				return {
+					success: false,
+					message: "Failed to show save dialog",
+					error: String(error),
+				};
 			}
-			return { success: true, path: approved };
-		} catch (error) {
-			console.error("Failed to show save dialog:", error);
-			return {
-				success: false,
-				message: "Failed to show save dialog",
-				error: String(error),
-			};
-		}
-	});
+		},
+	);
 
 	ipcMain.handle("write-export-to-path", async (_, videoData: ArrayBuffer, filePath: string) => {
 		try {

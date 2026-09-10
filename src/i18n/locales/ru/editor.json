@@ -201,7 +201,15 @@
 		"failedToWriteFile": "Не удалось записать файл",
 		"qualityUpscaleWarning": "Апскейл",
 		"exportedVideoOf": "видео экспортировано за",
-		"nothingToExport": "Нечего экспортировать — таймлайн пуст."
+		"nothingToExport": "Нечего экспортировать — таймлайн пуст.",
+		"aspectRatios": "Соотношения сторон",
+		"aspectRatiosHint": "Будет экспортирован один файл.",
+		"aspectRatiosBatchHint": "Будет экспортировано файлов: {{count}} — рядом друг с другом.",
+		"pickAnAspectRatio": "Выберите хотя бы одно соотношение сторон.",
+		"batchProgress": "Файл {{current}} из {{total}} · {{ratio}}",
+		"batchExportedCount": "Экспортировано файлов: {{count}}",
+		"batchCancelledAfter": "Отменено — готовые файлы сохранены: {{count}}.",
+		"batchPartial": "Уже готово ({{count}}): {{files}}"
 	},
 	"inspector": {
 		"resetFocusPoint": "Сбросить точку фокуса",

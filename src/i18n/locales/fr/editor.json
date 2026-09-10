@@ -201,7 +201,15 @@
 		"exportFailed": "Échec de l'export",
 		"failedToWriteFile": "Échec de l'écriture du fichier",
 		"qualityUpscaleWarning": "Upscaling",
-		"nothingToExport": "Rien à exporter — la timeline est vide."
+		"nothingToExport": "Rien à exporter — la timeline est vide.",
+		"aspectRatios": "Formats d'image",
+		"aspectRatiosHint": "Un seul fichier sera exporté.",
+		"aspectRatiosBatchHint": "{{count}} fichiers seront exportés côte à côte.",
+		"pickAnAspectRatio": "Choisissez au moins un format d'image.",
+		"batchProgress": "Fichier {{current}} sur {{total}} · {{ratio}}",
+		"batchExportedCount": "{{count}} fichiers exportés",
+		"batchCancelledAfter": "Annulé — {{count}} fichier(s) déjà terminés ont été conservés.",
+		"batchPartial": "{{count}} déjà terminés : {{files}}"
 	},
 	"inspector": {
 		"resetFocusPoint": "Réinitialiser le point de focus",

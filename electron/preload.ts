@@ -294,8 +294,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	openExternalUrl: (url: string) => {
 		return ipcRenderer.invoke("open-external-url", url);
 	},
-	pickExportSavePath: (fileName: string, exportFolder?: string) => {
-		return ipcRenderer.invoke("pick-export-save-path", fileName, exportFolder);
+	pickExportSavePath: (fileName: string, exportFolder?: string, aspectTokens?: string[]) => {
+		return ipcRenderer.invoke("pick-export-save-path", fileName, exportFolder, aspectTokens);
 	},
 	writeExportToPath: (videoData: ArrayBuffer, filePath: string) => {
 		return ipcRenderer.invoke("write-export-to-path", videoData, filePath);

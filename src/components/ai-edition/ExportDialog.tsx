@@ -17,10 +17,11 @@ import {
 	collectEffectiveClipDims,
 	type Dims,
 	pickExtremeDims,
+	pickOutputDims,
 	resolveAspectRatioValue,
 } from "@/lib/ai-edition/document/outputFormat";
 import type { AxcutDocument } from "@/lib/ai-edition/schema";
-import { getEditorSettings } from "@/lib/ai-edition/store/editorSettings";
+import { getEditorSettings, patchEditorSettings } from "@/lib/ai-edition/store/editorSettings";
 import { assetCameraSource } from "@/lib/ai-edition/timeline/camera";
 import { resolveClipSourceEndSec } from "@/lib/ai-edition/timeline/clipDuration";
 import {
@@ -33,11 +34,18 @@ import {
 	type GifFrameRate,
 	type GifSizePreset,
 } from "@/lib/exporter";
+import { runBatchExport } from "@/lib/exporter/batchExport";
 import { calculateMp4ExportSettings, wouldUpscale } from "@/lib/exporter/mp4ExportSettings";
 import { outputFrameCount } from "@/lib/exporter/outputFrameCount";
 import { exportGifNative, exportMultiNative, useIsCpuCompositor } from "@/native";
 import type { CompositorClipInput } from "@/native/contracts";
 import { buildSceneDescription, resolveVisibleClips } from "@/native/sceneDescription";
+import {
+	ASPECT_RATIO_PRESETS,
+	type AspectRatio,
+	getAspectRatioLabel,
+	toAspectRatioToken,
+} from "@/utils/aspectRatioUtils";
 import { ExportProgressFloat } from "./ExportProgressFloat";
 import { ModalShell } from "./Modals";
 import styles from "./NewEditorShell.module.css";
@@ -64,6 +72,12 @@ function formatHms(totalSeconds: number): string {
  *  and resolves `{ success: false }` when even the fallback failed. The export already
  *  succeeded — failing to open the folder is not worth a second error toast, but it is worth
  *  a line. */
+/** Last path segment, for listing what a partial batch left behind. Handles both
+ *  separators because the path comes from the main process, not from this platform. */
+function fileNameOf(filePath: string): string {
+	return filePath.split(/[\\/]/).pop() || filePath;
+}
+
 function revealExportedFile(filePath: string): void {
 	void window.electronAPI
 		?.revealInFolder?.(filePath)
@@ -146,6 +160,15 @@ export function ExportDialog({ open, onClose, onReopen, document }: ExportDialog
 	// doubles the per-frame cost and screen content quantizes cleanly without it. It
 	// earns its keep on gradients and camera footage, which is why it is a choice.
 	const [gifDither, setGifDither] = useState(false);
+	// Null means "follow the document" — the ratio the timeline is set to, which is what
+	// a single-ratio export has always used. Only a tick in the ratio list makes this an
+	// explicit set, so opening the dialog and pressing Export is unchanged behaviour.
+	const [ratios, setRatios] = useState<AspectRatio[] | null>(null);
+	// Which file of how many is rendering. Null outside a run and for a single-file
+	// export, where "1 of 1" would be noise.
+	const [batch, setBatch] = useState<{ index: number; total: number; ratio: AspectRatio } | null>(
+		null,
+	);
 	const [phase, setPhase] = useState<Phase>("idle");
 	const [progress, setProgress] = useState<ExportProgress | null>(null);
 	const [error, setError] = useState<string | null>(null);
@@ -195,15 +218,46 @@ export function ExportDialog({ open, onClose, onReopen, document }: ExportDialog
 		[effectiveClipDims],
 	);
 
-	// Aspect the export normalizes to: the timeline's selected ratio (mirrors documentExporter),
-	// so the sizes shown match what the export produces. Read through `getEditorSettings` — the
-	// same typed façade the ratio dropdown writes through and `buildSceneDescription` reads — so
-	// this dialog can't drift from the compositor if the storage ever moves. `resolveAspectRatioValue`
-	// owns the legacy "native" case (uncropped reference asset), previously hand-rolled here.
-	const EXPORT_ASPECT = useMemo(
-		() => resolveAspectRatioValue(document, getEditorSettings(document).aspectRatio),
+	// The ratio the document is set to, and the default selection. Read through
+	// `getEditorSettings` — the same typed façade the ratio dropdown writes through and
+	// `buildSceneDescription` reads — so this dialog can't drift from the compositor if the
+	// storage ever moves. Kept as STORED — legacy
+	// "native" included — so a single-ratio export renders through exactly the same path it
+	// does today, with no re-resolution that could shift the frame by a pixel.
+	const documentAspect = useMemo<AspectRatio>(
+		() => getEditorSettings(document).aspectRatio,
 		[document],
 	);
+	const selectedRatios = ratios ?? [documentAspect];
+
+	// The presets, plus the document's own shape when it is not one of them (a native
+	// capture ratio, or legacy "native"). Order is the picker's, so the list reads the
+	// same here as in the ratio dropdown.
+	const ratioOptions = useMemo<AspectRatio[]>(() => {
+		const presets = [...ASPECT_RATIO_PRESETS] as AspectRatio[];
+		return presets.includes(documentAspect) ? presets : [documentAspect, ...presets];
+	}, [documentAspect]);
+
+	// Filenames are suffixed from a concrete `W:H` token — `batchExportPaths` in the main
+	// process names a file after two parsed integers and refuses anything else, so legacy
+	// "native" has to be resolved to the shape it actually renders at before it can name
+	// one. Only the FILENAME uses this; the render still uses the token as selected.
+	const concreteToken = (ratio: AspectRatio): AspectRatio => {
+		if (ratio !== "native" || !document) return ratio;
+		const dims = pickOutputDims(document, "native");
+		return toAspectRatioToken(dims.width, dims.height) ?? "16:9";
+	};
+
+	const dimsForRatio = (value: ExportQuality, ratio: AspectRatio) =>
+		smallestSource
+			? calculateMp4ExportSettings({
+					quality: value,
+					sourceWidth: smallestSource.width,
+					sourceHeight: smallestSource.height,
+					aspectRatioValue: resolveAspectRatioValue(document, ratio),
+				})
+			: null;
+
 	// Output dimensions the export will produce for a given tier, from the (crop-aware)
 	// SMALLEST clip on the timeline — see `smallestSource` above for why. Only "Source"
 	// quality actually uses these as its target size; 720p/1080p target a fixed short side
@@ -228,15 +282,10 @@ export function ExportDialog({ open, onClose, onReopen, document }: ExportDialog
 		return { width: even(tierDims.width), height: even(tierDims.height) };
 	};
 
-	const tierOutputDims = (value: ExportQuality) =>
-		smallestSource
-			? calculateMp4ExportSettings({
-					quality: value,
-					sourceWidth: smallestSource.width,
-					sourceHeight: smallestSource.height,
-					aspectRatioValue: EXPORT_ASPECT,
-				})
-			: null;
+	// The size badges on the quality cards describe the FIRST file a run writes. With one
+	// ratio ticked that is the whole export; with several, the rest differ by shape and the
+	// ratio list is where the user reads that.
+	const tierOutputDims = (value: ExportQuality) => dimsForRatio(value, selectedRatios[0]);
 
 	// Deliberately NOT reset when `open` goes false. Closing mid-export now means
 	// "minimize": the dialog component itself never unmounts (`NewEditorShell` renders it
@@ -283,17 +332,44 @@ export function ExportDialog({ open, onClose, onReopen, document }: ExportDialog
 		setError(null);
 		setProgress(null);
 		setSavedPath(null);
+		setBatch(null);
 
-		let pickedPath: string | undefined;
+		const exportRatios = selectedRatios;
+		if (exportRatios.length === 0) {
+			setError(t("exportDialog.pickAnAspectRatio"));
+			setPhase("error");
+			return;
+		}
+
+		// One dialog for the whole run. With several ratios ticked the user names ONE file
+		// and the main process derives a sibling per ratio beside it, approves each, and
+		// hands the list back — see `batchExportPaths` in electron/exportPolicy.ts. The
+		// paths are used exactly as returned: re-deriving them here would be a second copy
+		// of that rule, and a path the policy did not register is refused *quietly* on the
+		// write route, so the only symptom of a drift would be a file that never appears.
+		let destinations: string[];
 		try {
-			const picker = await window.electronAPI?.pickExportSavePath?.(suggested);
-			pickedPath = picker && "path" in picker ? picker.path : undefined;
+			const picker = await window.electronAPI?.pickExportSavePath?.(
+				suggested,
+				undefined,
+				exportRatios.length > 1 ? exportRatios.map(concreteToken) : undefined,
+			);
+			if (!picker || picker.canceled) {
+				setPhase("idle");
+				return;
+			}
+			if (picker.success === false) {
+				setError(picker.message ?? t("exportDialog.exportFailedGeneric"));
+				setPhase("error");
+				return;
+			}
+			destinations = picker.paths?.length ? picker.paths : picker.path ? [picker.path] : [];
 		} catch (err) {
 			setError(err instanceof Error ? err.message : String(err));
 			setPhase("error");
 			return;
 		}
-		if (!pickedPath) {
+		if (destinations.length === 0) {
 			setPhase("idle");
 			return;
 		}
@@ -309,6 +385,11 @@ export function ExportDialog({ open, onClose, onReopen, document }: ExportDialog
 			setPhase("rendering");
 			// Render the real timeline when there are clips; else fall back to the fixture.
 			const clips = buildNativeClipList(document);
+			if (clips.length === 0) {
+				setError(t("exportDialog.nothingToExport"));
+				setPhase("error");
+				return;
+			}
 			// GIF runs at its own frame rate, so the progress total has to use it.
 			const outFps = format === "gif" ? gifFrameRate : fps;
 			// Total frames the encoder will produce, known upfront from the timeline — the
@@ -320,11 +401,18 @@ export function ExportDialog({ open, onClose, onReopen, document }: ExportDialog
 			// region emits 80% of `duration * fps`, which is where the "frozen at ~80%" of
 			// OpenScreen#371 came from — the bar climbed to 80% and the export finished
 			// there. `outputFrameCount` mirrors the compositor's own span arithmetic.
-			const sceneDesc = buildSceneDescription(document);
-			const totalFrames = outputFrameCount(clips, sceneDesc.speedRegions, outFps);
-			const startedAt = Date.now();
+			//
+			// Aspect changes the FRAME SIZE, never the frame COUNT, so one total covers every
+			// file in a batch and the bar is per-file rather than across the run.
+			const totalFrames = outputFrameCount(
+				clips,
+				buildSceneDescription(document).speedRegions,
+				outFps,
+			);
+			// Reassigned per file so the ETA describes the file on screen, not the run.
+			let fileStartedAt = Date.now();
 			const unsubscribeProgress = window.electronAPI?.onNativeExportProgress?.((frames) => {
-				const elapsedS = (Date.now() - startedAt) / 1000;
+				const elapsedS = (Date.now() - fileStartedAt) / 1000;
 				const fractionDone = Math.min(1, frames / totalFrames);
 				const estimatedTimeRemaining = fractionDone > 0 ? elapsedS / fractionDone - elapsedS : 0;
 				setProgress({
@@ -334,64 +422,111 @@ export function ExportDialog({ open, onClose, onReopen, document }: ExportDialog
 					estimatedTimeRemaining,
 				});
 			});
+
+			// A box, not a bare `let`: TypeScript resets the narrowing of a `let` that is
+			// assigned inside a callback, so reading it after the batch would type as `null`.
+			const lastStats: { current: { videoDurationS: number; wallS: number } | null } = {
+				current: null,
+			};
 			try {
 				// The webcam background effect is applied by the compositor from the scene,
 				// so the clip list needs no pre-rendering pass.
 				const exportClips = clips;
+				const result = await runBatchExport(destinations, async (destination, index) => {
+					const ratio = exportRatios[index];
+					setBatch({ index: index + 1, total: destinations.length, ratio });
+					setProgress(null);
+					fileStartedAt = Date.now();
 
-				const sceneJson = JSON.stringify(sceneDesc);
-				const outDims = tierOutputDims(quality);
-				if (exportClips.length === 0) {
-					throw new Error(t("exportDialog.nothingToExport"));
-				}
-				const stats =
-					format === "gif"
-						? await exportGifNative(exportClips, pickedPath, sceneJson, {
-								// GIF is 256-colour and grows fast; cap the long edge at the
-								// chosen preset rather than exporting at source size.
-								...gifOutputDims(gifSize, outDims),
-								fps: gifFrameRate,
-								// 0 = infinite, the historical GIF default; 1 = play once.
-								loopCount: gifLoop ? 0 : 1,
-								dither: gifDither,
-							})
-						: await exportMultiNative(exportClips, pickedPath, sceneJson, {
-								width: outDims?.width,
-								height: outDims?.height,
-								fps,
-								codec,
-							});
-				await writeSubtitleSidecars(document, pickedPath);
-				setSavedPath(pickedPath);
-				setPhase("done");
-				toast.success(t("exportDialog.exportedVideo"), {
-					description: `${pickedPath} · ${formatHms(stats.videoDurationS)} ${t("exportDialog.exportedVideoOf")} ${formatHms(stats.wallS)}`,
-					action: {
-						label: t("exportDialog.showInFolder"),
-						// The toast is gone in five seconds; the done panel below keeps the same
-						// action around for as long as the dialog is open.
-						onClick: () => revealExportedFile(pickedPath),
-					},
+					// Aspect is not a crop here — it is the shape of the output frame, and the
+					// scene's layout is derived from it (caption column, webcam rect, padding
+					// box, corner radius all resolve against `pickOutputDims`). So a ratio needs
+					// its OWN scene, not the same scene rasterised at different dimensions;
+					// reusing one would lay the frame out for 16:9 and then encode it at 9:16.
+					// Patching the setting is how the document says "render as this shape", and
+					// an unchanged ratio patches nothing so the single-file path is untouched.
+					const docForRatio =
+						ratio === documentAspect
+							? document
+							: patchEditorSettings(document, { aspectRatio: ratio });
+					const sceneJson = JSON.stringify(buildSceneDescription(docForRatio));
+					const outDims = dimsForRatio(quality, ratio);
+
+					lastStats.current =
+						format === "gif"
+							? await exportGifNative(exportClips, destination, sceneJson, {
+									// GIF is 256-colour and grows fast; cap the long edge at the
+									// chosen preset rather than exporting at source size.
+									...gifOutputDims(gifSize, outDims),
+									fps: gifFrameRate,
+									// 0 = infinite, the historical GIF default; 1 = play once.
+									loopCount: gifLoop ? 0 : 1,
+									dither: gifDither,
+								})
+							: await exportMultiNative(exportClips, destination, sceneJson, {
+									width: outDims?.width,
+									height: outDims?.height,
+									fps,
+									codec,
+								});
+					// Cues and timings do not depend on the output shape, so every file in a
+					// batch gets the same subtitles beside it — under its own stem, which the
+					// approval above already registered.
+					await writeSubtitleSidecars(document, destination);
 				});
-			} catch (err) {
-				const message = err instanceof Error ? err.message : String(err);
-				// The compositor rejects with this token when the walk saw the cancel flag.
-				// Matched on the message because that is all that survives the napi -> IPC
-				// hops; the token is untranslated precisely so this test is language-proof.
-				// A cancel is a user decision, not a failure: back to the form, no error
-				// panel, no toast. The partial file is already gone — the compositor's
-				// cleanup facade removes it on any `Err`, including this one.
-				if (message.includes("EXPORT_CANCELLED")) {
+
+				if (!result.failure) {
+					const finished = result.completed[result.completed.length - 1];
+					setSavedPath(finished);
+					setPhase("done");
+					const stats = lastStats.current;
+					toast.success(t("exportDialog.exportedVideo"), {
+						description:
+							result.completed.length > 1
+								? t("exportDialog.batchExportedCount", { count: result.completed.length })
+								: `${finished}${stats ? ` · ${formatHms(stats.videoDurationS)} ${t("exportDialog.exportedVideoOf")} ${formatHms(stats.wallS)}` : ""}`,
+						action: {
+							label: t("exportDialog.showInFolder"),
+							// The toast is gone in five seconds; the done panel below keeps the same
+							// action around for as long as the dialog is open.
+							onClick: () => revealExportedFile(finished),
+						},
+					});
+				} else if (result.failure.kind === "cancelled") {
+					// A cancel is a user decision, not a failure: back to the form, no error
+					// panel. The partial file is already gone — the compositor's cleanup facade
+					// removes it on any `Err`, including this one — so anything already finished
+					// is the complete list of what survives, and the toast names how many.
 					setPhase("idle");
 					setProgress(null);
 					setSavedPath(null);
+					if (result.completed.length > 0) {
+						toast.info(t("exportDialog.batchCancelledAfter", { count: result.completed.length }));
+					}
 				} else {
-					setError(message);
+					// Name the file that failed and the ones that did not run, so a folder with
+					// two of three files in it is not something the user has to decode.
+					setError(
+						result.completed.length > 0
+							? `${result.failure.message} — ${t("exportDialog.batchPartial", {
+									count: result.completed.length,
+									files: result.completed.map(fileNameOf).join(", "),
+								})}`
+							: result.failure.message,
+					);
 					setPhase("error");
-					toast.error(t("exportDialog.exportFailed"), { description: message });
+					toast.error(t("exportDialog.exportFailed"), { description: result.failure.message });
 				}
+			} catch (err) {
+				// `runBatchExport` reports a job's rejection rather than rethrowing, so reaching
+				// here means the batch machinery itself broke — kept so it cannot fail silently.
+				const message = err instanceof Error ? err.message : String(err);
+				setError(message);
+				setPhase("error");
+				toast.error(t("exportDialog.exportFailed"), { description: message });
 			} finally {
 				setCancelling(false);
+				setBatch(null);
 				unsubscribeProgress?.();
 			}
 			return;
@@ -442,6 +577,59 @@ export function ExportDialog({ open, onClose, onReopen, document }: ExportDialog
 						disabled={isBusy}
 					/>
 				</div>
+
+				<section>
+					<div
+						style={{
+							font: "500 11px/1 var(--font-body)",
+							textTransform: "uppercase",
+							letterSpacing: "0.06em",
+							color: "var(--muted)",
+							marginBottom: 8,
+						}}
+					>
+						{t("exportDialog.aspectRatios")}
+					</div>
+					<div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+						{ratioOptions.map((r) => {
+							const on = selectedRatios.includes(r);
+							return (
+								<button
+									type="button"
+									key={r}
+									role="checkbox"
+									aria-checked={on}
+									disabled={isBusy}
+									onClick={() =>
+										setRatios(
+											on
+												? selectedRatios.filter((entry) => entry !== r)
+												: // Keep the picker's order, not click order, so the files come out
+													// in the order the list reads.
+													ratioOptions.filter(
+														(entry) => entry === r || selectedRatios.includes(entry),
+													),
+										)
+									}
+									style={segStyle(on)}
+								>
+									{getAspectRatioLabel(r)}
+								</button>
+							);
+						})}
+					</div>
+					<div
+						style={{
+							marginTop: 6,
+							font: "400 11px/1.4 var(--font-body)",
+							color: "var(--muted)",
+						}}
+					>
+						{selectedRatios.length > 1
+							? t("exportDialog.aspectRatiosBatchHint", { count: selectedRatios.length })
+							: t("exportDialog.aspectRatiosHint")}
+					</div>
+				</section>
 
 				{format === "mp4" ? (
 					<section>
@@ -675,6 +863,22 @@ export function ExportDialog({ open, onClose, onReopen, document }: ExportDialog
 							{gifLoop ? t("exportDialog.loopOn") : t("exportDialog.loopOff")}
 						</div>
 					</section>
+				)}
+
+				{batch && batch.total > 1 && (
+					<div
+						data-testid="export-batch-progress"
+						style={{
+							font: "500 12px/1 var(--font-body)",
+							color: "var(--muted)",
+						}}
+					>
+						{t("exportDialog.batchProgress", {
+							current: batch.index,
+							total: batch.total,
+							ratio: getAspectRatioLabel(batch.ratio),
+						})}
+					</div>
 				)}
 
 				<ProgressBlock
