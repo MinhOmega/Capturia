@@ -32,7 +32,7 @@ describe("buildIssueReportUrl", () => {
 	it("measures the encoded length, not the character count", () => {
 		const url = buildIssueReportUrl({
 			title: "[Bug] ctx",
-			bodyLines: [("日本語のスタックトレース").repeat(2_000)],
+			bodyLines: ["日本語のスタックトレース".repeat(2_000)],
 		});
 		expect(url.length).toBeLessThanOrEqual(MAX_URL_LENGTH);
 	});
