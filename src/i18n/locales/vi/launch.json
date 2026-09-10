@@ -90,11 +90,40 @@
 		"done": "Xong",
 		"micLevel": "Mức đầu vào",
 		"micHint": "Hãy nói để kiểm tra micrô",
+		"micGain": "Độ khuếch đại micrô",
+		"countdown": "Đếm ngược (giây)",
+		"countdownOff": "Tắt",
+		"frameRate": "Tốc độ khung hình (fps)",
+		"resolution": "Độ phân giải",
+		"resolutionAuto": "Tự động",
+		"captureHint": "Hãy giảm các giá trị này nếu bản ghi bị rớt khung hình.",
 		"noMicrophones": "Không tìm thấy micrô",
 		"preview": "Xem trước",
 		"previewUnavailable": "Không thể xem trước",
 		"about": "Giới thiệu",
 		"version": "Phiên bản {{version}}",
 		"checkingForUpdates": "Đang kiểm tra…"
+	},
+	"permissions": {
+		"title": "Quyền truy cập",
+		"required": "Bắt buộc",
+		"row": {
+			"screen": "Ghi màn hình",
+			"camera": "Máy ảnh",
+			"microphone": "Micrô",
+			"accessibility": "Trợ năng"
+		},
+		"status": {
+			"granted": "Đã cho phép",
+			"denied": "Bị từ chối",
+			"restricted": "Bị hạn chế",
+			"not-determined": "Chưa hỏi",
+			"unknown": "Không rõ"
+		},
+		"action": {
+			"request": "Yêu cầu",
+			"open-settings": "Mở Cài đặt"
+		},
+		"relaunchHint": "macOS chỉ áp dụng quyền Ghi màn hình mới từ lần khởi động sau — hãy thoát và mở lại Capturia."
 	}
 }

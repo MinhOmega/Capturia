@@ -9,7 +9,8 @@
 		"addTrim": "Kırpma Ekle (T)",
 		"addAnnotation": "Açıklama Ekle (A)",
 		"addSpeed": "Hız Ekle (S)",
-		"addCameraFullscreen": "Tam Ekran Kamera Ekle (C)"
+		"addCameraFullscreen": "Tam Ekran Kamera Ekle (C)",
+		"splitAtPlayhead": "Klibi oynatma çizgisinde böl"
 	},
 	"hints": {
 		"pressZoom": "Yakınlaştırma eklemek için Z tuşuna basın",
@@ -96,7 +97,8 @@
 		"smartCutsNoSpeech": "Konuşma algılanmadı",
 		"smartCutsFailed": "Metne dökme başarısız — Medya bölümünden yeniden deneyin",
 		"addAudioTooltip": "Ses ekle",
-		"addedWord": "Eklenen kelime: \"{{word}}\" — arkasında ses yok"
+		"addedWord": "Eklenen kelime: \"{{word}}\" — arkasında ses yok",
+		"splitNothingHere": "Burada bölünecek bir şey yok — oynatma çizgisini bir klibin içine getirin."
 	},
 	"audio": {
 		"addVoiceover": "Seslendirme ekle",

@@ -9,7 +9,8 @@
 		"addTrim": "添加剪辑 (T)",
 		"addAnnotation": "添加标注 (A)",
 		"addSpeed": "添加速度 (S)",
-		"addCameraFullscreen": "添加全屏摄像头 (C)"
+		"addCameraFullscreen": "添加全屏摄像头 (C)",
+		"splitAtPlayhead": "在播放头处分割片段"
 	},
 	"hints": {
 		"pressZoom": "按 Z 添加缩放",
@@ -96,7 +97,8 @@
 		"smartCutsNoSpeech": "未检测到语音",
 		"smartCutsFailed": "转录失败 — 请在“媒体”中重试",
 		"addAudioTooltip": "添加音频",
-		"addedWord": "已添加的词：“{{word}}” — 背后没有声音"
+		"addedWord": "已添加的词：“{{word}}” — 背后没有声音",
+		"splitNothingHere": "这里没有可分割的内容 — 请把播放头移到片段内。"
 	},
 	"audio": {
 		"addVoiceover": "添加配音",

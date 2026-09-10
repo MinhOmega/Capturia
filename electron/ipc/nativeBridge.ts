@@ -251,6 +251,14 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 		deleteSession: context.deleteAiEditionChatSession,
 	});
 
+	// Cancel rides its own channel rather than a `native-bridge` action: the bridge call
+	// carrying the export is still unresolved when the user clicks Cancel, and the renderer
+	// must be able to reach main WITHOUT waiting on it. Registered here because this is where
+	// the addon-owning service instance lives.
+	ipcMain.handle("export:cancel", () => {
+		compositorViewService.cancelExport();
+	});
+
 	ipcMain.handle(NATIVE_BRIDGE_CHANNEL, async (event, request: unknown) => {
 		if (!isBridgeRequest(request)) {
 			return createErrorResponse(undefined, "INVALID_REQUEST", "Invalid native bridge request.");

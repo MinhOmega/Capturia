@@ -9,7 +9,8 @@
 		"addTrim": "إضافة قص (T)",
 		"addAnnotation": "إضافة شرح (A)",
 		"addSpeed": "إضافة سرعة (S)",
-		"addCameraFullscreen": "إضافة كاميرا كاملة الشاشة (C)"
+		"addCameraFullscreen": "إضافة كاميرا كاملة الشاشة (C)",
+		"splitAtPlayhead": "تقسيم المقطع عند رأس التشغيل"
 	},
 	"hints": {
 		"pressZoom": "اضغط Z لإضافة تكبير",
@@ -96,7 +97,8 @@
 		"smartCutsNoSpeech": "لم يتم اكتشاف كلام",
 		"smartCutsFailed": "فشل النسخ — أعد المحاولة من قسم الوسائط",
 		"addAudioTooltip": "إضافة صوت",
-		"addedWord": "كلمة مضافة: \"{{word}}\" — لا صوت خلفها"
+		"addedWord": "كلمة مضافة: \"{{word}}\" — لا صوت خلفها",
+		"splitNothingHere": "لا يوجد ما يمكن تقسيمه هنا — ضع رأس التشغيل داخل مقطع."
 	},
 	"audio": {
 		"addVoiceover": "إضافة تعليق صوتي",

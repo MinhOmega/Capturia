@@ -33,6 +33,11 @@ interface Window {
 		 *  `compositor.export`/`compositor.exportMulti` runs. Distinct from `exportOnFrameAck`,
 		 *  the OLD web/CPU pipeline's per-frame ack, not a progress signal. */
 		onNativeExportProgress?: (callback: (frames: number) => void) => () => void;
+		/** Ask the running native export to stop. Resolving means main took the request,
+		 *  NOT that the export ended — the export's own promise rejects with
+		 *  `EXPORT_CANCELLED` a frame later, and that is the completion signal.
+		 *  Optional: an older preload in a dev tree may not expose it. */
+		exportCancel?: () => Promise<void>;
 		getSources: (opts: Electron.SourcesOptions) => Promise<ProcessedDesktopSource[]>;
 		switchToEditor: () => Promise<void>;
 		switchToHud: () => Promise<void>;
@@ -78,6 +83,12 @@ interface Window {
 			status: string;
 			error?: string;
 		}>;
+		getCapturePermissions: () => Promise<
+			import("./permissions/capturePermissions").CapturePermissionRow[]
+		>;
+		requestCapturePermission: (
+			key: import("./permissions/capturePermissions").CapturePermissionKey,
+		) => Promise<{ success: boolean; openedSettings: boolean; error?: string }>;
 		requestNativeMacCursorAccess: () => Promise<{
 			success: boolean;
 			granted: boolean;
@@ -289,9 +300,16 @@ interface Window {
 		pickExportSavePath: (
 			fileName: string,
 			exportFolder?: string,
+			/** Aspect tokens for a multi-aspect batch. One approved sibling path comes
+			 *  back per token, in order; omit for a single-file export. */
+			aspectTokens?: string[],
 		) => Promise<{
 			success: boolean;
 			path?: string;
+			/** Every destination approved by this pick, in `aspectTokens` order.
+			 *  `[path]` when no tokens were sent. Use these verbatim — deriving the
+			 *  names renderer-side would fail approval and the file would never appear. */
+			paths?: string[];
 			message?: string;
 			canceled?: boolean;
 			error?: string;
@@ -442,15 +460,17 @@ interface Window {
 		) => Promise<{ success: boolean; error?: string; message?: string }>;
 		getShortcuts: () => Promise<Record<string, unknown> | null>;
 		saveShortcuts: (shortcuts: unknown) => Promise<{ success: boolean; error?: string }>;
-		updateGlobalShortcut: (binding: {
-			key: string;
-			ctrl?: boolean;
-			shift?: boolean;
-			alt?: boolean;
-		}) => Promise<{ status: import("../src/lib/shortcuts").ShortcutStatus }>;
-		/** What the last openApp registration actually achieved. See `ShortcutStatus`:
-		 *  "conflict" is the user's to fix, "unavailable" is the session's. */
-		getGlobalShortcutStatus: () => Promise<import("../src/lib/shortcuts").ShortcutStatus>;
+		updateGlobalShortcuts: (
+			bindings: Partial<
+				Record<
+					import("../src/lib/shortcuts").GlobalShortcutAction,
+					{ key: string; ctrl?: boolean; shift?: boolean; alt?: boolean }
+				>
+			>,
+		) => Promise<{ statuses: import("../src/lib/shortcuts").GlobalShortcutStatuses }>;
+		/** What the last registration actually achieved, per global action. See
+		 *  `ShortcutStatus`: "conflict" is the user's to fix, "unavailable" is the session's. */
+		getGlobalShortcutStatuses: () => Promise<import("../src/lib/shortcuts").GlobalShortcutStatuses>;
 		hudOverlayHide: () => void;
 		hudOverlayClose: () => void;
 		setHudOverlayIgnoreMouseEvents: (ignore: boolean) => void;

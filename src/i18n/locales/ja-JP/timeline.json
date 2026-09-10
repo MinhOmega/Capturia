@@ -9,7 +9,8 @@
 		"addTrim": "トリムを追加 (T)",
 		"addAnnotation": "注釈を追加 (A)",
 		"addSpeed": "再生速度を追加 (S)",
-		"addCameraFullscreen": "フルスクリーンカメラを追加 (C)"
+		"addCameraFullscreen": "フルスクリーンカメラを追加 (C)",
+		"splitAtPlayhead": "再生ヘッドでクリップを分割"
 	},
 	"hints": {
 		"pressZoom": "Zキーを押してズームを追加",
@@ -96,7 +97,8 @@
 		"smartCutsNoSpeech": "音声が検出されませんでした",
 		"smartCutsFailed": "文字起こしに失敗しました — メディアから再試行してください",
 		"addAudioTooltip": "音声を追加",
-		"addedWord": "追加した単語:「{{word}}」— 音声はありません"
+		"addedWord": "追加した単語:「{{word}}」— 音声はありません",
+		"splitNothingHere": "ここには分割できるものがありません — 再生ヘッドをクリップの中に移動してください。"
 	},
 	"audio": {
 		"addVoiceover": "ナレーションを追加",

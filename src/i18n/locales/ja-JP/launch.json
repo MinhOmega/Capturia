@@ -90,11 +90,40 @@
 		"done": "完了",
 		"micLevel": "入力レベル",
 		"micHint": "マイクをテストするには話してください",
+		"micGain": "マイクゲイン",
+		"countdown": "カウントダウン (秒)",
+		"countdownOff": "オフ",
+		"frameRate": "フレームレート (fps)",
+		"resolution": "解像度",
+		"resolutionAuto": "自動",
+		"captureHint": "録画中にフレーム落ちが起きる場合は、これらを下げてください。",
 		"noMicrophones": "マイクが見つかりません",
 		"preview": "プレビュー",
 		"previewUnavailable": "プレビューを利用できません",
 		"about": "情報",
 		"version": "バージョン {{version}}",
 		"checkingForUpdates": "確認中…"
+	},
+	"permissions": {
+		"title": "アクセス権限",
+		"required": "必須",
+		"row": {
+			"screen": "画面収録",
+			"camera": "カメラ",
+			"microphone": "マイク",
+			"accessibility": "アクセシビリティ"
+		},
+		"status": {
+			"granted": "許可済み",
+			"denied": "拒否",
+			"restricted": "制限あり",
+			"not-determined": "未確認",
+			"unknown": "不明"
+		},
+		"action": {
+			"request": "リクエスト",
+			"open-settings": "設定を開く"
+		},
+		"relaunchHint": "macOS では画面収録の許可は次回起動時に反映されます。Capturia を終了して開き直してください。"
 	}
 }

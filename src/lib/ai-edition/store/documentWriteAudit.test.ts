@@ -280,6 +280,9 @@ const DECLARED: WritePath[] = [
 	w("src/lib/ai-edition/store/useTimeline.ts", "removeRegion", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "removeRegions", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "setTrimEntries", "save", "gesture"),
+	// One save, one undo step: cutting a clip in two is one thing the user asked for,
+	// however many rows fan out across the seam.
+	w("src/lib/ai-edition/store/useTimeline.ts", "splitAtPlayhead", "save", "gesture"),
 	// The live halves of the two drags.
 	w("src/lib/ai-edition/store/useTimeline.ts", "updateAnnotationLive", "set", "automatic"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "updateAnnotationSpan", "save", "gesture"),

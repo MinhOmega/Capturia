@@ -6,6 +6,8 @@ import { installBrowserShims } from "./native/browserShim";
 
 installBrowserShims();
 
+import { AppErrorBoundary } from "./components/app/AppErrorBoundary";
+import { GlobalErrorObserver } from "./components/app/GlobalErrorObserver";
 import { CountdownOverlay } from "./components/launch/CountdownOverlay.tsx";
 import { LaunchWindow } from "./components/launch/LaunchWindow";
 import { NotesWindow } from "./components/launch/NotesWindow.tsx";
@@ -15,7 +17,6 @@ import { TooltipProvider } from "./components/ui/tooltip";
 import { EditorDialogsProvider } from "./contexts/EditorDialogsContext";
 import { useScopedT } from "./contexts/I18nContext";
 import { ShortcutsProvider } from "./contexts/ShortcutsContext";
-import { loadAllCustomFonts } from "./lib/customFonts";
 
 const VideoEditorEntry = lazy(() =>
 	import("./components/ai-edition/AiEditionShell").then((module) => ({
@@ -71,13 +72,6 @@ export default function App() {
 			root?.style.setProperty("overflow", "hidden");
 		}
 	}, [windowType]);
-
-	useEffect(() => {
-		// Load custom fonts on app initialization
-		loadAllCustomFonts().catch((error) => {
-			console.error("Failed to load custom fonts:", error);
-		});
-	}, []);
 
 	const content = (() => {
 		switch (windowType) {
@@ -164,7 +158,11 @@ export default function App() {
 
 	return (
 		<TooltipProvider>
-			{showNotes ? <NotesWindow /> : content}
+			{/* The boundary wraps only the content, so a render crash inside it still
+			    leaves the Toaster mounted to carry the report -- and the observer
+			    mounted to catch whatever throws next. */}
+			<AppErrorBoundary>{showNotes ? <NotesWindow /> : content}</AppErrorBoundary>
+			<GlobalErrorObserver />
 			<Toaster theme="dark" />
 		</TooltipProvider>
 	);

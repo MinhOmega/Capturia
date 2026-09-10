@@ -201,7 +201,15 @@
 		"exportFailed": "Export failed",
 		"failedToWriteFile": "Failed to write file",
 		"qualityUpscaleWarning": "Upscale",
-		"nothingToExport": "Nothing to export — the timeline is empty."
+		"nothingToExport": "Nothing to export — the timeline is empty.",
+		"aspectRatios": "Aspect ratios",
+		"aspectRatiosHint": "One file will be written.",
+		"aspectRatiosBatchHint": "{{count}} files will be written side by side.",
+		"pickAnAspectRatio": "Pick at least one aspect ratio.",
+		"batchProgress": "File {{current}} of {{total}} · {{ratio}}",
+		"batchExportedCount": "{{count}} files exported",
+		"batchCancelledAfter": "Cancelled — {{count}} finished file(s) were kept.",
+		"batchPartial": "{{count}} already finished: {{files}}"
 	},
 	"inspector": {
 		"resetFocusPoint": "Reset focus point",
@@ -348,6 +356,8 @@
 		"playPauseTitle": "Play / Pause (Space)",
 		"previousClip": "Previous clip",
 		"nextClip": "Next clip",
+		"reviewSpeedSet": "Review speed {{rate}}×",
+		"reviewSpeedReset": "Review speed — click to return to 1×",
 		"loop": "Loop",
 		"seekVideo": "Seek video"
 	},

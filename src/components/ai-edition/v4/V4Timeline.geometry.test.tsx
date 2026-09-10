@@ -175,8 +175,8 @@ describe("V4Timeline lane pills", () => {
 		// still carries the value on hover).
 		expect(pill.textContent).toBe("");
 
-		// Zoomed to the 50× ceiling the same second is 25 px wide and hosts its own
-		// chrome again.
+		// Zoomed deep in, the same second is tens of px wide and hosts its own chrome
+		// again. (Not the ceiling any more — see the create-from-toolbar tests below.)
 		zoomIn(40);
 		expect(left.style.left).toBe("0px");
 		expect(right.style.right).toBe("0px");
@@ -276,11 +276,29 @@ describe("V4Timeline create-from-toolbar", () => {
 		// 900px viewport / 1800 s = 0.5 px per second, so a 96px pill is 192 s.
 		expect(durationOf(tl)).toBeCloseTo(192, 3);
 
-		// Zoomed to the 50x ceiling the same 96px is worth 3.84 s: same pill on
-		// screen, a region 50x shorter.
+		// 40 notches of 1.12 is ~93x, where the same 96px is worth 2.06 s: same pill on
+		// screen, a region 93x shorter. Deliberately NOT at the zoom ceiling — past ~770x
+		// the duration hits PILL_CREATE_MIN_SEC and stops tracking the zoom at all, which
+		// would make this measure the floor instead. The ceiling has its own test below.
 		zoomIn(40);
 		fireEvent.click(screen.getByLabelText("buttons.addZoom"));
-		expect(durationOf(tl)).toBeCloseTo(3.84, 3);
+		// 96px at (900px / TOTAL_SEC) px per second, times the zoom.
+		expect(durationOf(tl)).toBeCloseTo((96 * TOTAL_SEC) / (900 * 1.12 ** 40), 3);
+	});
+
+	it("stops zooming at the depth ceiling", () => {
+		// 2000x, not the flat 50x this used to be. A fraction of the timeline is a
+		// DURATION in disguise: 50x of this 30-minute fixture is 25 px/s, where one frame
+		// at 60 fps is under half a pixel wide and no cut can be placed by eye. The
+		// ceiling is now a duration on screen (50 ms), floored by how far the canvas can
+		// be widened before Chromium's layout limits bite — see MIN_VISIBLE_SEC.
+		//
+		// Asserted on the nav window rather than through `addZoom`, because a created
+		// region's duration floors at PILL_CREATE_MIN_SEC long before the zoom does.
+		renderTimeline();
+		const navWindow = document.querySelector("[class*=tlNavWindow]") as HTMLElement;
+		zoomIn(200);
+		expect(Number.parseFloat(navWindow.style.width)).toBeCloseTo(100 / 2000, 6);
 	});
 
 	it("zooms from a wheel over the ruler too, not just the lanes", () => {
@@ -292,7 +310,8 @@ describe("V4Timeline create-from-toolbar", () => {
 		const ruler = document.querySelector("[class*=tlRulerRow]") as HTMLElement;
 		wheelZoomOn(ruler, 40);
 		fireEvent.click(screen.getByLabelText("buttons.addZoom"));
-		expect(durationOf(tl)).toBeCloseTo(3.84, 3);
+		// 96px at (900px / TOTAL_SEC) px per second, times the zoom.
+		expect(durationOf(tl)).toBeCloseTo((96 * TOTAL_SEC) / (900 * 1.12 ** 40), 3);
 	});
 
 	it("pans from a wheel over the ruler too, not just the lanes", () => {

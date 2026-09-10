@@ -9,7 +9,8 @@
 		"addTrim": "Ajouter une coupe (T)",
 		"addAnnotation": "Ajouter une annotation (A)",
 		"addSpeed": "Ajouter une vitesse (S)",
-		"addCameraFullscreen": "Ajouter Caméra plein écran (C)"
+		"addCameraFullscreen": "Ajouter Caméra plein écran (C)",
+		"splitAtPlayhead": "Couper le clip à la tête de lecture"
 	},
 	"hints": {
 		"pressZoom": "Appuyez sur Z pour ajouter un zoom",
@@ -96,7 +97,8 @@
 		"smartCutsNoSpeech": "Aucune parole détectée",
 		"smartCutsFailed": "Échec de la transcription — relancez-la depuis Médias",
 		"addAudioTooltip": "Ajouter un audio",
-		"addedWord": "Mot ajouté : « {{word}} » — aucun son derrière"
+		"addedWord": "Mot ajouté : « {{word}} » — aucun son derrière",
+		"splitNothingHere": "Rien à couper ici — placez la tête de lecture dans un clip."
 	},
 	"audio": {
 		"addVoiceover": "Ajouter une voix off",

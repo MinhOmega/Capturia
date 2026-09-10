@@ -3,6 +3,7 @@
 	"customize": "تخصيص",
 	"configurable": "قابل للتكوين",
 	"fixed": "ثابت",
+	"options": "خيارات",
 	"pressKey": "اضغط على مفتاح...",
 	"clickToChange": "انقر للتغيير",
 	"pressEscToCancel": "اضغط على Esc للإلغاء",
@@ -17,12 +18,14 @@
 	"globalShortcutUnavailable": "الاختصارات العامة غير متاحة في هذه الجلسة، لذا لن يعمل هذا الاختصار. لا تتأثر بقية الاختصارات.",
 	"actions": {
 		"openApp": "فتح التطبيق",
+		"stopRecording": "إيقاف التسجيل",
 		"addZoom": "إضافة تكبير",
 		"addTrim": "إضافة قص",
 		"addSpeed": "إضافة سرعة",
 		"addAnnotation": "إضافة شرح",
 		"addAudio": "إضافة صوت",
 		"addVoiceover": "تسجيل تعليق صوتي",
+		"splitAtPlayhead": "تقسيم عند رأس التشغيل",
 		"addKeyframe": "إضافة إطار رئيسي",
 		"addCameraFullscreen": "إضافة كاميرا كاملة الشاشة",
 		"deleteSelected": "حذف المحدد",
@@ -38,7 +41,17 @@
 		"deleteSelectedAlt": "حذف المحدد (alt)",
 		"panTimeline": "تحريك المخطط الزمني",
 		"zoomTimeline": "تكبير المخطط الزمني",
+		"zoomTimelineIn": "تكبير المخطط الزمني",
+		"zoomTimelineOut": "تصغير المخطط الزمني",
 		"frameBack": "إطار للخلف",
-		"frameForward": "إطار للأمام"
+		"frameForward": "إطار للأمام",
+		"reviewSpeedDown": "خفض سرعة المراجعة",
+		"reviewSpeedUp": "رفع سرعة المراجعة"
+	},
+	"seekStep": {
+		"label": "خطوة مفاتيح الأسهم",
+		"frame": "إطار واحد",
+		"second": "ثانية واحدة",
+		"fiveSeconds": "خمس ثوانٍ"
 	}
 }

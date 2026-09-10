@@ -220,6 +220,14 @@ export const clipSchema = z
 		// that as the identity region {x:0,y:0,width:1,height:1} rather than
 		// storing the identity explicitly, so untouched clips stay lean.
 		cropRegion: clipCropRegionSchema.optional(),
+		// This clip's head is a cut the user made by hand (`splitClipAt`). Additive and
+		// optional like every flag before it: absent on every document written before the
+		// split tool existed, and an older build simply drops it on save.
+		//
+		// It exists because `joinContiguous` folds media-contiguous same-asset neighbours
+		// back into one clip, and the two halves of a fresh split are exactly that — so
+		// without a marker the next structural edit silently undid the cut.
+		userSplit: z.boolean().optional(),
 	})
 	.refine((data) => data.timelineEndSec >= data.timelineStartSec, {
 		message: "timelineEndSec must be greater than or equal to timelineStartSec",

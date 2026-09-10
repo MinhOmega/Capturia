@@ -201,7 +201,15 @@
 		"failedToWriteFile": "فشلت كتابة الملف",
 		"qualityUpscaleWarning": "تكبير الدقة",
 		"exportedVideoOf": "من الفيديو تم تصديره في",
-		"nothingToExport": "لا يوجد شيء للتصدير — المخطط الزمني فارغ."
+		"nothingToExport": "لا يوجد شيء للتصدير — المخطط الزمني فارغ.",
+		"aspectRatios": "نسب العرض إلى الارتفاع",
+		"aspectRatiosHint": "سيتم تصدير ملف واحد.",
+		"aspectRatiosBatchHint": "سيتم تصدير {{count}} ملفات جنبًا إلى جنب.",
+		"pickAnAspectRatio": "اختر نسبة عرض إلى ارتفاع واحدة على الأقل.",
+		"batchProgress": "الملف {{current}} من {{total}} · {{ratio}}",
+		"batchExportedCount": "تم تصدير {{count}} ملفات",
+		"batchCancelledAfter": "تم الإلغاء — تم الاحتفاظ بـ {{count}} ملفات مكتملة.",
+		"batchPartial": "{{count}} ملفات مكتملة: {{files}}"
 	},
 	"inspector": {
 		"resetFocusPoint": "إعادة تعيين نقطة التركيز",
@@ -348,6 +356,8 @@
 		"playPauseTitle": "تشغيل / إيقاف مؤقت (مسافة)",
 		"previousClip": "المقطع السابق",
 		"nextClip": "المقطع التالي",
+		"reviewSpeedSet": "سرعة المراجعة {{rate}}×",
+		"reviewSpeedReset": "سرعة المراجعة — انقر للعودة إلى 1×",
 		"loop": "تكرار",
 		"seekVideo": "التنقل في الفيديو"
 	},

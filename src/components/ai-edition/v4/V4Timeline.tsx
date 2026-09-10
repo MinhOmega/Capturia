@@ -11,6 +11,7 @@ import {
 	Pencil,
 	Scissors,
 	Sparkles,
+	Split,
 	SplitSquareHorizontal,
 	Trash2,
 	Wand2,
@@ -45,6 +46,7 @@ import {
 } from "@/lib/ai-edition/document/audioTracks";
 import { createId } from "@/lib/ai-edition/document/ids";
 import { isGeneratedAssetId } from "@/lib/ai-edition/document/insertion";
+import { isModalOpen } from "@/lib/ai-edition/modalGuard";
 import { setUiProbeScrubbing } from "@/lib/ai-edition/perf/uiFrameProbe";
 import type { AxcutAudioTrack, AxcutClip } from "@/lib/ai-edition/schema";
 import { audioGainScalar } from "@/lib/ai-edition/store/editorSettings";
@@ -76,7 +78,7 @@ import {
 	type AutoZoomSuggestion,
 	buildAutoZoomSuggestionsForClips,
 } from "@/lib/ai-edition/timeline/zoom-suggestions";
-import { formatBinding } from "@/lib/shortcuts";
+import { formatBinding, isTextEditingTarget, matchesFixedShortcut } from "@/lib/shortcuts";
 import { nativeBridgeClient } from "@/native/client";
 import { TransportBar } from "../TransportBar";
 import type { VideoSource } from "../VirtualPreview";
@@ -172,6 +174,58 @@ const CLIP_GUTTER_PX = 6;
  * is the zoom's business, and the two were conflated.
  */
 const MIN_REGION_SEC = 0.001;
+
+/**
+ * Deepest zoom, expressed the two ways it actually has a limit.
+ *
+ * It used to be a flat `0.02` — 50× the whole timeline — and a fraction is a DURATION in
+ * disguise, so what it bought depended on the recording. On a ~1200px panel that is 100 px/s
+ * on a 10-minute take (1.7 px for a frame at 60 fps) and 33 px/s on a 30-minute one, where a
+ * frame is half a pixel wide and no cut can be placed by eye at all. What the user is really
+ * asking for is a duration on screen, so that is what the first term says: 50 ms, the floor
+ * the old fork settled on.
+ *
+ * The second term is what keeps that safe. The zoomed canvas is a percentage WIDTH, so the
+ * zoom factor is literally a DOM element's width multiplier: 2000 × a 1200px panel is 2.4M px,
+ * comfortably inside Chromium's layout ceiling, whereas `MIN_VISIBLE_SEC / total` alone would
+ * ask for ~86M px on a one-hour recording and break the layout outright.
+ */
+const MIN_VISIBLE_SEC = 0.05;
+const MAX_ZOOM_FACTOR = 2000;
+
+/** One wheel notch. */
+const WHEEL_ZOOM_STEP = 1.12;
+/** One keypress — coarser than a notch, because a key has no momentum behind it. */
+const KEY_ZOOM_STEP = 1.4;
+
+/**
+ * Re-window the nav to `factor` × its current width, holding `anchorFrac` (a fraction of the
+ * WHOLE timeline) at `atPct` across the visible window.
+ *
+ * Both zoom gestures land here, so the depth clamp has one definition. They differ only in
+ * what they hold still: the wheel holds the point under the cursor, the keyboard holds the
+ * playhead — which is the moment you are about to cut, and the only reason a keyboard zoom
+ * is worth having.
+ */
+function zoomWindow(
+	prev: { start: number; end: number },
+	factor: number,
+	anchorFrac: number,
+	atPct: number,
+	minSpan: number,
+): { start: number; end: number } {
+	const width = prev.end - prev.start;
+	const nextWidth = Math.min(1, Math.max(minSpan, width * factor));
+	const start = Math.max(0, Math.min(1 - nextWidth, anchorFrac - atPct * nextWidth));
+	return { start, end: start + nextWidth };
+}
+
+/** How far behind the left edge the playhead is parked when auto-follow re-pages, and how
+ *  long a manual pan/zoom parks auto-follow for. The pause is what keeps "follow the
+ *  playhead" from being a fight: scrolling back to check something during playback has to
+ *  survive the next frame, or the feature is a bug. */
+const FOLLOW_LOOKBEHIND = 0.15;
+const FOLLOW_SUSPEND_MS = 2500;
 
 /**
  * How a pill's chrome is laid out at its current on-screen size.
@@ -666,7 +720,10 @@ export function V4Timeline({
 	// at that zoom. Every screen-space rule below — ruler step, pill affordances,
 	// snap radius — goes through this instead of being written as a fraction of
 	// `total`, which is a duration in disguise and so scales with the recording.
-	const navSpan = Math.max(0.02, nav.end - nav.start);
+	// The deepest zoom this recording allows — a duration on screen, floored by what the
+	// canvas can be widened to. See MIN_VISIBLE_SEC.
+	const minNavSpan = Math.min(1, Math.max(MIN_VISIBLE_SEC / total, 1 / MAX_ZOOM_FACTOR));
+	const navSpan = Math.max(minNavSpan, nav.end - nav.start);
 	const pxPerSec = viewportWidthPx / navSpan / total;
 	// Publish the scale so the keyboard shortcuts (NewEditorShell) size a new
 	// region exactly like the buttons below do — `nav` never leaves this
@@ -675,6 +732,107 @@ export function V4Timeline({
 	useEffect(() => {
 		setTimelineScale(pxPerSec);
 	}, [pxPerSec]);
+
+	// ── zoom persistence, playhead zoom, auto-follow ─────────────────
+	// The saved viewport, per project. A viewport is not project CONTENT — it is where you
+	// were looking, like the timeline's own height (see NewEditorShell's `os-editor-*` keys),
+	// so it goes to localStorage rather than into the document. Writing it to the document
+	// would mark the project dirty on every wheel notch and put a zoom on the undo stack,
+	// which is not an edit. Keyed per project because `nav` is a FRACTION of the timeline:
+	// 0.4→0.5 of a 30-second clip and of an hour-long one are not the same view, and sharing
+	// one value across projects would restore a nonsense window.
+	const projectId = useProjectStore((s) => s.projectId);
+	const navStorageKey = projectId ? `os-editor-timeline-nav:${projectId}` : null;
+	useEffect(() => {
+		if (!navStorageKey) return;
+		const raw = localStorage.getItem(navStorageKey);
+		if (!raw) return;
+		const [start, end] = raw.split(",").map(Number);
+		// A stored window has to still be a window: anything a hand-edit or an older format
+		// could leave behind falls back to the full timeline rather than blanking the panel.
+		if (!Number.isFinite(start) || !Number.isFinite(end)) return;
+		if (start < 0 || end > 1 || end - start <= 0) return;
+		setNav({ start, end });
+	}, [navStorageKey]);
+	useEffect(() => {
+		if (!navStorageKey) return;
+		// Debounced: a zoom gesture is dozens of wheel events and only the one it settles on
+		// is worth storing. Declared AFTER the restore above so the restore's `setNav` cancels
+		// this effect's first, still-default write before it lands.
+		const id = setTimeout(
+			() => localStorage.setItem(navStorageKey, `${nav.start},${nav.end}`),
+			400,
+		);
+		return () => clearTimeout(id);
+	}, [navStorageKey, nav]);
+
+	// Auto-follow parking. A ref, not state: nothing renders it, and a re-render per wheel
+	// event during playback is exactly what this component spends its comments avoiding.
+	const followSuspendedUntilRef = useRef(0);
+	const suspendFollow = useCallback(() => {
+		followSuspendedUntilRef.current = performance.now() + FOLLOW_SUSPEND_MS;
+	}, []);
+
+	// Keep the playhead on screen while the film plays.
+	//
+	// Subscribed imperatively rather than through the hook: `currentTimeSec` is rewritten
+	// every animation frame, and reading it as state here would re-render the timeline —
+	// clips, waveforms, every pill — 60 times a second to move a line a few pixels. Same
+	// reasoning as PlayheadOverlay and `playheadSec()` in useTimeline. `setNav` therefore
+	// runs about once per screenful of playback, not once per frame.
+	useEffect(() => {
+		if (!showLanes || !playing) return;
+		return useProjectStore.subscribe((state, prev) => {
+			if (state.currentTimeSec === prev.currentTimeSec) return;
+			if (performance.now() < followSuspendedUntilRef.current) return;
+			const frac = state.currentTimeSec / total;
+			setNav((cur) => {
+				const width = cur.end - cur.start;
+				// Nothing to follow when the whole timeline is already on screen, and nothing
+				// to do while the playhead is still inside the window: re-centring on every
+				// frame is what makes an auto-follow unusable.
+				if (width >= 1) return cur;
+				if (frac >= cur.start && frac <= cur.end) return cur;
+				const start = Math.max(0, Math.min(1 - width, frac - width * FOLLOW_LOOKBEHIND));
+				return start === cur.start ? cur : { start, end: start + width };
+			});
+		});
+	}, [showLanes, playing, total]);
+
+	// Ctrl + = / Ctrl + - : the keyboard half of Ctrl+Scroll, anchored on the PLAYHEAD.
+	// Listens on window like the shell's own handler and repeats its two guards, because
+	// `nav` never leaves this component and threading a zoom callback up to the shell to
+	// hand it straight back is more moving parts than one listener.
+	useEffect(() => {
+		if (!showLanes) return;
+		const onKey = (e: KeyboardEvent) => {
+			if (isTextEditingTarget(e.target) || isModalOpen()) return;
+			const inward = matchesFixedShortcut(e, "zoomTimelineIn", isMac);
+			if (!inward && !matchesFixedShortcut(e, "zoomTimelineOut", isMac)) return;
+			// Without this the browser takes Ctrl +/- as a page zoom and the timeline never
+			// sees it.
+			e.preventDefault();
+			suspendFollow();
+			const frac = Math.min(1, Math.max(0, useProjectStore.getState().currentTimeSec / total));
+			setNav((prev) => {
+				const width = prev.end - prev.start;
+				// Hold the playhead where it already sits on screen when it is on screen, and
+				// centre on it when it is not — a keyboard zoom with the playhead off-screen is
+				// a request to look AT it.
+				const atPct =
+					width > 0 && frac >= prev.start && frac <= prev.end ? (frac - prev.start) / width : 0.5;
+				return zoomWindow(
+					prev,
+					inward ? 1 / KEY_ZOOM_STEP : KEY_ZOOM_STEP,
+					frac,
+					atPct,
+					minNavSpan,
+				);
+			});
+		};
+		window.addEventListener("keydown", onKey);
+		return () => window.removeEventListener("keydown", onKey);
+	}, [showLanes, isMac, total, minNavSpan, suspendFollow]);
 
 	// ── region lanes ────────────────────────────────────────────────
 	// zoom/speed/annotation: one pill per row, never coalesced — each carries
@@ -1255,6 +1413,7 @@ export function V4Timeline({
 			e.stopPropagation();
 			const r = navRef.current?.getBoundingClientRect();
 			if (!r) return;
+			suspendFollow();
 			const startX = e.clientX;
 			const s0 = nav.start;
 			const e0 = nav.end;
@@ -1278,7 +1437,7 @@ export function V4Timeline({
 			window.addEventListener("pointermove", move);
 			window.addEventListener("pointerup", up);
 		},
-		[nav],
+		[nav, suspendFollow],
 	);
 
 	// Plain scroll = vertical scroll (the panel can be too short to show every
@@ -1308,6 +1467,7 @@ export function V4Timeline({
 			const viewportPct = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
 			if (e.shiftKey) {
 				e.preventDefault();
+				suspendFollow();
 				setNav((prev) => {
 					const width = prev.end - prev.start;
 					// Shift often routes the wheel onto deltaX; accept whichever axis moved.
@@ -1323,20 +1483,25 @@ export function V4Timeline({
 				// reads "up" and the gesture only ever zooms in.
 				const wheelDelta = e.deltaY !== 0 ? e.deltaY : e.deltaX;
 				if (wheelDelta === 0) return;
-				setNav((prev) => {
-					const width = prev.end - prev.start;
-					const cursorFrac = prev.start + viewportPct * width;
-					const zoomFactor = wheelDelta > 0 ? 1.12 : 1 / 1.12;
-					const nextWidth = Math.min(1, Math.max(0.02, width * zoomFactor));
-					const start = Math.max(0, Math.min(1 - nextWidth, cursorFrac - viewportPct * nextWidth));
-					return { start, end: start + nextWidth };
-				});
+				suspendFollow();
+				setNav((prev) =>
+					zoomWindow(
+						prev,
+						wheelDelta > 0 ? WHEEL_ZOOM_STEP : 1 / WHEEL_ZOOM_STEP,
+						// The timeline fraction currently under the cursor: that is what has to
+						// stay under it, which is what makes the gesture read as "zoom into
+						// this", not "zoom and also scroll".
+						prev.start + viewportPct * (prev.end - prev.start),
+						viewportPct,
+						minNavSpan,
+					),
+				);
 			}
 			// Otherwise let the native vertical scroll of .tlTracks run (no preventDefault).
 		};
 		panel.addEventListener("wheel", onWheelNative, { passive: false });
 		return () => panel.removeEventListener("wheel", onWheelNative);
-	}, [showLanes]);
+	}, [showLanes, minNavSpan, suspendFollow]);
 
 	// Track the tracks' content width for the ruler. .tlTracks and .tlRulerRow
 	// carry the same horizontal padding and the tracks' scrollbar is hidden, so
@@ -2008,6 +2173,25 @@ export function V4Timeline({
 									) : null}
 								</Fragment>
 							))}
+							{/* Not one of `tools`: those all create a REGION over the film, this one
+							    changes the film's own structure. Its shortcut is advertised the way
+							    the audio menu advertises its own — the binding is remappable, so a
+							    hardcoded label would eventually teach the wrong key. */}
+							<Tooltip
+								content={`${t("buttons.splitAtPlayhead")} · ${formatBinding(
+									shortcuts.splitAtPlayhead,
+									isMac,
+								)}`}
+							>
+								<button
+									type="button"
+									className={styles.tlToolBtn}
+									aria-label={t("buttons.splitAtPlayhead")}
+									onClick={() => void tl.splitAtPlayhead()}
+								>
+									<Split size={15} />
+								</button>
+							</Tooltip>
 							<Tooltip content={t("buttons.addZoom")}>
 								<button
 									type="button"

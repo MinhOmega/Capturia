@@ -13,6 +13,7 @@ use crate::cpu_frames::CpuFrames;
 use crate::cursor::CursorTrack;
 use crate::d3d::{Backend, Gpu};
 use crate::ffi::*;
+use crate::partial_output::discard_partial_output;
 use crate::regions::{speed_segments_for_window, SpeedSegment};
 use crate::scene::Scene;
 // `walk_composited_timeline` / `advance_decoder_to` vivaient ici ; ils sont
@@ -438,23 +439,7 @@ unsafe extern "C" fn get_hw_format(
 }
 
 pub fn run_c0(screen: &str, out: &str, gpu: &Gpu) -> Result<Stats> {
-    discard_partial_output(out, unsafe { run_c0_inner(screen, out, gpu) })
-}
-
-/// Un run interrompu laisse le MP4 sans son `moov` : illisible, et portant exactement le nom du
-/// fichier que l'utilisateur croit avoir exporté. Le retirer plutôt que le laisser traîner.
-///
-/// Posé sur les façades plutôt que sur chaque `?` : les `*_inner` sortent par une trentaine de
-/// points, tous concernés de la même façon.
-///
-/// ponytail: seul le fichier est nettoyé ; les contextes ffmpeg alloués dans les `*_inner` fuient
-/// toujours sur ces sorties-là (il faudrait une garde RAII par pointeur, comme `FrameGuard`).
-/// Un export raté est rare et ne boucle pas — à reprendre si ça devient un mode de marche.
-fn discard_partial_output(out: &str, result: Result<Stats>) -> Result<Stats> {
-    if result.is_err() {
-        let _ = std::fs::remove_file(out);
-    }
-    result
+    discard_partial_output(out, || unsafe { run_c0_inner(screen, out, gpu) })
 }
 
 unsafe fn run_c0_inner(screen: &str, out: &str, gpu: &Gpu) -> Result<Stats> {
@@ -1165,7 +1150,7 @@ pub fn run_composited(
     cfg: &Cfg,
     progress: &mut dyn FnMut(u64),
 ) -> Result<Stats> {
-    discard_partial_output(out, unsafe {
+    discard_partial_output(out, || unsafe {
         run_c1_inner(screen, webcam, out, gpu, comp, cfg, progress)
     })
 }
@@ -1280,7 +1265,7 @@ pub fn run_composited_multi(
     params: &ExportParams,
     progress: &mut dyn FnMut(u64),
 ) -> Result<Stats> {
-    discard_partial_output(out, unsafe {
+    discard_partial_output(out, || unsafe {
         run_multi_inner(clips, out, gpu, comp, cfg, params, progress)
     })
 }

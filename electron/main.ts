@@ -15,7 +15,12 @@ import {
 	systemPreferences,
 	Tray,
 } from "electron";
-import { ShortcutBinding } from "../src/lib/shortcuts";
+import {
+	GLOBAL_SHORTCUT_ACTIONS,
+	type GlobalShortcutAction,
+	type GlobalShortcutStatuses,
+	ShortcutBinding,
+} from "../src/lib/shortcuts";
 import {
 	type AboutFacts,
 	COPYRIGHT,
@@ -42,9 +47,8 @@ import { runCli } from "./cli/cliMain";
 import { isDiagnosticModeEnabled, mainLogBuffer } from "./diagnostics/main-log-buffer";
 import { buildEditMenuSubmenu, type EditorUndoRedoChannel, routeEditorUndoRedo } from "./edit-menu";
 import {
-	loadAndRegisterGlobalShortcut,
-	registerOpenAppShortcut,
-	type ShortcutStatus,
+	loadAndRegisterGlobalShortcuts,
+	registerGlobalShortcut,
 	unregisterAllGlobalShortcuts,
 } from "./globalShortcut";
 import { mainT, setMainLocale } from "./i18n";
@@ -145,10 +149,13 @@ let countdownOverlayWindow: BrowserWindow | null = null;
 let notesWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let selectedSourceName = "";
-/** Outcome of the last openApp global-shortcut registration; read by the shortcuts
- *  dialog. "unavailable" until startup has actually tried, so a renderer that asks
- *  early is told the hotkey is not working rather than that it is. */
-let globalShortcutStatus: ShortcutStatus = "unavailable";
+/** Outcome of the last global-shortcut registration for each global action; read by
+ *  the shortcuts dialog. "unavailable" until startup has actually tried, so a
+ *  renderer that asks early is told the hotkey is not working rather than that it is. */
+let globalShortcutStatuses: GlobalShortcutStatuses = {
+	openApp: "unavailable",
+	stopRecording: "unavailable",
+};
 const isMac = process.platform === "darwin";
 const trayIconSize = isMac ? 16 : 24;
 
@@ -176,6 +183,27 @@ function showMainWindow() {
 
 	createWindow();
 }
+
+/**
+ * Asks the renderer to stop the running take.
+ *
+ * The tray's Stop item and the global hotkey both land here, on the channel the
+ * tray has always used — the renderer owns the recorder handles, and its listener
+ * already no-ops when nothing is recording, which is what makes the hotkey safe to
+ * press at any time.
+ */
+function requestStopRecording() {
+	if (mainWindow && !mainWindow.isDestroyed()) {
+		mainWindow.webContents.send("stop-recording-from-tray");
+	}
+}
+
+/** What each global hotkey does. One object so registration and re-registration
+ *  cannot drift apart. */
+const globalShortcutHandlers: Record<GlobalShortcutAction, () => void> = {
+	openApp: showMainWindow,
+	stopRecording: requestStopRecording,
+};
 
 // Ahead of the CLI/GUI split and of `whenReady` on purpose: this is the one
 // place every window in either boot path passes through, so no window can exist
@@ -867,11 +895,7 @@ function updateTrayMenu(recording: boolean = false) {
 		? [
 				{
 					label: mainT("common", "actions.stopRecording") || "Stop Recording",
-					click: () => {
-						if (mainWindow && !mainWindow.isDestroyed()) {
-							mainWindow.webContents.send("stop-recording-from-tray");
-						}
-					},
+					click: requestStopRecording,
 				},
 			]
 		: [
@@ -1204,15 +1228,29 @@ appReady?.then(async () => {
 		updateTrayMenu();
 	});
 
-	ipcMain.handle("update-global-shortcut", (_, binding: ShortcutBinding) => {
-		globalShortcutStatus = registerOpenAppShortcut(binding, showMainWindow);
-		return { status: globalShortcutStatus };
-	});
+	// Takes every global binding at once, because the renderer saves the whole
+	// config at once: registering only the one the user just edited would leave the
+	// other reporting a status from a binding that is no longer in the file.
+	ipcMain.handle(
+		"update-global-shortcuts",
+		(_, bindings: Partial<Record<GlobalShortcutAction, ShortcutBinding>>) => {
+			for (const action of GLOBAL_SHORTCUT_ACTIONS) {
+				const binding = bindings?.[action];
+				if (!binding) continue;
+				globalShortcutStatuses[action] = registerGlobalShortcut(
+					action,
+					binding,
+					globalShortcutHandlers[action],
+				);
+			}
+			return { statuses: globalShortcutStatuses };
+		},
+	);
 
 	// What startup actually managed, for the shortcuts dialog. Deliberately pull, not
 	// push: a hotkey the user cannot act on must not interrupt them at launch with a
 	// toast, but it must be the truth when they go looking for it.
-	ipcMain.handle("get-global-shortcut-status", () => globalShortcutStatus);
+	ipcMain.handle("get-global-shortcut-statuses", () => globalShortcutStatuses);
 
 	// The HUD's settings panel shows the running version and, where this copy owns its updates,
 	// runs the same check the menu does. Registered here rather than in ipc/handlers.ts because
@@ -1325,7 +1363,7 @@ appReady?.then(async () => {
 
 	// Kept, not discarded: this is the only registration most users ever get, and
 	// throwing the result away here is what left a dead hotkey reported to nobody.
-	globalShortcutStatus = await loadAndRegisterGlobalShortcut(showMainWindow);
+	globalShortcutStatuses = await loadAndRegisterGlobalShortcuts(globalShortcutHandlers);
 
 	// --bench=<query>: run the export bench instead of the app. Opens the real
 	// editor window (same webPreferences, same preload) pointed at the bench

@@ -14,7 +14,7 @@ use openscreen_compositor::d3d::{Backend, Gpu};
 use openscreen_compositor::gif_export::{GifExportParams, GifStats};
 use openscreen_compositor::live::{LiveView, PausedPreviews};
 use openscreen_compositor::scene::Scene;
-use openscreen_compositor::{config, pipeline};
+use openscreen_compositor::{cancel, config, pipeline};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Mutex, OnceLock};
@@ -491,6 +491,9 @@ pub fn export_multi(
     params: Option<ExportParamsInput>,
     on_progress: Option<JsFunction>,
 ) -> Result<AsyncTask<ExportMultiTask>> {
+    // Réarme le drapeau sur le thread JS, AVANT de mettre la tâche en file : une
+    // annulation laissée par l'export précédent tuerait celui-ci dès sa première frame.
+    cancel::reset();
     let clips = clips
         .into_iter()
         .map(|c| pipeline::ClipSource {
@@ -645,6 +648,9 @@ pub fn export_gif(
     params: Option<GifParamsInput>,
     on_progress: Option<JsFunction>,
 ) -> Result<AsyncTask<ExportGifTask>> {
+    // Réarme le drapeau sur le thread JS, AVANT de mettre la tâche en file : une
+    // annulation laissée par l'export précédent tuerait celui-ci dès sa première frame.
+    cancel::reset();
     // Deliberately the same argument shape as `export_multi`: the caller builds
     // one clip list and one scene, and picks the container. Cursor comes from
     // the scene like every other effect — there is no GIF-specific input left.
@@ -675,6 +681,17 @@ pub fn export_gif(
         params: gif_params,
         on_progress: make_progress_tsfn(on_progress)?,
     }))
+}
+
+/// Demande l'arrêt de l'export en cours. Retourne immédiatement : l'arrêt effectif
+/// a lieu à la frame suivante, quand `timeline_walk` teste le drapeau et ressort en
+/// `Err(EXPORT_CANCELLED)`. La Promise de `exportMulti`/`exportGif` est donc celle qui
+/// signale la fin réelle — c'est elle que le renderer doit attendre, pas ce retour.
+///
+/// Sans effet s'il n'y a pas d'export en cours.
+#[napi]
+pub fn export_cancel() {
+    cancel::request();
 }
 
 /// Bilan d'un remux, tel que le voit la glue TS.

@@ -17,7 +17,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { parseCustomPlaybackSpeedInput } from "@/components/video-editor/customPlaybackSpeed";
 import {
+	MAX_BLUR_BLOCK_SIZE,
+	MAX_BLUR_INTENSITY,
 	MAX_PLAYBACK_SPEED,
+	MIN_BLUR_BLOCK_SIZE,
+	MIN_BLUR_INTENSITY,
 	SPEED_OPTIONS,
 	ZOOM_DEPTH_SCALES,
 } from "@/components/video-editor/types";
@@ -39,6 +43,7 @@ import type { useTimeline } from "@/lib/ai-edition/store/useTimeline";
 import { formatSeconds } from "@/lib/ai-edition/timeline/format";
 import { coalescedTrimGroups } from "@/lib/ai-edition/timeline/trim-mapping";
 import { ColorField } from "../ColorField";
+import { FontFamilyField } from "../FontFamilyField";
 import {
 	AudioPane,
 	AudioTrackPane,
@@ -305,6 +310,7 @@ function paneRow(label: string, control: React.ReactNode) {
 
 type AnnotationKind = AxcutAnnotationRegion["type"];
 type ArrowDirectionKind = NonNullable<AxcutAnnotationRegion["figureData"]>["arrowDirection"];
+type AnnotationTextAlign = NonNullable<AxcutAnnotationRegion["style"]>["textAlign"];
 
 /** Les huit directions de `ArrowSvgs.tsx`, dans l'ordre où elles y sont définies. */
 const ARROW_DIRECTIONS: ArrowDirectionKind[] = [
@@ -848,6 +854,64 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 									{te("inspector.freehandRendersAsBox")}
 								</p>
 							) : null}
+							{/* Un seul des deux réglages s'applique à la fois : le compositeur lit
+							    `intensity` comme un RAYON en pixels pour le flou et `blockSize` comme le
+							    pas de la grille pour la mosaïque (`amount` dans compositor_*.rs), jamais
+							    les deux. Les bornes sont celles que la persistance impose déjà
+							    (`projectPersistence.ts`), donc le curseur ne peut plus produire une valeur
+							    que le rechargement du projet corrigerait en silence. */}
+							{(region.blurData?.type ?? BLUR_DEFAULTS.type) === "blur" ? (
+								<SliderCell
+									label={ts("annotation.blurIntensity")}
+									value={region.blurData?.intensity ?? BLUR_DEFAULTS.intensity}
+									min={MIN_BLUR_INTENSITY}
+									max={MAX_BLUR_INTENSITY}
+									suffix="px"
+									onChange={(next) =>
+										tl.updateAnnotationLive(region.id, {
+											blurData: { ...(region.blurData ?? BLUR_DEFAULTS), intensity: next },
+										})
+									}
+									onCommit={() => void tl.commitAnnotationChange()}
+								/>
+							) : (
+								<>
+									<SliderCell
+										label={ts("annotation.mosaicBlockSize")}
+										value={region.blurData?.blockSize ?? BLUR_DEFAULTS.blockSize}
+										min={MIN_BLUR_BLOCK_SIZE}
+										max={MAX_BLUR_BLOCK_SIZE}
+										suffix="px"
+										onChange={(next) =>
+											tl.updateAnnotationLive(region.id, {
+												blurData: { ...(region.blurData ?? BLUR_DEFAULTS), blockSize: next },
+											})
+										}
+										onCommit={() => void tl.commitAnnotationChange()}
+									/>
+									{/* La teinte n'est lue qu'en mosaïque : `tinted` vaut 0 pour le flou côté
+									    compositeur, un flou teinté ne ressemblant plus à un flou. */}
+									{paneRow(
+										ts("annotation.blurColor"),
+										<select
+											value={region.blurData?.color ?? BLUR_DEFAULTS.color}
+											onChange={(e) => {
+												tl.updateAnnotationLive(region.id, {
+													blurData: {
+														...(region.blurData ?? BLUR_DEFAULTS),
+														color: e.target.value as "white" | "black",
+													},
+												});
+												void tl.commitAnnotationChange();
+											}}
+											style={selectStyle}
+										>
+											<option value="white">{ts("annotation.blurColorWhite")}</option>
+											<option value="black">{ts("annotation.blurColorBlack")}</option>
+										</select>,
+									)}
+								</>
+							)}
 						</>
 					) : null}
 					{region.type === "text"
@@ -872,6 +936,86 @@ function SelectionPane({ tl, onClose }: { tl: TimelineApi; onClose: () => void }
 								/>,
 							)
 						: null}
+					{/* Graisse, italique, soulignement et alignement suivaient déjà le même chemin que
+					    la taille — schéma, `sceneDescription`, puis `text_*.rs` — sans que rien ici ne
+					    les écrive : une annotation sortait donc toujours dans les valeurs par défaut.
+					    La famille passe par le même champ que les sous-titres : les deux polices
+					    embarquées plus celles installées sur la machine, seules familles que le
+					    compositor sait résoudre. */}
+					{region.type === "text" ? (
+						<>
+							{paneRow(
+								ts("captions.font"),
+								<FontFamilyField
+									value={region.style?.fontFamily ?? "Inter"}
+									onChange={(family) => {
+										tl.updateAnnotationLive(region.id, {
+											style: { ...region.style, fontFamily: family },
+										});
+										void tl.commitAnnotationChange();
+									}}
+									label={ts("captions.font")}
+									style={selectStyle}
+								/>,
+							)}
+							{paneRow(
+								ts("captions.bold"),
+								<Toggle
+									checked={(region.style?.fontWeight ?? "bold") === "bold"}
+									onChange={(next) => {
+										tl.updateAnnotationLive(region.id, {
+											style: { ...region.style, fontWeight: next ? "bold" : "normal" },
+										});
+										void tl.commitAnnotationChange();
+									}}
+								/>,
+							)}
+							{paneRow(
+								ts("annotation.italic"),
+								<Toggle
+									checked={region.style?.fontStyle === "italic"}
+									onChange={(next) => {
+										tl.updateAnnotationLive(region.id, {
+											style: { ...region.style, fontStyle: next ? "italic" : "normal" },
+										});
+										void tl.commitAnnotationChange();
+									}}
+								/>,
+							)}
+							{paneRow(
+								ts("annotation.underline"),
+								<Toggle
+									checked={region.style?.textDecoration === "underline"}
+									onChange={(next) => {
+										tl.updateAnnotationLive(region.id, {
+											style: { ...region.style, textDecoration: next ? "underline" : "none" },
+										});
+										void tl.commitAnnotationChange();
+									}}
+								/>,
+							)}
+							{paneRow(
+								ts("annotation.textAlign"),
+								<select
+									value={region.style?.textAlign ?? "center"}
+									onChange={(e) => {
+										tl.updateAnnotationLive(region.id, {
+											style: {
+												...region.style,
+												textAlign: e.target.value as AnnotationTextAlign,
+											},
+										});
+										void tl.commitAnnotationChange();
+									}}
+									style={selectStyle}
+								>
+									<option value="left">{ts("captions.alignLeft")}</option>
+									<option value="center">{ts("captions.alignCenter")}</option>
+									<option value="right">{ts("captions.alignRight")}</option>
+								</select>,
+							)}
+						</>
+					) : null}
 					{region.type === "text"
 						? paneRow(
 								ts("annotation.background"),

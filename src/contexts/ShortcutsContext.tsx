@@ -9,8 +9,11 @@ import {
 } from "react";
 import {
 	DEFAULT_SHORTCUTS,
+	GLOBAL_SHORTCUT_ACTIONS,
+	type GlobalShortcutAction,
+	type GlobalShortcutStatuses,
 	mergeWithDefaults,
-	type ShortcutStatus,
+	type ShortcutBinding,
 	type ShortcutsConfig,
 } from "@/lib/shortcuts";
 import { isMac as getIsMac } from "@/utils/platformUtils";
@@ -19,10 +22,10 @@ interface ShortcutsContextValue {
 	shortcuts: ShortcutsConfig;
 	isMac: boolean;
 	setShortcuts: (config: ShortcutsConfig) => void;
-	persistShortcuts: (config?: ShortcutsConfig) => Promise<ShortcutStatus>;
-	/** What startup made of the openApp hotkey, so the dialog can stop offering a
+	persistShortcuts: (config?: ShortcutsConfig) => Promise<GlobalShortcutStatuses>;
+	/** What startup made of each OS-owned hotkey, so the dialog can stop offering a
 	 *  rebind on a session where no rebind can succeed. */
-	globalShortcutStatus: ShortcutStatus;
+	globalShortcutStatuses: GlobalShortcutStatuses;
 	isConfigOpen: boolean;
 	openConfig: () => void;
 	closeConfig: () => void;
@@ -44,8 +47,11 @@ export function ShortcutsProvider({ children }: { children: ReactNode }) {
 	const [isMac, setIsMac] = useState(false);
 	const [isConfigOpen, setIsConfigOpen] = useState(false);
 	// Optimistic default: in browser mode and in tests there is no main process to
-	// ask, and claiming the hotkey is broken there would be its own wrong message.
-	const [globalShortcutStatus, setGlobalShortcutStatus] = useState<ShortcutStatus>("registered");
+	// ask, and claiming the hotkeys are broken there would be its own wrong message.
+	const [globalShortcutStatuses, setGlobalShortcutStatuses] = useState<GlobalShortcutStatuses>({
+		openApp: "registered",
+		stopRecording: "registered",
+	});
 
 	useEffect(() => {
 		setIsMac(getIsMac());
@@ -67,24 +73,33 @@ export function ShortcutsProvider({ children }: { children: ReactNode }) {
 			});
 
 		window.electronAPI
-			?.getGlobalShortcutStatus?.()
-			?.then(setGlobalShortcutStatus)
+			?.getGlobalShortcutStatuses?.()
+			?.then((statuses) => {
+				if (statuses) setGlobalShortcutStatuses(statuses);
+			})
 			.catch(() => {
-				// An unanswered question is not evidence the hotkey is broken.
+				// An unanswered question is not evidence the hotkeys are broken.
 			});
 	}, []);
 
 	const persistShortcuts = useCallback(
-		async (config?: ShortcutsConfig): Promise<ShortcutStatus> => {
+		async (config?: ShortcutsConfig): Promise<GlobalShortcutStatuses> => {
 			const configToSave = config ?? shortcuts;
 			await window.electronAPI?.saveShortcuts?.(configToSave);
 
-			const result = await window.electronAPI?.updateGlobalShortcut?.(configToSave.openApp);
+			const bindings: Partial<Record<GlobalShortcutAction, ShortcutBinding>> = {};
+			for (const action of GLOBAL_SHORTCUT_ACTIONS) {
+				bindings[action] = configToSave[action];
+			}
+			const result = await window.electronAPI?.updateGlobalShortcuts?.(bindings);
 			// No main process (browser mode, tests): the local shortcuts still saved, and
 			// there is no global one to have failed.
-			const status = result ? result.status : "registered";
-			setGlobalShortcutStatus(status);
-			return status;
+			const statuses = result?.statuses ?? {
+				openApp: "registered" as const,
+				stopRecording: "registered" as const,
+			};
+			setGlobalShortcutStatuses(statuses);
+			return statuses;
 		},
 		[shortcuts],
 	);
@@ -98,7 +113,7 @@ export function ShortcutsProvider({ children }: { children: ReactNode }) {
 			isMac,
 			setShortcuts,
 			persistShortcuts,
-			globalShortcutStatus,
+			globalShortcutStatuses,
 			isConfigOpen,
 			openConfig,
 			closeConfig,
@@ -107,7 +122,7 @@ export function ShortcutsProvider({ children }: { children: ReactNode }) {
 			shortcuts,
 			isMac,
 			persistShortcuts,
-			globalShortcutStatus,
+			globalShortcutStatuses,
 			isConfigOpen,
 			openConfig,
 			closeConfig,

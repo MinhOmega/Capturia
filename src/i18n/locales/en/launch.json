@@ -90,11 +90,40 @@
 		"done": "Done",
 		"micLevel": "Input level",
 		"micHint": "Speak to check your microphone",
+		"micGain": "Microphone gain",
+		"countdown": "Countdown (seconds)",
+		"countdownOff": "Off",
+		"frameRate": "Frame rate (fps)",
+		"resolution": "Resolution",
+		"resolutionAuto": "Auto",
+		"captureHint": "Lower these if frames are dropped while recording.",
 		"noMicrophones": "No microphone found",
 		"preview": "Preview",
 		"previewUnavailable": "Preview unavailable",
 		"about": "About",
 		"version": "Version {{version}}",
 		"checkingForUpdates": "Checking…"
+	},
+	"permissions": {
+		"title": "Permissions",
+		"required": "Required",
+		"row": {
+			"screen": "Screen Recording",
+			"camera": "Camera",
+			"microphone": "Microphone",
+			"accessibility": "Accessibility"
+		},
+		"status": {
+			"granted": "Allowed",
+			"denied": "Denied",
+			"restricted": "Restricted",
+			"not-determined": "Not asked yet",
+			"unknown": "Unknown"
+		},
+		"action": {
+			"request": "Ask",
+			"open-settings": "Open Settings"
+		},
+		"relaunchHint": "macOS applies a new Screen Recording grant on the next launch — quit and reopen Capturia."
 	}
 }

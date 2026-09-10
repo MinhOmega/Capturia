@@ -1,9 +1,14 @@
 import fs from "node:fs/promises";
 import { globalShortcut } from "electron";
-import { type ShortcutBinding, type ShortcutStatus } from "../src/lib/shortcuts";
+import {
+	DEFAULT_SHORTCUTS,
+	GLOBAL_SHORTCUT_ACTIONS,
+	type GlobalShortcutAction,
+	type GlobalShortcutStatuses,
+	type ShortcutBinding,
+	type ShortcutStatus,
+} from "../src/lib/shortcuts";
 import { SHORTCUTS_FILE } from "./ipc/handlers";
-
-const DEFAULT_OPEN_APP_BINDING: ShortcutBinding = { key: "o", ctrl: true, shift: true };
 
 // Maps KeyboardEvent.key values to Electron accelerator key names
 const KEY_TO_ACCELERATOR: Record<string, string> = {
@@ -36,7 +41,14 @@ function bindingToAccelerator(binding: ShortcutBinding): string {
 	return parts.join("+");
 }
 
-let currentAccelerator: string | null = null;
+/**
+ * The accelerator each action currently holds, so a re-register knows what to
+ * release and an unchanged binding can be recognised as such.
+ *
+ * Per action rather than one slot: two global hotkeys means the openApp key must
+ * not be released because the stop key changed.
+ */
+const currentAccelerators: Partial<Record<GlobalShortcutAction, string>> = {};
 
 /**
  * Accelerators nothing plausibly binds, used only to classify a failure.
@@ -70,7 +82,8 @@ function sessionAcceptsGlobalShortcuts(): boolean {
 
 export type { ShortcutStatus };
 
-export function registerOpenAppShortcut(
+export function registerGlobalShortcut(
+	action: GlobalShortcutAction,
 	binding: ShortcutBinding,
 	onTrigger: () => void,
 ): ShortcutStatus {
@@ -78,7 +91,7 @@ export function registerOpenAppShortcut(
 
 	// Deliberately NOT "registered": this call registered nothing. Both were `true`
 	// before, which let a caller report success for a hotkey that may be dead.
-	if (accelerator === currentAccelerator) {
+	if (accelerator === currentAccelerators[action]) {
 		return "unchanged";
 	}
 
@@ -86,11 +99,12 @@ export function registerOpenAppShortcut(
 	const success = globalShortcut.register(accelerator, onTrigger);
 
 	if (success) {
-		if (currentAccelerator) {
-			globalShortcut.unregister(currentAccelerator);
+		const previous = currentAccelerators[action];
+		if (previous) {
+			globalShortcut.unregister(previous);
 		}
-		currentAccelerator = accelerator;
-		console.log(`Global shortcut registered: ${accelerator}`);
+		currentAccelerators[action] = accelerator;
+		console.log(`Global shortcut registered for ${action}: ${accelerator}`);
 		return "registered";
 	}
 
@@ -99,7 +113,7 @@ export function registerOpenAppShortcut(
 	// user through every key on the keyboard, none of which can work.
 	const status = sessionAcceptsGlobalShortcuts() ? "conflict" : "unavailable";
 	console.warn(
-		`Failed to register global shortcut: ${accelerator} (${
+		`Failed to register global shortcut for ${action}: ${accelerator} (${
 			status === "conflict"
 				? "already taken by another application"
 				: "this session does not support global shortcuts"
@@ -108,17 +122,30 @@ export function registerOpenAppShortcut(
 	return status;
 }
 
-export async function loadAndRegisterGlobalShortcut(
-	onTrigger: () => void,
-): Promise<ShortcutStatus> {
+/**
+ * Registers every global hotkey from the saved config, falling back to the
+ * defaults for anything the file does not carry — including the whole file being
+ * absent, which is every fresh install.
+ */
+export async function loadAndRegisterGlobalShortcuts(
+	handlers: Record<GlobalShortcutAction, () => void>,
+): Promise<GlobalShortcutStatuses> {
+	let saved: Record<string, ShortcutBinding> = {};
 	try {
-		const data = await fs.readFile(SHORTCUTS_FILE, "utf-8");
-		const shortcuts = JSON.parse(data);
-		const binding = shortcuts.openApp || DEFAULT_OPEN_APP_BINDING;
-		return registerOpenAppShortcut(binding, onTrigger);
+		saved = JSON.parse(await fs.readFile(SHORTCUTS_FILE, "utf-8"));
 	} catch {
-		return registerOpenAppShortcut(DEFAULT_OPEN_APP_BINDING, onTrigger);
+		// No file yet, or one this build cannot read: the defaults below are the answer.
 	}
+
+	const statuses = {} as GlobalShortcutStatuses;
+	for (const action of GLOBAL_SHORTCUT_ACTIONS) {
+		statuses[action] = registerGlobalShortcut(
+			action,
+			saved?.[action] ?? DEFAULT_SHORTCUTS[action],
+			handlers[action],
+		);
+	}
+	return statuses;
 }
 
 export function unregisterAllGlobalShortcuts(): void {

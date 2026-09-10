@@ -3,6 +3,7 @@
 	"customize": "自定义",
 	"configurable": "可配置",
 	"fixed": "固定",
+	"options": "选项",
 	"pressKey": "请按下按键…",
 	"clickToChange": "点击以更改",
 	"pressEscToCancel": "按 Esc 取消",
@@ -17,12 +18,14 @@
 	"globalShortcutUnavailable": "此会话不支持全局快捷键，因此该快捷键将无法使用。其他快捷键不受影响。",
 	"actions": {
 		"openApp": "打开应用",
+		"stopRecording": "停止录制",
 		"addZoom": "添加缩放",
 		"addTrim": "添加剪辑",
 		"addSpeed": "添加速度",
 		"addAnnotation": "添加标注",
 		"addAudio": "添加音频",
 		"addVoiceover": "录制配音",
+		"splitAtPlayhead": "在播放头处分割",
 		"addKeyframe": "添加关键帧",
 		"addCameraFullscreen": "添加全屏摄像头",
 		"deleteSelected": "删除所选",
@@ -38,7 +41,17 @@
 		"deleteSelectedAlt": "删除所选（替代）",
 		"panTimeline": "平移时间轴",
 		"zoomTimeline": "缩放时间轴",
+		"zoomTimelineIn": "放大时间轴",
+		"zoomTimelineOut": "缩小时间轴",
 		"frameBack": "上一帧",
-		"frameForward": "下一帧"
+		"frameForward": "下一帧",
+		"reviewSpeedDown": "降低预览速度",
+		"reviewSpeedUp": "提高预览速度"
+	},
+	"seekStep": {
+		"label": "方向键步长",
+		"frame": "一帧",
+		"second": "一秒",
+		"fiveSeconds": "五秒"
 	}
 }

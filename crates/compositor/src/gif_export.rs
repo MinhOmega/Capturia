@@ -74,6 +74,7 @@
 use crate::compositor::Compositor;
 use crate::config::Cfg;
 use crate::d3d::Gpu;
+use crate::partial_output::discard_partial_output;
 use crate::pipeline::{ClipSource, Decoder};
 use crate::timeline_walk::walk_composited_timeline;
 use anyhow::{anyhow, bail, Context, Result};
@@ -161,8 +162,8 @@ impl Default for GifExportParams {
 /// to the CPU and quantizes it to 256 colours.
 ///
 /// A failed run leaves a truncated GIF under exactly the name the user thinks
-/// they exported. Remove it rather than leave it lying around — same contract
-/// as `discard_partial_output` on the MP4 path.
+/// they exported. Remove it rather than leave it lying around — the shared
+/// `discard_partial_output` is the same one the MP4 pipelines use.
 pub fn export_gif(
 	clips: &[ClipSource],
 	out_path: &Path,
@@ -172,11 +173,9 @@ pub fn export_gif(
 	params: &GifExportParams,
 	progress: &mut dyn FnMut(u64),
 ) -> Result<GifStats> {
-	let result = export_gif_inner(clips, out_path, gpu, comp, cfg, params, progress);
-	if result.is_err() {
-		let _ = std::fs::remove_file(out_path);
-	}
-	result
+	discard_partial_output(out_path, || {
+		export_gif_inner(clips, out_path, gpu, comp, cfg, params, progress)
+	})
 }
 
 fn export_gif_inner(

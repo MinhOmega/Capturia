@@ -90,11 +90,40 @@
 		"done": "Tamam",
 		"micLevel": "Giriş seviyesi",
 		"micHint": "Mikrofonunuzu test etmek için konuşun",
+		"micGain": "Mikrofon kazancı",
+		"countdown": "Geri sayım (saniye)",
+		"countdownOff": "Kapalı",
+		"frameRate": "Kare hızı (fps)",
+		"resolution": "Çözünürlük",
+		"resolutionAuto": "Otomatik",
+		"captureHint": "Kayıt sırasında kare düşüyorsa bu değerleri düşürün.",
 		"noMicrophones": "Mikrofon bulunamadı",
 		"preview": "Önizleme",
 		"previewUnavailable": "Önizleme kullanılamıyor",
 		"about": "Hakkında",
 		"version": "Sürüm {{version}}",
 		"checkingForUpdates": "Denetleniyor…"
+	},
+	"permissions": {
+		"title": "İzinler",
+		"required": "Gerekli",
+		"row": {
+			"screen": "Ekran Kaydı",
+			"camera": "Kamera",
+			"microphone": "Mikrofon",
+			"accessibility": "Erişilebilirlik"
+		},
+		"status": {
+			"granted": "İzin verildi",
+			"denied": "Reddedildi",
+			"restricted": "Kısıtlı",
+			"not-determined": "Henüz sorulmadı",
+			"unknown": "Bilinmiyor"
+		},
+		"action": {
+			"request": "İste",
+			"open-settings": "Ayarları Aç"
+		},
+		"relaunchHint": "macOS yeni ekran kaydı iznini bir sonraki açılışta uygular — Capturia’yı kapatıp yeniden açın."
 	}
 }

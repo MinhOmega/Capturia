@@ -20,6 +20,7 @@ import type {
 	AxcutZoomRegion,
 } from "@/lib/ai-edition/schema";
 import { audioGainScalar } from "@/lib/ai-edition/store/editorSettings";
+import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { useEditorSettings } from "@/lib/ai-edition/store/useEditorSettings";
 import type { PlaybackClockRef } from "@/lib/ai-edition/timeline/playback-clock";
 import { removedRawSpans } from "@/lib/ai-edition/timeline/programme-time";
@@ -981,9 +982,18 @@ export function VirtualPreview({
 					speedRegionsRef.current,
 					Math.round(nextTimeSec * 1000),
 				);
+				// The review speed (`[` / `]`) MULTIPLIES the region's, it does not replace it:
+				// a 2× region watched at 0.5× plays at 1×, which is the whole point of being
+				// able to slow a fast passage down to read it. Read imperatively, like the
+				// playhead: this runs once per frame and a subscription here would re-render
+				// the preview 60×/s to learn a number that changes twice a session.
+				//
 				// Clamp to the browser's 16× playbackRate ceiling; >16× is rendered at
 				// its true speed only on the offline export path, not the live preview.
-				const rate = Math.min(activeRegion?.speed ?? 1, MAX_NATIVE_PLAYBACK_RATE);
+				const rate = Math.min(
+					(activeRegion?.speed ?? 1) * useProjectStore.getState().previewRate,
+					MAX_NATIVE_PLAYBACK_RATE,
+				);
 				if (v.playbackRate !== rate) v.playbackRate = rate;
 			}
 		},

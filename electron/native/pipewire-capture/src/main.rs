@@ -61,6 +61,11 @@ const DEFAULT_FPS: i32 = 30;
 struct VideoRequest {
     fps: Option<i32>,
     bitrate: Option<i64>,
+    /// The user's resolution cap as a long edge, or absent for "record what the
+    /// portal hands over". A long edge rather than a size because the renderer
+    /// cannot know the capture's dimensions — or even its orientation — until
+    /// this helper reports them back.
+    max_long_edge: Option<i32>,
 }
 
 /// Mirrors the `audio` block of `NativeWindowsRecordingRequest`
@@ -169,6 +174,14 @@ impl Request {
             .as_ref()
             .and_then(|video| video.bitrate)
             .filter(|bitrate| *bitrate > 0)
+    }
+
+    /// The capture's long-edge ceiling, or `None` to encode at the captured size.
+    fn max_long_edge(&self) -> Option<i32> {
+        self.video
+            .as_ref()
+            .and_then(|video| video.max_long_edge)
+            .filter(|limit| *limit > 0)
     }
 
     /// The audio streams to open, in the order they become MP4 tracks.
@@ -328,6 +341,7 @@ fn main() {
         output_path,
         fps: request.fps(),
         bitrate: request.bitrate(),
+        max_long_edge: request.max_long_edge(),
         forced_encoder,
         cursor_mode,
         audio: request.audio_sources(),
@@ -347,6 +361,8 @@ struct RunConfig {
     fps: i32,
     /// `None` lets the encoder derive one from the negotiated size.
     bitrate: Option<i64>,
+    /// `None` encodes at the captured size; see [`capture::scaled_size`].
+    max_long_edge: Option<i32>,
     forced_encoder: Option<encoder::Backend>,
     cursor_mode: portal::CursorMode,
     audio: Vec<AudioSourceConfig>,
@@ -777,6 +793,10 @@ fn run<W: Write>(
                                 exit_code = 1;
                                 break;
                             }
+                            // What the file will actually be, which is the crop
+                            // rectangle unless the user capped the resolution.
+                            let (encoded_width, encoded_height) =
+                                capture::scaled_size(width, height, config.max_long_edge);
                             let _ = emitter.emit(&Event::Debug {
                                 code: "crop".to_owned(),
                                 data: json_map([
@@ -786,8 +806,8 @@ fn run<W: Write>(
                                     ("cropY", frame.crop.y.into()),
                                     ("cropWidth", frame.crop.width.into()),
                                     ("cropHeight", frame.crop.height.into()),
-                                    ("encodedWidth", width.into()),
-                                    ("encodedHeight", height.into()),
+                                    ("encodedWidth", encoded_width.into()),
+                                    ("encodedHeight", encoded_height.into()),
                                     ("hasCrop", frame.has_crop.into()),
                                     ("framesAwaited", frames_awaiting_crop.into()),
                                 ]),
@@ -797,6 +817,7 @@ fn run<W: Write>(
                                 path,
                                 width,
                                 height,
+                                config.max_long_edge,
                                 config.fps,
                                 config.bitrate,
                                 config.forced_encoder,
@@ -855,7 +876,6 @@ fn run<W: Write>(
 
                     let first = !capture.started();
                     let staged = capture.stage(&frame);
-                    let (width, height) = (frame.crop.width, frame.crop.height);
                     mailbox.recycle(frame.pixels);
                     match staged {
                         Ok(capture::StageOutcome::Staged) => {
@@ -901,6 +921,10 @@ fn run<W: Write>(
                     // Only once a frame has actually staged — a first frame that
                     // dropped leaves capture unstarted, so this waits for a real one.
                     if first && capture.started() {
+                        // The ENCODED size, not the crop: under a resolution cap
+                        // the file is smaller than the region it was taken from,
+                        // and this event is what the app logs as the take's size.
+                        let (width, height) = capture.encoded_size();
                         let _ = emitter.emit(&Event::CaptureStarted {
                             timestamp_ms: timestamp_ms(),
                             path: config

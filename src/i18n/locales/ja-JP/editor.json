@@ -201,7 +201,15 @@
 		"failedToWriteFile": "ファイルの書き込みに失敗しました",
 		"qualityUpscaleWarning": "アップスケール",
 		"exportedVideoOf": "の動画を書き出しました。所要時間:",
-		"nothingToExport": "書き出す内容がありません — タイムラインが空です。"
+		"nothingToExport": "書き出す内容がありません — タイムラインが空です。",
+		"aspectRatios": "アスペクト比",
+		"aspectRatiosHint": "ファイルを 1 つ書き出します。",
+		"aspectRatiosBatchHint": "{{count}} 個のファイルを並べて書き出します。",
+		"pickAnAspectRatio": "アスペクト比を 1 つ以上選択してください。",
+		"batchProgress": "ファイル {{current}} / {{total}} · {{ratio}}",
+		"batchExportedCount": "{{count}} 個のファイルを書き出しました",
+		"batchCancelledAfter": "キャンセルしました — 完了済みの {{count}} 個のファイルは保持されます。",
+		"batchPartial": "完了済み {{count}} 個: {{files}}"
 	},
 	"inspector": {
 		"resetFocusPoint": "フォーカスポイントをリセット",
@@ -348,6 +356,8 @@
 		"playPauseTitle": "再生 / 一時停止（スペース）",
 		"previousClip": "前のクリップ",
 		"nextClip": "次のクリップ",
+		"reviewSpeedSet": "確認速度 {{rate}}×",
+		"reviewSpeedReset": "確認速度 — クリックで 1× に戻す",
 		"loop": "ループ",
 		"seekVideo": "動画をシーク"
 	},

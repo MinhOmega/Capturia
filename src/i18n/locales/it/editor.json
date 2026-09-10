@@ -201,7 +201,15 @@
 		"failedToWriteFile": "Impossibile scrivere il file",
 		"qualityUpscaleWarning": "Upscaling",
 		"exportedVideoOf": "di video esportato in",
-		"nothingToExport": "Niente da esportare: la timeline è vuota."
+		"nothingToExport": "Niente da esportare: la timeline è vuota.",
+		"aspectRatios": "Proporzioni",
+		"aspectRatiosHint": "Verrà esportato un solo file.",
+		"aspectRatiosBatchHint": "Verranno esportati {{count}} file affiancati.",
+		"pickAnAspectRatio": "Scegli almeno una proporzione.",
+		"batchProgress": "File {{current}} di {{total}} · {{ratio}}",
+		"batchExportedCount": "{{count}} file esportati",
+		"batchCancelledAfter": "Annullato — {{count}} file già completati sono stati mantenuti.",
+		"batchPartial": "{{count}} già completati: {{files}}"
 	},
 	"inspector": {
 		"resetFocusPoint": "Reimposta punto di messa a fuoco",
@@ -348,6 +356,8 @@
 		"playPauseTitle": "Riproduci / Pausa (Spazio)",
 		"previousClip": "Clip precedente",
 		"nextClip": "Clip successivo",
+		"reviewSpeedSet": "Velocità di revisione {{rate}}×",
+		"reviewSpeedReset": "Velocità di revisione — clicca per tornare a 1×",
 		"loop": "Ripeti",
 		"seekVideo": "Scorri il video"
 	},

@@ -119,3 +119,45 @@ export function cliExportDestinations(request: {
 	if (!stem) return [];
 	return [...ALLOWED_EXPORT_EXTENSIONS].map((extension) => `${stem}${extension}`);
 }
+
+/**
+ * Sibling destinations for a multi-aspect batch export.
+ *
+ * The renderer names no path here. It sends aspect TOKENS, and every byte of the
+ * result is built from the path the user picked in the save dialog plus a suffix
+ * made of the two integers parsed out of the token — so a token cannot carry a
+ * separator, a `..`, or an extension, and the outputs cannot leave the directory
+ * the user chose. Anything that is not a `W:H` shape contributes no path at all.
+ *
+ * The suffix goes BEFORE the extension so the result still ends in `.mp4`/`.gif`.
+ * That is what keeps this in lock-step with two things that must agree with it
+ * byte for byte: `ApprovedExportPaths.approve` (strips `extname` to derive the
+ * sidecars) and `subtitleSidecarPath` in `src/lib/ai-edition/captions/subtitles.ts`
+ * (strips `/\.(mp4|gif)$/i`). Both strip exactly the trailing container extension,
+ * so a suffixed stem survives both unchanged.
+ *
+ * Order follows `aspectTokens`, and duplicate destinations collapse: two tokens
+ * that reduce to the same suffix must not become two jobs racing for one file.
+ */
+export function batchExportPaths(
+	basePath: string,
+	aspectTokens: readonly string[],
+	platformPath: PlatformPath = nodePath,
+): string[] {
+	const extension = platformPath.extname(basePath);
+	if (!ALLOWED_EXPORT_EXTENSIONS.has(extension.toLowerCase())) return [];
+	const stem = basePath.slice(0, basePath.length - extension.length);
+	const seen = new Set<string>();
+	const paths: string[] = [];
+	for (const token of aspectTokens) {
+		if (typeof token !== "string") continue;
+		const match = /^\s*(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)\s*$/.exec(token);
+		if (!match) continue;
+		const candidate = `${stem}-${match[1]}x${match[2]}${extension}`;
+		const key = canonicalize(candidate, platformPath);
+		if (seen.has(key)) continue;
+		seen.add(key);
+		paths.push(candidate);
+	}
+	return paths;
+}

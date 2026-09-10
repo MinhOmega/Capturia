@@ -27,42 +27,11 @@ import { useCaptions } from "@/lib/ai-edition/store/useCaptions";
 import { firstTimelineBusyView } from "@/lib/ai-edition/transcription/status";
 import { nativeBridgeClient } from "@/native";
 import { ColorField } from "./ColorField";
+import { FontFamilyField } from "./FontFamilyField";
 import styles from "./NewEditorShell.module.css";
 import { SliderCell, Toggle } from "./RightPanes";
 import { useTranscriptionLabel } from "./TranscriptionStatus";
 import { transcriptionBusyLabel } from "./transcriptionBusyLabel";
-
-/**
- * Every family the caption picker offers. Inter is bundled in
- * `src/styles/annotation-fonts.css`, Geist in `styles/fonts.css`. Adding a name here
- * that is not in one of those two sheets gets you a preview drawn in a fallback face.
- *
- * The list used to hold seventeen families; fifteen display/serif/mono faces were cut
- * in v2.1 because nothing shipped as a default used them and they cost ~3 MB of
- * committed woff2.
- *
- * KNOWN GAP, and it is not fixable from this file. Bundling a font makes it available
- * to the DOM, and the DOM is only the PREVIEW. Export text is rasterised natively and
- * every one of the three backends resolves a family against the SYSTEM font collection
- * only, with no path for a file we ship:
- *
- *   - `text_windows.rs` calls `CreateTextFormat(family, None, ...)`; the `None` is the
- *     `IDWriteFontCollection`, and NULL means the system collection.
- *   - `text_macos.rs` calls `CTFontCreateWithName(family, ...)`, which searches fonts
- *     registered with the OS.
- *   - `text_linux.rs` builds `FontSystem::new()`, whose fontdb is seeded from the system
- *     font directories; nothing calls `load_font_data`.
- *
- * Cutting the list did NOT close that gap, and it is important not to read it as having
- * done so: neither Inter nor Geist is a system font on Windows, macOS or a stock Linux
- * desktop, so BOTH remaining families are still substituted at export on any machine
- * that does not happen to have them installed. Every caption this app can produce is
- * exposed to it — there is no safe choice in the picker. Closing it needs a native
- * change per platform (a DirectWrite custom font collection,
- * `CTFontManagerRegisterFontsForURL`, `fontdb::load_font_data`) AND ttf/otf copies of
- * these files — the bundled woff2 is a web-only container none of the three can parse.
- */
-const CAPTION_FONTS = ["Inter", "Geist"] as const;
 
 /** Offered as translation targets. Codes double as the storage key. */
 const TRANSLATION_LANGUAGES: ReadonlyArray<{ code: string; label: string }> = [
@@ -437,18 +406,13 @@ export function CaptionsPane({ onClose }: { onClose?: () => void } = {}) {
 				<div className={styles.sectionLabel}>{t("captions.text")}</div>
 				<div className={styles.paneRow}>
 					<span className={styles.label}>{t("captions.font")}</span>
-					<select
+					<FontFamilyField
 						value={settings.fontFamily}
+						onChange={(family) => void set({ fontFamily: family })}
+						label={t("captions.font")}
 						disabled={disabled}
-						onChange={(e) => void set({ fontFamily: e.target.value })}
 						style={selectStyle}
-					>
-						{CAPTION_FONTS.map((font) => (
-							<option key={font} value={font} style={{ fontFamily: font }}>
-								{font}
-							</option>
-						))}
-					</select>
+					/>
 				</div>
 				<div className={styles.paneRow}>
 					<span className={styles.label}>{t("captions.bold")}</span>

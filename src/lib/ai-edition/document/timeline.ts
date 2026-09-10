@@ -942,6 +942,90 @@ export function duplicateClip(
 }
 
 /**
+ * Every row anchored to the clip that was just cut, copied onto BOTH halves.
+ *
+ * Not "decide which half each row belongs to" — that is interval arithmetic no caller of
+ * this has any business owning. One copy per half, and `rederiveRegionMs` clamps each to its
+ * own clip's source window and drops what has nothing left. A row wholly on one side
+ * survives once; one straddling the cut survives on both, which is what a zoom drawn across
+ * the moment of a cut actually means.
+ *
+ * Goes through `mapAllRegionCollections` rather than naming the collections itself, for the
+ * same reason `rederiveRegionMs` does: speed and camera-fullscreen live under `legacyEditor`
+ * and were missed by the hand-written list this replaced, so a speed region straddling an
+ * insertion came back truncated at the seam instead of covering both halves. Trims are
+ * appended separately because they store source seconds rather than derived ms and so are
+ * not part of that walk.
+ */
+export function fanOutAnchors(document: AxcutDocument, from: string, to: string): AxcutDocument {
+	const both = <T extends { id: string; clipId?: string }>(
+		rows: readonly T[] | undefined,
+		prefix: string,
+	): T[] =>
+		// `?? []` for the reason every other collection walk here has one: these keys are
+		// additive, so a document written before one of them — or hand-built, never through
+		// the schema — simply has none, and the schema defaults it back to an empty array.
+		(rows ?? []).flatMap((row) =>
+			row.clipId === from ? [row, { ...row, id: createId(prefix), clipId: to }] : [row],
+		);
+	const fanned = mapAllRegionCollections(document, both);
+	return {
+		...fanned,
+		timeline: { ...fanned.timeline, trimRanges: both(fanned.timeline.trimRanges, "trim") },
+	};
+}
+
+/**
+ * The single mutator for "cut the clip under this moment in two" — the edit the timeline's
+ * split button and its shortcut both perform.
+ *
+ * `rulerSec` is RAW timeline seconds, the clock the playhead runs on. The halves keep the
+ * same media, the same framing and the same total length: only the source window is divided,
+ * so nothing about playback changes until one half is moved, trimmed or deleted. That is the
+ * point of a split — it makes the two sides separately addressable, it does not itself edit
+ * the film.
+ *
+ * NOT `withClipsChanged`, unlike its neighbours: that runs `joinContiguous`, which folds
+ * media-contiguous same-asset neighbours into one clip — precisely what the two halves are.
+ * `userSplit` on the right half is what keeps the cut from being folded away by the NEXT
+ * structural edit; the plain resequence here is what keeps this call from undoing itself.
+ *
+ * A moment outside every clip, or within a millisecond of a clip edge, is a no-op: there is
+ * nothing to divide there and a half that short is not a clip.
+ */
+export function splitClipAt(document: AxcutDocument, rulerSec: number): AxcutDocument {
+	if (!Number.isFinite(rulerSec)) return document;
+	const target = document.timeline.clips.find(
+		(c) =>
+			rulerSec > c.timelineStartSec + REGION_WINDOW_EPSILON_SEC &&
+			rulerSec < c.timelineEndSec - REGION_WINDOW_EPSILON_SEC,
+	);
+	if (!target) return document;
+	// The clip's own shift between the ruler and its media, which is the whole of the
+	// conversion: a raw clip plays its source at 1:1, so the offset into the clip IS the
+	// offset into the source.
+	const cutSourceSec = target.sourceStartSec + (rulerSec - target.timelineStartSec);
+	const right: AxcutClip = {
+		...target,
+		id: createId("clip"),
+		sourceStartSec: cutSourceSec,
+		timelineStartSec: rulerSec,
+		userSplit: true,
+	};
+	const clips = document.timeline.clips.flatMap((c) =>
+		c.id === target.id
+			? [{ ...c, sourceEndSec: cutSourceSec, timelineEndSec: rulerSec }, right]
+			: [c],
+	);
+	const next: AxcutDocument = {
+		...document,
+		timeline: { ...document.timeline, clips: resequenceClips(clips) },
+	};
+	const anchored = fanOutAnchors(next, target.id, right.id);
+	return rederiveRegionMs(anchored, anchored.timeline.clips);
+}
+
+/**
  * The single mutator for "narrow/extend a clip's own source in/out" — the edit the
  * clip's Edit modal, the renderer op dispatcher, and the LLM's `setClipRange` tool all
  * perform. Extracted here (like `moveClip` / `duplicateClip`) so the recipe lives in one
@@ -1105,6 +1189,10 @@ function joinContiguous(clips: AxcutClip[]): {
  *  the whole of the guard. */
 function joinable(left: AxcutClip, right: AxcutClip): boolean {
 	return (
+		// A hand-made cut is the other one. `splitClipAt` leaves two halves that are
+		// media-contiguous by construction, so without this the very next structural edit
+		// would fold the user's cut away again.
+		!right.userSplit &&
 		left.assetId === right.assetId &&
 		left.sourceEndSec !== undefined &&
 		Math.abs(left.sourceEndSec - right.sourceStartSec) < 1e-6 &&

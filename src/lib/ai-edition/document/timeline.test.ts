@@ -22,6 +22,7 @@ import {
 	resolvePlaybackSegments,
 	restoreFullTimeline,
 	setClipSourceRange,
+	splitClipAt,
 	subtractInterval,
 	timelineIntervals,
 } from "./timeline";
@@ -1738,5 +1739,141 @@ describe("projectRawTimelineSecToPlayback with speed regions", () => {
 	it("ignores a nonsense rate rather than dividing by it", () => {
 		const speed = [{ startMs: 0, endMs: 4000, speed: 0 }];
 		expect(projectRawTimelineSecToPlayback([clip], [], 4, speed)).toBeCloseTo(4, 6);
+	});
+});
+
+describe("splitClipAt", () => {
+	// One clip covering source 0→10 at ruler 0→10, with one zoom straddling the cut, one
+	// zoom wholly on the right half, and a speed region (legacyEditor) straddling it too.
+	function docWithOneClip(): AxcutDocument {
+		return makeDoc({
+			timeline: {
+				clips: [makeClip({ id: "clip_a", sourceEndSec: 10, timelineEndSec: 10 })],
+				gaps: [],
+				trimRanges: [],
+				muteRanges: [],
+				speedRanges: [],
+				captionRanges: [],
+			},
+			zoomRanges: [
+				{
+					id: "zoom_across",
+					startMs: 3_000,
+					endMs: 7_000,
+					depth: 2,
+					focus: { cx: 0.5, cy: 0.5 },
+					clipId: "clip_a",
+					sourceStartSec: 3,
+					sourceEndSec: 7,
+				},
+				{
+					id: "zoom_right",
+					startMs: 8_000,
+					endMs: 9_000,
+					depth: 2,
+					focus: { cx: 0.5, cy: 0.5 },
+					clipId: "clip_a",
+					sourceStartSec: 8,
+					sourceEndSec: 9,
+				},
+			] as unknown as AxcutDocument["zoomRanges"],
+			legacyEditor: {
+				speedRegions: [
+					{
+						id: "speed_across",
+						startMs: 4_000,
+						endMs: 6_000,
+						speed: 2,
+						clipId: "clip_a",
+						sourceStartSec: 4,
+						sourceEndSec: 6,
+					},
+				],
+			},
+		});
+	}
+
+	it("cuts the clip under the moment in two, back-to-back, same total length", () => {
+		const next = splitClipAt(docWithOneClip(), 5);
+		const clips = next.timeline.clips;
+		expect(clips).toHaveLength(2);
+		expect(clips[0]).toMatchObject({
+			id: "clip_a",
+			sourceStartSec: 0,
+			sourceEndSec: 5,
+			timelineStartSec: 0,
+			timelineEndSec: 5,
+		});
+		expect(clips[1]).toMatchObject({
+			assetId: "asset_1",
+			sourceStartSec: 5,
+			sourceEndSec: 10,
+			timelineStartSec: 5,
+			timelineEndSec: 10,
+			userSplit: true,
+		});
+		expect(clips[1].id).not.toBe("clip_a");
+	});
+
+	it("keeps the halves apart through the next structural edit", () => {
+		// `joinContiguous` folds media-contiguous same-asset neighbours back into one; the
+		// `userSplit` flag is the only thing standing between a fresh cut and that fold, and
+		// every structural mutator runs it.
+		const split = splitClipAt(docWithOneClip(), 5);
+		const rejoined = duplicateClip(split, split.timeline.clips[0].id);
+		expect(rejoined.timeline.clips.filter((c) => c.userSplit)).toHaveLength(1);
+		expect(rejoined.timeline.clips).toHaveLength(3);
+	});
+
+	it("carries anchored rows across the cut instead of truncating them", () => {
+		const next = splitClipAt(docWithOneClip(), 5);
+		const [left, right] = next.timeline.clips;
+
+		// The zoom drawn across the cut now exists on BOTH halves, each clamped to the
+		// source its own half still holds — together they still cover source 3→7.
+		const across = next.zoomRanges.filter(
+			(z) => (z as unknown as { sourceStartSec: number }).sourceStartSec < 7,
+		) as unknown as Array<{
+			clipId: string;
+			sourceStartSec: number;
+			sourceEndSec: number;
+			startMs: number;
+			endMs: number;
+		}>;
+		expect(across).toHaveLength(2);
+		expect(across.map((z) => z.clipId).sort()).toEqual([left.id, right.id].sort());
+		expect(across.find((z) => z.clipId === left.id)).toMatchObject({
+			sourceStartSec: 3,
+			sourceEndSec: 5,
+			startMs: 3_000,
+			endMs: 5_000,
+		});
+		expect(across.find((z) => z.clipId === right.id)).toMatchObject({
+			sourceStartSec: 5,
+			sourceEndSec: 7,
+			startMs: 5_000,
+			endMs: 7_000,
+		});
+
+		// The zoom wholly on the right half survives exactly once, on the right half.
+		const right8to9 = next.zoomRanges.filter(
+			(z) => (z as unknown as { sourceStartSec: number }).sourceStartSec === 8,
+		);
+		expect(right8to9).toHaveLength(1);
+		expect((right8to9[0] as unknown as { clipId: string }).clipId).toBe(right.id);
+
+		// Speed lives under `legacyEditor`, which the hand-written fan-out list used to
+		// miss — it must survive the cut on both sides like every other modifier.
+		const speed = (next.legacyEditor as { speedRegions: Array<{ clipId: string }> }).speedRegions;
+		expect(speed).toHaveLength(2);
+		expect(speed.map((r) => r.clipId).sort()).toEqual([left.id, right.id].sort());
+	});
+
+	it("is a no-op outside a clip, on a clip edge, and on a non-finite moment", () => {
+		const doc = docWithOneClip();
+		expect(splitClipAt(doc, 0).timeline.clips).toHaveLength(1);
+		expect(splitClipAt(doc, 10).timeline.clips).toHaveLength(1);
+		expect(splitClipAt(doc, 12).timeline.clips).toHaveLength(1);
+		expect(splitClipAt(doc, Number.NaN).timeline.clips).toHaveLength(1);
 	});
 });

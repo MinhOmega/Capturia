@@ -57,6 +57,12 @@
 		"failed": "Não foi possível verificar atualizações.",
 		"downloadFailed": "Não foi possível baixar a atualização."
 	},
+	"errors": {
+		"unexpected": "Algo deu errado",
+		"unexpectedBody": "O Capturia encontrou um erro inesperado. Seu projeto está salvo — recarregar é seguro.",
+		"reference": "Referência: {{id}}",
+		"reportOpenFailed": "Não foi possível abrir a página de relatório de bugs."
+	},
 	"units": {
 		"pixelsPerSecond": "{{value}} pixels/s",
 		"pixels": "{{value}} pixels"

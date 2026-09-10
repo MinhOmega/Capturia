@@ -36,6 +36,15 @@ export interface LinuxCaptureConfig {
 	cursorMode: "metadata" | "embedded";
 	fps: number;
 	bitrate?: number;
+	/**
+	 * The user's capture-resolution cap, as a long edge. Absent records at
+	 * whatever the portal negotiated.
+	 *
+	 * A long edge and not a size: this side never learns the capture's dimensions
+	 * — on Wayland the compositor picks the source and only the helper sees the
+	 * result — so the shape has to be the helper's to preserve.
+	 */
+	maxLongEdge?: number;
 	audio: {
 		system: { enabled: boolean };
 		microphone: { enabled: boolean; deviceName?: string; gain: number };
@@ -129,6 +138,7 @@ export class LinuxNativeCaptureSession {
 			video: {
 				fps: this.config.fps,
 				...(this.config.bitrate ? { bitrate: this.config.bitrate } : {}),
+				...(this.config.maxLongEdge ? { maxLongEdge: this.config.maxLongEdge } : {}),
 			},
 			audio: this.config.audio,
 			...(this.config.deferStart ? { deferStart: true } : {}),

@@ -9,7 +9,8 @@
 		"addTrim": "新增剪輯 (T)",
 		"addAnnotation": "新增標註 (A)",
 		"addSpeed": "新增速度 (S)",
-		"addCameraFullscreen": "新增全螢幕攝影機 (C)"
+		"addCameraFullscreen": "新增全螢幕攝影機 (C)",
+		"splitAtPlayhead": "在播放磁頭處分割片段"
 	},
 	"hints": {
 		"pressZoom": "按 Z 新增縮放",
@@ -96,7 +97,8 @@
 		"smartCutsNoSpeech": "未偵測到語音",
 		"smartCutsFailed": "轉錄失敗 — 請在「媒體」中重試",
 		"addAudioTooltip": "新增音訊",
-		"addedWord": "已加入的字詞：「{{word}}」— 背後沒有聲音"
+		"addedWord": "已加入的字詞：「{{word}}」— 背後沒有聲音",
+		"splitNothingHere": "這裡沒有可分割的內容 — 請將播放磁頭移到片段內。"
 	},
 	"audio": {
 		"addVoiceover": "新增旁白",

@@ -57,6 +57,12 @@
 		"failed": "无法检查更新。",
 		"downloadFailed": "无法下载更新。"
 	},
+	"errors": {
+		"unexpected": "出现问题",
+		"unexpectedBody": "Capturia 遇到意外错误。您的项目已保存，重新加载是安全的。",
+		"reference": "参考编号：{{id}}",
+		"reportOpenFailed": "无法打开错误报告页面。"
+	},
 	"units": {
 		"pixelsPerSecond": "{{value}} 像素/秒",
 		"pixels": "{{value}} 像素"

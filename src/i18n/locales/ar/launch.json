@@ -90,11 +90,40 @@
 		"done": "تم",
 		"micLevel": "مستوى الإدخال",
 		"micHint": "تحدّث لاختبار الميكروفون",
+		"micGain": "تضخيم الميكروفون",
+		"countdown": "العد التنازلي (ثوانٍ)",
+		"countdownOff": "إيقاف",
+		"frameRate": "معدل الإطارات (إطار/ث)",
+		"resolution": "الدقة",
+		"resolutionAuto": "تلقائي",
+		"captureHint": "قلّل هذه القيم إذا فُقدت إطارات أثناء التسجيل.",
 		"noMicrophones": "لم يتم العثور على ميكروفون",
 		"preview": "معاينة",
 		"previewUnavailable": "المعاينة غير متاحة",
 		"about": "حول",
 		"version": "الإصدار {{version}}",
 		"checkingForUpdates": "جارٍ التحقق…"
+	},
+	"permissions": {
+		"title": "الأذونات",
+		"required": "مطلوب",
+		"row": {
+			"screen": "تسجيل الشاشة",
+			"camera": "الكاميرا",
+			"microphone": "الميكروفون",
+			"accessibility": "إمكانية الوصول"
+		},
+		"status": {
+			"granted": "مسموح",
+			"denied": "مرفوض",
+			"restricted": "مقيّد",
+			"not-determined": "لم يُطلب بعد",
+			"unknown": "غير معروف"
+		},
+		"action": {
+			"request": "طلب",
+			"open-settings": "فتح الإعدادات"
+		},
+		"relaunchHint": "يطبّق macOS إذن تسجيل الشاشة الجديد عند التشغيل التالي — أغلق Capturia وأعد فتحه."
 	}
 }

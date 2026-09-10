@@ -3,6 +3,7 @@
 	"customize": "Настроить",
 	"configurable": "Настраиваемые",
 	"fixed": "Фиксированные",
+	"options": "Параметры",
 	"pressKey": "Нажмите клавишу…",
 	"clickToChange": "Нажмите для изменения",
 	"pressEscToCancel": "Нажмите Esc для отмены",
@@ -17,12 +18,14 @@
 	"globalShortcutUnavailable": "Глобальные горячие клавиши недоступны в этом сеансе, поэтому эта комбинация не будет работать. Остальные сочетания не затронуты.",
 	"actions": {
 		"openApp": "Открыть приложение",
+		"stopRecording": "Остановить запись",
 		"addZoom": "Добавить масштабирование",
 		"addTrim": "Добавить обрезку",
 		"addSpeed": "Изменить скорость",
 		"addAnnotation": "Добавить аннотацию",
 		"addAudio": "Добавить аудио",
 		"addVoiceover": "Записать закадровый голос",
+		"splitAtPlayhead": "Разрезать по позиции воспроизведения",
 		"addKeyframe": "Добавить ключевой кадр",
 		"addCameraFullscreen": "Добавить камеру на весь экран",
 		"deleteSelected": "Удалить выбранное",
@@ -38,7 +41,17 @@
 		"deleteSelectedAlt": "Удалить выбранное (альт)",
 		"panTimeline": "Панорамирование таймлайна",
 		"zoomTimeline": "Масштабирование таймлайна",
+		"zoomTimelineIn": "Приблизить таймлайн",
+		"zoomTimelineOut": "Отдалить таймлайн",
 		"frameBack": "Кадр назад",
-		"frameForward": "Кадр вперёд"
+		"frameForward": "Кадр вперёд",
+		"reviewSpeedDown": "Уменьшить скорость просмотра",
+		"reviewSpeedUp": "Увеличить скорость просмотра"
+	},
+	"seekStep": {
+		"label": "Шаг стрелок",
+		"frame": "Один кадр",
+		"second": "Одна секунда",
+		"fiveSeconds": "Пять секунд"
 	}
 }

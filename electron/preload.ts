@@ -56,8 +56,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	},
 	exportFinish: (sessionId: string) =>
 		ipcRenderer.invoke("export:finish", sessionId) as Promise<{ outputPath: string }>,
-	exportCancel: (sessionId: string) =>
-		ipcRenderer.invoke("export:cancel", sessionId) as Promise<void>,
+	/** Ask the running native export to stop. Resolving here means main received the
+	 *  request, NOT that the export ended — the export's own promise rejects with
+	 *  `EXPORT_CANCELLED` a frame later, and that is the completion signal. */
+	exportCancel: () => ipcRenderer.invoke("export:cancel") as Promise<void>,
 	/** Export bench only (--bench=): tells main the run is over so it can quit. */
 	benchFinished: () => ipcRenderer.invoke("bench:finished") as Promise<void>,
 	/** Native (D3D) export progress — frames encoded so far, pushed at ~10 Hz max while
@@ -155,6 +157,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	},
 	requestNativeMacCursorAccess: () => {
 		return ipcRenderer.invoke("request-native-mac-cursor-access");
+	},
+	getCapturePermissions: () => {
+		return ipcRenderer.invoke("get-capture-permissions");
+	},
+	requestCapturePermission: (key: string) => {
+		return ipcRenderer.invoke("request-capture-permission", key);
 	},
 	storeRecordedVideo: (videoData: ArrayBuffer, fileName: string) => {
 		return ipcRenderer.invoke("store-recorded-video", videoData, fileName);
@@ -286,8 +294,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	openExternalUrl: (url: string) => {
 		return ipcRenderer.invoke("open-external-url", url);
 	},
-	pickExportSavePath: (fileName: string, exportFolder?: string) => {
-		return ipcRenderer.invoke("pick-export-save-path", fileName, exportFolder);
+	pickExportSavePath: (fileName: string, exportFolder?: string, aspectTokens?: string[]) => {
+		return ipcRenderer.invoke("pick-export-save-path", fileName, exportFolder, aspectTokens);
 	},
 	writeExportToPath: (videoData: ArrayBuffer, filePath: string) => {
 		return ipcRenderer.invoke("write-export-to-path", videoData, filePath);
@@ -428,11 +436,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	saveShortcuts: (shortcuts: unknown) => {
 		return ipcRenderer.invoke("save-shortcuts", shortcuts);
 	},
-	updateGlobalShortcut: (binding: ShortcutBinding) => {
-		return ipcRenderer.invoke("update-global-shortcut", binding);
+	updateGlobalShortcuts: (bindings: Record<string, ShortcutBinding>) => {
+		return ipcRenderer.invoke("update-global-shortcuts", bindings);
 	},
-	getGlobalShortcutStatus: () => {
-		return ipcRenderer.invoke("get-global-shortcut-status");
+	getGlobalShortcutStatuses: () => {
+		return ipcRenderer.invoke("get-global-shortcut-statuses");
 	},
 	setLocale: (locale: string) => {
 		return ipcRenderer.invoke("set-locale", locale);

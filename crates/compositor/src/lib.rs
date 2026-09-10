@@ -29,12 +29,18 @@
 
 pub mod audio;
 pub mod audio_jobs;
+// Annulation d'un export : drapeau partagé, testé dans la boucle par frame de
+// `timeline_walk` — donc valable pour les trois pipelines et l'export GIF.
+pub mod cancel;
 pub mod config;
 pub mod cursor;
 pub mod export_probe;
 pub mod ffi;
 pub mod frame_geometry;
 pub mod gif_export;
+// Nettoyage du fichier de sortie sur export raté. Multiplateforme : `pipeline_linux`,
+// `pipeline_macos`, `pipeline_windows` et `gif_export` en partagent la seule copie.
+pub mod partial_output;
 pub mod regions;
 // Multiplateforme à dessein : n'utilise que libavformat (liée sur les trois
 // cibles) et le shim C. Seul Linux l'appelle aujourd'hui, parce que c'est la

@@ -3,6 +3,7 @@
 	"customize": "Customize",
 	"configurable": "Configurable",
 	"fixed": "Fixed",
+	"options": "Options",
 	"pressKey": "Press a key…",
 	"clickToChange": "Click to change",
 	"pressEscToCancel": "Press Esc to cancel",
@@ -17,12 +18,14 @@
 	"globalShortcutUnavailable": "Global shortcuts aren't available in this session, so this one won't work. Every other shortcut is unaffected.",
 	"actions": {
 		"openApp": "Open App",
+		"stopRecording": "Stop Recording",
 		"addZoom": "Add Zoom",
 		"addTrim": "Add Trim",
 		"addSpeed": "Add Speed",
 		"addAnnotation": "Add Annotation",
 		"addAudio": "Add Audio",
 		"addVoiceover": "Record Voiceover",
+		"splitAtPlayhead": "Split at Playhead",
 		"addKeyframe": "Add Keyframe",
 		"addCameraFullscreen": "Add Full Camera",
 		"deleteSelected": "Delete Selected",
@@ -38,7 +41,17 @@
 		"deleteSelectedAlt": "Delete Selected (alt)",
 		"panTimeline": "Pan Timeline",
 		"zoomTimeline": "Zoom Timeline",
+		"zoomTimelineIn": "Zoom Timeline In",
+		"zoomTimelineOut": "Zoom Timeline Out",
 		"frameBack": "Frame Back",
-		"frameForward": "Frame Forward"
+		"frameForward": "Frame Forward",
+		"reviewSpeedDown": "Review Speed Down",
+		"reviewSpeedUp": "Review Speed Up"
+	},
+	"seekStep": {
+		"label": "Arrow key step",
+		"frame": "One frame",
+		"second": "One second",
+		"fiveSeconds": "Five seconds"
 	}
 }

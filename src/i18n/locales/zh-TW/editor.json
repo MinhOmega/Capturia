@@ -201,7 +201,15 @@
 		"failedToWriteFile": "寫入檔案失敗",
 		"qualityUpscaleWarning": "放大",
 		"exportedVideoOf": "的影片已匯出，耗時",
-		"nothingToExport": "沒有可匯出的內容 — 時間軸為空。"
+		"nothingToExport": "沒有可匯出的內容 — 時間軸為空。",
+		"aspectRatios": "長寬比",
+		"aspectRatiosHint": "將匯出一個檔案。",
+		"aspectRatiosBatchHint": "將並排匯出 {{count}} 個檔案。",
+		"pickAnAspectRatio": "請至少選擇一種長寬比。",
+		"batchProgress": "檔案 {{current}} / {{total}} · {{ratio}}",
+		"batchExportedCount": "已匯出 {{count}} 個檔案",
+		"batchCancelledAfter": "已取消 — 已完成的 {{count}} 個檔案將保留。",
+		"batchPartial": "已完成 {{count}} 個：{{files}}"
 	},
 	"inspector": {
 		"resetFocusPoint": "重設焦點",
@@ -348,6 +356,8 @@
 		"playPauseTitle": "播放 / 暫停（空白鍵）",
 		"previousClip": "上一個片段",
 		"nextClip": "下一個片段",
+		"reviewSpeedSet": "預覽速度 {{rate}}×",
+		"reviewSpeedReset": "預覽速度 — 點擊恢復 1×",
 		"loop": "循環",
 		"seekVideo": "拖曳影片進度"
 	},

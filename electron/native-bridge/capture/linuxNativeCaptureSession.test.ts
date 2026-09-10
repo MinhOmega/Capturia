@@ -60,9 +60,10 @@ class FakeHelper extends EventEmitter {
 const spawnMock = vi.mocked(spawn);
 let helper: FakeHelper;
 
-function newSession(deferStart = false) {
+function newSession(deferStart = false, maxLongEdge?: number) {
 	return new LinuxNativeCaptureSession({
 		...(deferStart ? { deferStart: true } : {}),
+		...(maxLongEdge ? { maxLongEdge } : {}),
 		outputPath: "/tmp/recording.mp4",
 		cursorMode: "metadata",
 		fps: 30,
@@ -148,6 +149,21 @@ describe("LinuxNativeCaptureSession", () => {
 
 		expect(request).not.toHaveProperty("restoreToken");
 		expect(JSON.stringify(request)).not.toContain("restoreToken");
+	});
+
+	/**
+	 * The capture settings are baked into the spawn arguments, so a cap that never
+	 * reaches them records at full resolution while the app believes otherwise.
+	 */
+	it("passes the resolution cap to the helper, and omits it when there is none", async () => {
+		await startReady(newSession());
+		const uncapped = JSON.parse((spawnMock.mock.calls[0][1] as string[])[0]);
+		expect(uncapped.video).not.toHaveProperty("maxLongEdge");
+
+		spawnMock.mockClear();
+		await startReady(newSession(false, 1920));
+		const capped = JSON.parse((spawnMock.mock.calls[0][1] as string[])[0]);
+		expect(capped.video).toMatchObject({ fps: 30, maxLongEdge: 1920 });
 	});
 
 	it("reports the source kind the portal granted", async () => {

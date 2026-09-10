@@ -9,7 +9,8 @@
 		"addTrim": "Thêm Cắt (T)",
 		"addAnnotation": "Thêm Chú thích (A)",
 		"addSpeed": "Thêm Tốc độ (S)",
-		"addCameraFullscreen": "Thêm Camera Toàn màn hình (C)"
+		"addCameraFullscreen": "Thêm Camera Toàn màn hình (C)",
+		"splitAtPlayhead": "Cắt clip tại đầu phát"
 	},
 	"hints": {
 		"pressZoom": "Nhấn Z để thêm thu phóng",
@@ -96,7 +97,8 @@
 		"smartCutsNoSpeech": "Không phát hiện giọng nói",
 		"smartCutsFailed": "Phiên âm thất bại — thử lại trong Media",
 		"addAudioTooltip": "Thêm âm thanh",
-		"addedWord": "Từ đã thêm: \"{{word}}\" — không có âm thanh phía sau"
+		"addedWord": "Từ đã thêm: \"{{word}}\" — không có âm thanh phía sau",
+		"splitNothingHere": "Không có gì để cắt ở đây — hãy đưa đầu phát vào trong một clip."
 	},
 	"audio": {
 		"addVoiceover": "Thêm thuyết minh",

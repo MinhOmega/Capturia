@@ -90,11 +90,40 @@
 		"done": "Fatto",
 		"micLevel": "Livello di ingresso",
 		"micHint": "Parla per testare il microfono",
+		"micGain": "Guadagno microfono",
+		"countdown": "Conto alla rovescia (secondi)",
+		"countdownOff": "Nessuno",
+		"frameRate": "Frequenza fotogrammi (fps)",
+		"resolution": "Risoluzione",
+		"resolutionAuto": "Auto",
+		"captureHint": "Riducile se durante la registrazione vengono persi fotogrammi.",
 		"noMicrophones": "Nessun microfono trovato",
 		"preview": "Anteprima",
 		"previewUnavailable": "Anteprima non disponibile",
 		"about": "Info",
 		"version": "Versione {{version}}",
 		"checkingForUpdates": "Controllo…"
+	},
+	"permissions": {
+		"title": "Autorizzazioni",
+		"required": "Obbligatoria",
+		"row": {
+			"screen": "Registrazione schermo",
+			"camera": "Fotocamera",
+			"microphone": "Microfono",
+			"accessibility": "Accessibilità"
+		},
+		"status": {
+			"granted": "Consentito",
+			"denied": "Negato",
+			"restricted": "Limitato",
+			"not-determined": "Non richiesto",
+			"unknown": "Sconosciuto"
+		},
+		"action": {
+			"request": "Richiedi",
+			"open-settings": "Apri Impostazioni"
+		},
+		"relaunchHint": "macOS applica una nuova autorizzazione alla registrazione dello schermo al prossimo avvio: chiudi e riapri Capturia."
 	}
 }

@@ -9,7 +9,8 @@
 		"addTrim": "Adicionar Recorte (T)",
 		"addAnnotation": "Adicionar Anotação (A)",
 		"addSpeed": "Adicionar Velocidade (S)",
-		"addCameraFullscreen": "Adicionar Câmera em Tela Cheia (C)"
+		"addCameraFullscreen": "Adicionar Câmera em Tela Cheia (C)",
+		"splitAtPlayhead": "Dividir o clipe na cabeça de reprodução"
 	},
 	"hints": {
 		"pressZoom": "Pressione Z para adicionar zoom",
@@ -96,7 +97,8 @@
 		"smartCutsNoSpeech": "Nenhuma fala detectada",
 		"smartCutsFailed": "Falha na transcrição — tente de novo em Mídia",
 		"addAudioTooltip": "Adicionar áudio",
-		"addedWord": "Palavra adicionada: \"{{word}}\" — sem áudio por trás"
+		"addedWord": "Palavra adicionada: \"{{word}}\" — sem áudio por trás",
+		"splitNothingHere": "Não há nada para dividir aqui — coloque a cabeça de reprodução dentro de um clipe."
 	},
 	"audio": {
 		"addVoiceover": "Adicionar narração",

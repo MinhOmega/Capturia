@@ -1,5 +1,6 @@
 export const SHORTCUT_ACTIONS = [
 	"openApp",
+	"stopRecording",
 	"addZoom",
 	"addTrim",
 	"addSpeed",
@@ -7,6 +8,7 @@ export const SHORTCUT_ACTIONS = [
 	"addAnnotation",
 	"addAudio",
 	"addVoiceover",
+	"splitAtPlayhead",
 	"deleteSelected",
 	"playPause",
 	"copySelected",
@@ -26,7 +28,24 @@ export interface ShortcutBinding {
 export type ShortcutsConfig = Record<ShortcutAction, ShortcutBinding>;
 
 /**
- * Outcome of registering the openApp GLOBAL shortcut (the only one the OS owns).
+ * The actions the OS owns rather than the renderer.
+ *
+ * These are the only ones that work while the app is not focused, which is also
+ * the only reason to spend a global key on them: `openApp` is unreachable by
+ * definition when the window is hidden, and a stop hotkey is worthless if you have
+ * to click the app first to use it. Everything else in `SHORTCUT_ACTIONS` is an
+ * editor keydown and needs no OS registration.
+ */
+export const GLOBAL_SHORTCUT_ACTIONS = ["openApp", "stopRecording"] as const;
+
+export type GlobalShortcutAction = (typeof GLOBAL_SHORTCUT_ACTIONS)[number];
+
+export function isGlobalShortcutAction(action: ShortcutAction): action is GlobalShortcutAction {
+	return (GLOBAL_SHORTCUT_ACTIONS as readonly string[]).includes(action);
+}
+
+/**
+ * Outcome of registering one GLOBAL shortcut.
  *
  * Four states rather than a boolean because the two failures need different words:
  * "conflict" is one key the user can change, "unavailable" is the whole session and
@@ -35,7 +54,10 @@ export type ShortcutsConfig = Record<ShortcutAction, ShortcutBinding>;
  */
 export type ShortcutStatus = "registered" | "unchanged" | "conflict" | "unavailable";
 
-/** Whether the openApp hotkey actually works right now. */
+/** What the last registration achieved, per global action. */
+export type GlobalShortcutStatuses = Record<GlobalShortcutAction, ShortcutStatus>;
+
+/** Whether a global hotkey actually works right now. */
 export function isGlobalShortcutLive(status: ShortcutStatus): boolean {
 	return status === "registered" || status === "unchanged";
 }
@@ -83,6 +105,21 @@ export const FIXED_SHORTCUTS: FixedShortcut[] = [
 		bindings: [],
 	},
 	{ i18nKey: "zoomTimeline", label: "Zoom Timeline", display: "Ctrl + Scroll", bindings: [] },
+	// The keyboard half of the same gesture. Unlike the wheel it has no cursor to zoom
+	// around, so it zooms around the PLAYHEAD — which is also the moment you are about to
+	// cut, and the reason a keyboard zoom is worth having at all.
+	{
+		i18nKey: "zoomTimelineIn",
+		label: "Zoom Timeline In",
+		display: "Ctrl + =",
+		bindings: [{ key: "=", ctrl: true }],
+	},
+	{
+		i18nKey: "zoomTimelineOut",
+		label: "Zoom Timeline Out",
+		display: "Ctrl + -",
+		bindings: [{ key: "-", ctrl: true }],
+	},
 	{ i18nKey: "frameBack", label: "Frame Back", display: "←", bindings: [{ key: "arrowleft" }] },
 	{
 		i18nKey: "frameForward",
@@ -90,6 +127,14 @@ export const FIXED_SHORTCUTS: FixedShortcut[] = [
 		display: "→",
 		bindings: [{ key: "arrowright" }],
 	},
+	// Review speed — how fast you WATCH, not a speed region. See timeline/transport.ts.
+	{
+		i18nKey: "reviewSpeedDown",
+		label: "Review Speed Down",
+		display: "[",
+		bindings: [{ key: "[" }],
+	},
+	{ i18nKey: "reviewSpeedUp", label: "Review Speed Up", display: "]", bindings: [{ key: "]" }] },
 ];
 
 export type ShortcutConflict =
@@ -125,6 +170,9 @@ export function findConflict(
 
 export const DEFAULT_SHORTCUTS: ShortcutsConfig = {
 	openApp: { key: "o", ctrl: true, shift: true },
+	// Global, so it can stop a take while the app is behind whatever is being
+	// recorded — which is the only state a recording is ever watched from.
+	stopRecording: { key: "s", ctrl: true, shift: true },
 	addZoom: { key: "z" },
 	addTrim: { key: "t" },
 	addSpeed: { key: "s" },
@@ -133,6 +181,9 @@ export const DEFAULT_SHORTCUTS: ShortcutsConfig = {
 	addAudio: { key: "m" },
 	// Record a voiceover over the timeline from the playhead.
 	addVoiceover: { key: "v" },
+	// Not the bare `S` the old fork used for its scissors mode: `S` is Add Speed here, and
+	// a default that has to steal a key from an existing default is not a default.
+	splitAtPlayhead: { key: "k", ctrl: true },
 	deleteSelected: { key: "d", ctrl: true },
 	playPause: { key: " " },
 	copySelected: { key: "c", ctrl: true },
@@ -141,6 +192,7 @@ export const DEFAULT_SHORTCUTS: ShortcutsConfig = {
 
 export const SHORTCUT_LABELS: Record<ShortcutAction, string> = {
 	openApp: "Open App",
+	stopRecording: "Stop Recording",
 	addZoom: "Add Zoom",
 	addTrim: "Add Trim",
 	addSpeed: "Add Speed",
@@ -148,6 +200,7 @@ export const SHORTCUT_LABELS: Record<ShortcutAction, string> = {
 	addAnnotation: "Add Annotation",
 	addAudio: "Add Audio",
 	addVoiceover: "Record Voiceover",
+	splitAtPlayhead: "Split at Playhead",
 	deleteSelected: "Delete Selected",
 	playPause: "Play / Pause",
 	copySelected: "Copy Selected",
@@ -168,6 +221,23 @@ export function matchesShortcut(
 	if (e.altKey !== !!binding.alt) return false;
 
 	return true;
+}
+
+/**
+ * Does `e` match any binding of the FIXED shortcut named `i18nKey`?
+ *
+ * So a handler and the dialog's conflict table read the same row instead of holding two
+ * copies of one key. The configurable actions already had that through `shortcuts[action]`;
+ * the fixed ones were being re-typed at their handlers, which is how a key can end up
+ * reserved in the dialog and dead in the editor.
+ */
+export function matchesFixedShortcut(
+	e: KeyboardEvent,
+	i18nKey: string,
+	isMacPlatform: boolean,
+): boolean {
+	const fixed = FIXED_SHORTCUTS.find((f) => f.i18nKey === i18nKey);
+	return !!fixed?.bindings.some((binding) => matchesShortcut(e, binding, isMacPlatform));
 }
 
 /** True when the event target is a text-editing surface where shortcuts should not fire. */

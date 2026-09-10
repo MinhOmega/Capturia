@@ -90,11 +90,40 @@
 		"done": "Готово",
 		"micLevel": "Уровень входа",
 		"micHint": "Скажите что-нибудь, чтобы проверить микрофон",
+		"micGain": "Усиление микрофона",
+		"countdown": "Обратный отсчёт (секунды)",
+		"countdownOff": "Выкл.",
+		"frameRate": "Частота кадров (кадр/с)",
+		"resolution": "Разрешение",
+		"resolutionAuto": "Авто",
+		"captureHint": "Уменьшите эти значения, если при записи теряются кадры.",
 		"noMicrophones": "Микрофон не найден",
 		"preview": "Предпросмотр",
 		"previewUnavailable": "Предпросмотр недоступен",
 		"about": "О программе",
 		"version": "Версия {{version}}",
 		"checkingForUpdates": "Проверка…"
+	},
+	"permissions": {
+		"title": "Разрешения",
+		"required": "Обязательно",
+		"row": {
+			"screen": "Запись экрана",
+			"camera": "Камера",
+			"microphone": "Микрофон",
+			"accessibility": "Универсальный доступ"
+		},
+		"status": {
+			"granted": "Разрешено",
+			"denied": "Отклонено",
+			"restricted": "Ограничено",
+			"not-determined": "Запрос не отправлен",
+			"unknown": "Неизвестно"
+		},
+		"action": {
+			"request": "Запросить",
+			"open-settings": "Открыть настройки"
+		},
+		"relaunchHint": "macOS применяет новое разрешение на запись экрана при следующем запуске — закройте и снова откройте Capturia."
 	}
 }

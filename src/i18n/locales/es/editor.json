@@ -201,7 +201,15 @@
 		"failedToWriteFile": "No se pudo escribir el archivo",
 		"qualityUpscaleWarning": "Upscaling",
 		"exportedVideoOf": "de vídeo exportado en",
-		"nothingToExport": "Nada que exportar: la línea de tiempo está vacía."
+		"nothingToExport": "Nada que exportar: la línea de tiempo está vacía.",
+		"aspectRatios": "Relaciones de aspecto",
+		"aspectRatiosHint": "Se exportará un archivo.",
+		"aspectRatiosBatchHint": "Se exportarán {{count}} archivos, uno junto a otro.",
+		"pickAnAspectRatio": "Elige al menos una relación de aspecto.",
+		"batchProgress": "Archivo {{current}} de {{total}} · {{ratio}}",
+		"batchExportedCount": "{{count}} archivos exportados",
+		"batchCancelledAfter": "Cancelado: se conservaron {{count}} archivo(s) ya terminados.",
+		"batchPartial": "{{count}} ya terminados: {{files}}"
 	},
 	"inspector": {
 		"resetFocusPoint": "Restablecer punto de enfoque",
@@ -348,6 +356,8 @@
 		"playPauseTitle": "Reproducir / Pausar (Espacio)",
 		"previousClip": "Clip anterior",
 		"nextClip": "Clip siguiente",
+		"reviewSpeedSet": "Velocidad de revisión {{rate}}×",
+		"reviewSpeedReset": "Velocidad de revisión: haz clic para volver a 1×",
 		"loop": "Bucle",
 		"seekVideo": "Desplazarse por el vídeo"
 	},

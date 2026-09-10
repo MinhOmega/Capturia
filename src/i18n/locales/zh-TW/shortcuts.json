@@ -3,6 +3,7 @@
 	"customize": "自訂",
 	"configurable": "可設定",
 	"fixed": "固定",
+	"options": "選項",
 	"pressKey": "請按下按鍵…",
 	"clickToChange": "點擊以變更",
 	"pressEscToCancel": "按 Esc 取消",
@@ -17,12 +18,14 @@
 	"globalShortcutUnavailable": "此工作階段不支援全域快捷鍵，因此該快捷鍵將無法使用。其他快捷鍵不受影響。",
 	"actions": {
 		"openApp": "開啟應用程式",
+		"stopRecording": "停止錄製",
 		"addZoom": "新增縮放",
 		"addTrim": "新增剪輯",
 		"addSpeed": "新增速度",
 		"addAnnotation": "新增標註",
 		"addAudio": "新增音訊",
 		"addVoiceover": "錄製配音",
+		"splitAtPlayhead": "在播放磁頭處分割",
 		"addKeyframe": "新增關鍵影格",
 		"addCameraFullscreen": "新增全螢幕攝影機",
 		"deleteSelected": "刪除所選",
@@ -38,7 +41,17 @@
 		"deleteSelectedAlt": "刪除所選（替代）",
 		"panTimeline": "平移時間軸",
 		"zoomTimeline": "縮放時間軸",
+		"zoomTimelineIn": "放大時間軸",
+		"zoomTimelineOut": "縮小時間軸",
 		"frameBack": "上一影格",
-		"frameForward": "下一影格"
+		"frameForward": "下一影格",
+		"reviewSpeedDown": "降低預覽速度",
+		"reviewSpeedUp": "提高預覽速度"
+	},
+	"seekStep": {
+		"label": "方向鍵步進",
+		"frame": "一格",
+		"second": "一秒",
+		"fiveSeconds": "五秒"
 	}
 }

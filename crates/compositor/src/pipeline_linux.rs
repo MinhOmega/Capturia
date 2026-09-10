@@ -35,6 +35,7 @@ use crate::config::Cfg;
 use crate::d3d::Gpu;
 use crate::ffi::AVFrame;
 use crate::linux_decode::SwDecoder;
+use crate::partial_output::discard_partial_output;
 use crate::timeline_walk::NextFrameTime;
 use crate::linux_frames::CpuFrames;
 
@@ -834,7 +835,27 @@ impl Sink {
     }
 }
 
+/// Export multiclip : rend la timeline (clips ordonnes, avec trims) en un seul MP4.
+///
+/// Facade de nettoyage : un echec ne doit pas laisser de MP4 tronque a la
+/// destination choisie par l'utilisateur. Meme decoupage facade/`_inner` que
+/// `pipeline_windows::run_composited_multi` et `gif_export::export_gif` — voir
+/// `partial_output` pour le pourquoi.
 pub fn run_composited_multi(
+    clips: &[ClipSource],
+    out: &str,
+    gpu: &Gpu,
+    comp: &crate::compositor::Compositor,
+    cfg: &Cfg,
+    params: &ExportParams,
+    progress: &mut dyn FnMut(u64),
+) -> Result<Stats> {
+    discard_partial_output(out, || {
+        run_composited_multi_inner(clips, out, gpu, comp, cfg, params, progress)
+    })
+}
+
+fn run_composited_multi_inner(
     clips: &[ClipSource],
     out: &str,
     gpu: &Gpu,

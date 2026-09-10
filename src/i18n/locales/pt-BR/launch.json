@@ -90,11 +90,40 @@
 		"done": "Concluído",
 		"micLevel": "Nível de entrada",
 		"micHint": "Fale para testar seu microfone",
+		"micGain": "Ganho do microfone",
+		"countdown": "Contagem regressiva (segundos)",
+		"countdownOff": "Desligado",
+		"frameRate": "Taxa de quadros (fps)",
+		"resolution": "Resolução",
+		"resolutionAuto": "Automática",
+		"captureHint": "Reduza estes valores se quadros forem perdidos durante a gravação.",
 		"noMicrophones": "Nenhum microfone encontrado",
 		"preview": "Pré-visualização",
 		"previewUnavailable": "Pré-visualização indisponível",
 		"about": "Sobre",
 		"version": "Versão {{version}}",
 		"checkingForUpdates": "Verificando…"
+	},
+	"permissions": {
+		"title": "Permissões",
+		"required": "Obrigatória",
+		"row": {
+			"screen": "Gravação de tela",
+			"camera": "Câmera",
+			"microphone": "Microfone",
+			"accessibility": "Acessibilidade"
+		},
+		"status": {
+			"granted": "Permitido",
+			"denied": "Negado",
+			"restricted": "Restrito",
+			"not-determined": "Ainda não solicitado",
+			"unknown": "Desconhecido"
+		},
+		"action": {
+			"request": "Solicitar",
+			"open-settings": "Abrir Ajustes"
+		},
+		"relaunchHint": "O macOS aplica uma nova permissão de gravação de tela na próxima inicialização — feche e reabra o Capturia."
 	}
 }

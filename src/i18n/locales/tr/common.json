@@ -57,6 +57,12 @@
 		"failed": "Güncellemeler denetlenemedi.",
 		"downloadFailed": "Güncelleme indirilemedi."
 	},
+	"errors": {
+		"unexpected": "Bir şeyler ters gitti",
+		"unexpectedBody": "Capturia beklenmeyen bir hatayla karşılaştı. Projeniz kaydedildi — yeniden yüklemek güvenli.",
+		"reference": "Referans: {{id}}",
+		"reportOpenFailed": "Hata bildirim sayfası açılamadı."
+	},
 	"units": {
 		"pixelsPerSecond": "{{value}} piks/sn",
 		"pixels": "{{value}} piks"

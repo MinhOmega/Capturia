@@ -90,11 +90,40 @@
 		"done": "Terminé",
 		"micLevel": "Niveau d'entrée",
 		"micHint": "Parlez pour tester votre microphone",
+		"micGain": "Gain du microphone",
+		"countdown": "Compte à rebours (secondes)",
+		"countdownOff": "Aucun",
+		"frameRate": "Fréquence d'images (fps)",
+		"resolution": "Résolution",
+		"resolutionAuto": "Auto",
+		"captureHint": "Réduisez-les si des images sont perdues pendant l'enregistrement.",
 		"noMicrophones": "Aucun microphone détecté",
 		"preview": "Aperçu",
 		"previewUnavailable": "Aperçu indisponible",
 		"about": "À propos",
 		"version": "Version {{version}}",
 		"checkingForUpdates": "Recherche…"
+	},
+	"permissions": {
+		"title": "Autorisations",
+		"required": "Requis",
+		"row": {
+			"screen": "Enregistrement de l’écran",
+			"camera": "Caméra",
+			"microphone": "Microphone",
+			"accessibility": "Accessibilité"
+		},
+		"status": {
+			"granted": "Autorisé",
+			"denied": "Refusé",
+			"restricted": "Restreint",
+			"not-determined": "Pas encore demandé",
+			"unknown": "Inconnu"
+		},
+		"action": {
+			"request": "Demander",
+			"open-settings": "Ouvrir les Réglages"
+		},
+		"relaunchHint": "macOS applique une nouvelle autorisation d’enregistrement de l’écran au prochain lancement : quittez puis rouvrez Capturia."
 	}
 }

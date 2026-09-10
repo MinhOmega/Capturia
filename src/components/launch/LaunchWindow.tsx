@@ -105,6 +105,14 @@ export function LaunchWindow() {
 		setWebcamDeviceName,
 		cursorCaptureMode,
 		setCursorCaptureMode,
+		captureFrameRate,
+		setCaptureFrameRate,
+		captureResolution,
+		setCaptureResolution,
+		countdownSeconds,
+		setCountdownSeconds,
+		microphoneGain,
+		setMicrophoneGain,
 		softwareEncoderFallbackNoticeVisible,
 		dismissSoftwareEncoderFallbackNotice,
 		addRecordingMarker,
@@ -893,6 +901,13 @@ export function LaunchWindow() {
 			camera: t("webcam.cameraDevice"),
 			micLevel: t("deviceSettings.micLevel"),
 			micHint: t("deviceSettings.micHint"),
+			micGain: t("deviceSettings.micGain"),
+			countdown: t("deviceSettings.countdown"),
+			countdownOff: t("deviceSettings.countdownOff"),
+			frameRate: t("deviceSettings.frameRate"),
+			resolution: t("deviceSettings.resolution"),
+			resolutionAuto: t("deviceSettings.resolutionAuto"),
+			captureHint: t("deviceSettings.captureHint"),
 			noMicrophones: t("deviceSettings.noMicrophones"),
 			searching: t("webcam.searching"),
 			noCameras: t("webcam.noneFound"),
@@ -1104,6 +1119,10 @@ export function LaunchWindow() {
 								cameraDevices={cameraDevices}
 								activeMicId={microphoneDeviceId || selectedMicId}
 								activeCameraId={webcamDeviceId || selectedCameraId}
+								captureFrameRate={captureFrameRate}
+								captureResolution={captureResolution}
+								countdownSeconds={countdownSeconds}
+								microphoneGain={microphoneGain}
 								cameraLoading={isCameraDevicesLoading}
 								cameraError={cameraDevicesError}
 								labels={deviceSettingsLabels}
@@ -1116,6 +1135,10 @@ export function LaunchWindow() {
 								checkingForUpdates={isCheckingForUpdates}
 								onSelectMic={handleSelectMicDevice}
 								onSelectCamera={handleSelectCameraDevice}
+								onSelectFrameRate={setCaptureFrameRate}
+								onSelectResolution={setCaptureResolution}
+								onSelectCountdown={setCountdownSeconds}
+								onSelectMicGain={setMicrophoneGain}
 								onCheckForUpdates={handleCheckForUpdates}
 								onClose={closeDeviceSettings}
 								panelRef={setPopoverEl}

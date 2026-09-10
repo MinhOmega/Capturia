@@ -201,7 +201,15 @@
 		"failedToWriteFile": "Dosya yazılamadı",
 		"qualityUpscaleWarning": "Upscale",
 		"exportedVideoOf": "video şu sürede dışa aktarıldı:",
-		"nothingToExport": "Dışa aktarılacak bir şey yok — zaman çizelgesi boş."
+		"nothingToExport": "Dışa aktarılacak bir şey yok — zaman çizelgesi boş.",
+		"aspectRatios": "En boy oranları",
+		"aspectRatiosHint": "Tek bir dosya dışa aktarılacak.",
+		"aspectRatiosBatchHint": "{{count}} dosya yan yana dışa aktarılacak.",
+		"pickAnAspectRatio": "En az bir en boy oranı seçin.",
+		"batchProgress": "Dosya {{current}} / {{total}} · {{ratio}}",
+		"batchExportedCount": "{{count}} dosya dışa aktarıldı",
+		"batchCancelledAfter": "İptal edildi — tamamlanan {{count}} dosya korundu.",
+		"batchPartial": "{{count}} dosya tamamlandı: {{files}}"
 	},
 	"inspector": {
 		"resetFocusPoint": "Odak noktasını sıfırla",
@@ -348,6 +356,8 @@
 		"playPauseTitle": "Oynat / Duraklat (Boşluk)",
 		"previousClip": "Önceki klip",
 		"nextClip": "Sonraki klip",
+		"reviewSpeedSet": "İnceleme hızı {{rate}}×",
+		"reviewSpeedReset": "İnceleme hızı — 1× değerine dönmek için tıklayın",
 		"loop": "Döngü",
 		"seekVideo": "Videoda gezin"
 	},

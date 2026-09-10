@@ -1,9 +1,20 @@
 import { Check, X } from "lucide-react";
 import { memo, useEffect, useRef } from "react";
+import {
+	CAPTURE_FRAME_RATES,
+	CAPTURE_RESOLUTION_PRESETS,
+	type CaptureFrameRate,
+	type CaptureResolutionPreset,
+	COUNTDOWN_OPTIONS,
+	type CountdownSeconds,
+	MICROPHONE_GAINS,
+	type MicrophoneGain,
+} from "@/lib/captureSettings";
 import { useAudioLevelMeter } from "../../hooks/useAudioLevelMeter";
 import type { CameraDevice } from "../../hooks/useCameraDevices";
 import { useCameraPreviewStream } from "../../hooks/useCameraPreviewStream";
 import type { MicrophoneDevice } from "../../hooks/useMicrophoneDevices";
+import { HudPermissions } from "./HudPermissions";
 import styles from "./LaunchWindow.module.css";
 
 const LEVEL_SEGMENTS = 12;
@@ -16,6 +27,13 @@ export interface HudDeviceSettingsLabels {
 	camera: string;
 	micLevel: string;
 	micHint: string;
+	micGain: string;
+	countdown: string;
+	countdownOff: string;
+	frameRate: string;
+	resolution: string;
+	resolutionAuto: string;
+	captureHint: string;
 	noMicrophones: string;
 	searching: string;
 	noCameras: string;
@@ -41,6 +59,29 @@ const LevelMeter = memo(function LevelMeter({ level }: { level: number }) {
 		</div>
 	);
 });
+
+/** One value in a capture-settings row. Four of these fit where four full-width rows would not. */
+function SegmentButton({
+	label,
+	active,
+	onSelect,
+}: {
+	label: string;
+	active: boolean;
+	onSelect: () => void;
+}) {
+	return (
+		<button
+			type="button"
+			role="menuitemradio"
+			aria-checked={active}
+			onClick={onSelect}
+			className={`${styles.languageMenuItem} ${styles.hudSegment} ${active ? styles.languageMenuItemActive : ""}`}
+		>
+			{label}
+		</button>
+	);
+}
 
 function CameraPreview({
 	stream,
@@ -89,6 +130,10 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	cameraDevices,
 	activeMicId,
 	activeCameraId,
+	captureFrameRate,
+	captureResolution,
+	countdownSeconds,
+	microphoneGain,
 	cameraLoading,
 	cameraError,
 	labels,
@@ -97,6 +142,10 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	checkingForUpdates,
 	onSelectMic,
 	onSelectCamera,
+	onSelectFrameRate,
+	onSelectResolution,
+	onSelectCountdown,
+	onSelectMicGain,
 	onCheckForUpdates,
 	onClose,
 	panelRef,
@@ -105,6 +154,10 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	cameraDevices: CameraDevice[];
 	activeMicId: string | undefined;
 	activeCameraId: string | undefined;
+	captureFrameRate: CaptureFrameRate;
+	captureResolution: CaptureResolutionPreset;
+	countdownSeconds: CountdownSeconds;
+	microphoneGain: MicrophoneGain;
 	cameraLoading: boolean;
 	cameraError: string | null;
 	labels: HudDeviceSettingsLabels;
@@ -115,6 +168,10 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	checkingForUpdates: boolean;
 	onSelectMic: (device: MicrophoneDevice) => void;
 	onSelectCamera: (device: CameraDevice) => void;
+	onSelectFrameRate: (fps: CaptureFrameRate) => void;
+	onSelectResolution: (preset: CaptureResolutionPreset) => void;
+	onSelectCountdown: (seconds: CountdownSeconds) => void;
+	onSelectMicGain: (gain: MicrophoneGain) => void;
 	onCheckForUpdates: () => void;
 	onClose: () => void;
 	panelRef: (el: HTMLDivElement | null) => void;
@@ -180,6 +237,22 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 			</div>
 			<div className={styles.hudModalHint}>{labels.micHint}</div>
 
+			{/* Under the mic, because it is about the mic — and a multiplier rather than an
+			    absolute level, so 100% is whatever the app was already doing (unity alone,
+			    1.4x over system audio). The level meter above reads the raw device and does
+			    NOT reflect this. */}
+			<div className={styles.hudMenuSectionLabel}>{labels.micGain}</div>
+			<div className={styles.hudSegmentRow}>
+				{MICROPHONE_GAINS.map((gain) => (
+					<SegmentButton
+						key={gain}
+						label={`${Math.round(gain * 100)}%`}
+						active={gain === microphoneGain}
+						onSelect={() => onSelectMicGain(gain)}
+					/>
+				))}
+			</div>
+
 			<div className={styles.hudMenuSectionLabel}>{labels.camera}</div>
 			{cameraLoading ? (
 				<div className={styles.hudModalEmpty}>{labels.searching}</div>
@@ -217,6 +290,56 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 					/>
 				</>
 			) : null}
+
+			{/* Frame rate and size, the two knobs that decide whether the encoder can keep
+			    up. They live here because this panel is the app's only settings surface,
+			    and next to the devices because they are the same kind of choice: what the
+			    next recording is made of. Values are unlocalised numbers by design. */}
+			<div className={styles.hudMenuSectionLabel}>{labels.countdown}</div>
+			<div className={styles.hudSegmentRow}>
+				{COUNTDOWN_OPTIONS.map((seconds) => (
+					<SegmentButton
+						key={seconds}
+						// 0 reads as "Off", not as "0": the number would look like a broken
+						// default rather than the deliberate "start the moment I click".
+						label={seconds === 0 ? labels.countdownOff : String(seconds)}
+						active={seconds === countdownSeconds}
+						onSelect={() => onSelectCountdown(seconds)}
+					/>
+				))}
+			</div>
+
+			<div className={styles.hudMenuSectionLabel}>{labels.frameRate}</div>
+			<div className={styles.hudSegmentRow}>
+				{CAPTURE_FRAME_RATES.map((fps) => (
+					<SegmentButton
+						key={fps}
+						label={String(fps)}
+						active={fps === captureFrameRate}
+						onSelect={() => onSelectFrameRate(fps)}
+					/>
+				))}
+			</div>
+
+			<div className={styles.hudMenuSectionLabel}>{labels.resolution}</div>
+			<div className={styles.hudSegmentRow}>
+				{CAPTURE_RESOLUTION_PRESETS.map((preset) => (
+					<SegmentButton
+						key={preset}
+						label={preset === "auto" ? labels.resolutionAuto : preset}
+						active={preset === captureResolution}
+						onSelect={() => onSelectResolution(preset)}
+					/>
+				))}
+			</div>
+			<div className={styles.hudModalHint}>{labels.captureHint}</div>
+
+			{/* This panel is the app's only settings surface, so the permission list
+			    lives here rather than behind a window of its own: it is the same
+			    question as the device rows above — will the next recording actually
+			    get what it asks for — and it renders nothing at all on a platform
+			    that gates none of it. */}
+			<HudPermissions />
 
 			{/* The HUD has no other settings surface, and an app the user cannot ask "which
 			    version am I running?" is an app whose bug reports arrive without one. The

@@ -2,6 +2,16 @@ import {
 	DEFAULT_EDITOR_LAYOUT_SETTINGS,
 	DEFAULT_EXPORT_SETTINGS,
 } from "@/components/video-editor/editorDefaults";
+import {
+	type CaptureFrameRate,
+	type CaptureResolutionPreset,
+	type CountdownSeconds,
+	isCaptureFrameRate,
+	isCaptureResolutionPreset,
+	isCountdownSeconds,
+	isMicrophoneGain,
+	type MicrophoneGain,
+} from "@/lib/captureSettings";
 import type { ExportFormat, ExportQuality } from "@/lib/exporter";
 import { type AspectRatio, isAspectRatio } from "@/utils/aspectRatioUtils";
 
@@ -26,6 +36,14 @@ export interface UserPreferences {
 	preferSoftwareEncoder: boolean;
 	/** Stop showing the notice that recording fell back to software encoding */
 	hideSoftwareEncoderFallbackNotice: boolean;
+	/** Frames per second to capture at */
+	captureFrameRate: CaptureFrameRate;
+	/** Ceiling on the captured frame size, or "auto" to record what the display gives */
+	captureResolution: CaptureResolutionPreset;
+	/** Seconds counted down before a take starts; 0 starts it immediately */
+	countdownSeconds: CountdownSeconds;
+	/** Multiplier on the microphone level the mix would otherwise use */
+	microphoneGain: MicrophoneGain;
 }
 
 export const DEFAULT_PREFS: UserPreferences = {
@@ -38,6 +56,13 @@ export const DEFAULT_PREFS: UserPreferences = {
 	trayLayout: "horizontal",
 	preferSoftwareEncoder: false,
 	hideSoftwareEncoderFallbackNotice: false,
+	// 60/auto is what every take used before these two became selectable, so an
+	// existing user's recordings do not change under them.
+	captureFrameRate: 60,
+	captureResolution: "auto",
+	// 3 s and unity gain are what every take used before these became selectable.
+	countdownSeconds: 3,
+	microphoneGain: 1,
 };
 
 /** Parses stored preferences without throwing on malformed JSON. */
@@ -99,6 +124,20 @@ export function loadUserPreferences(): UserPreferences {
 			typeof raw.hideSoftwareEncoderFallbackNotice === "boolean"
 				? raw.hideSoftwareEncoderFallbackNotice
 				: DEFAULT_PREFS.hideSoftwareEncoderFallbackNotice,
+		captureFrameRate: isCaptureFrameRate(raw.captureFrameRate)
+			? raw.captureFrameRate
+			: DEFAULT_PREFS.captureFrameRate,
+		captureResolution: isCaptureResolutionPreset(raw.captureResolution)
+			? raw.captureResolution
+			: DEFAULT_PREFS.captureResolution,
+		// `isCountdownSeconds`, not a truthiness check: a stored 0 is a valid choice
+		// and must survive the round trip instead of reverting to the default.
+		countdownSeconds: isCountdownSeconds(raw.countdownSeconds)
+			? raw.countdownSeconds
+			: DEFAULT_PREFS.countdownSeconds,
+		microphoneGain: isMicrophoneGain(raw.microphoneGain)
+			? raw.microphoneGain
+			: DEFAULT_PREFS.microphoneGain,
 	};
 }
 
