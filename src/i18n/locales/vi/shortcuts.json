@@ -18,6 +18,7 @@
 	"globalShortcutUnavailable": "Phím tắt toàn cục không khả dụng trong phiên này nên phím này sẽ không hoạt động. Các phím tắt khác không bị ảnh hưởng.",
 	"actions": {
 		"openApp": "Mở ứng dụng",
+		"stopRecording": "Dừng ghi hình",
 		"addZoom": "Thêm Thu phóng",
 		"addTrim": "Thêm Cắt",
 		"addSpeed": "Thêm Tốc độ",

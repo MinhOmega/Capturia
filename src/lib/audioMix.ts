@@ -15,6 +15,12 @@ export const MIC_FADE_IN_S = 0.02;
 export type MixAudioTracksInput = {
 	systemAudioTrack?: MediaStreamTrack | null | undefined;
 	micAudioTrack?: MediaStreamTrack | null | undefined;
+	/**
+	 * The user's microphone gain, as a multiplier on the level this function would
+	 * have picked on its own. Defaults to 1, which is the behaviour that shipped
+	 * before the setting existed.
+	 */
+	micGain?: number;
 };
 
 export type MixAudioTracksResult = {
@@ -37,9 +43,20 @@ export type MixAudioTracksResult = {
  * - System audio only: returned verbatim, no AudioContext created (no warm-up click).
  * - Neither present: returns `{ context: null, track: null }`.
  */
+/**
+ * A gain that cannot poison the graph. A NaN or negative multiplier would silence
+ * or invert every sample, and it arrives from persisted preferences that a user
+ * can hand-edit.
+ */
+function sanitizeGain(gain: number): number {
+	return Number.isFinite(gain) && gain > 0 ? gain : 1;
+}
+
 export function mixAudioTracks({
 	systemAudioTrack,
 	micAudioTrack,
+	// Renamed on the way in: `micGain` below is the GainNode this multiplier feeds.
+	micGain: userGain = 1,
 }: MixAudioTracksInput): MixAudioTracksResult {
 	if (!micAudioTrack) {
 		return { context: null, track: systemAudioTrack ?? null };
@@ -52,7 +69,9 @@ export function mixAudioTracks({
 		systemSource.connect(destination);
 	}
 	// Unity when the mic is on its own; boosted only when competing with system audio.
-	const micTargetGain = systemAudioTrack ? MIC_GAIN_BOOST : 1;
+	// The user's gain multiplies that rather than replacing it, so the "only boost
+	// over system audio" rule survives a user who just wants everything louder.
+	const micTargetGain = (systemAudioTrack ? MIC_GAIN_BOOST : 1) * sanitizeGain(userGain);
 	const micSource = context.createMediaStreamSource(new MediaStream([micAudioTrack]));
 	const micGain = context.createGain();
 	micGain.gain.setValueAtTime(0, context.currentTime);

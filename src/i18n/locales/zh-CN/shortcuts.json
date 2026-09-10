@@ -18,6 +18,7 @@
 	"globalShortcutUnavailable": "此会话不支持全局快捷键，因此该快捷键将无法使用。其他快捷键不受影响。",
 	"actions": {
 		"openApp": "打开应用",
+		"stopRecording": "停止录制",
 		"addZoom": "添加缩放",
 		"addTrim": "添加剪辑",
 		"addSpeed": "添加速度",

@@ -18,6 +18,7 @@
 	"globalShortcutUnavailable": "Los atajos globales no están disponibles en esta sesión, así que este no funcionará. Los demás atajos no se ven afectados.",
 	"actions": {
 		"openApp": "Abrir aplicación",
+		"stopRecording": "Detener grabación",
 		"addZoom": "Agregar zoom",
 		"addTrim": "Agregar recorte",
 		"addSpeed": "Agregar velocidad",

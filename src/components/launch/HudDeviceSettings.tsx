@@ -5,6 +5,10 @@ import {
 	CAPTURE_RESOLUTION_PRESETS,
 	type CaptureFrameRate,
 	type CaptureResolutionPreset,
+	COUNTDOWN_OPTIONS,
+	type CountdownSeconds,
+	MICROPHONE_GAINS,
+	type MicrophoneGain,
 } from "@/lib/captureSettings";
 import { useAudioLevelMeter } from "../../hooks/useAudioLevelMeter";
 import type { CameraDevice } from "../../hooks/useCameraDevices";
@@ -22,6 +26,9 @@ export interface HudDeviceSettingsLabels {
 	camera: string;
 	micLevel: string;
 	micHint: string;
+	micGain: string;
+	countdown: string;
+	countdownOff: string;
 	frameRate: string;
 	resolution: string;
 	resolutionAuto: string;
@@ -124,6 +131,8 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	activeCameraId,
 	captureFrameRate,
 	captureResolution,
+	countdownSeconds,
+	microphoneGain,
 	cameraLoading,
 	cameraError,
 	labels,
@@ -134,6 +143,8 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	onSelectCamera,
 	onSelectFrameRate,
 	onSelectResolution,
+	onSelectCountdown,
+	onSelectMicGain,
 	onCheckForUpdates,
 	onClose,
 	panelRef,
@@ -144,6 +155,8 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	activeCameraId: string | undefined;
 	captureFrameRate: CaptureFrameRate;
 	captureResolution: CaptureResolutionPreset;
+	countdownSeconds: CountdownSeconds;
+	microphoneGain: MicrophoneGain;
 	cameraLoading: boolean;
 	cameraError: string | null;
 	labels: HudDeviceSettingsLabels;
@@ -156,6 +169,8 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	onSelectCamera: (device: CameraDevice) => void;
 	onSelectFrameRate: (fps: CaptureFrameRate) => void;
 	onSelectResolution: (preset: CaptureResolutionPreset) => void;
+	onSelectCountdown: (seconds: CountdownSeconds) => void;
+	onSelectMicGain: (gain: MicrophoneGain) => void;
 	onCheckForUpdates: () => void;
 	onClose: () => void;
 	panelRef: (el: HTMLDivElement | null) => void;
@@ -221,6 +236,22 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 			</div>
 			<div className={styles.hudModalHint}>{labels.micHint}</div>
 
+			{/* Under the mic, because it is about the mic — and a multiplier rather than an
+			    absolute level, so 100% is whatever the app was already doing (unity alone,
+			    1.4x over system audio). The level meter above reads the raw device and does
+			    NOT reflect this. */}
+			<div className={styles.hudMenuSectionLabel}>{labels.micGain}</div>
+			<div className={styles.hudSegmentRow}>
+				{MICROPHONE_GAINS.map((gain) => (
+					<SegmentButton
+						key={gain}
+						label={`${Math.round(gain * 100)}%`}
+						active={gain === microphoneGain}
+						onSelect={() => onSelectMicGain(gain)}
+					/>
+				))}
+			</div>
+
 			<div className={styles.hudMenuSectionLabel}>{labels.camera}</div>
 			{cameraLoading ? (
 				<div className={styles.hudModalEmpty}>{labels.searching}</div>
@@ -263,6 +294,20 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 			    up. They live here because this panel is the app's only settings surface,
 			    and next to the devices because they are the same kind of choice: what the
 			    next recording is made of. Values are unlocalised numbers by design. */}
+			<div className={styles.hudMenuSectionLabel}>{labels.countdown}</div>
+			<div className={styles.hudSegmentRow}>
+				{COUNTDOWN_OPTIONS.map((seconds) => (
+					<SegmentButton
+						key={seconds}
+						// 0 reads as "Off", not as "0": the number would look like a broken
+						// default rather than the deliberate "start the moment I click".
+						label={seconds === 0 ? labels.countdownOff : String(seconds)}
+						active={seconds === countdownSeconds}
+						onSelect={() => onSelectCountdown(seconds)}
+					/>
+				))}
+			</div>
+
 			<div className={styles.hudMenuSectionLabel}>{labels.frameRate}</div>
 			<div className={styles.hudSegmentRow}>
 				{CAPTURE_FRAME_RATES.map((fps) => (

@@ -18,6 +18,7 @@
 	"globalShortcutUnavailable": "Bu oturumda genel kısayollar kullanılamıyor, bu nedenle bu kısayol çalışmayacak. Diğer kısayollar etkilenmez.",
 	"actions": {
 		"openApp": "Uygulamayı Aç",
+		"stopRecording": "Kaydı Durdur",
 		"addZoom": "Yakınlaştırma Ekle",
 		"addTrim": "Kırpma Ekle",
 		"addSpeed": "Hız Ekle",
