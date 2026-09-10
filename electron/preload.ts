@@ -56,8 +56,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	},
 	exportFinish: (sessionId: string) =>
 		ipcRenderer.invoke("export:finish", sessionId) as Promise<{ outputPath: string }>,
-	exportCancel: (sessionId: string) =>
-		ipcRenderer.invoke("export:cancel", sessionId) as Promise<void>,
+	/** Ask the running native export to stop. Resolving here means main received the
+	 *  request, NOT that the export ended — the export's own promise rejects with
+	 *  `EXPORT_CANCELLED` a frame later, and that is the completion signal. */
+	exportCancel: () => ipcRenderer.invoke("export:cancel") as Promise<void>,
 	/** Export bench only (--bench=): tells main the run is over so it can quit. */
 	benchFinished: () => ipcRenderer.invoke("bench:finished") as Promise<void>,
 	/** Native (D3D) export progress — frames encoded so far, pushed at ~10 Hz max while

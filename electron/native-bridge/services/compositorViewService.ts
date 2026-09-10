@@ -674,6 +674,14 @@ export class CompositorViewService {
 		);
 	}
 
+	/** Ask the running native export to stop; the pending `exportMulti`/`exportGif` promise
+	 *  rejects with `EXPORT_CANCELLED` a frame later. No-op when the addon is absent or was
+	 *  built before `exportCancel` existed — a cancel that cannot be delivered must not throw
+	 *  at the caller, who has no better move than to keep waiting for the export to end. */
+	cancelExport(): void {
+		this.ensureAddon()?.exportCancel?.();
+	}
+
 	/** Stream-copy `inputPath` to `outputPath` through libavformat's matroska muxer.
 	 *  No re-encode: the packets are copied verbatim and only the container is rebuilt,
 	 *  which is what gives the output a real `Duration`, `Cues` and `SeekHead`.

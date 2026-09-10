@@ -29,6 +29,9 @@
 
 pub mod audio;
 pub mod audio_jobs;
+// Annulation d'un export : drapeau partagé, testé dans la boucle par frame de
+// `timeline_walk` — donc valable pour les trois pipelines et l'export GIF.
+pub mod cancel;
 pub mod config;
 pub mod cursor;
 pub mod export_probe;

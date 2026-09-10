@@ -304,6 +304,11 @@ pub(crate) unsafe fn walk_composited_timeline(
         let frames_before_clip = frames;
         'clip_frames: for segment in &speed_segments {
             for segment_frame in 0..segment.frame_count {
+                // Point d'interruption unique de tous les exports composités. Testé AVANT
+                // le décodage : annuler pendant une frame lente ne doit pas attendre
+                // qu'elle finisse. Un `Err` ici remonte tel quel jusqu'au napi, et les
+                // façades de nettoyage suppriment le fichier partiel au passage.
+                crate::cancel::check()?;
                 let target_source_time =
                     segment.start_sec + segment_frame as f64 * segment.speed / out_fps as f64;
                 {

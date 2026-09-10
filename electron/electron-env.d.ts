@@ -33,6 +33,11 @@ interface Window {
 		 *  `compositor.export`/`compositor.exportMulti` runs. Distinct from `exportOnFrameAck`,
 		 *  the OLD web/CPU pipeline's per-frame ack, not a progress signal. */
 		onNativeExportProgress?: (callback: (frames: number) => void) => () => void;
+		/** Ask the running native export to stop. Resolving means main took the request,
+		 *  NOT that the export ended — the export's own promise rejects with
+		 *  `EXPORT_CANCELLED` a frame later, and that is the completion signal.
+		 *  Optional: an older preload in a dev tree may not expose it. */
+		exportCancel?: () => Promise<void>;
 		getSources: (opts: Electron.SourcesOptions) => Promise<ProcessedDesktopSource[]>;
 		switchToEditor: () => Promise<void>;
 		switchToHud: () => Promise<void>;
