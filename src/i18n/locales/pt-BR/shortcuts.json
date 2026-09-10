@@ -14,6 +14,7 @@
 	"savedToast": "Atalhos de teclado salvos",
 	"resetToast": "Atalhos redefinidos para o padrão — clique em Salvar para aplicar",
 	"registrationFailed": "Falha ao registrar o atalho. Ele pode já estar em uso por outro aplicativo. Tente uma tecla diferente.",
+	"globalShortcutUnavailable": "Os atalhos globais não estão disponíveis nesta sessão, portanto este não funcionará. Os demais atalhos não são afetados.",
 	"actions": {
 		"openApp": "Abrir Aplicativo",
 		"addZoom": "Adicionar Zoom",

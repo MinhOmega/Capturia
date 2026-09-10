@@ -14,6 +14,7 @@
 	"savedToast": "Đã lưu phím tắt",
 	"resetToast": "Đã đặt lại về phím tắt mặc định — nhấp Lưu để áp dụng",
 	"registrationFailed": "Không thể đăng ký phím tắt. Có thể đang được sử dụng bởi ứng dụng khác. Hãy thử phím khác.",
+	"globalShortcutUnavailable": "Phím tắt toàn cục không khả dụng trong phiên này nên phím này sẽ không hoạt động. Các phím tắt khác không bị ảnh hưởng.",
 	"actions": {
 		"openApp": "Mở ứng dụng",
 		"addZoom": "Thêm Thu phóng",

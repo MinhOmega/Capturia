@@ -14,6 +14,7 @@
 	"savedToast": "Scorciatoie tastiera salvate",
 	"resetToast": "Ripristino alle scorciatoie predefinite — clicca Salva per applicare",
 	"registrationFailed": "Impossibile registrare la scorciatoia. Potrebbe essere in uso da un'altra applicazione. Prova un altro tasto.",
+	"globalShortcutUnavailable": "Le scorciatoie globali non sono disponibili in questa sessione, quindi questa non funzionerà. Le altre scorciatoie non sono interessate.",
 	"actions": {
 		"openApp": "Apri applicazione",
 		"addZoom": "Aggiungi zoom",

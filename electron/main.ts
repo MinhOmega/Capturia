@@ -44,6 +44,7 @@ import { buildEditMenuSubmenu, type EditorUndoRedoChannel, routeEditorUndoRedo }
 import {
 	loadAndRegisterGlobalShortcut,
 	registerOpenAppShortcut,
+	type ShortcutStatus,
 	unregisterAllGlobalShortcuts,
 } from "./globalShortcut";
 import { mainT, setMainLocale } from "./i18n";
@@ -144,6 +145,10 @@ let countdownOverlayWindow: BrowserWindow | null = null;
 let notesWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let selectedSourceName = "";
+/** Outcome of the last openApp global-shortcut registration; read by the shortcuts
+ *  dialog. "unavailable" until startup has actually tried, so a renderer that asks
+ *  early is told the hotkey is not working rather than that it is. */
+let globalShortcutStatus: ShortcutStatus = "unavailable";
 const isMac = process.platform === "darwin";
 const trayIconSize = isMac ? 16 : 24;
 
@@ -1200,9 +1205,14 @@ appReady?.then(async () => {
 	});
 
 	ipcMain.handle("update-global-shortcut", (_, binding: ShortcutBinding) => {
-		const success = registerOpenAppShortcut(binding, showMainWindow);
-		return { success };
+		globalShortcutStatus = registerOpenAppShortcut(binding, showMainWindow);
+		return { status: globalShortcutStatus };
 	});
+
+	// What startup actually managed, for the shortcuts dialog. Deliberately pull, not
+	// push: a hotkey the user cannot act on must not interrupt them at launch with a
+	// toast, but it must be the truth when they go looking for it.
+	ipcMain.handle("get-global-shortcut-status", () => globalShortcutStatus);
 
 	// The HUD's settings panel shows the running version and, where this copy owns its updates,
 	// runs the same check the menu does. Registered here rather than in ipc/handlers.ts because
@@ -1313,7 +1323,9 @@ appReady?.then(async () => {
 	// Native STT (whisper.cpp + forced alignment) — single instance per app.
 	registerSttIpc(ipcMain);
 
-	await loadAndRegisterGlobalShortcut(showMainWindow);
+	// Kept, not discarded: this is the only registration most users ever get, and
+	// throwing the result away here is what left a dead hotkey reported to nobody.
+	globalShortcutStatus = await loadAndRegisterGlobalShortcut(showMainWindow);
 
 	// --bench=<query>: run the export bench instead of the app. Opens the real
 	// editor window (same webPreferences, same preload) pointed at the bench

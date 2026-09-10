@@ -447,7 +447,10 @@ interface Window {
 			ctrl?: boolean;
 			shift?: boolean;
 			alt?: boolean;
-		}) => Promise<{ success: boolean }>;
+		}) => Promise<{ status: import("../src/lib/shortcuts").ShortcutStatus }>;
+		/** What the last openApp registration actually achieved. See `ShortcutStatus`:
+		 *  "conflict" is the user's to fix, "unavailable" is the session's. */
+		getGlobalShortcutStatus: () => Promise<import("../src/lib/shortcuts").ShortcutStatus>;
 		hudOverlayHide: () => void;
 		hudOverlayClose: () => void;
 		setHudOverlayIgnoreMouseEvents: (ignore: boolean) => void;

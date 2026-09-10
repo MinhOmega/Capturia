@@ -16,6 +16,7 @@ import {
 	FIXED_SHORTCUTS,
 	findConflict,
 	formatBinding,
+	isGlobalShortcutLive,
 	SHORTCUT_ACTIONS,
 	type ShortcutAction,
 	type ShortcutBinding,
@@ -34,8 +35,10 @@ export function ShortcutsConfigDialog() {
 		closeConfig,
 		setShortcuts,
 		persistShortcuts,
+		globalShortcutStatus,
 	} = useShortcuts();
 	void openConfig;
+	const globalShortcutLive = isGlobalShortcutLive(globalShortcutStatus);
 	const t = useScopedT("shortcuts");
 	const tc = useScopedT("common");
 
@@ -110,14 +113,22 @@ export function ShortcutsConfigDialog() {
 	const handleCancelConflict = useCallback(() => setConflict(null), []);
 
 	const handleSave = useCallback(async () => {
-		const success = await persistShortcuts(draft);
-		if (success) {
-			setShortcuts(draft);
-			toast.success(t("savedToast"));
-			closeConfig();
-		} else {
+		const status = await persistShortcuts(draft);
+
+		// Only a conflict is the user's to fix, so only a conflict holds the dialog
+		// open. On a session with no global shortcuts at all there is no key that
+		// would work, and refusing to close would trap them in a dialog whose advice
+		// cannot be followed — the other eleven shortcuts saved fine, so say what
+		// happened and let them out.
+		if (status === "conflict") {
 			toast.error(t("registrationFailed"));
+			return;
 		}
+
+		setShortcuts(draft);
+		if (status === "unavailable") toast.warning(t("globalShortcutUnavailable"));
+		else toast.success(t("savedToast"));
+		closeConfig();
 	}, [draft, setShortcuts, persistShortcuts, closeConfig, t]);
 
 	const handleReset = useCallback(() => {
@@ -154,29 +165,52 @@ export function ShortcutsConfigDialog() {
 						{SHORTCUT_ACTIONS.map((action) => {
 							const isCapturing = captureFor === action;
 							const hasConflict = conflict?.forAction === action;
+							// openApp is the only shortcut the OS owns, so it is the only one a
+							// session without global shortcuts can take away.
+							const isDead = action === "openApp" && !globalShortcutLive;
 							return (
 								<div key={action}>
 									<div className="flex items-center justify-between py-1.5 px-1 border-b border-[var(--border-soft)]">
-										<span className="text-sm text-[var(--fg-2)]">{t(`actions.${action}`)}</span>
+										<span
+											className={
+												isDead ? "text-sm text-[var(--muted)]" : "text-sm text-[var(--fg-2)]"
+											}
+										>
+											{t(`actions.${action}`)}
+										</span>
 										<button
 											type="button"
+											disabled={isDead}
 											onClick={() => {
 												setConflict(null);
 												setCaptureFor(isCapturing ? null : action);
 											}}
-											title={isCapturing ? t("pressEscToCancel") : t("clickToChange")}
+											title={
+												isDead
+													? t("globalShortcutUnavailable")
+													: isCapturing
+														? t("pressEscToCancel")
+														: t("clickToChange")
+											}
 											className={[
 												"px-2 py-1 rounded text-xs font-mono border transition-all min-w-[90px] text-center select-none",
-												isCapturing
-													? "bg-[var(--brand-soft)] border-[var(--brand)] text-[var(--brand)] animate-pulse"
-													: hasConflict
-														? "bg-[var(--warn-soft)] border-[var(--warn)] text-[var(--warn)]"
-														: "bg-[var(--surface-2)] border-[var(--border)] text-[var(--fg-2)] hover:border-[var(--brand)] hover:text-[var(--brand)] cursor-pointer",
+												isDead
+													? "bg-[var(--surface-2)] border-[var(--border)] text-[var(--muted)] line-through opacity-60 cursor-not-allowed"
+													: isCapturing
+														? "bg-[var(--brand-soft)] border-[var(--brand)] text-[var(--brand)] animate-pulse"
+														: hasConflict
+															? "bg-[var(--warn-soft)] border-[var(--warn)] text-[var(--warn)]"
+															: "bg-[var(--surface-2)] border-[var(--border)] text-[var(--fg-2)] hover:border-[var(--brand)] hover:text-[var(--brand)] cursor-pointer",
 											].join(" ")}
 										>
 											{isCapturing ? t("pressKey") : formatBinding(draft[action], isMac)}
 										</button>
 									</div>
+									{isDead && (
+										<p className="px-1 pb-1.5 text-[10px] leading-snug text-[var(--muted)]">
+											{t("globalShortcutUnavailable")}
+										</p>
+									)}
 									{hasConflict && conflict?.conflictWith.type === "configurable" && (
 										<div className="flex items-center justify-between px-1 py-1.5 mb-0.5 bg-[var(--warn-soft)] border border-[var(--warn)] rounded text-xs">
 											<span className="text-[var(--warn)]">

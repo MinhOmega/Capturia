@@ -25,6 +25,21 @@ export interface ShortcutBinding {
 
 export type ShortcutsConfig = Record<ShortcutAction, ShortcutBinding>;
 
+/**
+ * Outcome of registering the openApp GLOBAL shortcut (the only one the OS owns).
+ *
+ * Four states rather than a boolean because the two failures need different words:
+ * "conflict" is one key the user can change, "unavailable" is the whole session and
+ * changing keys cannot help. "unchanged" is kept apart from "registered" so nothing
+ * can report success for a call that registered nothing.
+ */
+export type ShortcutStatus = "registered" | "unchanged" | "conflict" | "unavailable";
+
+/** Whether the openApp hotkey actually works right now. */
+export function isGlobalShortcutLive(status: ShortcutStatus): boolean {
+	return status === "registered" || status === "unchanged";
+}
+
 export interface FixedShortcut {
 	i18nKey: string;
 	label: string;

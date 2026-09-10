@@ -7,14 +7,22 @@ import {
 	useMemo,
 	useState,
 } from "react";
-import { DEFAULT_SHORTCUTS, mergeWithDefaults, type ShortcutsConfig } from "@/lib/shortcuts";
+import {
+	DEFAULT_SHORTCUTS,
+	mergeWithDefaults,
+	type ShortcutStatus,
+	type ShortcutsConfig,
+} from "@/lib/shortcuts";
 import { isMac as getIsMac } from "@/utils/platformUtils";
 
 interface ShortcutsContextValue {
 	shortcuts: ShortcutsConfig;
 	isMac: boolean;
 	setShortcuts: (config: ShortcutsConfig) => void;
-	persistShortcuts: (config?: ShortcutsConfig) => Promise<boolean>;
+	persistShortcuts: (config?: ShortcutsConfig) => Promise<ShortcutStatus>;
+	/** What startup made of the openApp hotkey, so the dialog can stop offering a
+	 *  rebind on a session where no rebind can succeed. */
+	globalShortcutStatus: ShortcutStatus;
 	isConfigOpen: boolean;
 	openConfig: () => void;
 	closeConfig: () => void;
@@ -35,6 +43,9 @@ export function ShortcutsProvider({ children }: { children: ReactNode }) {
 	// free of any dependency on preload having been installed.
 	const [isMac, setIsMac] = useState(false);
 	const [isConfigOpen, setIsConfigOpen] = useState(false);
+	// Optimistic default: in browser mode and in tests there is no main process to
+	// ask, and claiming the hotkey is broken there would be its own wrong message.
+	const [globalShortcutStatus, setGlobalShortcutStatus] = useState<ShortcutStatus>("registered");
 
 	useEffect(() => {
 		setIsMac(getIsMac());
@@ -54,15 +65,26 @@ export function ShortcutsProvider({ children }: { children: ReactNode }) {
 			.catch(() => {
 				// Keep default shortcuts if persisted settings can't be loaded.
 			});
+
+		window.electronAPI
+			?.getGlobalShortcutStatus?.()
+			?.then(setGlobalShortcutStatus)
+			.catch(() => {
+				// An unanswered question is not evidence the hotkey is broken.
+			});
 	}, []);
 
 	const persistShortcuts = useCallback(
-		async (config?: ShortcutsConfig) => {
+		async (config?: ShortcutsConfig): Promise<ShortcutStatus> => {
 			const configToSave = config ?? shortcuts;
 			await window.electronAPI?.saveShortcuts?.(configToSave);
 
 			const result = await window.electronAPI?.updateGlobalShortcut?.(configToSave.openApp);
-			return result ? result.success : true;
+			// No main process (browser mode, tests): the local shortcuts still saved, and
+			// there is no global one to have failed.
+			const status = result ? result.status : "registered";
+			setGlobalShortcutStatus(status);
+			return status;
 		},
 		[shortcuts],
 	);
@@ -76,11 +98,20 @@ export function ShortcutsProvider({ children }: { children: ReactNode }) {
 			isMac,
 			setShortcuts,
 			persistShortcuts,
+			globalShortcutStatus,
 			isConfigOpen,
 			openConfig,
 			closeConfig,
 		}),
-		[shortcuts, isMac, persistShortcuts, isConfigOpen, openConfig, closeConfig],
+		[
+			shortcuts,
+			isMac,
+			persistShortcuts,
+			globalShortcutStatus,
+			isConfigOpen,
+			openConfig,
+			closeConfig,
+		],
 	);
 
 	return <ShortcutsContext.Provider value={value}>{children}</ShortcutsContext.Provider>;

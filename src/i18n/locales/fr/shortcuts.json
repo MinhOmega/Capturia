@@ -14,6 +14,7 @@
 	"savedToast": "Raccourcis clavier enregistrés",
 	"resetToast": "Réinitialisé aux raccourcis par défaut — cliquez sur Enregistrer pour appliquer",
 	"registrationFailed": "Échec de l'enregistrement du raccourci. Il est peut-être utilisé par une autre application. Essayez une autre touche.",
+	"globalShortcutUnavailable": "Les raccourcis globaux ne sont pas disponibles dans cette session : celui-ci ne fonctionnera pas. Les autres raccourcis ne sont pas affectés.",
 	"actions": {
 		"openApp": "Ouvrir l'application",
 		"addZoom": "Ajouter un zoom",
