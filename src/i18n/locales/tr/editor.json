@@ -64,11 +64,11 @@
 		"importVideoButton": "Video içe aktar",
 		"loadProjectButton": "Proje aç",
 		"supportedFormats": "Desteklenen formatlar: MP4, MOV, WebM, MKV, AVI, M4V, WMV",
-		"dragDropHint": "veya bir .openscreen proje dosyasını buraya sürükleyip bırakın",
+		"dragDropHint": "veya bir Capturia proje dosyasını buraya sürükleyip bırakın",
 		"dropOverlay": "Açmak için proje dosyasını bırakın",
 		"dropErrors": {
 			"unsupportedFormatTitle": "Desteklenmeyen Format",
-			"unsupportedFormatMessage": "Buraya yalnızca .openscreen proje dosyaları bırakılabilir. Video içe aktarmak için \"Video Dosyası İçe Aktar...\" düğmesini kullanın.",
+			"unsupportedFormatMessage": "Buraya yalnızca Capturia proje dosyaları (.capturia) bırakılabilir. Video içe aktarmak için \"Video Dosyası İçe Aktar...\" düğmesini kullanın.",
 			"couldNotOpenTitle": "Dosya Açılamadı",
 			"couldNotOpenMessage": "Proje dosyası açılamadı. Başvurulan video taşınmış veya silinmiş olabilir."
 		}

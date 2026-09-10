@@ -64,11 +64,11 @@
 		"importVideoButton": "导入视频",
 		"loadProjectButton": "打开项目",
 		"supportedFormats": "支持的格式：MP4、MOV、WebM、MKV、AVI、M4V、WMV",
-		"dragDropHint": "或将 .openscreen 项目文件拖放到此处",
+		"dragDropHint": "或将 Capturia 项目文件拖放到此处",
 		"dropOverlay": "将项目文件拖放至此以打开",
 		"dropErrors": {
 			"unsupportedFormatTitle": "不支持的格式",
-			"unsupportedFormatMessage": "此处只能拖放 .openscreen 项目文件。要导入视频，请使用\"导入视频文件...\"按钮。",
+			"unsupportedFormatMessage": "此处只能拖放 Capturia 项目文件（.capturia）。要导入视频，请使用\"导入视频文件...\"按钮。",
 			"couldNotOpenTitle": "无法打开文件",
 			"couldNotOpenMessage": "无法打开项目文件。它引用的视频可能已被移动或删除。"
 		}

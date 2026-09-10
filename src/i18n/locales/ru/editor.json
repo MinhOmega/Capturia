@@ -64,11 +64,11 @@
 		"importVideoButton": "Импортировать видео",
 		"loadProjectButton": "Открыть проект",
 		"supportedFormats": "Поддерживаемые форматы: MP4, MOV, WebM, MKV, AVI, M4V, WMV",
-		"dragDropHint": "или перетащите файл проекта .openscreen сюда",
+		"dragDropHint": "или перетащите файл проекта Capturia сюда",
 		"dropOverlay": "Перетащите файл проекта для открытия",
 		"dropErrors": {
 			"unsupportedFormatTitle": "Неподдерживаемый формат",
-			"unsupportedFormatMessage": "Сюда можно перетаскивать только файлы проекта .openscreen. Для импорта видео используйте кнопку «Импортировать видеофайл...».",
+			"unsupportedFormatMessage": "Сюда можно перетаскивать только файлы проекта Capturia (.capturia). Для импорта видео используйте кнопку «Импортировать видеофайл...».",
 			"couldNotOpenTitle": "Не удалось открыть файл",
 			"couldNotOpenMessage": "Не удалось открыть файл проекта. Видео, на которое он ссылается, возможно, было перемещено или удалено."
 		}

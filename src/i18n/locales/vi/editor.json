@@ -64,11 +64,11 @@
 		"importVideoButton": "Nhập video",
 		"loadProjectButton": "Mở dự án",
 		"supportedFormats": "Định dạng được hỗ trợ: MP4, MOV, WebM, MKV, AVI, M4V, WMV",
-		"dragDropHint": "hoặc kéo và thả tệp dự án .openscreen vào đây",
+		"dragDropHint": "hoặc kéo và thả tệp dự án Capturia vào đây",
 		"dropOverlay": "Thả tệp dự án để mở",
 		"dropErrors": {
 			"unsupportedFormatTitle": "Định dạng không được hỗ trợ",
-			"unsupportedFormatMessage": "Chỉ có thể thả các tệp dự án .openscreen vào đây. Để nhập video, hãy sử dụng nút \"Nhập tệp video...\" thay thế.",
+			"unsupportedFormatMessage": "Chỉ có thể thả các tệp dự án Capturia (.capturia) vào đây. Để nhập video, hãy sử dụng nút \"Nhập tệp video...\" thay thế.",
 			"couldNotOpenTitle": "Không thể mở tệp",
 			"couldNotOpenMessage": "Không thể mở tệp dự án. Video mà nó tham chiếu có thể đã bị di chuyển hoặc xóa."
 		}

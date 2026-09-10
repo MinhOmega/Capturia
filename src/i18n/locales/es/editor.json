@@ -64,11 +64,11 @@
 		"importVideoButton": "Importar vídeo",
 		"loadProjectButton": "Abrir proyecto",
 		"supportedFormats": "Formatos compatibles: MP4, MOV, WebM, MKV, AVI, M4V, WMV",
-		"dragDropHint": "o arrastra y suelta un archivo .openscreen aquí",
+		"dragDropHint": "o arrastra y suelta un archivo de proyecto Capturia aquí",
 		"dropOverlay": "Suelta el archivo de proyecto para abrirlo",
 		"dropErrors": {
 			"unsupportedFormatTitle": "Formato no compatible",
-			"unsupportedFormatMessage": "Solo se pueden soltar aquí archivos de proyecto .openscreen. Para importar un video, usa el botón \"Importar archivo de video...\" en su lugar.",
+			"unsupportedFormatMessage": "Solo se pueden soltar aquí archivos de proyecto Capturia (.capturia). Para importar un video, usa el botón \"Importar archivo de video...\" en su lugar.",
 			"couldNotOpenTitle": "No se pudo abrir el archivo",
 			"couldNotOpenMessage": "No se pudo abrir el archivo de proyecto. El video al que hace referencia puede haber sido movido o eliminado."
 		}
