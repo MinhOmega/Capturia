@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { Profiler, type ProfilerOnRenderCallback } from "react";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 // The regression under test is geometric, so the environment has to have a size:
 // jsdom reports 0 for every box, which would leave `pxPerSec` at 0 (the
@@ -76,7 +77,11 @@ function renderTimeline(
 	clips = [clip(0, TOTAL_SEC)],
 	annotation = { id: "ann1", startMs: 10_000, endMs: 11_000 },
 	assets: Array<Record<string, unknown>> = [NO_CAMERA_ASSET],
+	onRender: ProfilerOnRenderCallback = () => {
+		/* only the scrub test counts commits */
+	},
 ) {
+	const setCurrentTime = vi.fn();
 	const tl = {
 		clips,
 		// Marks for added words are read straight off the transcript (see the pane's
@@ -106,26 +111,33 @@ function renderTimeline(
 	};
 	render(
 		<ShortcutsProvider>
-			<V4Timeline
-				// Only the members the lanes and the clip row read are mocked; the prop
-				// stays typed as the real API rather than widened to `any` (AGENTS.md).
-				tl={tl as unknown as ReturnType<typeof useTimeline>}
-				setCurrentTime={vi.fn()}
-				playing={false}
-				onTogglePlay={vi.fn()}
-				onPrevClip={vi.fn()}
-				onNextClip={vi.fn()}
-				onEditClip={vi.fn()}
-				onAddVoiceover={vi.fn()}
-			/>
+			<Profiler id="timeline" onRender={onRender}>
+				<V4Timeline
+					// Only the members the lanes and the clip row read are mocked; the prop
+					// stays typed as the real API rather than widened to `any` (AGENTS.md).
+					tl={tl as unknown as ReturnType<typeof useTimeline>}
+					setCurrentTime={setCurrentTime}
+					playing={false}
+					onTogglePlay={vi.fn()}
+					onPrevClip={vi.fn()}
+					onNextClip={vi.fn()}
+					onEditClip={vi.fn()}
+					onAddVoiceover={vi.fn()}
+				/>
+			</Profiler>
 		</ShortcutsProvider>,
 	);
 	return {
 		pill: screen.getByTitle("toolbar.newAnnotation"),
 		clipEls: Array.from(document.querySelectorAll<HTMLElement>("[data-clip-id]")),
 		tl,
+		setCurrentTime,
 	};
 }
+
+afterEach(() => {
+	vi.unstubAllGlobals();
+});
 
 /** Drag a handle by `dxPx`. The move/up listeners live on `window`, so the drag
  *  is driven by pointer deltas alone — the handle may re-mount under it. */
@@ -146,6 +158,45 @@ function wheelZoomOn(el: HTMLElement, notches: number) {
 function zoomIn(notches: number) {
 	wheelZoomOn(document.querySelector("[class*=tlTracks]") as HTMLElement, notches);
 }
+
+describe("V4Timeline scrubbing", () => {
+	it("publishes at most one React scrub-state update per animation frame", () => {
+		const frames = new Map<number, FrameRequestCallback>();
+		let nextFrameId = 1;
+		vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+			const frameId = nextFrameId++;
+			frames.set(frameId, callback);
+			return frameId;
+		});
+		vi.stubGlobal("cancelAnimationFrame", (frameId: number) => {
+			frames.delete(frameId);
+		});
+		const onRender = vi.fn<ProfilerOnRenderCallback>();
+		const { setCurrentTime } = renderTimeline(undefined, undefined, undefined, onRender);
+		const ruler = document.querySelector<HTMLElement>("[class*=tlRulerRow]") as HTMLElement;
+
+		fireEvent.pointerDown(ruler, { button: 0, clientX: 90 });
+		const commitsAfterPointerDown = onRender.mock.calls.length;
+		setCurrentTime.mockClear();
+
+		// Three pointer moves inside one frame: the playhead follows each in the DOM,
+		// but React and the store hear about the latest one only, once.
+		fireEvent.pointerMove(window, { clientX: 180 });
+		fireEvent.pointerMove(window, { clientX: 270 });
+		fireEvent.pointerMove(window, { clientX: 360 });
+		expect(onRender).toHaveBeenCalledTimes(commitsAfterPointerDown);
+		expect(setCurrentTime).not.toHaveBeenCalled();
+		expect(frames.size).toBe(1);
+
+		const [[frameId, frame]] = frames;
+		frames.delete(frameId);
+		act(() => frame(0));
+		expect(onRender).toHaveBeenCalledTimes(commitsAfterPointerDown + 1);
+		expect(setCurrentTime).toHaveBeenCalledTimes(1);
+		expect(setCurrentTime).toHaveBeenCalledWith(720); // 360 of 900 px over 1800 s
+		fireEvent.pointerUp(window);
+	});
+});
 
 describe("V4Timeline lane pills", () => {
 	it("draws a pill exactly as wide as its region, at any zoom", () => {

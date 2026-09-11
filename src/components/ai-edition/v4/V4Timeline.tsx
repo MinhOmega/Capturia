@@ -963,8 +963,6 @@ export function V4Timeline({
 				playheadElRef.current.style.left = `${pct * 100}%`;
 			}
 
-			// Optimistic local UI state update
-			setScrubbingTimeSec(targetTime);
 			pendingSeekTimeRef.current = targetTime;
 
 			if (isImmediate) {
@@ -972,15 +970,19 @@ export function V4Timeline({
 					cancelAnimationFrame(rafSeekRef.current);
 					rafSeekRef.current = 0;
 				}
+				setScrubbingTimeSec(targetTime);
 				setCurrentTime(targetTime);
 				return;
 			}
 
-			// Throttled store update / D3D seek via rAF to avoid IPC flooding
+			// Throttled React state + store update / D3D seek via rAF: once per frame,
+			// not once per pointermove, so the timeline re-renders at frame rate and
+			// IPC is not flooded. The playhead itself already moved above.
 			if (rafSeekRef.current === 0) {
 				rafSeekRef.current = requestAnimationFrame(() => {
 					rafSeekRef.current = 0;
 					if (pendingSeekTimeRef.current !== null) {
+						setScrubbingTimeSec(pendingSeekTimeRef.current);
 						setCurrentTime(pendingSeekTimeRef.current);
 					}
 				});
