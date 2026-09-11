@@ -195,6 +195,17 @@ try {
 	$manifest = Join-Path $extracted "AppxManifest.xml"
 	if (-not (Test-Path $manifest)) { throw "no AppxManifest.xml in $appxPath, is it really an appx?" }
 
+	# The package name and application id are read back from the manifest that
+	# electron-builder wrote from `appx.identityName` and `appx.applicationId`, not
+	# copied in here. A copy is what broke this: the Capturia rename updated the id
+	# and left the name saying EtienneLescot.OpenScreen, so the lookup below found
+	# nothing and the check never reached a single binary. XmlDocument.Load honours
+	# the manifest's own encoding declaration; Get-Content in 5.1 would guess ANSI.
+	$manifestXml = New-Object System.Xml.XmlDocument
+	$manifestXml.Load($manifest)
+	$identityName = $manifestXml.Package.Identity.Name
+	$applicationId = $manifestXml.Package.Applications.Application.Id
+
 	Write-Host "Registering the package"
 	try {
 		Add-AppxPackage -Register $manifest -ErrorAction Stop
@@ -203,8 +214,8 @@ try {
 		throw "Add-AppxPackage -Register failed: $($_.Exception.Message)`n`nLoose registration needs Developer Mode (Settings > System > For developers)."
 	}
 
-	$pkg = Get-AppxPackage -Name "EtienneLescot.OpenScreen"
-	if (-not $pkg) { throw "the package registered but cannot be found by name" }
+	$pkg = Get-AppxPackage -Name $identityName
+	if (-not $pkg) { throw "the package registered but cannot be found by name $identityName" }
 	$registered = $pkg.PackageFullName
 	Write-Host "Registered $($pkg.PackageFullName)"
 
@@ -214,7 +225,7 @@ try {
 	$childArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -InPackage -PackageRoot `"$extracted`" -ReportPath `"$report`""
 	Invoke-CommandInDesktopPackage `
 		-PackageFamilyName $pkg.PackageFamilyName `
-		-AppId "Capturia" `
+		-AppId $applicationId `
 		-Command "powershell.exe" `
 		-Args $childArgs `
 		-ErrorAction Stop
