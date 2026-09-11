@@ -360,20 +360,48 @@ describe("fresh-recording auto-zoom", () => {
 		expect(consumeFreshRecordingAutoZoomPending()).toBe(true);
 	});
 
-	it("consumes the hand-off when the cursor never sits still", async () => {
+	// Never still, never clicked, and too slow to read as a deliberate traverse: 0.03 of
+	// the frame per 80 ms is 0.375/s, under the suggester's 0.42/s floor, and every step
+	// is wider than a dwell's 0.02. No signal at all is an answer, so the hand-off goes.
+	it("consumes the hand-off when the cursor drifts without a dwell, click or traverse", async () => {
 		markFreshRecordingAutoZoomPending(RECORDING_PATH);
 		const document = documentWithClip();
+		const drifting = Array.from({ length: 8 }, (_, i) => ({
+			timeMs: 1000 + i * 80,
+			cx: 0.2 + i * 0.03,
+			cy: 0.3,
+		}));
+		const first = await applyPendingFreshRecordingAutoZooms(document, {
+			enabled: true,
+			getTelemetry: async () => drifting,
+		});
+		expect(first).toBe(document);
+		expect(consumeFreshRecordingAutoZoomPending()).toBe(false);
+	});
+
+	// Capturia's suggester reads a fast traverse as the pointer being taken somewhere and
+	// nudges in on it (depth 2), where upstream's dwell-only one saw nothing. 0.08 of the
+	// frame per 80 ms is 1.0/s, well over the 0.42/s floor. A traverse region is framed
+	// 120 ms before the step and held 1200 ms after it, so it spans 1320 ms, and it is
+	// focused on a point the pointer actually passed through.
+	it("nudges in on a fast traverse even though the cursor never sits still", async () => {
+		markFreshRecordingAutoZoomPending(RECORDING_PATH);
 		const moving = Array.from({ length: 8 }, (_, i) => ({
 			timeMs: 1000 + i * 80,
 			cx: 0.2 + i * 0.08,
 			cy: 0.3,
 		}));
-		const first = await applyPendingFreshRecordingAutoZooms(document, {
+		const next = await applyPendingFreshRecordingAutoZooms(documentWithClip(), {
 			enabled: true,
 			getTelemetry: async () => moving,
 		});
-		expect(first).toBe(document);
-		expect(consumeFreshRecordingAutoZoomPending()).toBe(false);
+		expect(next.zoomRanges).toHaveLength(1);
+		const [zoom] = next.zoomRanges;
+		expect(zoom.depth).toBe(2);
+		expect(zoom.endMs - zoom.startMs).toBe(1320);
+		expect(zoom.focus.cy).toBeCloseTo(0.3);
+		expect(zoom.focus.cx).toBeGreaterThan(0.2);
+		expect(zoom.focus.cx).toBeLessThanOrEqual(0.76);
 	});
 
 	// The one read that is not an answer: an error says nothing about whether the take
