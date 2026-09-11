@@ -481,7 +481,7 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			configuration.setValue(true, forKey: "captureMicrophone")
 			if let deviceId = resolveMicrophoneCaptureDeviceID() {
 				configuration.setValue(deviceId, forKey: "microphoneCaptureDeviceID")
-			} else {
+			} else if requestedASpecificMicrophone {
 				emit([
 					"event": "warning",
 					"code": "microphone-defaulted",
@@ -800,6 +800,25 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		streamConfig.responds(to: Selector(("setCaptureMicrophone:"))) &&
 			streamConfig.responds(to: Selector(("setMicrophoneCaptureDeviceID:"))) &&
 			SCStreamOutputType(rawValue: microphoneOutputTypeRawValue) != nil
+	}
+
+	/// Did the user actually ask for a particular microphone?
+	///
+	/// The same test the Windows helper makes before emitting this warning
+	/// (`wantedAParticularMicrophone` in wgc-capture/src/wasapi_loopback_capture.cpp),
+	/// and it has to be made here too because `resolveMicrophoneCaptureDeviceID()`
+	/// returns nil for two very different situations. One is a chosen microphone that
+	/// nothing here could find, which is worth saying out loud. The other is no choice
+	/// at all, which is the common case and has to stay silent: the HUD leaves both
+	/// fields unset until its picker moves off "default", and persists the literal id
+	/// "default" when the user picks Chromium's own Default entry — so both shapes
+	/// arrive here meaning "the system default is fine", not "your microphone is gone".
+	private var requestedASpecificMicrophone: Bool {
+		let deviceId =
+			request.audio.microphone.deviceId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+		let deviceName =
+			request.audio.microphone.deviceName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+		return (!deviceId.isEmpty && deviceId != "default") || !deviceName.isEmpty
 	}
 
 	private func resolveMicrophoneCaptureDeviceID() -> String? {
