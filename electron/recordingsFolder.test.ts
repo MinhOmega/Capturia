@@ -1,12 +1,42 @@
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+	chmodSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
-import { isPathWithinRecordingRoots, validRecordingsFolder } from "./recordingsFolder";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+	isPathWithinRecordingRoots,
+	takeOutputPath,
+	validRecordingsFolder,
+} from "./recordingsFolder";
+
+// Lets a test stand in for a folder whose permission bits say "writable" while creating a
+// file there still fails — what a read-only share or `C:\Program Files` looks like on Windows.
+const fsFaults = vi.hoisted(() => ({ refuseCreate: false }));
+vi.mock("node:fs", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("node:fs")>();
+	return {
+		...actual,
+		openSync: (...args: Parameters<typeof actual.openSync>) => {
+			if (fsFaults.refuseCreate) {
+				throw Object.assign(new Error("EPERM: operation not permitted"), { code: "EPERM" });
+			}
+			return actual.openSync(...args);
+		},
+	};
+});
 
 const temps: string[] = [];
 
 afterEach(() => {
+	fsFaults.refuseCreate = false;
 	for (const dir of temps) rmSync(dir, { recursive: true, force: true });
 	temps.length = 0;
 });
@@ -180,4 +210,53 @@ describe("validRecordingsFolder", () => {
 			}
 		},
 	);
+
+	it("decides writability by creating a file, not by permission bits, and leaves nothing behind", () => {
+		const { chosen } = roots();
+		writeFileSync(path.join(chosen, "holiday.mp4"), "");
+		expect(validRecordingsFolder(chosen, { writable: true })).toBe(chosen);
+		expect(readdirSync(chosen)).toEqual(["holiday.mp4"]);
+
+		fsFaults.refuseCreate = true;
+		expect(validRecordingsFolder(chosen)).toBe(chosen);
+		expect(validRecordingsFolder(chosen, { writable: true })).toBeNull();
+	});
+});
+
+describe("takeOutputPath", () => {
+	it("places a take-named file in the take folder", () => {
+		const { defaultDir, chosen } = roots();
+		expect(takeOutputPath("recording-5.webm", chosen, defaultDir, chosen)).toBe(
+			path.join(chosen, "recording-5.webm"),
+		);
+		expect(takeOutputPath("recording-5-webcam.webm", defaultDir, defaultDir, null)).toBe(
+			path.join(defaultDir, "recording-5-webcam.webm"),
+		);
+	});
+
+	it("refuses paths, traversal and names Capturia does not write", () => {
+		const { defaultDir, chosen } = roots();
+		for (const name of ["../recording-5.mp4", "sub/recording-5.mp4", "", "holiday.mp4"]) {
+			expect(() => takeOutputPath(name, chosen, defaultDir, chosen)).toThrow();
+		}
+		expect(() =>
+			takeOutputPath(path.join(chosen, "recording-5.mp4"), chosen, defaultDir, chosen),
+		).toThrow();
+	});
+
+	itWithSymlinks("refuses a take name in the chosen folder that links out of it", () => {
+		const { defaultDir, chosen, outside } = roots();
+		const victim = path.join(outside, "other-tool.mp4");
+		writeFileSync(victim, "keep me");
+		symlinkSync(victim, path.join(chosen, "recording-5.mp4"));
+		symlinkSync(path.join(outside, "missing.mp4"), path.join(chosen, "recording-6.mp4"));
+
+		expect(() => takeOutputPath("recording-5.mp4", chosen, defaultDir, chosen)).toThrow(
+			"outside the recordings folder",
+		);
+		expect(() => takeOutputPath("recording-6.mp4", chosen, defaultDir, chosen)).toThrow(
+			"outside the recordings folder",
+		);
+		expect(readFileSync(victim, "utf8")).toBe("keep me");
+	});
 });

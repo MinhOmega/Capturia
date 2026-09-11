@@ -42,7 +42,6 @@ import {
 	type RecordingSession,
 	type StoreRecordedSessionInput,
 } from "../../src/lib/recordingSession";
-import { recordingGroupKeyFromFileName } from "../../src/lib/recordingsCleanupPolicy";
 import type {
 	CursorRecordingData,
 	CursorRecordingSample,
@@ -115,6 +114,7 @@ import { loadRecordingsFolder, saveRecordingsFolder } from "../recording-setting
 import {
 	isPathWithinDir,
 	isPathWithinRecordingRoots,
+	takeOutputPath,
 	validRecordingsFolder,
 } from "../recordingsFolder";
 import { settingsPaneUrl } from "../windowPermissions";
@@ -445,29 +445,12 @@ function approveDocumentMedia(document: AxcutDocument): void {
 }
 
 function resolveRecordingOutputPath(fileName: string): string {
-	const trimmed = fileName.trim();
-	if (!trimmed) {
-		throw new Error("Invalid recording file name");
-	}
-
-	const parsedPath = path.parse(trimmed);
-	const hasTraversalSegments = trimmed.split(/[\\/]+/).some((segment) => segment === "..");
-	const isNestedPath =
-		parsedPath.dir !== "" ||
-		path.isAbsolute(trimmed) ||
-		trimmed.includes("/") ||
-		trimmed.includes("\\");
-	if (hasTraversalSegments || isNestedPath || parsedPath.base !== trimmed) {
-		throw new Error("Recording file name must not contain path segments");
-	}
-	// The renderer names this file and main then creates, overwrites or deletes it (the stream
-	// handlers, the empty-take unlink). In a folder the user picked, that must never reach a
-	// file Capturia did not name itself.
-	if (recordingGroupKeyFromFileName(parsedPath.base) === null) {
-		throw new Error("Recording file name is not one Capturia writes");
-	}
-
-	return path.join(newTakeDir(), parsedPath.base);
+	return takeOutputPath(
+		fileName,
+		newTakeDir(),
+		RECORDINGS_DIR,
+		validRecordingsFolder(chosenRecordingsFolder),
+	);
 }
 
 function isValidDurationMs(value: number | undefined): value is number {
