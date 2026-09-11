@@ -25,8 +25,14 @@
 // `readCursorTelemetryFile`), the interaction detectors yield nothing and this
 // degrades exactly to the dwell-only detector it grew from.
 
-import type { ZoomDepth, ZoomFocus } from "@/components/video-editor/types";
+import {
+	DEFAULT_ZOOM_DEPTH,
+	type ZoomDepth,
+	type ZoomFocus,
+} from "@/components/video-editor/types";
+import { interpolateCursorAt } from "@/lib/zoomMath/cursorFollowUtils";
 import type { AxcutClip } from "../schema";
+import type { ResolvedRecordingMarker } from "./recordingMarkers";
 
 export const MIN_DWELL_DURATION_MS = 450;
 export const MAX_DWELL_DURATION_MS = 2600;
@@ -65,8 +71,9 @@ const MOVEMENT_INTERACTION_GUARD_MS = 360;
 /** 500ms of zoom-in overlap plus ~700ms visibly held at full magnification. */
 export const MIN_REGION_DURATION_MS = 1_200;
 
-/** What produced a candidate. Interactions are observations; `dwell` is a guess. */
-export type ZoomCandidateReason = "click" | "selection" | "movement" | "dwell";
+/** What produced a candidate. Interactions are observations; `dwell` is a guess; a
+ *  `flag` is the user saying so outright, while recording. */
+export type ZoomCandidateReason = "click" | "selection" | "movement" | "dwell" | "flag";
 
 export interface ZoomDwellCandidate {
 	centerTimeMs: number;
@@ -430,11 +437,29 @@ export function buildAutoZoomSuggestions(options: {
 		return [];
 	}
 
-	const sortedCandidates = detectZoomCandidates(normalizedSamples);
-	if (sortedCandidates.length === 0) {
-		return [];
-	}
+	return placeZoomCandidates(detectZoomCandidates(normalizedSamples), {
+		totalMs,
+		existingRegions,
+		defaultDurationMs: defaultDuration,
+	});
+}
 
+/**
+ * The placement half of `buildAutoZoomSuggestions`: take candidates in order, space them,
+ * size them, fit them in `[0, totalMs]` and drop any that lands on a reserved span. Every
+ * candidate source goes through here, so a flagged moment and a detected click obey the
+ * same spacing and overlap rules rather than two copies of them.
+ */
+function placeZoomCandidates(
+	candidates: ZoomCandidate[],
+	options: {
+		totalMs: number;
+		existingRegions: { startMs: number; endMs: number }[];
+		/** Width for a candidate that carries no `spanMs` of its own. */
+		defaultDurationMs: number;
+	},
+): AutoZoomSuggestion[] {
+	const { totalMs, existingRegions, defaultDurationMs: defaultDuration } = options;
 	const reservedSpans = existingRegions
 		.map((region) => ({ start: region.startMs, end: region.endMs }))
 		.sort((a, b) => a.start - b.start);
@@ -442,7 +467,7 @@ export function buildAutoZoomSuggestions(options: {
 	const acceptedCenters: number[] = [];
 	const suggestions: AutoZoomSuggestion[] = [];
 
-	for (const candidate of sortedCandidates) {
+	for (const candidate of candidates) {
 		const tooCloseToAccepted = acceptedCenters.some(
 			(center) => Math.abs(center - candidate.centerTimeMs) < SUGGESTION_SPACING_MS,
 		);
@@ -531,37 +556,109 @@ export function buildAutoZoomSuggestionsForClips(options: {
 	defaultDurationMs: number;
 }): AutoZoomSuggestion[] {
 	const { cursorTelemetry, assetId, clips, existingRegions, defaultDurationMs } = options;
-	const suggestions: AutoZoomSuggestion[] = [];
-	for (const clip of clips) {
-		if (clip.assetId !== assetId) continue;
-		const sourceEndSec = clip.sourceEndSec ?? clip.sourceStartSec;
-		const windowMs = (sourceEndSec - clip.sourceStartSec) * 1000;
-		if (windowMs <= 0) continue;
-		const sourceOffsetMs = clip.sourceStartSec * 1000;
-		const timelineOffsetMs = clip.timelineStartSec * 1000;
-		const clipTelemetry = cursorTelemetry
-			.filter(
-				(sample) => sample.timeMs >= sourceOffsetMs && sample.timeMs <= sourceOffsetMs + windowMs,
-			)
-			.map((sample) => ({ ...sample, timeMs: sample.timeMs - sourceOffsetMs }));
-		const clipSuggestions = buildAutoZoomSuggestions({
-			cursorTelemetry: clipTelemetry,
-			totalMs: windowMs,
-			existingRegions: existingRegions.map((region) => ({
-				startMs: region.startMs - timelineOffsetMs,
-				endMs: region.endMs - timelineOffsetMs,
-			})),
-			defaultDurationMs,
-		});
-		suggestions.push(
-			...clipSuggestions.map((suggestion) => ({
-				...suggestion,
-				span: {
-					start: suggestion.span.start + timelineOffsetMs,
-					end: suggestion.span.end + timelineOffsetMs,
-				},
-			})),
+	return clips.flatMap((clip) =>
+		clip.assetId !== assetId
+			? []
+			: placeInClip(clip, existingRegions, (sourceOffsetMs, windowMs, clipRegions) =>
+					buildAutoZoomSuggestions({
+						cursorTelemetry: cursorTelemetry
+							.filter(
+								(sample) =>
+									sample.timeMs >= sourceOffsetMs && sample.timeMs <= sourceOffsetMs + windowMs,
+							)
+							.map((sample) => ({ ...sample, timeMs: sample.timeMs - sourceOffsetMs })),
+						totalMs: windowMs,
+						existingRegions: clipRegions,
+						defaultDurationMs,
+					}),
+				),
+	);
+}
+
+/**
+ * Run `place` in one clip's own frame — its source window as `[0, windowMs]`, and the
+ * reserved ruler spans shifted into it — then lift what it placed back onto the ruler.
+ * The projection `buildAutoZoomSuggestionsForClips` documents, held once for every
+ * candidate source. Skips a clip with no probed source window.
+ */
+function placeInClip(
+	clip: AxcutClip,
+	existingRegions: { startMs: number; endMs: number }[],
+	place: (
+		sourceOffsetMs: number,
+		windowMs: number,
+		clipRegions: { startMs: number; endMs: number }[],
+	) => AutoZoomSuggestion[],
+): AutoZoomSuggestion[] {
+	const sourceEndSec = clip.sourceEndSec ?? clip.sourceStartSec;
+	const windowMs = (sourceEndSec - clip.sourceStartSec) * 1000;
+	if (windowMs <= 0) return [];
+	const sourceOffsetMs = clip.sourceStartSec * 1000;
+	const timelineOffsetMs = clip.timelineStartSec * 1000;
+	const clipRegions = existingRegions.map((region) => ({
+		startMs: region.startMs - timelineOffsetMs,
+		endMs: region.endMs - timelineOffsetMs,
+	}));
+	return place(sourceOffsetMs, windowMs, clipRegions).map((suggestion) => ({
+		...suggestion,
+		span: {
+			start: suggestion.span.start + timelineOffsetMs,
+			end: suggestion.span.end + timelineOffsetMs,
+		},
+	}));
+}
+
+/**
+ * One zoom per moment the user flagged while recording, placed by the same rules as every
+ * other suggestion.
+ *
+ * `markers` is `resolveRecordingMarkers`' output, so the fan-out is already done: a flag on a
+ * clip that is on the timeline twice arrives twice, once per `clipId`, and each row is placed
+ * on its own clip. A row the resolver marked `removed` (a trim cuts it) is not placed — a zoom
+ * over footage that never plays is not a zoom. Each zoom is held like a click (a short
+ * pre-roll before the flag, then a hold), focused where the pointer was at that instant, at
+ * the default depth.
+ *
+ * `covered` counts the rows the placement rules refused — an existing zoom, or the zoom of an
+ * earlier flag, already sits on that stretch of ruler — so a caller can say why fewer zooms
+ * landed than flags were set. A clip too short to hold any zoom refuses its flags too, and
+ * they are counted here as well.
+ */
+export function buildFlagZoomSuggestions(options: {
+	markers: ResolvedRecordingMarker[];
+	clips: AxcutClip[];
+	/** Samples in the recording's own SOURCE time, same as the markers. */
+	cursorTelemetry: ZoomSuggestionSample[];
+	/** Already-placed zoom spans, in RAW TIMELINE ms. */
+	existingRegions: { startMs: number; endMs: number }[];
+}): { suggestions: AutoZoomSuggestion[]; covered: number; trimmed: number } {
+	const { markers, clips, existingRegions } = options;
+	const telemetry = normalizeCursorTelemetry(options.cursorTelemetry, Number.POSITIVE_INFINITY);
+	const live = markers.filter((marker) => !marker.removed);
+	const suggestions = clips.flatMap((clip) => {
+		const flags = live.filter((marker) => marker.clipId === clip.id);
+		if (flags.length === 0) return [];
+		return placeInClip(clip, existingRegions, (sourceOffsetMs, windowMs, clipRegions) =>
+			placeZoomCandidates(
+				flags.map((marker): ZoomCandidate => {
+					const atMs = marker.sourceSec * 1000 - sourceOffsetMs;
+					return {
+						centerTimeMs: atMs,
+						focus: interpolateCursorAt(telemetry, marker.sourceSec * 1000) ?? { cx: 0.5, cy: 0.5 },
+						strength: 0,
+						reason: "flag",
+						depth: DEFAULT_ZOOM_DEPTH,
+						spanMs: spanWithHold(atMs, atMs, CLICK_PRE_ROLL_MS, CLICK_HOLD_MS),
+					};
+				}),
+				// Every flag carries its own span, so there is no default width to fall back on.
+				{ totalMs: windowMs, existingRegions: clipRegions, defaultDurationMs: 0 },
+			),
 		);
-	}
-	return suggestions;
+	});
+	return {
+		suggestions,
+		covered: live.length - suggestions.length,
+		trimmed: markers.length - live.length,
+	};
 }

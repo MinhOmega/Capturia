@@ -4,10 +4,12 @@
 
 import { createId } from "../document/ids";
 import type { AxcutAsset, AxcutDocument } from "../schema";
+import { primaryVideoAsset, resolveRecordingMarkers } from "./recordingMarkers";
 import { anchorRegionsWithDerivedMs } from "./timelineMap";
 import {
 	type AutoZoomSuggestion,
 	buildAutoZoomSuggestionsForClips,
+	buildFlagZoomSuggestions,
 	type ZoomSuggestionSample,
 } from "./zoom-suggestions";
 
@@ -74,37 +76,71 @@ export function clipExtentSignature(document: AxcutDocument): string {
 		.join("|");
 }
 
+/** The wand's and the fresh-recording import's collect, with the stale-clips retry. */
+export async function collectAutoZoomSuggestionsForLatestDocument(
+	readDocument: () => AxcutDocument | null,
+	getTelemetry: AutoZoomTelemetryReader,
+	includeAsset?: AutoZoomAssetFilter,
+): Promise<{ document: AxcutDocument; suggestions: AutoZoomSuggestion[] } | null> {
+	const collected = await collectForLatestDocument(readDocument, (document) =>
+		collectAutoZoomSuggestionsForDocument(document, getTelemetry, includeAsset),
+	);
+	return collected && { document: collected.document, suggestions: collected.result };
+}
+
+/**
+ * One zoom per moment flagged while recording, collected the way the wand collects its
+ * suggestions: same telemetry reader, same retry when the clips move during the read.
+ *
+ * `markersMs` are the stored SOURCE times, resolved here against the document the zooms
+ * are built from — resolving them at click time would reintroduce the stale-clips problem
+ * the retry exists for. Placement, the trim skip and the counts are
+ * `buildFlagZoomSuggestions`'.
+ */
+export async function collectFlagZoomSuggestionsForLatestDocument(
+	readDocument: () => AxcutDocument | null,
+	getTelemetry: AutoZoomTelemetryReader,
+	markersMs: readonly number[],
+) {
+	const collected = await collectForLatestDocument(readDocument, async (document) => {
+		const asset = primaryVideoAsset(document);
+		const telemetry = asset?.originalPath ? ((await getTelemetry(asset.originalPath)) ?? []) : [];
+		return buildFlagZoomSuggestions({
+			markers: resolveRecordingMarkers(document, asset?.id, markersMs),
+			clips: document.timeline.clips,
+			cursorTelemetry: telemetry,
+			existingRegions: document.zoomRanges.map((region) => ({
+				startMs: region.startMs,
+				endMs: region.endMs,
+			})),
+		});
+	});
+	return collected && { document: collected.document, ...collected.result };
+}
+
 /**
  * Collect against the document as it is NOW, and collect again if the clips moved
  * while the telemetry was being read.
  *
  * One retry, not a loop: a user who keeps editing through the wait will keep
  * invalidating it, and the honest answer there is the write-time guards, not
- * spinning here. Returns the suggestions together with the document they were
- * built from, so the caller can tell what they describe.
+ * spinning here. Returns the result together with the document it was built from,
+ * so the caller can tell what it describes.
  */
-export async function collectAutoZoomSuggestionsForLatestDocument(
+async function collectForLatestDocument<T>(
 	readDocument: () => AxcutDocument | null,
-	getTelemetry: AutoZoomTelemetryReader,
-	includeAsset?: AutoZoomAssetFilter,
-): Promise<{ document: AxcutDocument; suggestions: AutoZoomSuggestion[] } | null> {
+	collect: (document: AxcutDocument) => Promise<T>,
+): Promise<{ document: AxcutDocument; result: T } | null> {
 	const start = readDocument();
 	if (!start) return null;
 	const startSignature = clipExtentSignature(start);
-	const suggestions = await collectAutoZoomSuggestionsForDocument(
-		start,
-		getTelemetry,
-		includeAsset,
-	);
+	const result = await collect(start);
 	const latest = readDocument();
 	if (!latest) return null;
 	if (clipExtentSignature(latest) === startSignature) {
-		return { document: latest, suggestions };
+		return { document: latest, result };
 	}
-	return {
-		document: latest,
-		suggestions: await collectAutoZoomSuggestionsForDocument(latest, getTelemetry, includeAsset),
-	};
+	return { document: latest, result: await collect(latest) };
 }
 
 export function appendAutoZoomSuggestions(

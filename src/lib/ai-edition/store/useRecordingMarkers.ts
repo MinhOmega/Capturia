@@ -10,25 +10,20 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+	primaryVideoAsset,
 	type ResolvedRecordingMarker,
 	resolveRecordingMarkers,
 } from "../timeline/recordingMarkers";
 import { useProjectStore } from "./projectStore";
 
 /**
- * The asset markers belong to: the recording the project was built around.
- *
- * Markers are written beside ONE file by the recorder, so there is exactly one
- * asset that can carry them. `primaryAssetId` is what `addAsset` claims for the
- * first asset in a project, which for a recorded project is the screen capture.
+ * `markers` for drawing; `markersMs` — the stored source times — for a caller that
+ * has to resolve them again later against a document that has moved on since.
  */
-function primaryVideoAsset(document: ReturnType<typeof useProjectStore.getState>["document"]) {
-	if (!document) return undefined;
-	const byId = document.assets.find((asset) => asset.id === document.project.primaryAssetId);
-	return byId ?? document.assets.find((asset) => asset.kind !== "audio");
-}
-
-export function useRecordingMarkers(): ResolvedRecordingMarker[] {
+export function useRecordingMarkers(): {
+	markers: ResolvedRecordingMarker[];
+	markersMs: number[];
+} {
 	const document = useProjectStore((state) => state.document);
 	const asset = primaryVideoAsset(document);
 	const assetId = asset?.id;
@@ -59,8 +54,9 @@ export function useRecordingMarkers(): ResolvedRecordingMarker[] {
 		};
 	}, [originalPath]);
 
-	return useMemo(
+	const markers = useMemo(
 		() => resolveRecordingMarkers(document, assetId, markersMs),
 		[document, assetId, markersMs],
 	);
+	return { markers, markersMs };
 }

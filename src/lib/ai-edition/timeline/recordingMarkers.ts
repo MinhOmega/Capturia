@@ -27,6 +27,19 @@ import type { AxcutDocument } from "../schema";
 import { placementRawSec } from "./aggregated-transcript";
 import { removalAt, removedRawSpans } from "./programme-time";
 
+/**
+ * The asset markers belong to: the recording the project was built around.
+ *
+ * Markers are written beside ONE file by the recorder, so there is exactly one
+ * asset that can carry them. `primaryAssetId` is what `addAsset` claims for the
+ * first asset in a project, which for a recorded project is the screen capture.
+ */
+export function primaryVideoAsset(document: AxcutDocument | null | undefined) {
+	if (!document) return undefined;
+	const byId = document.assets.find((asset) => asset.id === document.project.primaryAssetId);
+	return byId ?? document.assets.find((asset) => asset.kind !== "audio");
+}
+
 export interface ResolvedRecordingMarker {
 	/**
 	 * The clip replaying this instant.

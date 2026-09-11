@@ -2,7 +2,7 @@ import type { CursorTelemetryPoint, ZoomFocus } from "@/components/video-editor/
 
 /** Binary-search the sorted telemetry and lerp the cursor position at the given playback time. */
 export function interpolateCursorAt(
-	telemetry: CursorTelemetryPoint[],
+	telemetry: Pick<CursorTelemetryPoint, "timeMs" | "cx" | "cy">[],
 	timeMs: number,
 ): ZoomFocus | null {
 	if (telemetry.length === 0) return null;

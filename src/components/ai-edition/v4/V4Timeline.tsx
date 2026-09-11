@@ -3,6 +3,7 @@ import {
 	Clock,
 	Crosshair,
 	EyeOff,
+	Flag,
 	Loader2,
 	Maximize2,
 	MessageSquare,
@@ -56,7 +57,11 @@ import { useChatPromptBus } from "@/lib/ai-edition/store/useChatPromptBus";
 import { useEditorSettings } from "@/lib/ai-edition/store/useEditorSettings";
 import { useRecordingMarkers } from "@/lib/ai-edition/store/useRecordingMarkers";
 import type { useTimeline } from "@/lib/ai-edition/store/useTimeline";
-import { collectAutoZoomSuggestionsForLatestDocument } from "@/lib/ai-edition/timeline/apply-auto-zooms";
+import {
+	type AutoZoomTelemetryReader,
+	collectAutoZoomSuggestionsForLatestDocument,
+	collectFlagZoomSuggestionsForLatestDocument,
+} from "@/lib/ai-edition/timeline/apply-auto-zooms";
 import { hasAnyClipWithCamera } from "@/lib/ai-edition/timeline/camera";
 import { formatSec } from "@/lib/ai-edition/timeline/format";
 import {
@@ -99,6 +104,16 @@ const AI_ENHANCE_PROMPT =
 	"Cut the dead time in this recording: long pauses, silences, and idle stretches where nothing is being said or done. Keep the pacing tight and natural, and do not cut anything a viewer needs. Apply the edits directly to the timeline.";
 
 type TimelineApi = ReturnType<typeof useTimeline>;
+
+// The telemetry both Auto-enhance zoom passes read. `getRecordingData`, not
+// `getTelemetry`: the latter is a projection that keeps positions and DROPS
+// `interactionType` (see `readCursorTelemetryFile`), so every click the recorder
+// captured was thrown away one call before the detector that wants it. That
+// projection is right for the timeline overlay it was written for and wrong here —
+// it left the suggester guessing from stillness while the ground truth sat in the
+// same sidecar.
+const readRecordingTelemetry: AutoZoomTelemetryReader = async (videoPath) =>
+	(await nativeBridgeClient.cursor.getRecordingData(videoPath))?.samples ?? [];
 
 const ASSET_MIME = "application/x-axcut-asset";
 
@@ -643,6 +658,8 @@ export function V4Timeline({
 	// The camera lane borrows the Layout pane's "No Webcam" wording when there is no
 	// camera to grow, so the two surfaces say the same thing about the same project.
 	const ts = useScopedT("settings");
+	// The recorder's own name for its flag button, so the hint that points at it cannot drift.
+	const tLaunch = useScopedT("launch");
 	// Wheel zoom/pan listens on the whole pane (toolbar down through the nav bar),
 	// not just the lanes — a user scrolling over the ruler or the hint labels
 	// expects the same zoom/pan the lanes give, not silence.
@@ -933,7 +950,7 @@ export function V4Timeline({
 	// Moments the user flagged while recording. Positions are derived from source
 	// time on every render of the document, so a marker follows the clip that
 	// carries it through cuts, reorders and retimes instead of going stale.
-	const recordingMarkers = useRecordingMarkers();
+	const { markers: recordingMarkers, markersMs: recordingMarkersMs } = useRecordingMarkers();
 
 	// Live scrub position. The store write behind it is rAF-throttled (see
 	// seekToClientX), so this keeps the playhead and the timecode pinned to the
@@ -1700,15 +1717,7 @@ export function V4Timeline({
 			// different media.
 			const collected = await collectAutoZoomSuggestionsForLatestDocument(
 				() => useProjectStore.getState().document,
-				// `getRecordingData`, not `getTelemetry`: the latter is a projection
-				// that keeps positions and DROPS `interactionType` (see
-				// `readCursorTelemetryFile`), so every click the recorder captured
-				// was thrown away one call before the detector that wants it. That
-				// projection is right for the timeline overlay it was written for
-				// and wrong here — it left the suggester guessing from stillness
-				// while the ground truth sat in the same sidecar.
-				async (videoPath) =>
-					(await nativeBridgeClient.cursor.getRecordingData(videoPath))?.samples ?? [],
+				readRecordingTelemetry,
 			);
 			const suggestions = collected?.suggestions ?? [];
 			if (suggestions.length === 0) {
@@ -1733,6 +1742,49 @@ export function V4Timeline({
 			setAutoBusy(false);
 		}
 	}, [tl, t]);
+
+	// Auto-enhance: one zoom per moment flagged while recording. Collected through the
+	// same reader and stale-clips retry as the wand above, and placed by the same rules
+	// (see `buildFlagZoomSuggestions`); the telemetry is only asked where the pointer was
+	// at each flag.
+	const runFlagZooms = useCallback(async () => {
+		setAutoEnhanceOpen(false);
+		setAutoBusy(true);
+		try {
+			const collected = await collectFlagZoomSuggestionsForLatestDocument(
+				() => useProjectStore.getState().document,
+				readRecordingTelemetry,
+				recordingMarkersMs,
+			);
+			if (!collected) return;
+			const { suggestions, covered, trimmed } = collected;
+			const skipped =
+				[
+					covered > 0 ? t("toolbar.flagZoomsCovered", { count: covered }) : null,
+					trimmed > 0 ? t("toolbar.flagZoomsTrimmed", { count: trimmed }) : null,
+				]
+					.filter(Boolean)
+					.join(" · ") || undefined;
+			if (suggestions.length === 0) {
+				toast.info(t("toolbar.noAutoZoomMoments"), { description: skipped });
+				return;
+			}
+			// One save, so the whole pass is one undo step.
+			const added = await tl.addZoomsBulk(suggestions);
+			if (added === 0) return;
+			toast.success(
+				t(added === 1 ? "toolbar.addedAutoZoom" : "toolbar.addedAutoZoomPlural", { count: added }),
+				{ description: skipped },
+			);
+		} catch (err) {
+			toast.error(t("toolbar.autoZoomFailed"), {
+				description: err instanceof Error ? err.message : String(err),
+			});
+		} finally {
+			setAutoBusy(false);
+		}
+	}, [recordingMarkersMs, tl, t]);
+	const noFlags = recordingMarkers.length === 0;
 
 	// Auto-enhance option 2 — hand a generic prompt to the AI agent (smart
 	// zooms + cuts) via the chat prompt-bus. The chat panel owns the outcome
@@ -2033,6 +2085,25 @@ export function V4Timeline({
 												<span style={{ fontWeight: 600 }}>{t("toolbar.automaticZooms")}</span>
 												<span style={{ fontSize: 11, color: "var(--muted)" }}>
 													{t("toolbar.automaticZoomsHint")}
+												</span>
+											</span>
+										</button>
+										<button
+											type="button"
+											className={styles.recMenuRow}
+											onClick={() => void runFlagZooms()}
+											disabled={noFlags}
+											style={noFlags ? { opacity: 0.55, cursor: "not-allowed" } : undefined}
+										>
+											<Flag size={15} style={{ flexShrink: 0 }} />
+											<span style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+												<span style={{ fontWeight: 600 }}>{t("toolbar.flaggedZooms")}</span>
+												<span style={{ fontSize: 11, color: "var(--muted)" }}>
+													{noFlags
+														? t("toolbar.flaggedZoomsNoFlags", {
+																button: tLaunch("tooltips.addMarker"),
+															})
+														: t("toolbar.flaggedZoomsHint")}
 												</span>
 											</span>
 										</button>

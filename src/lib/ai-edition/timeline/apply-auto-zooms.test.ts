@@ -5,6 +5,7 @@ import {
 	appendAutoZoomSuggestions,
 	collectAutoZoomSuggestionsForDocument,
 	collectAutoZoomSuggestionsForLatestDocument,
+	collectFlagZoomSuggestionsForLatestDocument,
 } from "./apply-auto-zooms";
 
 function dwell(
@@ -158,5 +159,54 @@ describe("collectAutoZoomSuggestionsForLatestDocument", () => {
 		const getTelemetry = vi.fn(async () => telemetry);
 		expect(await collectAutoZoomSuggestionsForLatestDocument(() => null, getTelemetry)).toBeNull();
 		expect(getTelemetry).not.toHaveBeenCalled();
+	});
+});
+
+describe("collectFlagZoomSuggestionsForLatestDocument", () => {
+	it("zooms a normal flag and counts the covered and trimmed ones it skips", async () => {
+		// A zoom already sits over 6s, and a cut removes 11-13s.
+		const withZoom = appendAutoZoomSuggestions(documentWithClip(20), [
+			{ span: { start: 5500, end: 6500 }, focus: { cx: 0.5, cy: 0.5 } },
+		]);
+		const document: AxcutDocument = {
+			...withZoom,
+			timeline: {
+				...withZoom.timeline,
+				trimRanges: [
+					{
+						id: "trim_1",
+						assetId: "asset_1",
+						startSec: 11,
+						endSec: 13,
+						reason: "",
+						origin: "user",
+					},
+				],
+			},
+		};
+		const paths: string[] = [];
+
+		const out = await collectFlagZoomSuggestionsForLatestDocument(
+			() => document,
+			async (videoPath) => {
+				paths.push(videoPath);
+				return dwell(2000, 0.25, 0.75);
+			},
+			[2000, 6000, 12000], // normal, covered, trimmed
+		);
+
+		expect(paths).toEqual(["C:\\recordings\\rec.mp4"]);
+		expect(out?.covered).toBe(1);
+		expect(out?.trimmed).toBe(1);
+		const [zoom] = out?.suggestions ?? [];
+		expect(out?.suggestions).toHaveLength(1);
+		// Starts slightly before the flag and is held past it.
+		expect(zoom.span.start).toBeGreaterThan(1000);
+		expect(zoom.span.start).toBeLessThan(2000);
+		expect(zoom.span.end).toBeGreaterThan(2000);
+		expect(zoom.depth).toBe(3);
+		// Focused where the pointer was at that instant.
+		expect(zoom.focus.cx).toBeCloseTo(0.25, 5);
+		expect(zoom.focus.cy).toBeCloseTo(0.75, 5);
 	});
 });
