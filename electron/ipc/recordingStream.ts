@@ -9,7 +9,8 @@ import type { IpcMain } from "electron";
  * because it's already exchanged across IPC and is unique per recording.
  */
 export class RecordingStreamRegistry {
-	private readonly streams = new Map<string, WriteStream>();
+	/** The stream, and the path it was opened at — resolved once, when the take began. */
+	private readonly streams = new Map<string, { ws: WriteStream; filePath: string }>();
 
 	/**
 	 * Open a write stream, resolving only on the `open` event so a bad path or
@@ -34,16 +35,28 @@ export class RecordingStreamRegistry {
 			console.error(`[recording-stream] ${fileName}:`, error);
 		});
 
-		this.streams.set(fileName, ws);
+		this.streams.set(fileName, { ws, filePath });
 	}
 
 	has(fileName: string): boolean {
 		return this.streams.has(fileName);
 	}
 
+	/**
+	 * Where the open stream for `fileName` writes, or undefined when none is open.
+	 *
+	 * Callers finishing or discarding a take ask this rather than resolving the name again:
+	 * the recordings folder can change between the take's start and its stop (a chosen drive
+	 * that comes back mid-take, a folder picked meanwhile), and a fresh resolve would then
+	 * look for the file where it never was.
+	 */
+	pathOf(fileName: string): string | undefined {
+		return this.streams.get(fileName)?.filePath;
+	}
+
 	/** Append a chunk; rejects if no stream is open or the write fails. */
 	async append(fileName: string, chunk: Buffer): Promise<void> {
-		const ws = this.streams.get(fileName);
+		const ws = this.streams.get(fileName)?.ws;
 		if (!ws) {
 			throw new Error(`No active recording stream for ${fileName}`);
 		}
@@ -57,7 +70,7 @@ export class RecordingStreamRegistry {
 	 * open (streamed to disk) or false if the caller still needs to write its buffer.
 	 */
 	async finalize(fileName: string): Promise<boolean> {
-		const ws = this.streams.get(fileName);
+		const ws = this.streams.get(fileName)?.ws;
 		if (!ws) {
 			return false;
 		}
@@ -78,7 +91,7 @@ export class RecordingStreamRegistry {
 	}
 
 	private async endStream(fileName: string): Promise<void> {
-		const ws = this.streams.get(fileName);
+		const ws = this.streams.get(fileName)?.ws;
 		if (!ws) {
 			return;
 		}
@@ -129,7 +142,10 @@ export function registerRecordingStreamHandlers(
 		"close-recording-stream",
 		async (_, fileName: string): Promise<{ success: boolean; error?: string }> => {
 			try {
-				await registry.discard(fileName, resolveRecordingOutputPath(fileName));
+				await registry.discard(
+					fileName,
+					registry.pathOf(fileName) ?? resolveRecordingOutputPath(fileName),
+				);
 				return { success: true };
 			} catch (error) {
 				return { success: false, error: String(error) };

@@ -294,6 +294,12 @@ export class LinuxNativeCaptureSession {
 		return this.sourceKind;
 	}
 
+	/** Where this take is written, fixed when the session was created. Asked at discard rather
+	 *  than re-resolving the recordings folder, which can have changed since. */
+	get outputPath(): string {
+		return this.config.outputPath;
+	}
+
 	/**
 	 * Asks the helper to write the trailer and exit, then returns what it made.
 	 *
