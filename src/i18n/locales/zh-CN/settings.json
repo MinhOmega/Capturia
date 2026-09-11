@@ -241,6 +241,17 @@
 		"title": "摄像头布局",
 		"noWebcam": "无摄像头"
 	},
+	"looks": {
+		"title": "已保存的外观",
+		"empty": "还没有保存的外观。",
+		"saveAs": "将外观保存为预设…",
+		"namePlaceholder": "预设名称",
+		"includeAspectRatio": "包含格式（宽高比）",
+		"defaultForNew": "新项目的默认外观",
+		"rename": "重命名",
+		"missingAsset": "此外观中的图片或光标已不可用，已重置为默认值。",
+		"saveFailed": "无法保存外观。自定义背景图片可能太大，无法存储。"
+	},
 	"textAnimation": {
 		"slideLeft": "向左滑动",
 		"pulse": "脉动",

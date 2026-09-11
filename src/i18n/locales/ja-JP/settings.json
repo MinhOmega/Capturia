@@ -241,6 +241,17 @@
 		"title": "カメラレイアウト",
 		"noWebcam": "Webカメラなし"
 	},
+	"looks": {
+		"title": "保存したルック",
+		"empty": "保存したルックはまだありません。",
+		"saveAs": "ルックをプリセットとして保存…",
+		"namePlaceholder": "プリセット名",
+		"includeAspectRatio": "フォーマット（アスペクト比）を含める",
+		"defaultForNew": "新規プロジェクトのデフォルト",
+		"rename": "名前を変更",
+		"missingAsset": "このルックの画像またはカーソルが見つからないため、デフォルトに戻しました。",
+		"saveFailed": "ルックを保存できませんでした。カスタム背景画像が大きすぎて保存できない可能性があります。"
+	},
 	"textAnimation": {
 		"slideLeft": "左へスライド",
 		"pulse": "パルス",

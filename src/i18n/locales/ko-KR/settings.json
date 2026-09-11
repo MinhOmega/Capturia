@@ -241,6 +241,17 @@
 		"title": "카메라 레이아웃",
 		"noWebcam": "웹캠 없음"
 	},
+	"looks": {
+		"title": "저장된 스타일",
+		"empty": "저장된 스타일이 아직 없습니다.",
+		"saveAs": "스타일을 프리셋으로 저장…",
+		"namePlaceholder": "프리셋 이름",
+		"includeAspectRatio": "형식(화면 비율) 포함",
+		"defaultForNew": "새 프로젝트 기본값",
+		"rename": "이름 바꾸기",
+		"missingAsset": "이 스타일의 이미지 또는 커서를 더 이상 사용할 수 없어 기본값으로 재설정했습니다.",
+		"saveFailed": "스타일을 저장할 수 없습니다. 사용자 지정 배경 이미지가 너무 커서 저장하지 못했을 수 있습니다."
+	},
 	"textAnimation": {
 		"slideLeft": "왼쪽 슬라이드",
 		"pulse": "펄스",

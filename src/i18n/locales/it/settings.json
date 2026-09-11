@@ -241,6 +241,17 @@
 		"title": "Disposizione camera",
 		"noWebcam": "Nessuna webcam"
 	},
+	"looks": {
+		"title": "Stili salvati",
+		"empty": "Nessuno stile salvato.",
+		"saveAs": "Salva lo stile come preset…",
+		"namePlaceholder": "Nome del preset",
+		"includeAspectRatio": "Includi formato (proporzioni)",
+		"defaultForNew": "Predefinito per i nuovi progetti",
+		"rename": "Rinomina",
+		"missingAsset": "Un'immagine o un cursore di questo stile non è più disponibile, quindi è stato ripristinato il valore predefinito.",
+		"saveFailed": "Impossibile salvare lo stile. Un'immagine di sfondo personalizzata potrebbe essere troppo grande da archiviare."
+	},
 	"textAnimation": {
 		"slideLeft": "Scivola a sinistra",
 		"pulse": "Pulsazione",

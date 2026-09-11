@@ -9,6 +9,7 @@ import { type Interval, replaceTimeline as replaceTimelineOp } from "../document
 import { type AxcutAsset, type AxcutDocument, createAudioTrack, documentSchema } from "../schema";
 import { probeAudioDuration, probeVideoDimensions } from "../timeline/duration";
 import { DEFAULT_PREVIEW_RATE } from "../timeline/transport";
+import { applyLook, defaultLookPreset, withAvailableAssets } from "./lookPresets";
 import { clearHistory, currentWriteEpoch, pushHistory } from "./undoStack";
 
 let documentSavesInFlight = 0;
@@ -321,7 +322,18 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 			if (!result.success || !result.document) {
 				throw new Error(result.error ?? "Failed to create project");
 			}
-			const document = parseDocument(result.document);
+			let document = parseDocument(result.document);
+			// Seeded here rather than in the main process because the presets live in this
+			// renderer's localStorage. Best effort: a failed write leaves the project on the
+			// shipped defaults, which is what it was before looks existed.
+			const look = defaultLookPreset();
+			if (look) {
+				const seeded = await nativeBridgeClient.aiEdition.save(
+					applyLook(document, await withAvailableAssets(look)),
+				);
+				if (seeded.success && seeded.document) document = parseDocument(seeded.document);
+				else console.warn("[project] could not apply the default look:", seeded.error);
+			}
 			set({
 				projectId: document.project.id,
 				document,

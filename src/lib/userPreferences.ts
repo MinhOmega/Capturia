@@ -66,7 +66,7 @@ export const DEFAULT_PREFS: UserPreferences = {
 };
 
 /** Parses stored preferences without throwing on malformed JSON. */
-function safeJsonParse(text: string | null): Record<string, unknown> | null {
+export function safeJsonParse(text: string | null): Record<string, unknown> | null {
 	if (!text) return null;
 	try {
 		return JSON.parse(text);

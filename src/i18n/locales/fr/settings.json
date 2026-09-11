@@ -241,6 +241,17 @@
 		"title": "Disposition caméra",
 		"noWebcam": "Sans webcam"
 	},
+	"looks": {
+		"title": "Styles enregistrés",
+		"empty": "Aucun style enregistré pour l'instant.",
+		"saveAs": "Enregistrer le style comme préréglage…",
+		"namePlaceholder": "Nom du préréglage",
+		"includeAspectRatio": "Inclure le format (rapport d'aspect)",
+		"defaultForNew": "Par défaut pour les nouveaux projets",
+		"rename": "Renommer",
+		"missingAsset": "Une image ou un curseur de ce style n'est plus disponible ; la valeur par défaut a été rétablie.",
+		"saveFailed": "Impossible d'enregistrer le style. Une image d'arrière-plan personnalisée est peut-être trop volumineuse pour être stockée."
+	},
 	"textAnimation": {
 		"slideLeft": "Glisser à gauche",
 		"pulse": "Pulsation",

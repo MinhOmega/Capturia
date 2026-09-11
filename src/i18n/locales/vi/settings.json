@@ -241,6 +241,17 @@
 		"title": "Bố cục camera",
 		"noWebcam": "Không có webcam"
 	},
+	"looks": {
+		"title": "Giao diện đã lưu",
+		"empty": "Chưa có giao diện nào được lưu.",
+		"saveAs": "Lưu giao diện thành cài đặt sẵn…",
+		"namePlaceholder": "Tên cài đặt sẵn",
+		"includeAspectRatio": "Bao gồm định dạng (tỷ lệ khung hình)",
+		"defaultForNew": "Mặc định cho dự án mới",
+		"rename": "Đổi tên",
+		"missingAsset": "Một hình ảnh hoặc con trỏ trong giao diện này không còn khả dụng nên đã được đặt lại về mặc định.",
+		"saveFailed": "Không thể lưu giao diện. Có thể ảnh nền tùy chỉnh quá lớn để lưu trữ."
+	},
 	"textAnimation": {
 		"slideLeft": "Trượt sang trái",
 		"pulse": "Nhấp nháy",
