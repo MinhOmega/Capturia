@@ -38,6 +38,7 @@ import type {
 	AxcutDocument,
 	AxcutTrimRange,
 } from "../schema";
+import { appendAutoZoomSuggestions } from "../timeline/apply-auto-zooms";
 import { hasAnyClipWithCamera } from "../timeline/camera";
 import { probeAudioDuration, probeVideoDimensions, probeVideoDuration } from "../timeline/duration";
 import {
@@ -361,32 +362,11 @@ export function useTimeline() {
 			// after the switch, not across it -- which is the same reason
 			// `documentAfterProbedDuration` carries an `originatingProjectId`.
 			if (useProjectStore.getState().projectId !== projectId) return 0;
-			const anchored = suggestions.flatMap((s) =>
-				anchorRegionsWithDerivedMs(
-					[
-						{
-							id: createId("zoom"),
-							startMs: Math.round(s.span.start),
-							endMs: Math.round(s.span.end),
-							// The signal picks the magnification: a click frames a control
-							// tightly, a fast traverse only wants a nudge. `3` stays the
-							// default for a suggester that does not say.
-							depth: s.depth ?? (3 as const),
-							focus: { cx: s.focus.cx, cy: s.focus.cy },
-							focusMode: "auto" as const,
-						},
-					],
-					// Anchored against the SAME document the write is built from: anchoring
-					// on the stale clips and saving the fresh document would place regions
-					// against a timeline that no longer exists.
-					doc.timeline.clips,
-					() => createId("zoom"),
-				),
-			);
-			const next: AxcutDocument = {
-				...doc,
-				zoomRanges: [...doc.zoomRanges, ...anchored] as AxcutDocument["zoomRanges"],
-			};
+			// One append shared with the fresh-recording import path, so the wand and the
+			// import cannot drift apart. It anchors against the SAME document the write is
+			// built from: anchoring on stale clips and saving the fresh document would
+			// place the regions against a timeline that no longer exists.
+			const next = appendAutoZoomSuggestions(doc, suggestions);
 			if (!(await saveDocument(next, { history: true }))) return 0;
 			return suggestions.length;
 		},
