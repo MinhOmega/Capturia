@@ -30,6 +30,24 @@ const INPUT_STYLE: CSSProperties = {
 	borderRadius: 6,
 };
 
+/**
+ * Puts a preset's look on the open project as one undo step.
+ *
+ * Same optimistic-then-save pair as `useEditorSettings.set`, for the same reason: a pane
+ * edit made during the save's IPC round-trip reads the store, and without the optimistic
+ * write it read the pre-look document — whichever save landed last then dropped either
+ * the edit or the look.
+ */
+export async function applyLookPreset(preset: LookPreset): Promise<void> {
+	const look = await withAvailableAssets(preset);
+	// Read after the await: the document the look lands on is the one on screen now.
+	const { document: doc, setDocument, saveDocument } = useProjectStore.getState();
+	if (!doc) return;
+	const next = applyLook(doc, look);
+	setDocument(next, { history: false });
+	await saveDocument(next, { history: true, historyBase: doc });
+}
+
 export function LookPresetsMenu() {
 	const ts = useScopedT("settings");
 	const tc = useScopedT("common");
@@ -56,14 +74,6 @@ export function LookPresetsMenu() {
 		};
 		persist({ ...state, presets: [...state.presets, preset] });
 		setName("");
-	};
-
-	const apply = async (preset: LookPreset) => {
-		setOpen(false);
-		const look = await withAvailableAssets(preset);
-		// Read after the await: the document the look lands on is the one on screen now.
-		const doc = useProjectStore.getState().document;
-		if (doc) await useProjectStore.getState().saveDocument(applyLook(doc, look), { history: true });
 	};
 
 	const commitRename = () => {
@@ -156,7 +166,10 @@ export function LookPresetsMenu() {
 											cursor: hasDocument ? "pointer" : "default",
 										}}
 										disabled={!hasDocument}
-										onClick={() => void apply(preset)}
+										onClick={() => {
+											setOpen(false);
+											void applyLookPreset(preset);
+										}}
 									>
 										{preset.name}
 									</button>
