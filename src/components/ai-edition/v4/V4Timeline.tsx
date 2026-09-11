@@ -1678,15 +1678,12 @@ export function V4Timeline({
 		}
 		setAutoBusy(true);
 		try {
-			// Read once, up front: every clip reserves against the zooms the document
-			// ALREADY holds, and two clips can never contest the same stretch of ruler, so
-			// nothing here depends on the order the assets are visited — which is what lets
-			// their telemetry be fetched concurrently rather than one IPC round trip after
-			// another. `Promise.all` preserves input order, so the suggestions come out in
-			// the same sequence a loop would have produced.
-			const existingRegions = tl.zoomRegions.map((z) => ({ startMs: z.startMs, endMs: z.endMs }));
+			// Telemetry first, and nothing derived from the document until it is back.
+			// `Promise.all` preserves input order, so the suggestions still come out in the
+			// same sequence a loop would have produced.
 			const perSource = await Promise.all(
-				sources.map(async (source) => {
+				sources.map(async (source) => ({
+					assetId: source.id,
 					// `getRecordingData`, not `getTelemetry`: the latter is a projection
 					// that keeps positions and DROPS `interactionType` (see
 					// `readCursorTelemetryFile`), so every click the recorder captured
@@ -1694,19 +1691,34 @@ export function V4Timeline({
 					// projection is right for the timeline overlay it was written for
 					// and wrong here — it left the suggester guessing from stillness
 					// while the ground truth sat in the same sidecar.
-					const telemetry =
+					telemetry:
 						(await nativeBridgeClient.cursor.getRecordingData(fromFileUrl(source.src)))?.samples ??
-						[];
-					return buildAutoZoomSuggestionsForClips({
-						cursorTelemetry: telemetry,
-						assetId: source.id,
-						clips,
-						existingRegions,
-						defaultDurationMs: 2000,
-					});
+						[],
+				})),
+			);
+			// Read AFTER the round trip, not before it. `addZoomsBulk` anchors what comes out
+			// of here against the document IT reads at write time, so building the spans from
+			// the pre-await `clips` puts the two halves on different rulers: a trim landing
+			// during the wait moves every clip, and a span that no longer falls in one is
+			// stored unanchored. A stale `zoomRegions` is the same shape one step over — a
+			// zoom the user added during the wait would not be reserved, and the region
+			// minted here would sit on top of it.
+			//
+			// Still read ONCE for every asset rather than per asset: each clip reserves
+			// against the zooms the document already holds, and two clips can never contest
+			// the same stretch of ruler, so nothing depends on the order they are visited.
+			const doc = useProjectStore.getState().document;
+			if (!doc) return;
+			const existingRegions = doc.zoomRanges.map((z) => ({ startMs: z.startMs, endMs: z.endMs }));
+			const suggestions: AutoZoomSuggestion[] = perSource.flatMap(({ assetId, telemetry }) =>
+				buildAutoZoomSuggestionsForClips({
+					cursorTelemetry: telemetry,
+					assetId,
+					clips: doc.timeline.clips,
+					existingRegions,
+					defaultDurationMs: 2000,
 				}),
 			);
-			const suggestions: AutoZoomSuggestion[] = perSource.flat();
 			if (suggestions.length === 0) {
 				toast.info(t("toolbar.noAutoZoomMoments"), {
 					description: t("toolbar.noAutoZoomMomentsDescription"),
