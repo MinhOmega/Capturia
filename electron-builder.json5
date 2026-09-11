@@ -3,12 +3,6 @@
   "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
   "appId": "com.capturia.app",
   "asar": true,
-  // .node binaries can't be dlopen'd from inside an asar — must live unpacked.
-  // onnxruntime-node distributes as a `.node` shared object that whisper.cpp
-  // helpers run from process spawn, so they all unpack via the same glob.
-  "asarUnpack": [
-    "**/*.node"
-  ],
   "productName": "Capturia",
   // There is deliberately no `electronVersion` here. electron-builder needs an EXACT
   // version because it downloads the binaries for one release, and it takes that from
@@ -75,6 +69,17 @@
   "files": [
     "dist",
     "dist-electron",
+    // Vite bundles every runtime import into dist/ and dist-electron/, so the
+    // node_modules electron-builder would add are dead weight (app.asar 275 MB -> 10 MB upstream).
+    "!node_modules/**",
+    // Already shipped as extraResources, which is where they are read from
+    // (ASSET_BASE_DIR / sceneAssetBaseDirs); Vite's public/ copy is a duplicate.
+    "!dist/wallpapers/**",
+    "!dist/cursors/**",
+    "!dist/mediapipe/**",
+    // README/store art that Vite copies from public/; nothing in the app loads it.
+    "!dist/demo.gif",
+    "!dist/preview*.png",
     "!*.png",
     "!preview*.png",
     "!*.md",
