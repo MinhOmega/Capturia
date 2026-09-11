@@ -235,6 +235,15 @@ describe("LinuxNativeCaptureSession", () => {
 		expect(helper.stdinWrites).toContain("record\n");
 	});
 
+	it("survives EPIPE from a helper that died before its command was written", async () => {
+		await startReady(newSession());
+		// An 'error' with no listener throws out of emit(), which in the main
+		// process is an uncaught exception that takes the app down.
+		expect(() =>
+			helper.stdin.emit("error", Object.assign(new Error("write EPIPE"), { code: "EPIPE" })),
+		).not.toThrow();
+	});
+
 	it("arms at most once, so a caller need not track whether it prepared", async () => {
 		const session = newSession(true);
 		await startReady(session);

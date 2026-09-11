@@ -1578,6 +1578,15 @@ function attachNativeMacCaptureOutputDrain(
 	proc.stderr.on("data", drain);
 	proc.once("close", cleanup);
 	proc.once("error", cleanup);
+	// Same reason as attachNativeWindowsCaptureOutputDrain: writing "stop\n" to a
+	// helper that already died raises EPIPE on stdin, and an 'error' with no
+	// listener is an uncaught exception in the main process. The stop wait then
+	// never gets to report the helper's exit.
+	for (const stream of [proc.stdin, proc.stdout, proc.stderr]) {
+		stream.on("error", (error) => {
+			console.warn("[native-sck] helper pipe error:", error);
+		});
+	}
 	proc.once("exit", (code, signal) => {
 		const detail = `code=${code ?? "null"} signal=${signal ?? "null"}`;
 		notifyNativeCaptureHelperExit("darwin", recordingId, detail);

@@ -111,6 +111,11 @@ export class PipeWireCursorRecordingSession implements CursorRecordingSession {
 			{ stdio: ["pipe", "pipe", "pipe"] },
 		);
 		this.process = child;
+		// See linuxNativeCaptureSession: EPIPE from a dead helper arrives past the
+		// try/catch around the stop write and would crash the main process.
+		child.stdin.on("error", (error) => {
+			console.warn("[cursor-linux] helper stdin error:", error);
+		});
 
 		child.stdout.setEncoding("utf8");
 		child.stdout.on("data", (chunk: string) => this.handleStdoutChunk(chunk));
