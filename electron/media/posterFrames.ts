@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { app } from "electron";
 import { cacheKey, resolveFfmpeg } from "./audioPeaks";
@@ -101,20 +102,24 @@ function toDataUrl(jpeg: Buffer): string {
 let lane: Promise<unknown> = Promise.resolve();
 
 /**
- * A `data:` URL of the frame at `atSec`, or null when there is no ffmpeg or the
+ * A `data:` URL of a frame near `atSec`, or null when there is no ffmpeg or the
  * file cannot be decoded (the caller keeps its placeholder).
  *
- * Keyed on path + size + mtime (`cacheKey`), plus the requested time, so a
- * re-encoded or replaced file gets a fresh poster rather than the old one.
+ * One poster per source file: named `<path hash>-<path + size + mtime hash>`, so
+ * a re-encoded or replaced file gets a fresh poster, and writing it deletes the
+ * file's older entries. `atSec` only picks the frame on a miss and is not part
+ * of the key — keyed on it, every trim of a project's first clip, or any time a
+ * renderer cared to ask for, left one more JPEG behind for good.
  */
 export async function getPosterFrame(filePath: string, atSec = 0): Promise<string | null> {
 	const ffmpeg = resolveFfmpeg();
 	if (!ffmpeg) return null;
 
+	const fileId = createHash("sha1").update(filePath).digest("hex").slice(0, 16);
 	// Throws for a missing file, which the IPC handler turns into a placeholder.
-	const key = `${await cacheKey(filePath)}-${Math.round(Math.max(0, atSec) * 1000)}`;
+	const name = `${fileId}-${await cacheKey(filePath)}.jpg`;
 	const dir = posterCacheDir();
-	const cachePath = dir ? path.join(dir, `${key}.jpg`) : null;
+	const cachePath = dir ? path.join(dir, name) : null;
 	const readCached = async () =>
 		cachePath ? await readFile(cachePath).then(toDataUrl, () => null) : null;
 
@@ -125,7 +130,7 @@ export async function getPosterFrame(filePath: string, atSec = 0): Promise<strin
 		// A request queued behind an identical one finds its result here.
 		const late = await readCached();
 		if (late) return late;
-		const jpeg = await grabFrame(ffmpeg, filePath, atSec);
+		const jpeg = await grabFrame(ffmpeg, filePath, Math.max(0, Math.round(atSec)));
 		if (cachePath && dir) {
 			try {
 				await mkdir(dir, { recursive: true });
@@ -133,6 +138,12 @@ export async function getPosterFrame(filePath: string, atSec = 0): Promise<strin
 				// that the next launch would serve as the poster.
 				await writeFile(`${cachePath}.tmp`, jpeg);
 				await rename(`${cachePath}.tmp`, cachePath);
+				// Safe to sweep here: the lane means no other write is in flight.
+				for (const entry of await readdir(dir)) {
+					if (entry.startsWith(`${fileId}-`) && entry !== name) {
+						await rm(path.join(dir, entry), { force: true });
+					}
+				}
 			} catch {
 				// A cache we cannot write means regenerating next time, not a failure.
 			}

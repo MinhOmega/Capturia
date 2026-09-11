@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { EventEmitter } from "node:events";
-import { mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -67,5 +67,22 @@ describe("getPosterFrame cache", () => {
 		hoisted.spawn.mockImplementation(() => fakeFfmpeg("poster-3"));
 		expect(await getPosterFrame(video, 1)).not.toBe(second);
 		expect(hoisted.spawn).toHaveBeenCalledTimes(3);
+
+		// Another frame time is the same poster (a trimmed first clip, or a renderer
+		// asking for any time it likes), and every older version is gone: one entry
+		// per source file, however it was asked for.
+		expect(await getPosterFrame(video, 12.345)).toBe(
+			`data:image/jpeg;base64,${Buffer.from("poster-3").toString("base64")}`,
+		);
+		expect(hoisted.spawn).toHaveBeenCalledTimes(3);
+		expect(readdirSync(path.join(hoisted.userData, "posters"))).toHaveLength(1);
+	});
+
+	it("grabs the frame at whole seconds", async () => {
+		writeFileSync(path.join(root, "other.mp4"), "another file");
+		hoisted.spawn.mockImplementation(() => fakeFfmpeg("poster"));
+		await getPosterFrame(path.join(root, "other.mp4"), 7.6);
+		const args = hoisted.spawn.mock.calls[0][1] as string[];
+		expect(args[args.indexOf("-ss") + 1]).toBe("8");
 	});
 });
