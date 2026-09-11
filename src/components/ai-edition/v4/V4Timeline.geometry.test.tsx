@@ -172,11 +172,20 @@ describe("V4Timeline scrubbing", () => {
 			frames.delete(frameId);
 		});
 		const onRender = vi.fn<ProfilerOnRenderCallback>();
+		// Render passes WE schedule. Every commit of the timeline is followed by a
+		// "nested-update": Radix Slot (react-slot 1.2.3, `asChild` under each
+		// Tooltip) builds a fresh composeRefs callback per render, so React re-runs
+		// the trigger ref with null then the node, and TooltipRoot's setTrigger
+		// re-renders that root in the commit phase (~0.1 ms, measured). Mocking
+		// Tooltip removes it. Scrub code cannot schedule a commit-phase update, so
+		// the frame budget is counted on the "update" phase.
+		const updates = () => onRender.mock.calls.filter(([, phase]) => phase === "update").length;
 		const { setCurrentTime } = renderTimeline(undefined, undefined, undefined, onRender);
 		const ruler = document.querySelector<HTMLElement>("[class*=tlRulerRow]") as HTMLElement;
 
 		fireEvent.pointerDown(ruler, { button: 0, clientX: 90 });
 		const commitsAfterPointerDown = onRender.mock.calls.length;
+		const updatesAfterPointerDown = updates();
 		setCurrentTime.mockClear();
 
 		// Three pointer moves inside one frame: the playhead follows each in the DOM,
@@ -191,7 +200,7 @@ describe("V4Timeline scrubbing", () => {
 		const [[frameId, frame]] = frames;
 		frames.delete(frameId);
 		act(() => frame(0));
-		expect(onRender).toHaveBeenCalledTimes(commitsAfterPointerDown + 1);
+		expect(updates()).toBe(updatesAfterPointerDown + 1);
 		expect(setCurrentTime).toHaveBeenCalledTimes(1);
 		expect(setCurrentTime).toHaveBeenCalledWith(720); // 360 of 900 px over 1800 s
 		fireEvent.pointerUp(window);
