@@ -1294,16 +1294,24 @@ mod tests {
             );
         }
 
-        // The advertised modifier set is a real set, not a wildcard: a tiled or
-        // compressed buffer cannot be read through a plain mmap, so it must fail
-        // negotiation rather than be accepted and decoded into garbage.
-        // 0x0300000000000001 = a vendor (NVIDIA — modifier vendor byte 0x03) modifier,
-        // neither LINEAR nor INVALID.
+        // The advertised modifier set is a real set, not a wildcard: a modifier we
+        // did not offer (neither LINEAR, INVALID nor one the local GPU's EGL can
+        // import) must fail negotiation rather than be accepted and decoded into
+        // garbage.
+        //
+        // The probe must be foreign to EVERY host, and in its low 32 bits too. The
+        // vendored SPA 1.0.5 compares Long values as `(int)(a - b)`
+        // (spa/pod/compare.h; upstream now uses SPA_CMP), so two modifiers that
+        // differ only above bit 31 compare EQUAL. The old probe, 0x0300000000000001
+        // (NVIDIA Tegra tiled), therefore matched Intel's X_TILED
+        // (0x0100000000000001) on any Intel host whose EGL advertises it. Vendor
+        // byte 0x7f is unassigned, and 0xdeadbeef is not a low word any Intel, AMD
+        // or NVIDIA layout produces.
         assert_eq!(
-            enum_format_accepts_dmabuf_producer(true, 0x0300_0000_0000_0001),
+            enum_format_accepts_dmabuf_producer(true, 0x7f00_0000_dead_beef),
             0,
-            "a modifier we cannot mmap must not intersect — accepting it would ship \
-             a scrambled recording instead of an error"
+            "a modifier we never advertised must not intersect — accepting it would \
+             ship a scrambled recording instead of an error"
         );
     }
 
