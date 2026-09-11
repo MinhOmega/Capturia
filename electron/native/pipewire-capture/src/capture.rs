@@ -489,14 +489,28 @@ impl Capture {
         if self.paused_at.is_some() {
             return Ok(StageOutcome::Frozen);
         }
+        // The rectangle this frame is read from, recorded BEFORE the paths diverge.
+        // Both of them read from the same origin, so computing it once is what
+        // makes `content_rect` the single answer to "what does the file show" —
+        // the whole point of measuring the cursor against it. Assigning it inside
+        // the CPU branch alone left `content` at its opening value on the
+        // zero-copy path, so a window recorded through dmabuf reported the pointer
+        // without the crop origin taken off: the scale was right and the position
+        // was not, which is half of issue #513 surviving on the default GPU route.
+        let (x, y) = self.read_origin(frame);
+        self.content = shim::CropRect {
+            x,
+            y,
+            width: self.committed_width,
+            height: self.committed_height,
+        };
+
         // Zero-copy dmabuf path: import the tiled GPU buffer into an NV12 VAAPI
         // surface (the VPP crops a window to its committed rectangle) and hand it
         // to the encoder as-is — no swscale. See issue #507.
         if frame.dmabuf.is_some() {
-            // The crop origin, clamped to stay inside the buffer — same rule as the
-            // CPU path. Computed before the mutable importer borrow. For a monitor
-            // this is (0, 0).
-            let (crop_x, crop_y) = self.read_origin(frame);
+            // Same origin the content rect above carries. For a monitor it is (0, 0).
+            let (crop_x, crop_y) = (x, y);
             let desc = frame.dmabuf.as_ref().expect("checked is_some above");
             let importer = self
                 .importer
@@ -536,13 +550,6 @@ impl Capture {
         // in the source buffer, which cropping does not alter — WebRTC's memfd
         // path subtracts the x offset from it, which is wrong for any non-zero x
         // and is latent there only because no shipping compositor sets one.
-        let (x, y) = self.read_origin(frame);
-        self.content = shim::CropRect {
-            x,
-            y,
-            width: self.committed_width,
-            height: self.committed_height,
-        };
         let offset = (y as usize)
             .checked_mul(frame.stride)
             .and_then(|rows| rows.checked_add((x as usize) * BYTES_PER_SOURCE_PIXEL))
