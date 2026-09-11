@@ -395,9 +395,14 @@ int main() {
     // remove it BEFORE frames are dropped — a box average leaves it at roughly
     // 38%. Goertzel reads the 12 kHz bin out of the output; the leading frames
     // are skipped because the filter starts cold.
+    //
+    // The target is whatever the encoder would get for this source, so the
+    // 44.1 kHz family below is measured at 44.1 kHz; every 48 kHz-family source
+    // here snaps to exactly target48k.
     const auto measureTone = [&](const AudioInputFormat& sourceFormat,
                                  unsigned toneHz,
                                  unsigned readHz) -> double {
+        const AudioInputFormat target = makeAacCompatibleAudioFormat(sourceFormat);
         const double amplitude = 16384.0;
         const size_t toneFrames = static_cast<size_t>(sourceFormat.sampleRate) / 4;
         std::vector<BYTE> toneBytes(toneFrames * sourceFormat.blockAlign, 0);
@@ -411,14 +416,14 @@ int main() {
         }
         std::vector<BYTE> toneOut;
         convertAudioWithGain(
-            toneBytes.data(), static_cast<DWORD>(toneBytes.size()), sourceFormat, target48k, 1.0, toneOut);
-        const size_t outFrames = toneOut.size() / target48k.blockAlign;
+            toneBytes.data(), static_cast<DWORD>(toneBytes.size()), sourceFormat, target, 1.0, toneOut);
+        const size_t outFrames = toneOut.size() / target.blockAlign;
         const auto* outSamples = reinterpret_cast<const int16_t*>(toneOut.data());
         const size_t skip = std::min<size_t>(2400, outFrames / 4);
         double s1 = 0.0;
         double s2 = 0.0;
         const double omega = 2.0 * 3.14159265358979323846 * static_cast<double>(readHz) /
-            static_cast<double>(target48k.sampleRate);
+            static_cast<double>(target.sampleRate);
         const double coeff = 2.0 * std::cos(omega);
         size_t counted = 0;
         for (size_t frame = skip; frame < outFrames; frame += 1) {
@@ -467,6 +472,26 @@ int main() {
     expectTone(source192k, 1000, 1000, false, -0.5, "resample-192k-1k-passband-intact");
     expectTone(source96k, 15000, 15000, false, -0.5, "resample-96k-15k-passband-intact");
     expectTone(source192k, 15000, 15000, false, -0.5, "resample-192k-15k-passband-intact");
+
+    // The 44.1 kHz family has to reach the decimator too. Snapped to 48 kHz,
+    // 88.2 / 176.4 / 352.8 kHz are non-integer ratios and take the unfiltered
+    // linear path; snapped to 44.1 kHz they are factors 2 / 4 / 8. Folds are
+    // f mod 44100, reflected about 22050.
+    for (UINT32 rate : {88200u, 176400u, 352800u}) {
+        const AudioInputFormat snappedRate =
+            makeAacCompatibleAudioFormat(makeFormat(MFAudioFormat_PCM, rate, 2, 16));
+        expect(
+            ("snap-" + std::to_string(rate) + "-to-44100").c_str(),
+            snappedRate.sampleRate == 44100, describe(snappedRate));
+    }
+    const AudioInputFormat source88k = makeFormat(MFAudioFormat_PCM, 88200, 2, 16);
+    const AudioInputFormat source176k = makeFormat(MFAudioFormat_PCM, 176400, 2, 16);
+    const AudioInputFormat source352k = makeFormat(MFAudioFormat_PCM, 352800, 2, 16);
+    expectTone(source88k, 30000, 14100, true, -60.0, "resample-88k-f2-30k-alias");
+    expectTone(source176k, 60000, 15900, true, -60.0, "resample-176k-f4-60k-alias");
+    expectTone(source352k, 100000, 11800, true, -60.0, "resample-352k-f8-100k-alias");
+    expectTone(source88k, 1000, 1000, false, -0.5, "resample-88k-1k-passband-intact");
+    expectTone(source352k, 1000, 1000, false, -0.5, "resample-352k-1k-passband-intact");
 
     // The filter reaches back further than one packet, so the same stream cut
     // into ragged packets has to come out bit-identical to one long call, with

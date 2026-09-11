@@ -101,6 +101,13 @@ UINT32 aacCompatibleSampleRate(UINT32 sampleRate) {
             return rate;
         }
     }
+    // 88.2 / 176.4 / 352.8 kHz go to 44.1, not 48: only an integer factor
+    // reaches the anti-alias decimator, whose filter is designed relative to
+    // the factor. 48 kHz from these is a 1.84 / 3.68 / 7.35 ratio, which lands
+    // on the unfiltered linear path and aliases.
+    if (sampleRate > 44100 && sampleRate % 44100 == 0) {
+        return 44100;
+    }
     return 48000;
 }
 
@@ -121,8 +128,9 @@ bool sameAudioFormatForMixing(const AudioInputFormat& left, const AudioInputForm
 // often reports 96000 or 192000; those are legal PCM mix rates but not AAC
 // input rates, and SetInputMediaType then fails with MF_E_INVALIDMEDIATYPE
 // (0xc00d36b4). Keep legal rates as-is so a working 44100/48000 path is
-// unchanged; snap everything else (including 0) to 48000. The mixer already
-// resamples through convertAudioWithGain when the source rate differs.
+// unchanged; snap multiples of 44100 to 44100 and everything else (including
+// 0) to 48000. The mixer already resamples through convertAudioWithGain when
+// the source rate differs.
 AudioInputFormat makeAacCompatibleAudioFormat(const AudioInputFormat& source) {
     AudioInputFormat format{};
     format.subtype = MFAudioFormat_PCM;
