@@ -206,6 +206,16 @@ int osc_pw_cursor_meta_accepts_producer_size(uint32_t width, uint32_t height);
  */
 int osc_pw_enum_format_accepts_dmabuf_producer(int with_modifier, int64_t producer_modifier);
 
+/*
+ * How many bytes of a frame are readable from `offset` on, given `avail` bytes
+ * behind the base pointer. A shared-memory chunk is bounded by the producer's
+ * `chunk_size`; a DMA-BUF one is not, because PipeWire tells consumers to ignore
+ * both `maxsize` and `chunk->size` on DMA-BUF and size the buffer from the fd
+ * (xdg-desktop-portal-wlr sends maxsize 0 / size 9, niri's portal 1 / 1, for a
+ * full 1080p frame). 0 when `offset` lies past `avail`.
+ */
+uint32_t osc_pw_frame_readable(int is_dmabuf, size_t avail, uint32_t offset, uint32_t chunk_size);
+
 struct osc_pw_session;
 
 /*

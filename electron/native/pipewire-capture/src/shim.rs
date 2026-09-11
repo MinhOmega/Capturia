@@ -134,6 +134,8 @@ extern "C" {
         with_modifier: i32,
         producer_modifier: i64,
     ) -> i32;
+    #[cfg(test)]
+    fn osc_pw_frame_readable(is_dmabuf: i32, avail: usize, offset: u32, chunk_size: u32) -> u32;
     fn osc_pw_start(
         fd: i32,
         node_id: u32,
@@ -1103,7 +1105,7 @@ fn on_frame_inner(state: &CallbackState, frame: *const RawFrame) -> i32 {
     if rows > frame.size {
         return 0;
     }
-    // SAFETY: the shim clamped `size` against the mapping's `maxsize` before
+    // SAFETY: the shim clamped `size` against the mapping's length before
     // the callback, `rows <= size` was just checked, and the mapping stays
     // live until this returns.
     let pixels = unsafe { std::slice::from_raw_parts(frame.data, rows) };
@@ -1200,6 +1202,25 @@ mod tests {
     use std::os::unix::net::UnixStream;
     use std::sync::mpsc;
     use std::time::Duration;
+
+    /// A DMA-BUF frame is bounded by our mapping, not by the placeholder sizes
+    /// wlr / niri portals send, which rejected every 1080p frame (#287 follow-up).
+    #[test]
+    fn dmabuf_frames_are_bounded_by_the_mapping_not_the_chunk() {
+        let frame = 7680 * 1080;
+        // SAFETY: pure arithmetic on the C side.
+        let readable = |dmabuf, avail, offset, chunk| unsafe {
+            osc_pw_frame_readable(dmabuf, avail, offset, chunk)
+        };
+        // xdg-desktop-portal-wlr: chunk size 9 on an 8 MiB mapping.
+        assert!(readable(1, 8_388_608, 0, 9) as usize >= frame);
+        // Shared memory keeps trusting the chunk.
+        assert_eq!(readable(0, 8_388_608, 0, 9), 9);
+        // Never past the mapping, whatever the producer claims.
+        assert_eq!(readable(1, 8_388_608, 4096, u32::MAX), 8_388_608 - 4096);
+        assert_eq!(readable(1, 100, 200, 50), 0);
+        assert_eq!(readable(0, 100, 200, 50), 0);
+    }
 
     /// The bound that made Stage 1 produce nothing on the first real run.
     ///
