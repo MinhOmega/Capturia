@@ -112,7 +112,8 @@
 		"changeFolder": "Cambia…",
 		"resetFolder": "Ripristina",
 		"folderUnavailable": "Non disponibile al momento: all'avvio della registrazione verrà proposta la cartella predefinita.",
-		"folderHint": "Le registrazioni precedenti restano dove sono state salvate."
+		"folderHint": "Le registrazioni precedenti restano dove sono state salvate.",
+		"prereleases": "Ricevi le versioni preliminari"
 	},
 	"permissions": {
 		"title": "Autorizzazioni",

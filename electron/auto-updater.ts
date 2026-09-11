@@ -54,11 +54,20 @@ async function getUpdater() {
 	return autoUpdater;
 }
 
-/** Is an update available, and can this install apply it itself? */
-export async function checkForSelfUpdate(channel: InstallChannel): Promise<UpdateOutcome> {
+/** Is an update available, and can this install apply it itself?
+ *
+ *  `allowPrerelease` is the "Get pre-release builds" setting, set on every check. Left to
+ *  electron-updater it would follow the running version instead — an RC install would chase
+ *  RCs the release check (update-checker.ts) never offered, and download one of those while
+ *  the dialog named a stable. */
+export async function checkForSelfUpdate(
+	channel: InstallChannel,
+	allowPrerelease = false,
+): Promise<UpdateOutcome> {
 	if (!ownsItsUpdates(channel) || !app.isPackaged) return { kind: "unsupported" };
 	try {
 		const autoUpdater = await getUpdater();
+		autoUpdater.allowPrerelease = allowPrerelease;
 		const result = await autoUpdater.checkForUpdates();
 		// null when no feed resolved; equal versions come back with no downloadPromise.
 		const version = result?.updateInfo?.version;

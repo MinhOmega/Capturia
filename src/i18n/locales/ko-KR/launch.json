@@ -112,7 +112,8 @@
 		"changeFolder": "변경…",
 		"resetFolder": "초기화",
 		"folderUnavailable": "지금은 사용할 수 없습니다. 녹화할 때 기본 폴더를 제안합니다.",
-		"folderHint": "이전 녹화는 저장된 위치에 그대로 남습니다."
+		"folderHint": "이전 녹화는 저장된 위치에 그대로 남습니다.",
+		"prereleases": "사전 릴리스 빌드 받기"
 	},
 	"permissions": {
 		"title": "권한",

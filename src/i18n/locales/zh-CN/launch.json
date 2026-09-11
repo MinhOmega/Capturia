@@ -112,7 +112,8 @@
 		"changeFolder": "更改…",
 		"resetFolder": "重置",
 		"folderUnavailable": "当前不可用——录制时将建议使用默认文件夹。",
-		"folderHint": "之前的录制内容仍保留在原来的保存位置。"
+		"folderHint": "之前的录制内容仍保留在原来的保存位置。",
+		"prereleases": "获取预发布版本"
 	},
 	"permissions": {
 		"title": "权限",

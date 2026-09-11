@@ -112,7 +112,8 @@
 		"changeFolder": "Değiştir…",
 		"resetFolder": "Sıfırla",
 		"folderUnavailable": "Şu anda kullanılamıyor — kayıt başlatırken varsayılan klasör önerilecek.",
-		"folderHint": "Önceki kayıtlar kaydedildikleri yerde kalır."
+		"folderHint": "Önceki kayıtlar kaydedildikleri yerde kalır.",
+		"prereleases": "Ön sürüm yapılarını al"
 	},
 	"permissions": {
 		"title": "İzinler",

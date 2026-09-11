@@ -112,7 +112,8 @@
 		"changeFolder": "Cambiar…",
 		"resetFolder": "Restablecer",
 		"folderUnavailable": "No disponible ahora mismo: se te ofrecerá la carpeta predeterminada al grabar.",
-		"folderHint": "Las grabaciones anteriores se quedan donde se guardaron."
+		"folderHint": "Las grabaciones anteriores se quedan donde se guardaron.",
+		"prereleases": "Recibir versiones preliminares"
 	},
 	"permissions": {
 		"title": "Permisos",

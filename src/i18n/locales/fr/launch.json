@@ -112,7 +112,8 @@
 		"changeFolder": "Modifier…",
 		"resetFolder": "Réinitialiser",
 		"folderUnavailable": "Indisponible pour le moment — le dossier par défaut vous sera proposé à l'enregistrement.",
-		"folderHint": "Les enregistrements précédents restent à leur emplacement actuel."
+		"folderHint": "Les enregistrements précédents restent à leur emplacement actuel.",
+		"prereleases": "Recevoir les préversions"
 	},
 	"permissions": {
 		"title": "Autorisations",

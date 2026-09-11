@@ -112,7 +112,8 @@
 		"changeFolder": "變更…",
 		"resetFolder": "重設",
 		"folderUnavailable": "目前無法使用——錄製時將建議改用預設資料夾。",
-		"folderHint": "先前的錄製內容仍保留在原本的儲存位置。"
+		"folderHint": "先前的錄製內容仍保留在原本的儲存位置。",
+		"prereleases": "取得預先發行版本"
 	},
 	"permissions": {
 		"title": "權限",

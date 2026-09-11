@@ -43,6 +43,7 @@ export interface HudDeviceSettingsLabels {
 	about: string;
 	checkForUpdates: string;
 	checkingForUpdates: string;
+	prereleases: string;
 	saveTo: string;
 	changeFolder: string;
 	resetFolder: string;
@@ -152,6 +153,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	versionLabel,
 	canCheckForUpdates,
 	checkingForUpdates,
+	includePrereleases,
 	recordingsFolder,
 	recordingsFolderLocked,
 	onSelectMic,
@@ -161,6 +163,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	onSelectCountdown,
 	onSelectMicGain,
 	onCheckForUpdates,
+	onToggleIncludePrereleases,
 	onChooseRecordingsFolder,
 	onResetRecordingsFolder,
 	onClose,
@@ -182,6 +185,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	versionLabel: string | null;
 	canCheckForUpdates: boolean;
 	checkingForUpdates: boolean;
+	includePrereleases: boolean;
 	/** Null until main answers; the row stays out rather than showing a blank path. */
 	recordingsFolder: RecordingsFolderState | null;
 	/** Mid-take: the take already has its folder, and its stop paths expect it unchanged. */
@@ -193,6 +197,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	onSelectCountdown: (seconds: CountdownSeconds) => void;
 	onSelectMicGain: (gain: MicrophoneGain) => void;
 	onCheckForUpdates: () => void;
+	onToggleIncludePrereleases: () => void;
 	onChooseRecordingsFolder: () => void;
 	onResetRecordingsFolder: () => void;
 	onClose: () => void;
@@ -423,6 +428,19 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 							</button>
 						) : null}
 					</div>
+					{/* Beside the check it changes, and gone wherever that check is. */}
+					{canCheckForUpdates ? (
+						<button
+							type="button"
+							role="menuitemcheckbox"
+							aria-checked={includePrereleases}
+							onClick={onToggleIncludePrereleases}
+							className={`${styles.languageMenuItem} ${includePrereleases ? styles.languageMenuItemActive : ""}`}
+						>
+							<span className="truncate">{labels.prereleases}</span>
+							{includePrereleases ? <Check size={11} className="text-white/85" /> : null}
+						</button>
+					) : null}
 				</>
 			) : null}
 		</div>

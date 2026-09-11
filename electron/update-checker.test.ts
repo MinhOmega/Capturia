@@ -197,3 +197,125 @@ describe("checkLatestRelease", () => {
 		);
 	});
 });
+
+describe("checkLatestRelease with pre-release builds", () => {
+	const release = (tag: string, extra: Record<string, unknown> = {}) => ({
+		tag_name: tag,
+		html_url: `https://github.com/MinhOmega/Capturia/releases/tag/${tag}`,
+		draft: false,
+		prerelease: tag.includes("-"),
+		...extra,
+	});
+
+	it("reads this repository's release list and offers a newer RC", async () => {
+		const fetchLatest = vi
+			.fn()
+			.mockResolvedValue(
+				releaseResponse([release("v2.0.0-rc.3"), release("v2.0.0-rc.2"), release("v1.9.6")]),
+			);
+
+		await expect(
+			checkLatestRelease({ currentVersion: "1.9.6", fetchLatest, includePrereleases: true }),
+		).resolves.toEqual({
+			kind: "available",
+			currentVersion: "1.9.6",
+			latestVersion: "2.0.0-rc.3",
+			releaseUrl: "https://github.com/MinhOmega/Capturia/releases/tag/v2.0.0-rc.3",
+		});
+		expect(fetchLatest).toHaveBeenCalledWith(
+			"https://api.github.com/repos/MinhOmega/Capturia/releases?per_page=30",
+			expect.anything(),
+		);
+	});
+
+	it("asks only for the latest stable when the setting is off", async () => {
+		const fetchLatest = vi.fn().mockResolvedValue(releaseResponse(release("v1.9.6")));
+		await checkLatestRelease({ currentVersion: "1.9.6", fetchLatest, includePrereleases: false });
+		expect(fetchLatest).toHaveBeenCalledWith(
+			"https://api.github.com/repos/MinhOmega/Capturia/releases/latest",
+			expect.anything(),
+		);
+	});
+
+	it("moves an RC install on to the next RC, then to the stable", async () => {
+		const nextRc = vi.fn().mockResolvedValue(releaseResponse([release("v2.0.0-rc.3")]));
+		await expect(
+			checkLatestRelease({
+				currentVersion: "2.0.0-rc.2",
+				fetchLatest: nextRc,
+				includePrereleases: true,
+			}),
+		).resolves.toMatchObject({ kind: "available", latestVersion: "2.0.0-rc.3" });
+
+		const stable = vi
+			.fn()
+			.mockResolvedValue(releaseResponse([release("v2.0.0"), release("v2.0.0-rc.3")]));
+		await expect(
+			checkLatestRelease({
+				currentVersion: "2.0.0-rc.3",
+				fetchLatest: stable,
+				includePrereleases: true,
+			}),
+		).resolves.toMatchObject({ kind: "available", latestVersion: "2.0.0" });
+	});
+
+	it("picks by version rather than list order, skipping drafts and non-version tags", async () => {
+		const fetchLatest = vi
+			.fn()
+			.mockResolvedValue(
+				releaseResponse([
+					release("v1.9.7-rc.1"),
+					release("v3.0.0", { draft: true }),
+					release("nightly"),
+					{ tag_name: "v4.0.0" },
+					release("v2.0.1"),
+				]),
+			);
+
+		await expect(
+			checkLatestRelease({ currentVersion: "2.0.0", fetchLatest, includePrereleases: true }),
+		).resolves.toMatchObject({ kind: "available", latestVersion: "2.0.1" });
+	});
+
+	it("reports current when nothing newer, or nothing at all, is published", async () => {
+		const olderRc = vi.fn().mockResolvedValue(releaseResponse([release("v2.0.0-rc.3")]));
+		await expect(
+			checkLatestRelease({
+				currentVersion: "2.0.0",
+				fetchLatest: olderRc,
+				includePrereleases: true,
+			}),
+		).resolves.toEqual({ kind: "current", currentVersion: "2.0.0", latestVersion: "2.0.0-rc.3" });
+
+		const empty = vi.fn().mockResolvedValue(releaseResponse([]));
+		await expect(
+			checkLatestRelease({ currentVersion: "2.0.0", fetchLatest: empty, includePrereleases: true }),
+		).resolves.toEqual({ kind: "current", currentVersion: "2.0.0", latestVersion: "2.0.0" });
+	});
+
+	it("still refuses a malformed list or a release URL outside this repository", async () => {
+		const notAList = vi.fn().mockResolvedValue(releaseResponse(release("v9.9.9")));
+		await expect(
+			checkLatestRelease({
+				currentVersion: "1.9.0",
+				fetchLatest: notAList,
+				includePrereleases: true,
+			}),
+		).rejects.toThrow("invalid GitHub release response");
+
+		const foreign = vi.fn().mockResolvedValue(
+			releaseResponse([
+				release("v9.9.9-rc.1", {
+					html_url: "https://github.com/someone-else/fork/releases/tag/v9.9.9-rc.1",
+				}),
+			]),
+		);
+		await expect(
+			checkLatestRelease({
+				currentVersion: "1.9.0",
+				fetchLatest: foreign,
+				includePrereleases: true,
+			}),
+		).rejects.toThrow("untrusted release URL");
+	});
+});

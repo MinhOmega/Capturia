@@ -437,7 +437,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		ipcRenderer.invoke("get-app-info") as Promise<{
 			version: string;
 			canCheckForUpdates: boolean;
+			includePrereleases: boolean;
 		}>,
+	/** Settings → "Get pre-release builds". Resolves with the value main now holds. */
+	setIncludePrereleases: (value: boolean) =>
+		ipcRenderer.invoke("set-include-prereleases", value) as Promise<boolean>,
 	/** Resolves once the check has a verdict. The dialogs that verdict leads to — download,
 	 *  restart — are the main process's conversation, not the caller's. */
 	checkForUpdates: () => ipcRenderer.invoke("check-for-updates") as Promise<void>,

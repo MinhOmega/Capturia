@@ -470,7 +470,13 @@ interface Window {
 		quitApp: () => void;
 		setTitleBarOverlay: (color: string, symbolColor: string) => void;
 		getPlatform: () => string;
-		getAppInfo: () => Promise<{ version: string; canCheckForUpdates: boolean }>;
+		getAppInfo: () => Promise<{
+			version: string;
+			canCheckForUpdates: boolean;
+			includePrereleases: boolean;
+		}>;
+		/** Settings → "Get pre-release builds". Resolves with the value main now holds. */
+		setIncludePrereleases: (value: boolean) => Promise<boolean>;
 		checkForUpdates: () => Promise<void>;
 		showAbout: () => Promise<void>;
 		canCheckForUpdatesNow: () => Promise<boolean>;

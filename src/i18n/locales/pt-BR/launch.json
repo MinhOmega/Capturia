@@ -112,7 +112,8 @@
 		"changeFolder": "Alterar…",
 		"resetFolder": "Redefinir",
 		"folderUnavailable": "Indisponível no momento — a pasta padrão será oferecida ao gravar.",
-		"folderHint": "As gravações anteriores continuam onde foram salvas."
+		"folderHint": "As gravações anteriores continuam onde foram salvas.",
+		"prereleases": "Receber versões de pré-lançamento"
 	},
 	"permissions": {
 		"title": "Permissões",

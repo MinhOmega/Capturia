@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
 	autoUpdater: {
 		autoDownload: true,
 		autoInstallOnAppQuit: true,
+		// electron-updater's default on an RC build, which follows the running version.
+		allowPrerelease: true,
 		logger: {} as unknown,
 		checkForUpdates: vi.fn(),
 		downloadUpdate: vi.fn(),
@@ -112,6 +114,20 @@ describe("self-update flow", () => {
 		await checkForSelfUpdate("nsis");
 
 		expect(settingsWhenChecked).toEqual([false, false]);
+	});
+
+	it("follows the pre-release setting on every check, not the running version", async () => {
+		const allowedWhenChecked: boolean[] = [];
+		mocks.autoUpdater.checkForUpdates.mockImplementation(() => {
+			allowedWhenChecked.push(mocks.autoUpdater.allowPrerelease);
+			return Promise.resolve({ updateInfo: { version: "1.9.2" } });
+		});
+
+		await checkForSelfUpdate("nsis");
+		await checkForSelfUpdate("nsis", true);
+		await checkForSelfUpdate("nsis", false);
+
+		expect(allowedWhenChecked).toEqual([false, true, false]);
 	});
 
 	it("reports current when the feed offers the running version", async () => {

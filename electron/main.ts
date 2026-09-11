@@ -69,7 +69,12 @@ import { scheduleRecordingsCleanup } from "./recordingsCleanup";
 import { installNavigationPolicy, installPermissionPolicy } from "./securityPolicy";
 import { registerSttIpc, shutdownStt } from "./stt";
 import { checkLatestRelease } from "./update-checker";
-import { loadUpdateMode, saveUpdateMode } from "./update-settings";
+import {
+	loadIncludePrereleases,
+	loadUpdateMode,
+	saveIncludePrereleases,
+	saveUpdateMode,
+} from "./update-settings";
 import {
 	createCountdownOverlayWindow,
 	createEditorWindow,
@@ -633,6 +638,8 @@ function runSaveDiagnostics() {
  *  install directory and NSIS cannot overwrite a running .exe. */
 let isRecording = false;
 let currentUpdateMode: UpdateMode = "notify";
+/** Settings → "Get pre-release builds": both the release check and the updater follow it. */
+let includePrereleases = false;
 let backgroundUpdateTimer: ReturnType<typeof setInterval> | null = null;
 
 function showUpdateSettingsMenu(): boolean {
@@ -789,7 +796,10 @@ async function probeSelfUpdate(): Promise<UpdateOutcome> {
 		timer.unref?.();
 	});
 	try {
-		return await Promise.race([checkForSelfUpdate(getInstallChannel()), timeout]);
+		return await Promise.race([
+			checkForSelfUpdate(getInstallChannel(), includePrereleases),
+			timeout,
+		]);
 	} finally {
 		if (timer) clearTimeout(timer);
 	}
@@ -809,6 +819,7 @@ async function checkForUpdates(onVerdict?: () => void) {
 			currentVersion: app.getVersion(),
 			fetchLatest: (url, init) => net.fetch(url, init),
 			signal,
+			includePrereleases,
 		});
 		if (result.kind === "current") {
 			await showMessageBox({
@@ -1260,7 +1271,16 @@ appReady?.then(async () => {
 	ipcMain.handle("get-app-info", () => ({
 		version: app.getVersion(),
 		canCheckForUpdates: channelAllowsUpdateCheck(),
+		includePrereleases,
 	}));
+
+	ipcMain.handle("set-include-prereleases", (_, value: unknown) => {
+		if (typeof value === "boolean") {
+			includePrereleases = value;
+			saveIncludePrereleases(app.getPath("userData"), value);
+		}
+		return includePrereleases;
+	});
 
 	// The FULL veto, permanent and transient, for a caller that can ask again at the moment it
 	// needs the answer. `get-app-info` deliberately carries only the permanent half because the
@@ -1307,6 +1327,7 @@ appReady?.then(async () => {
 	// all (see auto-updater.ts getUpdater) — every real update path applies
 	// its settings lazily on first use.
 	currentUpdateMode = loadUpdateMode(app.getPath("userData"));
+	includePrereleases = loadIncludePrereleases(app.getPath("userData"));
 	createTray();
 	updateTrayMenu();
 	startBackgroundUpdateTimer();

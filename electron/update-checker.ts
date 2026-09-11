@@ -1,9 +1,13 @@
 // This fork's own repo, not upstream's: asking getopenscreen/openscreen whether
 // Capturia is out of date offered the user an OpenScreen release as "the update"
 // and linked them to upstream's tag page. `OFFICIAL_RELEASE_PREFIX` is the trust
-// anchor for `officialReleaseUrl` below, so the two must name the same repo.
-const LATEST_RELEASE_API = "https://api.github.com/repos/MinhOmega/Capturia/releases/latest";
-const OFFICIAL_RELEASE_PREFIX = "/MinhOmega/Capturia/releases/tag/";
+// anchor for `officialReleaseUrl` below, so every URL here is built from one `REPO`.
+const REPO = "MinhOmega/Capturia";
+const LATEST_RELEASE_API = `https://api.github.com/repos/${REPO}/releases/latest`;
+// `/releases/latest` never returns a prerelease, so the opt-in channel reads the list.
+// Newest first; one page is far more than the handful of RCs ahead of any stable.
+const RELEASES_API = `https://api.github.com/repos/${REPO}/releases?per_page=30`;
+const OFFICIAL_RELEASE_PREFIX = `/${REPO}/releases/tag/`;
 
 interface ReleaseResponse {
 	ok: boolean;
@@ -122,18 +126,55 @@ export type UpdateCheckResult =
 			latestVersion: string;
 	  };
 
+type Release = { tag_name: string; html_url: string };
+
+/**
+ * The highest-versioned published release in a `/releases` page, prereleases included, or
+ * null when there is none. Drafts, and tags that are not a version, are skipped rather than
+ * failing the page: one odd entry must not hide the release beside it.
+ */
+function newestRelease(payload: unknown): Release | null {
+	if (!Array.isArray(payload)) throw new Error("invalid GitHub release response");
+	let newest: (Release & { version: string }) | null = null;
+	for (const entry of payload) {
+		const release = entry as Record<string, unknown> | null;
+		if (
+			typeof release?.tag_name !== "string" ||
+			typeof release.html_url !== "string" ||
+			release.draft !== false
+		) {
+			continue;
+		}
+		let version: string;
+		try {
+			version = parseVersion(release.tag_name).normalized;
+		} catch {
+			continue;
+		}
+		if (!newest || compareVersions(version, newest.version) > 0) {
+			newest = { tag_name: release.tag_name, html_url: release.html_url, version };
+		}
+	}
+	return newest && { tag_name: newest.tag_name, html_url: newest.html_url };
+}
+
 export async function checkLatestRelease(options: {
 	currentVersion: string;
 	fetchLatest: FetchLatestRelease;
 	signal?: AbortSignal;
+	/** Settings → "Get pre-release builds": RCs count as updates too. */
+	includePrereleases?: boolean;
 }): Promise<UpdateCheckResult> {
-	const response = await options.fetchLatest(LATEST_RELEASE_API, {
-		headers: {
-			Accept: "application/vnd.github+json",
-			"X-GitHub-Api-Version": "2022-11-28",
+	const response = await options.fetchLatest(
+		options.includePrereleases ? RELEASES_API : LATEST_RELEASE_API,
+		{
+			headers: {
+				Accept: "application/vnd.github+json",
+				"X-GitHub-Api-Version": "2022-11-28",
+			},
+			...(options.signal ? { signal: options.signal } : {}),
 		},
-		...(options.signal ? { signal: options.signal } : {}),
-	});
+	);
 	// GitHub answers 404 — not an empty body — when a repo has published no releases
 	// at all, which is this fork's state today. That is "nothing newer exists", not a
 	// failure: letting it fall through to the throw below put a modal ERROR dialog
@@ -151,18 +192,31 @@ export async function checkLatestRelease(options: {
 	if (!response.ok) throw new Error(`GitHub release check failed (${response.status})`);
 
 	const payload = await response.json();
-	if (
-		typeof payload !== "object" ||
-		payload === null ||
-		typeof (payload as Record<string, unknown>).tag_name !== "string" ||
-		typeof (payload as Record<string, unknown>).html_url !== "string" ||
-		(payload as Record<string, unknown>).draft !== false ||
-		(payload as Record<string, unknown>).prerelease !== false
-	) {
-		throw new Error("invalid GitHub release response");
+	let release: Release | null;
+	if (options.includePrereleases) {
+		release = newestRelease(payload);
+	} else {
+		if (
+			typeof payload !== "object" ||
+			payload === null ||
+			typeof (payload as Record<string, unknown>).tag_name !== "string" ||
+			typeof (payload as Record<string, unknown>).html_url !== "string" ||
+			(payload as Record<string, unknown>).draft !== false ||
+			(payload as Record<string, unknown>).prerelease !== false
+		) {
+			throw new Error("invalid GitHub release response");
+		}
+		release = payload as Release;
 	}
-	const release = payload as { tag_name: string; html_url: string };
 	const current = parseVersion(options.currentVersion);
+	// An empty list means nothing is published yet: the same answer as the 404 above.
+	if (!release) {
+		return {
+			kind: "current",
+			currentVersion: current.normalized,
+			latestVersion: current.normalized,
+		};
+	}
 	const latest = parseVersion(release.tag_name);
 	const comparison = compareVersions(latest.normalized, current.normalized);
 	if (comparison <= 0) {

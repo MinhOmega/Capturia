@@ -112,7 +112,8 @@
 		"changeFolder": "Change…",
 		"resetFolder": "Reset",
 		"folderUnavailable": "Unavailable right now — the default folder will be offered when you record.",
-		"folderHint": "Earlier recordings stay where they were saved."
+		"folderHint": "Earlier recordings stay where they were saved.",
+		"prereleases": "Get pre-release builds"
 	},
 	"permissions": {
 		"title": "Permissions",

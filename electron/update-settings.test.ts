@@ -3,7 +3,13 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { parseUpdateMode } from "./background-update";
-import { loadUpdateMode, saveUpdateMode, updateSettingsPath } from "./update-settings";
+import {
+	loadIncludePrereleases,
+	loadUpdateMode,
+	saveIncludePrereleases,
+	saveUpdateMode,
+	updateSettingsPath,
+} from "./update-settings";
 
 const temps: string[] = [];
 
@@ -33,6 +39,25 @@ describe("update settings", () => {
 		const dir = tmp();
 		writeFileSync(updateSettingsPath(dir), '{"mode": not-even-json !!}');
 		expect(loadUpdateMode(dir)).toBe("notify");
+	});
+
+	it("keeps pre-release builds off unless they were turned on", () => {
+		const dir = tmp();
+		expect(loadIncludePrereleases(dir)).toBe(false);
+		writeFileSync(updateSettingsPath(dir), '{"prereleases": "yes"}');
+		expect(loadIncludePrereleases(dir)).toBe(false);
+		saveIncludePrereleases(dir, true);
+		expect(loadIncludePrereleases(dir)).toBe(true);
+	});
+
+	it("saves each setting without dropping the other", () => {
+		const dir = tmp();
+		saveIncludePrereleases(dir, true);
+		saveUpdateMode(dir, "download");
+		expect(loadIncludePrereleases(dir)).toBe(true);
+		saveIncludePrereleases(dir, false);
+		expect(loadUpdateMode(dir)).toBe("download");
+		expect(loadIncludePrereleases(dir)).toBe(false);
 	});
 
 	it("refuses garbage mode values rather than trusting the file", () => {

@@ -143,9 +143,11 @@ export function LaunchWindow() {
 	// Store/Flathub/Snap/Nix install is kept current by its package manager and is offered
 	// nothing (electron/install-channel.ts). Asked once: neither answer changes while the app
 	// runs, and the HUD is rebuilt for every recording anyway.
-	const [appInfo, setAppInfo] = useState<{ version: string; canCheckForUpdates: boolean } | null>(
-		null,
-	);
+	const [appInfo, setAppInfo] = useState<{
+		version: string;
+		canCheckForUpdates: boolean;
+		includePrereleases?: boolean;
+	} | null>(null);
 	const [isCheckingForUpdates, setIsCheckingForUpdates] = useState(false);
 	const [recordingsFolder, setRecordingsFolder] = useState<RecordingsFolderState | null>(null);
 	/**
@@ -290,6 +292,19 @@ export function LaunchWindow() {
 				setIsCheckingForUpdates(false);
 			});
 	}, []);
+
+	// Main is the only writer of this setting and the HUD its only editor, so the value main
+	// answers with is simply adopted.
+	const handleToggleIncludePrereleases = useCallback(() => {
+		window.electronAPI
+			?.setIncludePrereleases?.(!appInfo?.includePrereleases)
+			.then((includePrereleases) => {
+				setAppInfo((info) => (info ? { ...info, includePrereleases } : info));
+			})
+			.catch((error) => {
+				console.error("Failed to change the pre-release setting:", error);
+			});
+	}, [appInfo?.includePrereleases]);
 
 	// Asked each time the panel opens rather than once: the chosen folder can go away (a drive
 	// unplugged) while the HUD sits there, and the row should say so when the user looks.
@@ -977,6 +992,7 @@ export function LaunchWindow() {
 			about: t("deviceSettings.about"),
 			checkForUpdates: tCommon("actions.checkForUpdates"),
 			checkingForUpdates: t("deviceSettings.checkingForUpdates"),
+			prereleases: t("deviceSettings.prereleases"),
 			saveTo: t("deviceSettings.saveTo"),
 			changeFolder: t("deviceSettings.changeFolder"),
 			resetFolder: t("deviceSettings.resetFolder"),
@@ -1210,6 +1226,7 @@ export function LaunchWindow() {
 								// main process refuses the check then — an offered button would be dead.
 								canCheckForUpdates={(appInfo?.canCheckForUpdates ?? false) && !recording}
 								checkingForUpdates={isCheckingForUpdates}
+								includePrereleases={appInfo?.includePrereleases ?? false}
 								recordingsFolder={recordingsFolder}
 								recordingsFolderLocked={controlsLocked}
 								onSelectMic={handleSelectMicDevice}
@@ -1219,6 +1236,7 @@ export function LaunchWindow() {
 								onSelectCountdown={setCountdownSeconds}
 								onSelectMicGain={setMicrophoneGain}
 								onCheckForUpdates={handleCheckForUpdates}
+								onToggleIncludePrereleases={handleToggleIncludePrereleases}
 								onChooseRecordingsFolder={handleChooseRecordingsFolder}
 								onResetRecordingsFolder={handleResetRecordingsFolder}
 								onClose={closeDeviceSettings}

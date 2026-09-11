@@ -112,7 +112,8 @@
 		"changeFolder": "変更…",
 		"resetFolder": "リセット",
 		"folderUnavailable": "現在利用できません。録画時にデフォルトのフォルダーを提案します。",
-		"folderHint": "以前の録画は保存された場所にそのまま残ります。"
+		"folderHint": "以前の録画は保存された場所にそのまま残ります。",
+		"prereleases": "プレリリース版を受け取る"
 	},
 	"permissions": {
 		"title": "アクセス権限",

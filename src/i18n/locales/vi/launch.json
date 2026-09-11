@@ -112,7 +112,8 @@
 		"changeFolder": "Thay đổi…",
 		"resetFolder": "Đặt lại",
 		"folderUnavailable": "Hiện không khả dụng — thư mục mặc định sẽ được đề xuất khi bạn ghi.",
-		"folderHint": "Các bản ghi trước vẫn nằm ở nơi đã được lưu."
+		"folderHint": "Các bản ghi trước vẫn nằm ở nơi đã được lưu.",
+		"prereleases": "Nhận các bản phát hành thử nghiệm"
 	},
 	"permissions": {
 		"title": "Quyền truy cập",
