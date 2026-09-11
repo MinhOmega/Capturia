@@ -714,6 +714,39 @@ int main() {
                 std::to_string(afterMix == fromCold));
     }
 
+    // The interpolation path must not drift with the packet size. A 44.1 kHz
+    // microphone against a 48 kHz target, in the 448-frame packets WASAPI hands
+    // out: rounding each packet on its own gives 488 frames for 487.6, and
+    // +0.38 frame a packet is 3810 frames (~79 ms) over these 10000 packets,
+    // ~2.8 s an hour. The carried position has to land within one frame of the
+    // exact total over the whole run, and start over on reset().
+    {
+        const AudioInputFormat mic44k = makeFormat(MFAudioFormat_Float, 44100, 2, 32);
+        const AudioInputFormat target = makeFormat(MFAudioFormat_PCM, 48000, 2, 16);
+        constexpr size_t kPacketFrames = 448;
+        constexpr size_t kPackets = 10000;
+        std::vector<BYTE> packet(kPacketFrames * mic44k.blockAlign, 0);
+        AudioDecimatorState carry;
+        std::vector<BYTE> out;
+        uint64_t produced = 0;
+        for (size_t p = 0; p < kPackets; p += 1) {
+            convertAudioWithGain(
+                packet.data(), static_cast<DWORD>(packet.size()), mic44k, target, 1.0, out, carry);
+            produced += out.size() / target.blockAlign;
+        }
+        const double exact = static_cast<double>(kPackets * kPacketFrames) * 48000.0 / 44100.0;
+        const double drift = static_cast<double>(produced) - exact;
+        carry.reset();
+        convertAudioWithGain(
+            packet.data(), static_cast<DWORD>(packet.size()), mic44k, target, 1.0, out, carry);
+        const size_t afterReset = out.size() / target.blockAlign;
+        expect(
+            "resample-44k-to-48k-packets-do-not-drift",
+            std::abs(drift) <= 1.0 && afterReset == 488,
+            "produced=" + std::to_string(produced) + " exact=" + std::to_string(exact) +
+                " afterReset=" + std::to_string(afterReset));
+    }
+
     auto fillStereoFrame = [](std::vector<BYTE>& packet, int16_t left, int16_t right) {
         auto* samples = reinterpret_cast<int16_t*>(packet.data());
         samples[0] = left;

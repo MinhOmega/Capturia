@@ -180,9 +180,42 @@ constexpr double kKaiserBeta = 8.6;
 }  // namespace
 
 void AudioDecimatorState::reset() {
+    resetDecimation();
+    linearFramesIn_ = 0;
+    linearFramesOut_ = 0;
+}
+
+void AudioDecimatorState::resetDecimation() {
     std::fill(history_.begin(), history_.end(), 0.0);
     position_ = 0;
     phase_ = 0;
+}
+
+size_t AudioDecimatorState::advanceLinear(
+    size_t packetFrames, UINT32 sourceRate, UINT32 targetRate, double& firstSourcePosition) {
+    // A carry only means something against the ratio it was counted in. Keying
+    // it on the rates also keeps `framesOut - linearFramesOut_` from going
+    // negative when one state is reused across formats, as the suite does.
+    if (linearSourceRate_ != sourceRate || linearTargetRate_ != targetRate) {
+        linearSourceRate_ = sourceRate;
+        linearTargetRate_ = targetRate;
+        linearFramesIn_ = 0;
+        linearFramesOut_ = 0;
+    }
+    // All integer, so the running total is exact rather than a double that
+    // drifts: round-half-up of framesIn * target / source.
+    const uint64_t framesIn = linearFramesIn_ + packetFrames;
+    const uint64_t framesOut = (framesIn * targetRate + sourceRate / 2) / sourceRate;
+    // Output frame N sits at source frame N * source / target. Kept as an exact
+    // integer numerator over `targetRate` until the one division.
+    firstSourcePosition =
+        static_cast<double>(static_cast<int64_t>(linearFramesOut_ * sourceRate) -
+                            static_cast<int64_t>(linearFramesIn_ * targetRate)) /
+        static_cast<double>(targetRate);
+    const size_t owed = static_cast<size_t>(framesOut - linearFramesOut_);
+    linearFramesIn_ = framesIn;
+    linearFramesOut_ = framesOut;
+    return owed;
 }
 
 void AudioDecimatorState::prepare(UINT32 factor, UINT32 channels) {
@@ -406,15 +439,26 @@ void convertAudioWithGain(
     // sameAudioFormatForMixing on subtype alone -- WASAPI hands out float32 --
     // and `sourceRate > targetRate` is false, so on an ordinary machine every
     // microphone packet lands here and resets a decimator it never used.
-    decimator.reset();
+    decimator.resetDecimation();
     const size_t sourceFrames = packetFrames;
     const double rateRatio = static_cast<double>(targetFormat.sampleRate) /
         static_cast<double>(sourceFormat.sampleRate);
-    const size_t targetFrames = std::max<size_t>(1, static_cast<size_t>(std::llround(sourceFrames * rateRatio)));
+    // The count comes from the running total, not from this packet alone (see
+    // AudioDecimatorState). A packet may therefore owe zero frames, or one more
+    // than its own length would round to.
+    double firstSourcePosition = 0.0;
+    const size_t targetFrames = decimator.advanceLinear(
+        sourceFrames, sourceFormat.sampleRate, targetFormat.sampleRate, firstSourcePosition);
     destination.assign(targetFrames * targetFormat.blockAlign, 0);
 
     for (size_t targetFrame = 0; targetFrame < targetFrames; ++targetFrame) {
-        const double sourcePosition = static_cast<double>(targetFrame) / rateRatio;
+        // Clamped at both ends: the carried position can sit up to half an
+        // output frame before this packet's first frame or past its last, and
+        // the neighbour packet's samples are not available here.
+        const double sourcePosition = std::clamp(
+            firstSourcePosition + static_cast<double>(targetFrame) / rateRatio,
+            0.0,
+            static_cast<double>(sourceFrames - 1));
         const size_t sourceFrame = std::min(sourceFrames - 1, static_cast<size_t>(sourcePosition));
         const size_t nextFrame = std::min(sourceFrames - 1, sourceFrame + 1);
         const double frac = sourcePosition - static_cast<double>(sourceFrame);

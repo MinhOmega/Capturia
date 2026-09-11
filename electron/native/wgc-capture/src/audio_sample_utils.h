@@ -34,6 +34,12 @@ void convertAudioWithGain(
 // current output group the stream has got, which is the same accounting the
 // caller used to read off a leftover-bytes buffer: a group only produces an
 // output frame once all `factor` of its frames have arrived.
+//
+// It also carries the linear (non-integer ratio) path's position, for the same
+// reason: rounding each packet's output length on its own drifts. 448-frame
+// packets at 44.1 -> 48 kHz round 487.6 up to 488 every time, +0.38 frame a
+// packet, which is ~2.8 s of microphone lag per hour against a mixer that runs
+// on the wall clock and never trims.
 class AudioDecimatorState {
 public:
     void reset();
@@ -45,6 +51,16 @@ public:
     // survives the decimation.
     void prepare(UINT32 factor, UINT32 channels);
     bool consume(const double* frame, double* out);
+    // Clears the decimation half only. The linear path calls it on every packet
+    // and must not lose its own carry doing so.
+    void resetDecimation();
+
+    // Used by the linear path. Returns how many output frames this packet owes
+    // -- the exact running total round(framesIn * target / source) minus what
+    // earlier packets already produced -- and writes where the first of them
+    // falls, in this packet's source frames (may be slightly negative).
+    size_t advanceLinear(
+        size_t packetFrames, UINT32 sourceRate, UINT32 targetRate, double& firstSourcePosition);
 
 private:
     std::vector<double> taps_;
@@ -53,6 +69,10 @@ private:
     size_t phase_ = 0;
     UINT32 factor_ = 0;
     UINT32 channels_ = 0;
+    uint64_t linearFramesIn_ = 0;
+    uint64_t linearFramesOut_ = 0;
+    UINT32 linearSourceRate_ = 0;
+    UINT32 linearTargetRate_ = 0;
 };
 
 void convertAudioWithGain(
