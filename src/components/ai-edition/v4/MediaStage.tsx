@@ -40,13 +40,12 @@ function basename(path: string): string {
 }
 
 /** A real frame of the asset — a second in, past any fade from black — over the
- *  gradient placeholder, which stays for anything missing or undecodable. */
+ *  gradient placeholder, which stays for anything missing or undecodable. A fixed
+ *  second rather than one derived from `durationSec`: that is probed after mount,
+ *  and a time that moves with it re-requested (and re-grabbed) the poster. Main
+ *  falls back to the first frame for a file shorter than that. */
 function MediaThumb({ asset, index }: { asset: AxcutAsset; index: number }) {
-	const poster = usePosterFrame(
-		"media",
-		asset.originalPath,
-		Math.min(1, (asset.durationSec ?? 0) / 2),
-	);
+	const poster = usePosterFrame("media", asset.originalPath, 1);
 	return (
 		<div
 			className={styles.mediaThumb}

@@ -130,7 +130,12 @@ export async function getPosterFrame(filePath: string, atSec = 0): Promise<strin
 		// A request queued behind an identical one finds its result here.
 		const late = await readCached();
 		if (late) return late;
-		const jpeg = await grabFrame(ffmpeg, filePath, Math.max(0, Math.round(atSec)));
+		const at = Math.max(0, Math.round(atSec));
+		// A seek past the end writes no frame, so a file shorter than `at` gets
+		// its first one instead — clamping without having to probe the duration.
+		const jpeg = await grabFrame(ffmpeg, filePath, at).catch((error: unknown) =>
+			at > 0 ? grabFrame(ffmpeg, filePath, 0) : Promise.reject(error),
+		);
 		if (cachePath && dir) {
 			try {
 				await mkdir(dir, { recursive: true });
