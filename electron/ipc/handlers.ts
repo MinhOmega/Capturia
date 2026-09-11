@@ -1913,24 +1913,25 @@ export function registerIpcHandlers(
 			}
 
 			// Screen recording has no askForMediaAccess equivalent, so trigger the
-			// TCC prompt without opening OpenScreen's source selector above it.
-			if (status === "not-determined") {
-				const mainWin = getMainWindow();
-				if (mainWin && !mainWin.isDestroyed()) {
-					if (!mainWin.isVisible()) {
-						mainWin.show();
-					}
-					mainWin.focus();
+			// TCC prompt without opening Capturia's source selector above it.
+			// Not gated on "not-determined": Chromium reads this permission with
+			// CGPreflightScreenCaptureAccess(), a bool, so a never-asked app reports
+			// "denied" too and that gate never let the prompt be raised. macOS draws
+			// the prompt once per app; after that this capture attempt is answered
+			// silently and the caller's Settings dialog is what the user sees.
+			const mainWin = getMainWindow();
+			if (mainWin && !mainWin.isDestroyed()) {
+				if (!mainWin.isVisible()) {
+					mainWin.show();
 				}
-				app.focus({ steal: true });
-				desktopCapturer
-					.getSources({ types: ["screen"], thumbnailSize: { width: 1, height: 1 } })
-					.catch(() => {
-						// Permission probing failure is reported by the explicit status check below.
-					});
-				return { success: true, granted: false, status: "not-determined" };
+				mainWin.focus();
 			}
-
+			app.focus({ steal: true });
+			desktopCapturer
+				.getSources({ types: ["screen"], thumbnailSize: { width: 1, height: 1 } })
+				.catch(() => {
+					// Permission probing failure is reported by the explicit status check below.
+				});
 			return { success: true, granted: false, status };
 		} catch (error) {
 			console.error("Failed to request screen access:", error);
@@ -2186,7 +2187,7 @@ export function registerIpcHandlers(
 					cancelId: 1,
 					message: "Screen Recording permission is required",
 					detail:
-						"Allow Capturia in macOS System Settings, then come back and choose a screen or window.",
+						"Allow Capturia in macOS System Settings, then quit and reopen Capturia: macOS reports the change to Capturia only after a fresh launch.",
 				} satisfies Electron.MessageBoxOptions;
 				const result =
 					mainWin && !mainWin.isDestroyed()
