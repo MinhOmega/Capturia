@@ -502,6 +502,12 @@ interface Window {
 			onStatus: (
 				callback: (event: import("./stt/transcriptionContract").SttStatusEvent) => void,
 			) => () => void;
+			listModels: () => Promise<import("./stt/transcriptionContract").SttModelsSnapshot>;
+			setModel: (id: import("./stt/transcriptionContract").SttModelId) => Promise<void>;
+			deleteModel: (id: import("./stt/transcriptionContract").SttModelId) => Promise<void>;
+			onModelProgress: (
+				callback: (event: import("./stt/transcriptionContract").SttModelProgressEvent) => void,
+			) => () => void;
 		};
 		// CLI mode (hidden runner windows; see electron/cli/)
 		cliGetRequest: () => Promise<import("../src/lib/cliContracts").CliRequest>;

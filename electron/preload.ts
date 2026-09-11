@@ -8,6 +8,9 @@ import type { AiEditionChatEvent } from "../src/native/contracts";
 import { NATIVE_BRIDGE_CHANNEL, type NativeBridgeRequest } from "../src/native/contracts";
 import type { RecordingPrefs } from "./ipc/handlers";
 import type {
+	SttModelId,
+	SttModelProgressEvent,
+	SttModelsSnapshot,
 	SttStatusEvent,
 	SttTranscribeRequest,
 	SttTranscribeResponse,
@@ -521,6 +524,15 @@ contextBridge.exposeInMainWorld("electronAPI", {
 			const listener = (_event: unknown, payload: SttStatusEvent) => callback(payload);
 			ipcRenderer.on("stt:status", listener);
 			return () => ipcRenderer.removeListener("stt:status", listener);
+		},
+		/** Speech-model settings: see `SttManager.listModels / setModel / deleteModel`. */
+		listModels: (): Promise<SttModelsSnapshot> => ipcRenderer.invoke("stt:models"),
+		setModel: (id: SttModelId): Promise<void> => ipcRenderer.invoke("stt:set-model", id),
+		deleteModel: (id: SttModelId): Promise<void> => ipcRenderer.invoke("stt:delete-model", id),
+		onModelProgress: (callback: (event: SttModelProgressEvent) => void) => {
+			const listener = (_event: unknown, payload: SttModelProgressEvent) => callback(payload);
+			ipcRenderer.on("stt:model-progress", listener);
+			return () => ipcRenderer.removeListener("stt:model-progress", listener);
 		},
 	},
 	// --- CLI mode (hidden runner windows; see electron/cli/) ---

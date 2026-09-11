@@ -1,3 +1,6 @@
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from "vitest";
 
 import { planChunks } from "./chunking";
@@ -32,11 +35,11 @@ vi.mock("./whisperServer", () => {
 	return { WhisperServerManager: FakeWhisperServerManager };
 });
 
-vi.mock("./modelManager", () => ({
+// The real module, minus the download: a test that wants one opts back in with
+// `mockImplementationOnce(actual.ensureModels)`.
+vi.mock("./modelManager", async (importOriginal) => ({
+	...(await importOriginal<typeof import("./modelManager")>()),
 	ensureModels: vi.fn(async () => undefined),
-	modelPaths: (base: string) => ({
-		whisper: `${base}/whisper-ggml/ggml-small-q8_0.bin`,
-	}),
 }));
 
 vi.mock("./gpuDetector", () => ({
@@ -468,6 +471,45 @@ describe("SttManager", () => {
 
 		expect(mocked).toHaveBeenCalledTimes(2);
 		expect(fakeWhisperServer.start).toHaveBeenCalledOnce();
+	});
+
+	it("keeps the previous model active when switching models fails mid-download", async () => {
+		const actual = await vi.importActual<typeof import("./modelManager")>("./modelManager");
+		const { ensureModels } = await import("./modelManager");
+		const dir = mkdtempSync(path.join(tmpdir(), "capturia-stt-switch-"));
+		// The connection drops after the first KiB of the new model.
+		let sent = false;
+		const fetchStub = vi.fn(
+			async () =>
+				new Response(
+					new ReadableStream({
+						pull(controller) {
+							if (sent) controller.error(new Error("connection reset"));
+							else controller.enqueue(new Uint8Array(1024));
+							sent = true;
+						},
+					}),
+				),
+		);
+		vi.stubGlobal("fetch", fetchStub);
+		try {
+			const mgr = new SttManager();
+			await mgr.init({ modelsBaseDir: dir });
+			// Only the switch downloads for real; the init above kept the no-op.
+			vi.mocked(ensureModels).mockImplementationOnce(actual.ensureModels);
+
+			await expect(mgr.setModel("accurate")).rejects.toThrow("connection reset");
+
+			expect(fetchStub).toHaveBeenCalledOnce();
+			expect((await mgr.listModels()).active).toBe("balanced");
+			// Nothing half-written survives, under either name, to pass for the model later.
+			const target = actual.modelPath(dir, "accurate");
+			expect(existsSync(target)).toBe(false);
+			expect(existsSync(`${target}.partial`)).toBe(false);
+		} finally {
+			vi.unstubAllGlobals();
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 
 	it("fans status out to every sink, and detaching one leaves the others", async () => {

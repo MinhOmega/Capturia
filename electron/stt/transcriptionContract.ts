@@ -11,7 +11,7 @@
  */
 
 /** A word-level segment with timestamps from whisper.cpp's native DTW token
- *  timestamps (`t_dtw`, computed with the SMALL aheads preset — see
+ *  timestamps (`t_dtw`, computed with the aheads preset of the loaded model — see
  *  technical-documentation/architecture/transcription-and-captions.md § Decision rationale). Absolute seconds
  *  in the source recording. */
 export interface SttWordSegment {
@@ -60,6 +60,24 @@ export interface SttTiming {
 	rtf: number;
 }
 
+/** Speech model choice, in the order the settings list them (see `STT_MODELS`). */
+export type SttModelId = "fast" | "balanced" | "accurate";
+
+/** What the speech-model settings show: which model runs, and what is on disk. */
+export interface SttModelsSnapshot {
+	active: SttModelId;
+	models: { id: SttModelId; bytes: number; downloaded: boolean }[];
+	/** No GPU backend is known to bind, so the bigger models run slowly. */
+	cpuOnly: boolean;
+}
+
+/** Progress of a speech-model download started from the settings (`stt:set-model`). */
+export interface SttModelProgressEvent {
+	id: SttModelId;
+	downloadedBytes: number;
+	totalBytes: number;
+}
+
 /** Status phase the renderer surfaces over `onStatus("model" | "transcribe")`. */
 export type SttStatusPhase = "model" | "transcribe";
 
@@ -71,7 +89,7 @@ export interface SttStatusEvent {
 	/** Total bytes for the in-flight download. */
 	totalBytes?: number;
 	/** Which model is downloading. */
-	model?: "whisper";
+	model?: SttModelId;
 	/**
 	 * Seconds of audio transcribed so far, and the total for this request. Only
 	 * when `phase === "transcribe"`. Progress is reported per CHUNK (see

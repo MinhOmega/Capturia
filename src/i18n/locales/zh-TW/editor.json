@@ -417,5 +417,22 @@
 	"cpuCompositor": {
 		"notice": "沒有相容的 GPU，正在使用 CPU 算繪，因此播放較慢。",
 		"exportWarning": "沒有相容的 GPU：這次匯出將在 CPU 上執行，耗時會比平常長很多。"
+	},
+	"speechModel": {
+		"title": "語音模型",
+		"hint": "用於逐字稿與字幕的語音辨識。現有逐字稿會保留；重新產生逐字稿即可使用新模型。",
+		"fast": "快速",
+		"fastNote": "速度最快，但在嘈雜或帶口音的語音中漏字較多",
+		"balanced": "平衡",
+		"balancedNote": "速度適中，準確度良好",
+		"accurate": "精確",
+		"accurateNote": "準確度最高，但速度最慢",
+		"cpuWarning": "未使用 GPU：在這台裝置上精確模型會非常慢",
+		"active": "使用中",
+		"downloaded": "已下載",
+		"use": "使用",
+		"delete": "刪除模型",
+		"switchFailed": "無法切換語音模型，仍在使用先前的模型",
+		"deleteFailed": "無法刪除語音模型"
 	}
 }

@@ -1,30 +1,32 @@
 import { createHash } from "node:crypto";
 import { createReadStream, existsSync } from "node:fs";
-import { mkdir, rename, rm, stat } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import type { SttModelId } from "./transcriptionContract";
+
+export type { SttModelId } from "./transcriptionContract";
 
 /**
- * Manages the lifetime of the on-disk model artifact used by the STT stack.
+ * Manages the lifetime of the on-disk model artifacts used by the STT stack.
  *
- * The model is a single GGML file downloaded from HuggingFace
+ * Each model is a single GGML file downloaded from HuggingFace
  * (`ggerganov/whisper.cpp` — the model-file repo predates and is separate
  * from the `ggml-org` GitHub org the engine itself now lives under;
  * `ggml-org/whisper.cpp` on HuggingFace is a different, access-gated repo
  * and returns 401 on every file including README.md — confirmed by curl).
- * whisper.cpp bakes precision into the file, so
- * there is no runtime `--int8` flag; OpenScreen ships the q8_0 quantized
- * `small` multilingual model by default.
+ * whisper.cpp bakes precision into the file, so there is no runtime `--int8`
+ * flag. The user picks one of three in AI settings; `balanced`, the q8_0
+ * quantized `small` multilingual model, is the default and what every install
+ * before the choice existed was running.
  *
- * The file is verified by SHA-256 and written atomically (via .partial rename)
+ * Every file is verified by SHA-256 and written atomically (via .partial rename)
  * to prevent partial downloads from being treated as complete.
  *
  * Word timestamps come from whisper.cpp's native DTW token timestamps, so no
  * separate VAD model is required. See `technical-documentation/architecture/transcription-and-captions.md`.
  */
-
-export type SttModelId = "whisper";
 
 export interface SttModelFile {
 	/** Relative path within the model directory (e.g. "ggml-small-q8_0.bin"). */
@@ -42,6 +44,11 @@ export interface SttModelDescriptor {
 	cacheDir: string;
 	/** HuggingFace repo identifier (e.g. "ggerganov/whisper.cpp"). */
 	repoId: string;
+	/**
+	 * The helper's `--dtw-preset`: which model family's alignment heads DTW reads.
+	 * It has to match the file — a mismatched preset makes whisper_init fail.
+	 */
+	dtwPreset: "base" | "small" | "large-v3-turbo";
 	/** List of model files to download (currently a single GGML file). */
 	files: SttModelFile[];
 }
@@ -54,46 +61,109 @@ const MODEL_BASE = "https://huggingface.co";
 // long-standing public model-file repo that never moved when the engine's
 // GitHub org was renamed.
 const MODEL_REPO = "ggerganov/whisper.cpp";
-const MODEL_FILE = "ggml-small-q8_0.bin";
 // Pinned to a commit rather than `main` so `expectedSha256` is an invariant and
 // not a bet: `main` is a mutable branch pointer, and a re-upload under it would
 // now invalidate every cache in the field at once instead of merely breaking new
-// installs. This revision was checked against HuggingFace's paths-info API — its
-// LFS oid for MODEL_FILE is exactly the digest below.
+// installs. Every digest below was computed by downloading the file from this
+// revision and hashing it, and matches the LFS oid HuggingFace's paths-info API
+// reports for it.
 const MODEL_REVISION = "5359861c739e955e79d9a303bcbc70fb988958b1";
 
+function ggmlFile(name: string, expectedSha256: string, bytes: number): SttModelFile {
+	return {
+		name,
+		url: `${MODEL_BASE}/${MODEL_REPO}/resolve/${MODEL_REVISION}/${name}`,
+		expectedSha256,
+		approximateBytes: bytes,
+	};
+}
+
+// Sizes are the exact byte counts of the pinned files. q8_0 for the two small
+// models, where the saving from a coarser quantization is tens of MB and the
+// accuracy cost is not; q5_0 for turbo, a large model that tolerates it and
+// where q8_0 would add 300 MB.
 export const STT_MODELS: Record<SttModelId, SttModelDescriptor> = {
-	whisper: {
+	fast: {
 		cacheDir: "whisper-ggml",
 		repoId: MODEL_REPO,
+		dtwPreset: "base",
 		files: [
-			{
-				name: MODEL_FILE,
-				url: `${MODEL_BASE}/${MODEL_REPO}/resolve/${MODEL_REVISION}/${MODEL_FILE}`,
-				expectedSha256: "49C8FB02B65E6049D5FA6C04F81F53B867B5EC9540406812C643F177317F779F",
-				approximateBytes: 264_000_000,
-			},
+			ggmlFile(
+				"ggml-base-q8_0.bin",
+				"c577b9a86e7e048a0b7eada054f4dd79a56bbfa911fbdacf900ac5b567cbb7d9",
+				81_768_585,
+			),
+		],
+	},
+	balanced: {
+		cacheDir: "whisper-ggml",
+		repoId: MODEL_REPO,
+		dtwPreset: "small",
+		files: [
+			ggmlFile(
+				"ggml-small-q8_0.bin",
+				"49C8FB02B65E6049D5FA6C04F81F53B867B5EC9540406812C643F177317F779F",
+				264_464_607,
+			),
+		],
+	},
+	accurate: {
+		cacheDir: "whisper-ggml",
+		repoId: MODEL_REPO,
+		dtwPreset: "large-v3-turbo",
+		files: [
+			ggmlFile(
+				"ggml-large-v3-turbo-q5_0.bin",
+				"394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2",
+				574_041_195,
+			),
 		],
 	},
 };
 
-export function modelPaths(baseDir: string): Record<SttModelId, string> {
-	return {
-		whisper: path.join(baseDir, STT_MODELS.whisper.cacheDir, MODEL_FILE),
-	};
+/** The model a fresh install runs, and the one every install ran before the choice existed. */
+export const DEFAULT_STT_MODEL: SttModelId = "balanced";
+
+export function isSttModelId(value: unknown): value is SttModelId {
+	return typeof value === "string" && (Object.keys(STT_MODELS) as string[]).includes(value);
+}
+
+export function modelPath(baseDir: string, id: SttModelId): string {
+	const { cacheDir, files } = STT_MODELS[id];
+	return path.join(baseDir, cacheDir, files[0].name);
 }
 
 /**
- * True when the GGML model file exists and is non-empty.
+ * True when the model's GGML file exists and is non-empty. Only ever a final,
+ * verified file can sit at that path (see `ensureFile`), and `ensureModels`
+ * re-verifies it before any run loads it.
  */
-export async function areModelsPresent(baseDir: string): Promise<boolean> {
-	const paths = modelPaths(baseDir);
+export async function isModelPresent(baseDir: string, id: SttModelId): Promise<boolean> {
 	try {
-		const s = await stat(paths.whisper);
+		const s = await stat(modelPath(baseDir, id));
 		return s.isFile() && s.size > 0;
 	} catch {
 		return false;
 	}
+}
+
+const ACTIVE_MODEL_FILE = "active-model.json";
+
+/** The model transcription loads. Anything unreadable falls back to the default. */
+export async function readActiveModel(baseDir: string): Promise<SttModelId> {
+	try {
+		const raw = JSON.parse(await readFile(path.join(baseDir, ACTIVE_MODEL_FILE), "utf8")) as {
+			id?: unknown;
+		};
+		return isSttModelId(raw.id) ? raw.id : DEFAULT_STT_MODEL;
+	} catch {
+		return DEFAULT_STT_MODEL;
+	}
+}
+
+export async function writeActiveModel(baseDir: string, id: SttModelId): Promise<void> {
+	await mkdir(baseDir, { recursive: true });
+	await writeFile(path.join(baseDir, ACTIVE_MODEL_FILE), `${JSON.stringify({ id })}\n`, "utf8");
 }
 
 /** Verify SHA-256 of a file in 64 KiB chunks; resolves to the lowercase hex digest. */
@@ -196,7 +266,15 @@ async function ensureFile(
 		options.onProgress?.(downloaded);
 	});
 	const { createWriteStream } = await import("node:fs");
-	await pipeline(source, createWriteStream(tmp));
+	try {
+		await pipeline(source, createWriteStream(tmp));
+	} catch (error) {
+		// A dropped connection must not strand hundreds of MB of `.partial`. It
+		// could never pass as the model anyway — only the rename below creates
+		// that name, and only after the digest matched.
+		await rm(tmp, { force: true }).catch(() => undefined);
+		throw error;
+	}
 
 	if (expectedSha256) {
 		const actual = await sha256OfFile(tmp);
@@ -217,7 +295,7 @@ async function ensureFile(
 
 export interface EnsureModelsOptions {
 	baseDir: string;
-	/** Models to ensure; defaults to all (currently just `whisper`). */
+	/** Models to ensure; defaults to `DEFAULT_STT_MODEL`. */
 	only?: SttModelId[];
 	onProgress?: (event: {
 		id: SttModelId;
@@ -228,12 +306,12 @@ export interface EnsureModelsOptions {
 	fetcher?: typeof fetch;
 }
 
-/** Ensure the GGML model file is present locally; downloads with progress + retry. */
+/** Ensure the GGML model files are present locally; downloads with progress + retry. */
 export async function ensureModels(opts: EnsureModelsOptions): Promise<void> {
-	const targets = (opts.only ?? (["whisper"] as SttModelId[])).map((id) => ({
+	const targets = (opts.only ?? [DEFAULT_STT_MODEL]).map((id) => ({
 		id,
 		descriptor: STT_MODELS[id],
-		filePath: modelPaths(opts.baseDir)[id],
+		filePath: modelPath(opts.baseDir, id),
 	}));
 
 	for (const { id, descriptor, filePath } of targets) {

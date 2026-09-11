@@ -417,5 +417,22 @@
 	"cpuCompositor": {
 		"notice": "호환되는 GPU가 없어 CPU로 렌더링합니다. 재생이 느려집니다.",
 		"exportWarning": "호환되는 GPU가 없습니다. 이 내보내기는 CPU에서 실행되며 평소보다 훨씬 오래 걸립니다."
+	},
+	"speechModel": {
+		"title": "음성 모델",
+		"hint": "대본과 자막을 위해 음성을 텍스트로 변환합니다. 기존 대본은 유지되며, 새 모델을 사용하려면 대본을 재생성하세요.",
+		"fast": "빠름",
+		"fastNote": "가장 빠르지만 소음이나 억양이 있는 음성에서 놓치는 단어가 더 많습니다",
+		"balanced": "균형",
+		"balancedNote": "적당한 속도에 좋은 정확도",
+		"accurate": "정확",
+		"accurateNote": "정확도는 가장 높지만 가장 느립니다",
+		"cpuWarning": "GPU를 사용하지 않음: 이 컴퓨터에서는 정확 모델이 매우 느립니다",
+		"active": "사용 중",
+		"downloaded": "다운로드됨",
+		"use": "사용",
+		"delete": "모델 삭제",
+		"switchFailed": "음성 모델을 바꾸지 못했습니다. 이전 모델을 계속 사용합니다",
+		"deleteFailed": "음성 모델을 삭제하지 못했습니다"
 	}
 }

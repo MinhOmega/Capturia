@@ -417,5 +417,22 @@
 	"cpuCompositor": {
 		"notice": "Uyumlu GPU yok — işleme CPU üzerinde yapılıyor, bu yüzden oynatma daha yavaş.",
 		"exportWarning": "Uyumlu GPU yok: bu dışa aktarma CPU üzerinde çalışır ve normalden çok daha uzun sürer."
+	},
+	"speechModel": {
+		"title": "Konuşma modeli",
+		"hint": "Dökümler ve altyazılar için konuşmayı yazıya döker. Mevcut dökümler korunur; yeni modeli kullanmak için bir dökümü yeniden oluşturun.",
+		"fast": "Hızlı",
+		"fastNote": "En hızlısı, ancak gürültülü veya aksanlı konuşmada daha çok kelime kaçırır",
+		"balanced": "Dengeli",
+		"balancedNote": "Orta hızda iyi doğruluk",
+		"accurate": "Hassas",
+		"accurateNote": "En iyi doğruluk, ama en yavaşı",
+		"cpuWarning": "GPU kullanılmıyor: Hassas bu bilgisayarda çok yavaş çalışacak",
+		"active": "Etkin",
+		"downloaded": "İndirildi",
+		"use": "Kullan",
+		"delete": "Modeli sil",
+		"switchFailed": "Konuşma modeli değiştirilemedi; önceki model kullanılmaya devam ediyor",
+		"deleteFailed": "Konuşma modeli silinemedi"
 	}
 }

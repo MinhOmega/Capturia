@@ -417,5 +417,22 @@
 	"cpuCompositor": {
 		"notice": "Nessuna GPU compatibile: il rendering avviene sulla CPU, quindi la riproduzione è più lenta.",
 		"exportWarning": "Nessuna GPU compatibile: questa esportazione viene eseguita sulla CPU e richiederà molto più tempo del solito."
+	},
+	"speechModel": {
+		"title": "Modello vocale",
+		"hint": "Trascrive il parlato per trascrizioni e sottotitoli. Le trascrizioni esistenti vengono mantenute; rigenerane una per usare il nuovo modello.",
+		"fast": "Veloce",
+		"fastNote": "Il più rapido, ma perde più parole con rumore o accenti marcati",
+		"balanced": "Bilanciato",
+		"balancedNote": "Buona precisione a velocità moderata",
+		"accurate": "Preciso",
+		"accurateNote": "La massima precisione, ma il più lento",
+		"cpuWarning": "Nessuna GPU in uso: Preciso sarà molto lento su questo computer",
+		"active": "Attivo",
+		"downloaded": "Scaricato",
+		"use": "Usa",
+		"delete": "Elimina modello",
+		"switchFailed": "Impossibile cambiare modello vocale; resta in uso quello precedente",
+		"deleteFailed": "Impossibile eliminare il modello vocale"
 	}
 }

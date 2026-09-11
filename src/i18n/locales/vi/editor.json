@@ -417,5 +417,22 @@
 	"cpuCompositor": {
 		"notice": "Không có GPU tương thích — kết xuất trên CPU nên phát lại chậm hơn.",
 		"exportWarning": "Không có GPU tương thích: lần xuất này chạy trên CPU và sẽ lâu hơn bình thường rất nhiều."
+	},
+	"speechModel": {
+		"title": "Mô hình giọng nói",
+		"hint": "Nhận dạng giọng nói cho bản phiên âm và phụ đề. Các bản phiên âm hiện có được giữ nguyên; hãy tạo lại một bản để dùng mô hình mới.",
+		"fast": "Nhanh",
+		"fastNote": "Nhanh nhất, nhưng bỏ sót nhiều từ hơn khi có tiếng ồn hoặc giọng địa phương",
+		"balanced": "Cân bằng",
+		"balancedNote": "Độ chính xác tốt với tốc độ vừa phải",
+		"accurate": "Chính xác",
+		"accurateNote": "Chính xác nhất, nhưng chậm nhất",
+		"cpuWarning": "Không dùng GPU: Chính xác sẽ chạy rất chậm trên máy này",
+		"active": "Đang dùng",
+		"downloaded": "Đã tải",
+		"use": "Dùng",
+		"delete": "Xóa mô hình",
+		"switchFailed": "Không thể đổi mô hình giọng nói; mô hình trước vẫn đang được dùng",
+		"deleteFailed": "Không thể xóa mô hình giọng nói"
 	}
 }

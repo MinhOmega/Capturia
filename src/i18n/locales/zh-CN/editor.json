@@ -417,5 +417,22 @@
 	"cpuCompositor": {
 		"notice": "没有兼容的 GPU，正在使用 CPU 渲染，因此播放较慢。",
 		"exportWarning": "没有兼容的 GPU：本次导出将在 CPU 上运行，耗时会比平常长很多。"
+	},
+	"speechModel": {
+		"title": "语音模型",
+		"hint": "用于转录和字幕的语音识别。现有转录会保留；重新生成转录即可使用新模型。",
+		"fast": "快速",
+		"fastNote": "速度最快，但在嘈杂或有口音的语音中漏词更多",
+		"balanced": "均衡",
+		"balancedNote": "速度适中，准确度良好",
+		"accurate": "精确",
+		"accurateNote": "准确度最高，但速度最慢",
+		"cpuWarning": "未使用 GPU：在此设备上精确模型会非常慢",
+		"active": "使用中",
+		"downloaded": "已下载",
+		"use": "使用",
+		"delete": "删除模型",
+		"switchFailed": "无法切换语音模型，仍在使用之前的模型",
+		"deleteFailed": "无法删除语音模型"
 	}
 }
