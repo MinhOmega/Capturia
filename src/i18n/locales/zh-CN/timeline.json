@@ -10,7 +10,8 @@
 		"addAnnotation": "添加标注 (A)",
 		"addSpeed": "添加速度 (S)",
 		"addCameraFullscreen": "添加全屏摄像头 (C)",
-		"splitAtPlayhead": "在播放头处分割片段"
+		"splitAtPlayhead": "在播放头处分割片段",
+		"pasteAtPlayhead": "粘贴到播放头处"
 	},
 	"hints": {
 		"pressZoom": "按 Z 添加缩放",
@@ -66,6 +67,11 @@
 		"autoEnhance": "自动增强",
 		"automaticZooms": "自动缩放",
 		"automaticZoomsHint": "基于录制的光标移动",
+		"flaggedZooms": "在标记处缩放",
+		"flaggedZoomsHint": "录制时每个标记添加一个缩放",
+		"flaggedZoomsNoFlags": "尚无标记 — 录制时使用“{{button}}”",
+		"flagZoomsCovered": "已被覆盖：{{count}} 个",
+		"flagZoomsTrimmed": "位于剪切范围内：{{count}} 个",
 		"smartZoomsAndCuts": "智能剪切",
 		"smartZoomsAndCutsHint": "使用 AI",
 		"roughCut": "删除冷场",

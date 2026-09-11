@@ -31,6 +31,7 @@ import {
 } from "../../../electron/ai-edition/provider-registry";
 import { ModalShell } from "./Modals";
 import styles from "./NewEditorShell.module.css";
+import { SpeechModelSettings } from "./SpeechModelSettings";
 
 type Mode = "list" | "form";
 
@@ -177,11 +178,14 @@ function ProviderSettings({ open, onClose }: ProviderSettingsProps) {
 			wide
 		>
 			{mode === "list" ? (
-				<ProviderList
-					connected={new Set(snapshot?.connectedProviders ?? [])}
-					activeProvider={snapshot?.config?.provider ?? null}
-					onPick={openForm}
-				/>
+				<>
+					<ProviderList
+						connected={new Set(snapshot?.connectedProviders ?? [])}
+						activeProvider={snapshot?.config?.provider ?? null}
+						onPick={openForm}
+					/>
+					<SpeechModelSettings />
+				</>
 			) : active ? (
 				<ProviderForm
 					def={active}

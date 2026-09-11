@@ -115,6 +115,7 @@
 		"cursorHighlight": "カーソルの強調表示",
 		"autoZoom": "録画後に自動ズーム",
 		"autoZoomNeedsEditableCursor": "自動ズームには編集可能なカーソルが必要です。カーソルモードを切り替えてください。",
+		"drawArea": "録画後に範囲を指定",
 		"on": "オン",
 		"off": "オフ",
 		"loading": "読み込み中…",
@@ -129,6 +130,7 @@
 		"sourceModal": {
 			"screens": "画面 ({{count}})",
 			"windows": "ウィンドウ ({{count}})",
+			"area": "範囲",
 			"loadingSources": "ソースを読み込み中…",
 			"noScreensFound": "画面が見つかりません",
 			"noWindowsFound": "ウィンドウが見つかりません",
@@ -327,9 +329,9 @@
 		"title": "クリップを編集",
 		"adjustStart": "クリップの開始位置を調整",
 		"adjustEnd": "クリップの終了位置を調整",
-		"start": "開始",
-		"end": "終了",
-		"duration": "長さ",
+		"originalDuration": "元の長さ",
+		"trimRange": "トリム範囲",
+		"duration": "最終の長さ",
 		"reset": "リセット",
 		"apply": "適用",
 		"pickClipTitle": "編集するクリップを選択",
@@ -417,5 +419,22 @@
 	"cpuCompositor": {
 		"notice": "対応 GPU がないため CPU で描画しています。再生が遅くなります。",
 		"exportWarning": "対応 GPU がありません。この書き出しは CPU で実行されるため、通常よりはるかに時間がかかります。"
+	},
+	"speechModel": {
+		"title": "音声モデル",
+		"hint": "文字起こしと字幕のために音声を認識します。既存の文字起こしはそのまま残ります。新しいモデルを使うには文字起こしを再生成してください。",
+		"fast": "高速",
+		"fastNote": "最も速いものの、雑音やなまりのある音声では聞き漏らしが増えます",
+		"balanced": "バランス",
+		"balancedNote": "適度な速度で十分な精度",
+		"accurate": "高精度",
+		"accurateNote": "精度は最高ですが、最も低速です",
+		"cpuWarning": "GPU を使用していません: このマシンでは高精度モデルは非常に低速です",
+		"active": "使用中",
+		"downloaded": "ダウンロード済み",
+		"use": "使用する",
+		"delete": "モデルを削除",
+		"switchFailed": "音声モデルを切り替えられませんでした。以前のモデルを引き続き使用します",
+		"deleteFailed": "音声モデルを削除できませんでした"
 	}
 }

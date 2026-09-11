@@ -3,6 +3,7 @@ import {
 	Clock,
 	Crosshair,
 	EyeOff,
+	Flag,
 	Loader2,
 	Maximize2,
 	MessageSquare,
@@ -56,7 +57,11 @@ import { useChatPromptBus } from "@/lib/ai-edition/store/useChatPromptBus";
 import { useEditorSettings } from "@/lib/ai-edition/store/useEditorSettings";
 import { useRecordingMarkers } from "@/lib/ai-edition/store/useRecordingMarkers";
 import type { useTimeline } from "@/lib/ai-edition/store/useTimeline";
-import { collectAutoZoomSuggestionsForLatestDocument } from "@/lib/ai-edition/timeline/apply-auto-zooms";
+import {
+	type AutoZoomTelemetryReader,
+	collectAutoZoomSuggestionsForLatestDocument,
+	collectFlagZoomSuggestionsForLatestDocument,
+} from "@/lib/ai-edition/timeline/apply-auto-zooms";
 import { hasAnyClipWithCamera } from "@/lib/ai-edition/timeline/camera";
 import { formatSec } from "@/lib/ai-edition/timeline/format";
 import {
@@ -80,6 +85,7 @@ import { nativeBridgeClient } from "@/native/client";
 import { TransportBar } from "../TransportBar";
 import type { VideoSource } from "../VirtualPreview";
 import styles from "./EditorShellV4.module.css";
+import { RegionContextMenu, type RegionMenuTarget } from "./RegionContextMenu";
 
 // The AI option's prompt — sent straight to the chat agent via the prompt-bus.
 //
@@ -99,6 +105,16 @@ const AI_ENHANCE_PROMPT =
 	"Cut the dead time in this recording: long pauses, silences, and idle stretches where nothing is being said or done. Keep the pacing tight and natural, and do not cut anything a viewer needs. Apply the edits directly to the timeline.";
 
 type TimelineApi = ReturnType<typeof useTimeline>;
+
+// The telemetry both Auto-enhance zoom passes read. `getRecordingData`, not
+// `getTelemetry`: the latter is a projection that keeps positions and DROPS
+// `interactionType` (see `readCursorTelemetryFile`), so every click the recorder
+// captured was thrown away one call before the detector that wants it. That
+// projection is right for the timeline overlay it was written for and wrong here —
+// it left the suggester guessing from stillness while the ground truth sat in the
+// same sidecar.
+const readRecordingTelemetry: AutoZoomTelemetryReader = async (videoPath) =>
+	(await nativeBridgeClient.cursor.getRecordingData(videoPath))?.samples ?? [];
 
 const ASSET_MIME = "application/x-axcut-asset";
 
@@ -160,6 +176,22 @@ const PILL_SNAP_PX = 8;
  *  clips that follow — which is what a flex `gap` did, once per junction. */
 /** Below this a clip cannot show a label and a delete button inside itself. */
 const NARROW_CLIP_PX = 120;
+// Whether a card can also carry its edited duration. The label pill is capped at
+// `calc(100% - 50px)` so it clears the delete button, and everything inside it
+// but the name is incompressible: 15px of padding, the 16px pencil, two 8px
+// gaps, and the timecode. The timecode is the part that varies — `formatSec`
+// never prints an hour field, so a clip past ten minutes reads `16:40.0` and one
+// past a hundred `100:00.0` — so the room is measured against THIS card's own
+// text rather than a single number that only ever fitted the short form.
+// Measured in the running window: 6.0px per character at 10px in the mono face,
+// and a 6-character code overlapping the delete button at a 121px card, clear at
+// 131px.
+const CLIP_LABEL_RESERVE_PX = 50;
+const CLIP_LABEL_FIXED_PX = 47;
+const CLIP_LABEL_CHAR_PX = 6;
+function cardFitsDuration(cardPx: number, text: string): boolean {
+	return cardPx >= CLIP_LABEL_RESERVE_PX + CLIP_LABEL_FIXED_PX + text.length * CLIP_LABEL_CHAR_PX;
+}
 
 const CLIP_GUTTER_PX = 6;
 /**
@@ -438,6 +470,7 @@ const AudioLanePill = memo(function AudioLanePill({
 	selected,
 	onStartDrag,
 	onSelect,
+	onContextMenu,
 	label,
 	slipHint,
 	slipArmed,
@@ -464,6 +497,7 @@ const AudioLanePill = memo(function AudioLanePill({
 	selected: boolean;
 	onStartDrag: (e: ReactPointerEvent, track: AxcutAudioTrack, mode: "move" | "l" | "r") => void;
 	onSelect: (id: string) => void;
+	onContextMenu: (e: React.MouseEvent, kind: "audio", id: string) => void;
 	label: string;
 	/** Appended to the pill's tooltip. A modifier is never discoverable on its own —
 	 *  you either read it somewhere or you never find it — and the tooltip is where a
@@ -514,6 +548,7 @@ const AudioLanePill = memo(function AudioLanePill({
 			<div
 				role="button"
 				tabIndex={0}
+				data-pill-id={track.id}
 				className={`${styles.lanePill} ${styles.laneAudio}${
 					selected ? ` ${styles.lanePillSel}` : ""
 				}${slipArmed ? ` ${styles.laneAudioSlip}` : ""}`}
@@ -526,6 +561,7 @@ const AudioLanePill = memo(function AudioLanePill({
 				}}
 				// Body drag moves the track; it also selects and stops the .tlTracks scrub.
 				onPointerDown={(e) => onStartDrag(e, track, "move")}
+				onContextMenu={(e) => onContextMenu(e, "audio", track.id)}
 				onKeyDown={(e) => {
 					if (e.key !== "Enter" && e.key !== " ") return;
 					e.preventDefault();
@@ -603,6 +639,9 @@ export function V4Timeline({
 	onNextClip,
 	onEditClip,
 	onAddVoiceover,
+	onCopyRegion,
+	onPasteRegion,
+	onDeleteSelection,
 }: {
 	tl: TimelineApi;
 	setCurrentTime: (sec: number) => void;
@@ -619,6 +658,11 @@ export function V4Timeline({
 	/** Opens the voiceover recorder. Shell-level like the clip editor: the
 	 *  dialog owns the microphone and the shell owns the transport. */
 	onAddVoiceover: () => void;
+	/** The shell's own copy / paste / delete — what its shortcuts call — for the
+	 *  right-click menu, so the menu cannot do anything the keys would not. */
+	onCopyRegion?: () => void;
+	onPasteRegion?: () => void;
+	onDeleteSelection?: () => void;
 }) {
 	const t = useScopedT("timeline");
 	// The live bindings, not the defaults: these keys are remappable, and a menu
@@ -627,6 +671,8 @@ export function V4Timeline({
 	// The camera lane borrows the Layout pane's "No Webcam" wording when there is no
 	// camera to grow, so the two surfaces say the same thing about the same project.
 	const ts = useScopedT("settings");
+	// The recorder's own name for its flag button, so the hint that points at it cannot drift.
+	const tLaunch = useScopedT("launch");
 	// Wheel zoom/pan listens on the whole pane (toolbar down through the nav bar),
 	// not just the lanes — a user scrolling over the ruler or the hint labels
 	// expects the same zoom/pan the lanes give, not silence.
@@ -917,7 +963,7 @@ export function V4Timeline({
 	// Moments the user flagged while recording. Positions are derived from source
 	// time on every render of the document, so a marker follows the clip that
 	// carries it through cuts, reorders and retimes instead of going stale.
-	const recordingMarkers = useRecordingMarkers();
+	const { markers: recordingMarkers, markersMs: recordingMarkersMs } = useRecordingMarkers();
 
 	// Live scrub position. The store write behind it is rAF-throttled (see
 	// seekToClientX), so this keeps the playhead and the timecode pinned to the
@@ -947,8 +993,6 @@ export function V4Timeline({
 				playheadElRef.current.style.left = `${pct * 100}%`;
 			}
 
-			// Optimistic local UI state update
-			setScrubbingTimeSec(targetTime);
 			pendingSeekTimeRef.current = targetTime;
 
 			if (isImmediate) {
@@ -956,15 +1000,19 @@ export function V4Timeline({
 					cancelAnimationFrame(rafSeekRef.current);
 					rafSeekRef.current = 0;
 				}
+				setScrubbingTimeSec(targetTime);
 				setCurrentTime(targetTime);
 				return;
 			}
 
-			// Throttled store update / D3D seek via rAF to avoid IPC flooding
+			// Throttled React state + store update / D3D seek via rAF: once per frame,
+			// not once per pointermove, so the timeline re-renders at frame rate and
+			// IPC is not flooded. The playhead itself already moved above.
 			if (rafSeekRef.current === 0) {
 				rafSeekRef.current = requestAnimationFrame(() => {
 					rafSeekRef.current = 0;
 					if (pendingSeekTimeRef.current !== null) {
+						setScrubbingTimeSec(pendingSeekTimeRef.current);
 						setCurrentTime(pendingSeekTimeRef.current);
 					}
 				});
@@ -1042,6 +1090,9 @@ export function V4Timeline({
 
 	const startPillDrag = useCallback(
 		(e: ReactPointerEvent, pill: LanePill, dragMode: "move" | "l" | "r") => {
+			// A right-button press is the context menu's, and must not collapse a
+			// multi-selection or arm a drag the menu would then leave running.
+			if (e.button !== 0) return;
 			e.preventDefault();
 			e.stopPropagation();
 			selectPill(pill, e.shiftKey);
@@ -1229,6 +1280,7 @@ export function V4Timeline({
 	// once, on pointerup.
 	const startAudioDrag = useCallback(
 		(e: ReactPointerEvent, track: AxcutAudioTrack, mode: "move" | "l" | "r") => {
+			if (e.button !== 0) return;
 			e.preventDefault();
 			e.stopPropagation();
 			tl.selectAudioTrack(track.id);
@@ -1682,15 +1734,7 @@ export function V4Timeline({
 			// different media.
 			const collected = await collectAutoZoomSuggestionsForLatestDocument(
 				() => useProjectStore.getState().document,
-				// `getRecordingData`, not `getTelemetry`: the latter is a projection
-				// that keeps positions and DROPS `interactionType` (see
-				// `readCursorTelemetryFile`), so every click the recorder captured
-				// was thrown away one call before the detector that wants it. That
-				// projection is right for the timeline overlay it was written for
-				// and wrong here — it left the suggester guessing from stillness
-				// while the ground truth sat in the same sidecar.
-				async (videoPath) =>
-					(await nativeBridgeClient.cursor.getRecordingData(videoPath))?.samples ?? [],
+				readRecordingTelemetry,
 			);
 			const suggestions = collected?.suggestions ?? [];
 			if (suggestions.length === 0) {
@@ -1715,6 +1759,49 @@ export function V4Timeline({
 			setAutoBusy(false);
 		}
 	}, [tl, t]);
+
+	// Auto-enhance: one zoom per moment flagged while recording. Collected through the
+	// same reader and stale-clips retry as the wand above, and placed by the same rules
+	// (see `buildFlagZoomSuggestions`); the telemetry is only asked where the pointer was
+	// at each flag.
+	const runFlagZooms = useCallback(async () => {
+		setAutoEnhanceOpen(false);
+		setAutoBusy(true);
+		try {
+			const collected = await collectFlagZoomSuggestionsForLatestDocument(
+				() => useProjectStore.getState().document,
+				readRecordingTelemetry,
+				recordingMarkersMs,
+			);
+			if (!collected) return;
+			const { suggestions, covered, trimmed } = collected;
+			const skipped =
+				[
+					covered > 0 ? t("toolbar.flagZoomsCovered", { count: covered }) : null,
+					trimmed > 0 ? t("toolbar.flagZoomsTrimmed", { count: trimmed }) : null,
+				]
+					.filter(Boolean)
+					.join(" · ") || undefined;
+			if (suggestions.length === 0) {
+				toast.info(t("toolbar.noAutoZoomMoments"), { description: skipped });
+				return;
+			}
+			// One save, so the whole pass is one undo step.
+			const added = await tl.addZoomsBulk(suggestions);
+			if (added === 0) return;
+			toast.success(
+				t(added === 1 ? "toolbar.addedAutoZoom" : "toolbar.addedAutoZoomPlural", { count: added }),
+				{ description: skipped },
+			);
+		} catch (err) {
+			toast.error(t("toolbar.autoZoomFailed"), {
+				description: err instanceof Error ? err.message : String(err),
+			});
+		} finally {
+			setAutoBusy(false);
+		}
+	}, [recordingMarkersMs, tl, t]);
+	const noFlags = recordingMarkers.length === 0;
 
 	// Auto-enhance option 2 — hand a generic prompt to the AI agent (smart
 	// zooms + cuts) via the chat prompt-bus. The chat panel owns the outcome
@@ -1773,6 +1860,23 @@ export function V4Timeline({
 
 	const isPillSelected = (id: string) =>
 		tl.selection?.id === id || tl.multiSelection.some((m) => m.id === id);
+
+	// Right-click: select what was clicked unless it is already part of the selection — a
+	// multi-selection has to survive the click to be deleted as one — then open the menu at
+	// the pointer.
+	const [regionMenu, setRegionMenu] = useState<RegionMenuTarget | null>(null);
+	const openRegionMenu = useCallback(
+		(e: React.MouseEvent, kind: RegionMenuTarget["kind"], id: string) => {
+			e.preventDefault();
+			e.stopPropagation();
+			if (kind === "clip") tl.selectClip(id);
+			else if (kind === "audio") tl.selectAudioTrack(id);
+			else if (tl.selection?.id !== id && !tl.multiSelection.some((m) => m.id === id))
+				tl.selectRegion(kind, id);
+			setRegionMenu({ kind, id, x: e.clientX, y: e.clientY });
+		},
+		[tl],
+	);
 	// Optimistic preview: during a clip-reorder drag, slide each region pill by
 	// the same amount as the clip it sits on — mirroring the clip transforms so
 	// zoom/speed/annotation/trim pills travel with their content in real time,
@@ -1819,6 +1923,7 @@ export function V4Timeline({
 				key={seg.key}
 				role={seg.interactive ? "button" : undefined}
 				tabIndex={seg.interactive ? 0 : undefined}
+				data-pill-id={seg.interactive ? p.id : undefined}
 				className={`${styles.lanePill} ${laneOf(p.kind)}${
 					compact ? ` ${styles.lanePillCompact}` : ""
 				}${seg.interactive && isPillSelected(p.id) ? ` ${styles.lanePillSel}` : ""}`}
@@ -1841,6 +1946,7 @@ export function V4Timeline({
 						: {}),
 				}}
 				onPointerDown={seg.interactive ? (e) => startPillDrag(e, p, "move") : undefined}
+				onContextMenu={seg.interactive ? (e) => openRegionMenu(e, p.kind, p.id) : undefined}
 				// A pill is focusable and announced as a button, so Enter and Space have to
 				// activate it — without this a keyboard user could tab to a region and then
 				// reach nothing that acts on a selection: Delete, copy/paste, the inspector.
@@ -2015,6 +2121,25 @@ export function V4Timeline({
 												<span style={{ fontWeight: 600 }}>{t("toolbar.automaticZooms")}</span>
 												<span style={{ fontSize: 11, color: "var(--muted)" }}>
 													{t("toolbar.automaticZoomsHint")}
+												</span>
+											</span>
+										</button>
+										<button
+											type="button"
+											className={styles.recMenuRow}
+											onClick={() => void runFlagZooms()}
+											disabled={noFlags}
+											style={noFlags ? { opacity: 0.55, cursor: "not-allowed" } : undefined}
+										>
+											<Flag size={15} style={{ flexShrink: 0 }} />
+											<span style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+												<span style={{ fontWeight: 600 }}>{t("toolbar.flaggedZooms")}</span>
+												<span style={{ fontSize: 11, color: "var(--muted)" }}>
+													{noFlags
+														? t("toolbar.flaggedZoomsNoFlags", {
+																button: tLaunch("tooltips.addMarker"),
+															})
+														: t("toolbar.flaggedZoomsHint")}
 												</span>
 											</span>
 										</button>
@@ -2394,6 +2519,7 @@ export function V4Timeline({
 													selected={tl.selectedAudioTrackId === track.id}
 													onStartDrag={startAudioDrag}
 													onSelect={tl.selectAudioTrack}
+													onContextMenu={openRegionMenu}
 													label={track.label || asset?.label || ts("audioTrack.defaultLabel")}
 													slipHint={ts("audioTrack.slipHint")}
 													slipArmed={slipArmed}
@@ -2472,6 +2598,9 @@ export function V4Timeline({
 								// there is no arrangement that fits a button inside that — so while
 								// it is selected the controls step outside the box instead.
 								const narrow = boxLen * pxPerSec < NARROW_CLIP_PX;
+								// The gutter is taken out of the card's own width below, so the
+								// room the label actually has is that much less than the span.
+								const durText = formatSec(dur);
 								return (
 									<div
 										key={c.id}
@@ -2493,6 +2622,8 @@ export function V4Timeline({
 											transform: clipTransform,
 										}}
 										onPointerDown={(e) => startClipDrag(e, c)}
+										// Split needs a playhead, which only the Edit surface has.
+										onContextMenu={showLanes ? (e) => openRegionMenu(e, "clip", c.id) : undefined}
 										onClick={(e) => {
 											e.stopPropagation();
 											// A completed reorder-drag also fires a click; don't let it
@@ -2531,6 +2662,9 @@ export function V4Timeline({
 											<span className={styles.tlClipName}>
 												{tl.assets.find((a) => a.id === c.assetId)?.label ?? c.assetId}
 											</span>
+											{cardFitsDuration(boxLen * pxPerSec - CLIP_GUTTER_PX, durText) ? (
+												<span className={styles.tlClipDuration}>{durText}</span>
+											) : null}
 										</div>
 										{selected ? (
 											<button
@@ -2605,6 +2739,14 @@ export function V4Timeline({
 					</div>
 				</div>
 			) : null}
+			<RegionContextMenu
+				target={regionMenu}
+				onTargetChange={setRegionMenu}
+				tl={tl}
+				onCopy={onCopyRegion}
+				onPaste={onPasteRegion}
+				onDelete={onDeleteSelection}
+			/>
 			{/* The crop readout, at the component ROOT rather than in the lane: the lane
 			    sits inside the zoomed canvas transform, which would scale a chip placed
 			    there. `in -> out / length` — 0:00.0 and out = length are the boundary

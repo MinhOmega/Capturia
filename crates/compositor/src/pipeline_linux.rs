@@ -913,12 +913,25 @@ fn run_composited_multi_inner(
                 // Six, pas deux : c'est au-dessus de la latence observee, ca
                 // coute 6 x 3,3 Mo, et le garde-fou reste en place pour le cas ou
                 // un pilote irait plus loin.
-                let total = comp.nv12_geometry().3;
+                let (bpr_y, bpr_uv, off_uv, total) = comp.nv12_geometry();
                 let mut v_st = Vec::new();
                 for _ in 0..6 {
                     v_st.push(comp.create_exportable_staging(total)?);
                 }
-                Some((v, v_st))
+                // S'OUVRIR NE PROUVE PAS QU'IL ENCODE : voir `VaapiEncoder::probe`.
+                // Sans cet essai, un pilote qui refuse le dmabuf importe faisait
+                // mourir l'export a la premiere frame au lieu de le laisser au
+                // software.
+                let (w, h) = (out_w as i32, out_h as i32);
+                match unsafe {
+                    VaapiEncoder::probe(w, h, out_fps, bit_rate, v_st[0].fd, bpr_y, bpr_uv, off_uv)
+                } {
+                    Ok(r) if r >= 0 => Some((v, v_st)),
+                    other => {
+                        eprintln!("[pipeline] h264_vaapi n'encode pas depuis le dmabuf ({other:?}) — repli software");
+                        None
+                    }
+                }
             })
     } else {
         None
@@ -1446,7 +1459,64 @@ impl VaapiEncoder {
         // cette frame mappe le dmabuf du slot : tant qu'elle vit, l'encodeur peut
         // encore lire cette memoire. L'appelant la garde et ne la relache — donc
         // ne recycle le slot — qu'apres avoir draine le paquet correspondant.
+        //
+        // Sauf si l'envoi a echoue : l'encodeur n'en a alors rien pris, et la
+        // frame perdue garderait en vie jusqu'a la fin du processus la surface
+        // VA qui importe le dmabuf, les deux contextes de frames et le device.
+        if r.is_err() {
+            let mut d = dst;
+            av_frame_free(&mut d);
+        }
         r.map(|()| dst)
+    }
+
+    /// Encode UNE image depuis `fd` sur un encodeur JETABLE. Rend le code de
+    /// `avcodec_receive_packet` apres le flush : >= 0 si un paquet non vide est
+    /// sorti. `Err` si la chaine casse avant l'encodage (ouverture, mapping,
+    /// envoi).
+    ///
+    /// POURQUOI UN ESSAI ET PAS `open` SEUL. `open` reussi ne dit pas que le
+    /// pilote encode depuis un dmabuf IMPORTE. iHD sur Meteor Lake (Arc) ouvre
+    /// `h264_vaapi`, mappe le dmabuf, accepte la frame, puis `vaEndPicture` rend
+    /// VA_STATUS_ERROR_ENCODING_ERROR -- EIO -- a chaque image. Mesure avec iHD
+    /// 24.1 (Ubuntu 24.04) : en VBR comme en CQP, et a l'identique depuis un
+    /// tampon NV12 lineaire alloue par GBM/Mesa, donc ni notre export ni sa
+    /// description ne sont en cause ; le meme encodeur encode sans broncher les
+    /// surfaces que le pilote alloue lui-meme. Seul un essai reel le voit.
+    ///
+    /// Jetable parce qu'un paquet sorti de l'encodeur de l'export finirait dans
+    /// le fichier.
+    ///
+    /// # Safety
+    /// `fd` doit etre un dmabuf vivant couvrant la disposition NV12 decrite.
+    #[allow(clippy::too_many_arguments)]
+    pub unsafe fn probe(
+        w: i32,
+        h: i32,
+        fps: i32,
+        bit_rate: i64,
+        fd: i32,
+        bpr_y: u32,
+        bpr_uv: u32,
+        off_uv: u64,
+    ) -> Result<i32> {
+        use crate::ffi::*;
+        let Some(mut enc) = Self::open(w, h, fps, bit_rate) else {
+            bail!("h264_vaapi ne s'ouvre pas");
+        };
+        let mut frame = enc.send_dmabuf(fd, bpr_y, bpr_uv, off_uv, 0)?;
+        // Un encodeur peut legitimement retenir la premiere frame : on le vide
+        // pour forcer la sortie du paquet.
+        avcodec_send_frame(enc.ctx, ptr::null_mut());
+        let mut pkt = av_packet_alloc();
+        let r = avcodec_receive_packet(enc.ctx, pkt);
+        let size = if r >= 0 { (*pkt).size } else { 0 };
+        av_packet_free(&mut pkt);
+        av_frame_free(&mut frame);
+        if r >= 0 && size <= 0 {
+            bail!("paquet H.264 vide");
+        }
+        Ok(r)
     }
 
     /// Vrai si l'encodeur ne detient plus la frame mappee, donc si le slot qu'elle
@@ -1532,21 +1602,30 @@ mod vaapi_tests {
         gpu.device.poll(wgpu::Maintain::Wait);
 
         unsafe {
-            let Some(mut enc) = VaapiEncoder::open(w, h, 60, 4_000_000) else {
+            if VaapiEncoder::open(w, h, 60, 4_000_000).is_none() {
                 eprintln!("h264_vaapi indisponible — test saute");
                 return;
-            };
-            enc.send_dmabuf(st.fd, bpr_y, bpr_uv, off_uv, 0)
-                .expect("send_dmabuf");
-            // Un encodeur peut legitimement retenir la premiere frame : on le
-            // vide pour forcer la sortie du paquet.
-            let _ = crate::ffi::avcodec_send_frame(enc.ctx(), std::ptr::null_mut());
-            let pkt = crate::ffi::av_packet_alloc();
-            let r = crate::ffi::avcodec_receive_packet(enc.ctx(), pkt);
+            }
+            let r = VaapiEncoder::probe(w, h, 60, 4_000_000, st.fd, bpr_y, bpr_uv, off_uv)
+                .expect("ouverture, mapping ou envoi du dmabuf");
+            // LE SEUL REFUS TOLERE, et il est nomme : un GPU Intel dont le
+            // pilote a tout accepte (ouverture, mapping, envoi) puis rend EIO a
+            // l'encodage. C'est iHD sur Meteor Lake, qui n'encode depuis AUCUN
+            // dmabuf lineaire importe -- pas meme un tampon GBM de Mesa, voir
+            // `VaapiEncoder::probe`. L'export y retombe sur le software. Ailleurs
+            // (radeonsi, ou tout autre code d'erreur) le test echoue comme avant.
+            const AVERROR_EIO: i32 = -5; // AVERROR(EIO), EIO = 5 sous Linux
+            let intel = std::fs::read_to_string("/sys/class/drm/renderD128/device/vendor")
+                .is_ok_and(|v| v.trim() == "0x8086");
+            if r == AVERROR_EIO && intel {
+                eprintln!(
+                    "le pilote VAAPI Intel refuse d'encoder depuis un dmabuf lineaire \
+                     importe (EIO a vaEndPicture) — l'export retombe sur le software, \
+                     test saute"
+                );
+                return;
+            }
             assert!(r >= 0, "avcodec_receive_packet a rendu {r}");
-            assert!((*pkt).size > 0, "paquet H.264 vide");
-            let mut p = pkt;
-            crate::ffi::av_packet_free(&mut p);
         }
     }
 }

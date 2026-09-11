@@ -8,6 +8,9 @@ import type { AiEditionChatEvent } from "../src/native/contracts";
 import { NATIVE_BRIDGE_CHANNEL, type NativeBridgeRequest } from "../src/native/contracts";
 import type { RecordingPrefs } from "./ipc/handlers";
 import type {
+	SttModelId,
+	SttModelProgressEvent,
+	SttModelsSnapshot,
 	SttStatusEvent,
 	SttTranscribeRequest,
 	SttTranscribeResponse,
@@ -123,6 +126,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	getSelectedSource: () => {
 		return ipcRenderer.invoke("get-selected-source");
 	},
+	selectArea: (source: ProcessedDesktopSource) => {
+		return ipcRenderer.invoke("select-area", source);
+	},
+	finishAreaSelection: (rect: { x: number; y: number; width: number; height: number }) => {
+		return ipcRenderer.invoke("finish-area-selection", rect);
+	},
 	getRecordingPrefs: () => {
 		return ipcRenderer.invoke("get-recording-prefs");
 	},
@@ -185,6 +194,18 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	},
 	getRecordingsDiskSpace: () => {
 		return ipcRenderer.invoke("get-recordings-disk-space");
+	},
+	getRecordingsFolder: () => {
+		return ipcRenderer.invoke("get-recordings-folder");
+	},
+	chooseRecordingsFolder: () => {
+		return ipcRenderer.invoke("choose-recordings-folder");
+	},
+	resetRecordingsFolder: () => {
+		return ipcRenderer.invoke("reset-recordings-folder");
+	},
+	confirmRecordingsFolder: () => {
+		return ipcRenderer.invoke("confirm-recordings-folder");
 	},
 	writeRecordingMarkers: (videoPath: string, markers: number[]) => {
 		return ipcRenderer.invoke("write-recording-markers", videoPath, markers);
@@ -334,6 +355,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	getAudioPeaks: (filePath: string, durationSec: number) => {
 		return ipcRenderer.invoke("get-audio-peaks", filePath, durationSec);
 	},
+	/** Poster frames as `data:` URLs, disk-cached. See electron/media/posterFrames.ts. */
+	getMediaPoster: (filePath: string, atSec: number): Promise<string | null> => {
+		return ipcRenderer.invoke("get-media-poster", filePath, atSec);
+	},
+	getProjectPoster: (projectId: string): Promise<string | null> => {
+		return ipcRenderer.invoke("get-project-poster", projectId);
+	},
 	readFileChunk: (filePath: string, offset: number, length: number) => {
 		return ipcRenderer.invoke("read-file-chunk", filePath, offset, length);
 	},
@@ -415,7 +443,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		ipcRenderer.invoke("get-app-info") as Promise<{
 			version: string;
 			canCheckForUpdates: boolean;
+			includePrereleases: boolean;
 		}>,
+	/** Settings → "Get pre-release builds". Resolves with the value main now holds. */
+	setIncludePrereleases: (value: boolean) =>
+		ipcRenderer.invoke("set-include-prereleases", value) as Promise<boolean>,
 	/** Resolves once the check has a verdict. The dialogs that verdict leads to — download,
 	 *  restart — are the main process's conversation, not the caller's. */
 	checkForUpdates: () => ipcRenderer.invoke("check-for-updates") as Promise<void>,
@@ -514,6 +546,15 @@ contextBridge.exposeInMainWorld("electronAPI", {
 			const listener = (_event: unknown, payload: SttStatusEvent) => callback(payload);
 			ipcRenderer.on("stt:status", listener);
 			return () => ipcRenderer.removeListener("stt:status", listener);
+		},
+		/** Speech-model settings: see `SttManager.listModels / setModel / deleteModel`. */
+		listModels: (): Promise<SttModelsSnapshot> => ipcRenderer.invoke("stt:models"),
+		setModel: (id: SttModelId): Promise<void> => ipcRenderer.invoke("stt:set-model", id),
+		deleteModel: (id: SttModelId): Promise<void> => ipcRenderer.invoke("stt:delete-model", id),
+		onModelProgress: (callback: (event: SttModelProgressEvent) => void) => {
+			const listener = (_event: unknown, payload: SttModelProgressEvent) => callback(payload);
+			ipcRenderer.on("stt:model-progress", listener);
+			return () => ipcRenderer.removeListener("stt:model-progress", listener);
 		},
 	},
 	// --- CLI mode (hidden runner windows; see electron/cli/) ---

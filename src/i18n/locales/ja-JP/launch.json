@@ -66,10 +66,14 @@
 		"loading": "ソースを読み込み中...",
 		"screens": "画面 ({{count}})",
 		"windows": "ウィンドウ ({{count}})",
+		"area": "範囲",
 		"emptyTitle": "画面またはウィンドウが見つかりません",
 		"emptyDescription": "画面収録の権限を許可したばかりの場合は、このピッカーを再読み込みしてください。macOSではCapturiaの再起動が必要な場合があります。",
 		"loadFailedDescription": "Capturiaはキャプチャソースを読み込めませんでした。このピッカーを再読み込みしてもう一度お試しください。",
 		"defaultSourceName": "画面"
+	},
+	"areaSelector": {
+		"hint": "ドラッグして範囲を選択します。Enter で確定、Esc でキャンセル。"
 	},
 	"recording": {
 		"selectSource": "録画するソースを選択してください",
@@ -107,7 +111,13 @@
 		"previewUnavailable": "プレビューを利用できません",
 		"about": "情報",
 		"version": "バージョン {{version}}",
-		"checkingForUpdates": "確認中…"
+		"checkingForUpdates": "確認中…",
+		"saveTo": "録画の保存先",
+		"changeFolder": "変更…",
+		"resetFolder": "リセット",
+		"folderUnavailable": "現在利用できません。録画時にデフォルトのフォルダーを提案します。",
+		"folderHint": "以前の録画は保存された場所にそのまま残ります。",
+		"prereleases": "プレリリース版を受け取る"
 	},
 	"permissions": {
 		"title": "アクセス権限",

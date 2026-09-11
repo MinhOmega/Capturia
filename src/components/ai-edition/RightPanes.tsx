@@ -108,6 +108,7 @@ import {
 import { useCanSegmentCamera } from "../../native/hooks/useSegmentationSupport";
 import { CaptionsPane } from "./CaptionsPane";
 import { insertionsEnabled } from "./insertionsEnabled";
+import { LookPresetsMenu } from "./LookPresetsMenu";
 import styles from "./NewEditorShell.module.css";
 import { useTranscriptionLabel } from "./TranscriptionStatus";
 import { transcriptionBusyLabel } from "./transcriptionBusyLabel";
@@ -2383,6 +2384,7 @@ export function VideoEffectsPane() {
 		<Pane
 			title={ts("effects.title")}
 			icon={<Sliders size={14} />}
+			actions={<LookPresetsMenu />}
 			// Two complete sentences, one per merged half, rather than a third string to
 			// translate 13 times — both already exist in every locale and neither is a
 			// fragment of the other, so joining them survives translation and RTL alike.
@@ -2774,7 +2776,12 @@ export function LayoutPane() {
 		setLive({ webcamCropPan: pan, webcamCropRegion: cropRegionFor(webcamCrop.width, pan) });
 	};
 	return (
-		<Pane title={ts("layout.title")} icon={<Camera size={14} />} helpText={helpText}>
+		<Pane
+			title={ts("layout.title")}
+			icon={<Camera size={14} />}
+			helpText={helpText}
+			actions={<LookPresetsMenu />}
+		>
 			<div className={styles.sectionLabel}>{ts("layout.preset")}</div>
 			<div className={styles.field}>
 				<label htmlFor="layout-preset">{ts("layout.preset")}</label>
@@ -3295,6 +3302,7 @@ export function CursorPane() {
 		<Pane
 			title={ts("cursor.title")}
 			icon={<MousePointerClick size={14} />}
+			actions={<LookPresetsMenu />}
 			helpText={ts("cursor.help")}
 		>
 			<div className={styles.paneRow}>

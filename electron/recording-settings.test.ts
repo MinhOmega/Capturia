@@ -4,7 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { loadAutoZoomEnabled, saveAutoZoomEnabled } from "./recording-settings";
+import {
+	loadAutoZoomEnabled,
+	loadRecordingsFolder,
+	saveAutoZoomEnabled,
+	saveRecordingsFolder,
+} from "./recording-settings";
 
 const temps: string[] = [];
 const tmp = () => {
@@ -58,6 +63,20 @@ describe("recording settings", () => {
 		expect(result.error).toBeUndefined();
 		expect(result.status, result.stderr).toBe(0);
 		expect(result.stdout).toBe("false");
+	});
+
+	it("round-trips the recordings folder and its reset beside auto-zoom", () => {
+		const dir = tmp();
+		expect(loadRecordingsFolder(dir)).toBeNull();
+		saveAutoZoomEnabled(dir, false);
+		saveRecordingsFolder(dir, "/media/usb/Recordings");
+		expect(loadRecordingsFolder(dir)).toBe("/media/usb/Recordings");
+		expect(loadAutoZoomEnabled(dir)).toBe(false);
+		saveRecordingsFolder(dir, null);
+		expect(loadRecordingsFolder(dir)).toBeNull();
+		expect(loadAutoZoomEnabled(dir)).toBe(false);
+		writeFileSync(path.join(dir, "recording-settings.json"), '{"recordingsFolder":42}');
+		expect(loadRecordingsFolder(dir)).toBeNull();
 	});
 
 	it("rejects invalid writes and reports a failed disk write", () => {

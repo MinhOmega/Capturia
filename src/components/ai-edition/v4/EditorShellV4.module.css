@@ -1182,6 +1182,16 @@
 	background: var(--accent-soft);
 	color: var(--accent);
 }
+/* The same rows as items of a Radix menu (the timeline's right-click menu), which are not
+   buttons: keyboard focus shows like hover, and a disabled item reads as one. */
+.recMenuRow[data-highlighted] {
+	background: var(--surface-2);
+	outline: none;
+}
+.recMenuRow[data-disabled] {
+	opacity: 0.55;
+	pointer-events: none;
+}
 
 /* ─── REC-MODE SOURCE PICKER MODAL ──────────────────────────────────── */
 .sourceModalOverlay {
@@ -1999,6 +2009,12 @@
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
+}
+.tlClipDuration {
+	font: 500 10px/1.2 var(--font-mono);
+	color: rgba(255, 255, 255, 0.7);
+	white-space: nowrap;
+	flex-shrink: 0;
 }
 .tlClipDelete {
 	position: absolute;

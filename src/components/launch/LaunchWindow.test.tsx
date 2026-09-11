@@ -119,7 +119,7 @@ vi.mock("@/native", () => ({
 }));
 
 const appInfoState = vi.hoisted(() => ({
-	value: { version: "1.9.6", canCheckForUpdates: true },
+	value: { version: "1.9.6", canCheckForUpdates: true, includePrereleases: false },
 }));
 const updateCheckMock = vi.hoisted(() => vi.fn(async () => undefined));
 
@@ -321,7 +321,7 @@ function resetLaunchMocks() {
 	vi.mocked(nativeBridgeClient.system.getPlatform).mockImplementation(
 		async () => platformState.value,
 	);
-	appInfoState.value = { version: "1.9.6", canCheckForUpdates: true };
+	appInfoState.value = { version: "1.9.6", canCheckForUpdates: true, includePrereleases: false };
 	updateCheckMock.mockReset();
 	updateCheckMock.mockResolvedValue(undefined);
 	stubElectronAPI(vi.fn(async () => null));
@@ -1168,7 +1168,7 @@ describe("LaunchWindow device settings", () => {
 	// pointing its user at a GitHub download starts a second, parallel install that then drifts
 	// forever. The version still shows — it is the answer to "what am I running?", not an offer.
 	it("offers no update check where a package manager owns the update", async () => {
-		appInfoState.value = { version: "1.9.6", canCheckForUpdates: false };
+		appInfoState.value = { version: "1.9.6", canCheckForUpdates: false, includePrereleases: false };
 
 		renderLaunchWindow();
 

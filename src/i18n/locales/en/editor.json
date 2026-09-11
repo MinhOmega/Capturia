@@ -115,6 +115,7 @@
 		"cursorHighlight": "Cursor highlight",
 		"autoZoom": "Auto-zoom after recording",
 		"autoZoomNeedsEditableCursor": "Auto-zoom needs the editable cursor. Switch cursor mode to enable.",
+		"drawArea": "Draw an area after recording",
 		"on": "On",
 		"off": "Off",
 		"loading": "Loading…",
@@ -129,6 +130,7 @@
 		"sourceModal": {
 			"screens": "Screens ({{count}})",
 			"windows": "Windows ({{count}})",
+			"area": "Area",
 			"loadingSources": "Loading sources…",
 			"noScreensFound": "No screens found",
 			"noWindowsFound": "No windows found",
@@ -327,9 +329,9 @@
 		"title": "Edit clip",
 		"adjustStart": "Adjust clip start",
 		"adjustEnd": "Adjust clip end",
-		"start": "Start",
-		"end": "End",
-		"duration": "Duration",
+		"originalDuration": "Original duration",
+		"trimRange": "Trim range",
+		"duration": "Final duration",
 		"reset": "Reset",
 		"apply": "Apply",
 		"pickClipTitle": "Choose a clip to edit",
@@ -417,5 +419,22 @@
 	"cpuCompositor": {
 		"notice": "Running without a compatible GPU — rendering on CPU, so playback is slower.",
 		"exportWarning": "No compatible GPU: this export runs on CPU and will take much longer than usual."
+	},
+	"speechModel": {
+		"title": "Speech model",
+		"hint": "Transcribes speech for transcripts and captions. Existing transcripts are kept; regenerate one to use a new model.",
+		"fast": "Fast",
+		"fastNote": "Quickest, but misses more words in noisy or accented speech",
+		"balanced": "Balanced",
+		"balancedNote": "Good accuracy at a moderate speed",
+		"accurate": "Accurate",
+		"accurateNote": "Best accuracy, and the slowest",
+		"cpuWarning": "No GPU in use: Accurate will be very slow on this machine",
+		"active": "Active",
+		"downloaded": "Downloaded",
+		"use": "Use",
+		"delete": "Delete model",
+		"switchFailed": "Could not switch the speech model; the previous one is still in use",
+		"deleteFailed": "Could not delete the speech model"
 	}
 }

@@ -87,6 +87,11 @@
 		"videoFiles": "Arquivos de Vídeo",
 		"audioFiles": "Arquivos de áudio",
 		"openscreenProject": "Projeto Capturia",
-		"allFiles": "Todos os Arquivos"
+		"allFiles": "Todos os Arquivos",
+		"selectRecordingsFolder": "Selecionar pasta de gravações"
+	},
+	"recordingsFolder": {
+		"unavailable": "O Capturia não consegue salvar gravações em {{folder}}. A unidade pode estar desconectada ou o Capturia pode não ter permissão para gravar lá.",
+		"useDefault": "Gravar na pasta padrão"
 	}
 }

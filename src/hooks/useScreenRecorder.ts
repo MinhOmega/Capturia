@@ -1920,6 +1920,21 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		return true;
 	};
 
+	/**
+	 * False when the folder chosen in Settings cannot take this recording and the
+	 * user declined the default folder instead (main asks; see
+	 * `confirm-recordings-folder`). Like the disk check, a check that could not
+	 * run answers true.
+	 */
+	const recordingsFolderConfirmed = async (): Promise<boolean> => {
+		try {
+			return (await window.electronAPI?.confirmRecordingsFolder?.()) !== false;
+		} catch (error) {
+			console.warn("Failed to check the recordings folder before recording:", error);
+			return true;
+		}
+	};
+
 	const startRecording = async (
 		countdownRunToken?: number,
 		preparedRecordingId?: number | null,
@@ -1935,8 +1950,10 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 
 			// The one choke point every start path funnels through — the countdown,
 			// the tray, the CLI runner and `restartRecording` all land here — so the
-			// disk gate lives here rather than in `startRecordCountdown`.
-			if (!(await hasRoomToRecord())) {
+			// disk gate lives here rather than in `startRecordCountdown`. The folder
+			// gate goes first: the disk check measures wherever the take will land,
+			// which is the default folder once the user accepts it instead.
+			if (!(await recordingsFolderConfirmed()) || !(await hasRoomToRecord())) {
 				teardownMedia();
 				return;
 			}

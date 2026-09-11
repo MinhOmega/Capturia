@@ -2,6 +2,7 @@ import {
 	Camera,
 	CameraOff,
 	ChevronDown,
+	Crop,
 	Loader2,
 	MicOff,
 	Mic as MicOn,
@@ -30,6 +31,7 @@ interface RecordingPrefsState {
 	systemAudioEnabled: boolean;
 	cursorCaptureMode: "editable-overlay" | "system";
 	autoZoomEnabled: boolean;
+	drawAreaAfterRecording: boolean;
 }
 
 const DEFAULT_PREFS: RecordingPrefsState = {
@@ -41,6 +43,7 @@ const DEFAULT_PREFS: RecordingPrefsState = {
 	systemAudioEnabled: false,
 	cursorCaptureMode: "editable-overlay",
 	autoZoomEnabled: true,
+	drawAreaAfterRecording: false,
 };
 
 /**
@@ -140,7 +143,7 @@ export function RecStage({
 			});
 	}, []);
 	const [sourceModalOpen, setSourceModalOpen] = useState(false);
-	const [sourceTab, setSourceTab] = useState<"screen" | "window">("screen");
+	const [sourceTab, setSourceTab] = useState<"screen" | "window" | "area">("screen");
 	const [sources, setSources] = useState<ProcessedDesktopSource[]>([]);
 	const [loadingSources, setLoadingSources] = useState(false);
 	const openSourceModal = async () => {
@@ -158,13 +161,23 @@ export function RecStage({
 		}
 	};
 	const chooseSource = async (candidate: ProcessedDesktopSource) => {
-		const result = await window.electronAPI?.selectSource?.(candidate);
-		setSource(result ?? candidate);
+		if (sourceTab === "area") {
+			const picked = await window.electronAPI?.selectArea?.(candidate);
+			// Dismissed with Esc: stay in the picker.
+			if (!picked) return;
+			setSource(picked);
+		} else {
+			const result = await window.electronAPI?.selectSource?.(candidate);
+			setSource(result ?? candidate);
+		}
 		setSourceModalOpen(false);
 	};
 	const screenSources = sources.filter((s) => s.id.startsWith("screen:"));
 	const windowSources = sources.filter((s) => s.id.startsWith("window:"));
-	const visibleSources = sourceTab === "screen" ? screenSources : windowSources;
+	// An area is drawn on a screen, so the Area tab lists the screens.
+	const visibleSources = sourceTab === "window" ? windowSources : screenSources;
+	// Same rule as the HUD's picker (SourceSelector): no area overlay on Linux.
+	const offerArea = window.electronAPI?.getPlatform?.() !== "linux";
 
 	const cursorHighlight = prefs.cursorCaptureMode === "editable-overlay";
 	// Same answer as the HUD, from the same place. This stage used to decide for
@@ -255,6 +268,29 @@ export function RecStage({
 							</button>
 						</div>
 					)}
+
+					{/* Where the portal picks the monitor, no overlay can be put on it before
+					    recording (Wayland lets no client place a window on a given output). So
+					    the area is drawn afterwards instead, on the recording itself: the
+					    editor opens the new clip's crop dialog (NewEditorShell). */}
+					{portalOwnsSource ? (
+						<div className={styles.recRow}>
+							<div className={styles.recRowLabel}>
+								<Crop size={15} />
+								{t("rec.drawArea")}
+							</div>
+							<button
+								type="button"
+								className={`${styles.recToggleBtn}${prefs.drawAreaAfterRecording ? ` ${styles.on}` : ""}`}
+								aria-pressed={prefs.drawAreaAfterRecording}
+								onClick={() =>
+									updatePrefs({ drawAreaAfterRecording: !prefs.drawAreaAfterRecording })
+								}
+							>
+								{prefs.drawAreaAfterRecording ? t("rec.on") : t("rec.off")}
+							</button>
+						</div>
+					) : null}
 
 					<div className={styles.recRow}>
 						<div className={styles.recRowLabel}>
@@ -423,6 +459,7 @@ export function RecStage({
 					onTabChange={setSourceTab}
 					screenCount={screenSources.length}
 					windowCount={windowSources.length}
+					showArea={offerArea && screenSources.length > 0}
 					sources={visibleSources}
 					selectedId={source?.id ?? null}
 					onSelect={(s) => void chooseSource(s)}
@@ -439,16 +476,18 @@ function SourceModal({
 	onTabChange,
 	screenCount,
 	windowCount,
+	showArea,
 	sources,
 	selectedId,
 	onSelect,
 	onClose,
 }: {
 	loading: boolean;
-	tab: "screen" | "window";
-	onTabChange: (tab: "screen" | "window") => void;
+	tab: "screen" | "window" | "area";
+	onTabChange: (tab: "screen" | "window" | "area") => void;
 	screenCount: number;
 	windowCount: number;
+	showArea: boolean;
 	sources: ProcessedDesktopSource[];
 	selectedId: string | null;
 	onSelect: (source: ProcessedDesktopSource) => void;
@@ -473,6 +512,15 @@ function SourceModal({
 					>
 						{t("rec.sourceModal.windows", { count: windowCount })}
 					</button>
+					{showArea ? (
+						<button
+							type="button"
+							className={`${styles.sourceModalTab}${tab === "area" ? ` ${styles.active}` : ""}`}
+							onClick={() => onTabChange("area")}
+						>
+							{t("rec.sourceModal.area")}
+						</button>
+					) : null}
 				</div>
 				<div className={styles.sourceGrid}>
 					{loading ? (
@@ -482,9 +530,9 @@ function SourceModal({
 						</div>
 					) : sources.length === 0 ? (
 						<div className={styles.sourceModalEmpty}>
-							{tab === "screen"
-								? t("rec.sourceModal.noScreensFound")
-								: t("rec.sourceModal.noWindowsFound")}
+							{tab === "window"
+								? t("rec.sourceModal.noWindowsFound")
+								: t("rec.sourceModal.noScreensFound")}
 						</div>
 					) : (
 						sources.map((s) => (

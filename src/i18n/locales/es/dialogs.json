@@ -87,6 +87,11 @@
 		"videoFiles": "Archivos de video",
 		"audioFiles": "Archivos de audio",
 		"openscreenProject": "Proyecto Capturia",
-		"allFiles": "Todos los archivos"
+		"allFiles": "Todos los archivos",
+		"selectRecordingsFolder": "Seleccionar carpeta de grabaciones"
+	},
+	"recordingsFolder": {
+		"unavailable": "Capturia no puede guardar grabaciones en {{folder}}. Puede que la unidad esté desconectada o que Capturia no tenga permiso para escribir ahí.",
+		"useDefault": "Grabar en la carpeta predeterminada"
 	}
 }

@@ -87,6 +87,11 @@
 		"videoFiles": "视频文件",
 		"audioFiles": "音频文件",
 		"openscreenProject": "Capturia 项目",
-		"allFiles": "所有文件"
+		"allFiles": "所有文件",
+		"selectRecordingsFolder": "选择录制文件夹"
+	},
+	"recordingsFolder": {
+		"unavailable": "Capturia 无法将录制内容保存到 {{folder}}。驱动器可能已断开连接，或者 Capturia 没有写入权限。",
+		"useDefault": "录制到默认文件夹"
 	}
 }

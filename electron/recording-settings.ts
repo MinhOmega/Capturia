@@ -14,6 +14,23 @@ function readSettings(userData: string): Record<string, unknown> {
 	}
 }
 
+/** Sets one key, keeping every other one. Throws on a failed write, so no caller reports a
+ *  preference that will not survive a restart. */
+function writeSetting(userData: string, key: string, value: unknown): void {
+	const destination = path.join(userData, "recording-settings.json");
+	const temporary = `${destination}.${process.pid}.tmp`;
+	try {
+		writeFileSync(
+			temporary,
+			`${JSON.stringify({ ...readSettings(userData), [key]: value })}\n`,
+			"utf8",
+		);
+		renameSync(temporary, destination);
+	} finally {
+		rmSync(temporary, { force: true });
+	}
+}
+
 /** Default on for new users; a saved false must survive an app restart. */
 export function loadAutoZoomEnabled(userData: string): boolean {
 	const value = readSettings(userData).autoZoomEnabled;
@@ -23,16 +40,16 @@ export function loadAutoZoomEnabled(userData: string): boolean {
 /** Save only this durable preference; device selection remains session-only. */
 export function saveAutoZoomEnabled(userData: string, enabled: boolean): void {
 	if (typeof enabled !== "boolean") throw new TypeError("autoZoomEnabled must be a boolean");
-	const destination = path.join(userData, "recording-settings.json");
-	const temporary = `${destination}.${process.pid}.tmp`;
-	try {
-		writeFileSync(
-			temporary,
-			`${JSON.stringify({ ...readSettings(userData), autoZoomEnabled: enabled })}\n`,
-			"utf8",
-		);
-		renameSync(temporary, destination);
-	} finally {
-		rmSync(temporary, { force: true });
-	}
+	writeSetting(userData, "autoZoomEnabled", enabled);
+}
+
+/** Settings → "Save recordings to" as saved, or null for the default folder. Unvalidated:
+ *  every use goes through `validRecordingsFolder` (recordingsFolder.ts). */
+export function loadRecordingsFolder(userData: string): string | null {
+	const value = readSettings(userData).recordingsFolder;
+	return typeof value === "string" ? value : null;
+}
+
+export function saveRecordingsFolder(userData: string, folder: string | null): void {
+	writeSetting(userData, "recordingsFolder", folder);
 }

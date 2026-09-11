@@ -2,6 +2,7 @@ import { ArrowDown, Film, Plus, RotateCw, Search, X } from "lucide-react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { useI18n, useScopedT } from "@/contexts/I18nContext";
+import { usePosterFrame } from "@/hooks/usePosterFrame";
 import type { AxcutAsset, TranscriptLanguageCode } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import {
@@ -36,6 +37,39 @@ const THUMB_GRADIENTS = [
 
 function basename(path: string): string {
 	return path.split(/[\\/]/).pop() ?? path;
+}
+
+/** A real frame of the asset — a second in, past any fade from black — over the
+ *  gradient placeholder, which stays for anything missing or undecodable. A fixed
+ *  second rather than one derived from `durationSec`: that is probed after mount,
+ *  and a time that moves with it re-requested (and re-grabbed) the poster. Main
+ *  falls back to the first frame for a file shorter than that. */
+function MediaThumb({ asset, index }: { asset: AxcutAsset; index: number }) {
+	const poster = usePosterFrame("media", asset.originalPath, 1);
+	return (
+		<div
+			className={styles.mediaThumb}
+			style={{ background: THUMB_GRADIENTS[index % THUMB_GRADIENTS.length] }}
+		>
+			{poster ? (
+				<img
+					src={poster}
+					alt=""
+					// The card is the drag source (it carries the asset id), not the image.
+					draggable={false}
+					style={{
+						position: "absolute",
+						inset: 0,
+						width: "100%",
+						height: "100%",
+						objectFit: "cover",
+					}}
+				/>
+			) : (
+				<Film size={30} strokeWidth={1.8} />
+			)}
+		</div>
+	);
 }
 
 export async function addSelectedAssetToTimeline(
@@ -165,12 +199,7 @@ export function MediaStage({
 										}}
 										onClick={() => openDetail(asset)}
 									>
-										<div
-											className={styles.mediaThumb}
-											style={{ background: THUMB_GRADIENTS[i % THUMB_GRADIENTS.length] }}
-										>
-											<Film size={30} strokeWidth={1.8} />
-										</div>
+										<MediaThumb asset={asset} index={i} />
 										<div className={styles.mediaCardMeta}>
 											{asset.id === selectedId ? (
 												<span

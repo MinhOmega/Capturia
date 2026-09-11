@@ -10,7 +10,8 @@
 		"addAnnotation": "Açıklama Ekle (A)",
 		"addSpeed": "Hız Ekle (S)",
 		"addCameraFullscreen": "Tam Ekran Kamera Ekle (C)",
-		"splitAtPlayhead": "Klibi oynatma çizgisinde böl"
+		"splitAtPlayhead": "Klibi oynatma çizgisinde böl",
+		"pasteAtPlayhead": "Oynatma çizgisine yapıştır"
 	},
 	"hints": {
 		"pressZoom": "Yakınlaştırma eklemek için Z tuşuna basın",
@@ -66,6 +67,11 @@
 		"autoEnhance": "Otomatik iyileştirme",
 		"automaticZooms": "Otomatik yakınlaştırmalar",
 		"automaticZoomsHint": "Kaydedilen imleç hareketinden",
+		"flaggedZooms": "İşaretli anlara yakınlaştırma",
+		"flaggedZoomsHint": "Kayıt sırasında konulan her işaret için bir yakınlaştırma",
+		"flaggedZoomsNoFlags": "Henüz işaret yok — kayıt sırasında “{{button}}” düğmesini kullanın",
+		"flagZoomsCovered": "Zaten kapsanan: {{count}}",
+		"flagZoomsTrimmed": "Kırpma içinde: {{count}}",
 		"smartZoomsAndCuts": "Akıllı kırpma",
 		"smartZoomsAndCutsHint": "Yapay zeka ile",
 		"roughCut": "Ölü zamanı kaldır",

@@ -87,6 +87,11 @@
 		"videoFiles": "Tệp Video",
 		"audioFiles": "Tệp âm thanh",
 		"openscreenProject": "Dự án Capturia",
-		"allFiles": "Tất cả các tệp"
+		"allFiles": "Tất cả các tệp",
+		"selectRecordingsFolder": "Chọn thư mục lưu bản ghi"
+	},
+	"recordingsFolder": {
+		"unavailable": "Capturia không thể lưu bản ghi vào {{folder}}. Có thể ổ đĩa đã bị ngắt kết nối hoặc Capturia không có quyền ghi vào đó.",
+		"useDefault": "Ghi vào thư mục mặc định"
 	}
 }

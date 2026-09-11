@@ -297,6 +297,7 @@ jobs:
         run: |
           cd crates
           cargo test -p openscreen-compositor --lib --tests
+          cargo test --manifest-path ../electron/native/pipewire-capture/Cargo.toml
       - name: cargo build (napi addon)
         env:
           LD_LIBRARY_PATH: ${{ github.workspace }}/crates/thirdparty/ffmpeg-linux64-lgpl-shared/lib

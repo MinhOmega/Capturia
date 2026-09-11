@@ -10,7 +10,8 @@
 		"addAnnotation": "Добавить аннотацию (A)",
 		"addSpeed": "Изменить скорость (S)",
 		"addCameraFullscreen": "Добавить камеру на весь экран (C)",
-		"splitAtPlayhead": "Разрезать клип по позиции воспроизведения"
+		"splitAtPlayhead": "Разрезать клип по позиции воспроизведения",
+		"pasteAtPlayhead": "Вставить в позицию воспроизведения"
 	},
 	"hints": {
 		"pressZoom": "Нажмите Z для добавления масштабирования",
@@ -66,6 +67,11 @@
 		"autoEnhance": "Авто-улучшение",
 		"automaticZooms": "Автоматические зумы",
 		"automaticZoomsHint": "На основе записанного движения курсора",
+		"flaggedZooms": "Зумы в отмеченных моментах",
+		"flaggedZoomsHint": "Один зум на каждую отметку, сделанную при записи",
+		"flaggedZoomsNoFlags": "Отметок пока нет — используйте «{{button}}» во время записи",
+		"flagZoomsCovered": "Уже покрыто: {{count}}",
+		"flagZoomsTrimmed": "Внутри обрезки: {{count}}",
 		"smartZoomsAndCuts": "Умные вырезки",
 		"smartZoomsAndCutsHint": "С помощью ИИ",
 		"roughCut": "Убрать пустоты",

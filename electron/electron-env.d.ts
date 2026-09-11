@@ -58,6 +58,16 @@ interface Window {
 		}>;
 		selectSource: (source: ProcessedDesktopSource) => Promise<ProcessedDesktopSource | null>;
 		getSelectedSource: () => Promise<ProcessedDesktopSource | null>;
+		/** Opens the area overlay on this screen source's display; the selected source once
+		 *  the user confirms a rectangle, null when they dismiss it. */
+		selectArea: (source: ProcessedDesktopSource) => Promise<ProcessedDesktopSource | null>;
+		/** The area overlay's answer, in its own CSS pixels. */
+		finishAreaSelection: (rect: {
+			x: number;
+			y: number;
+			width: number;
+			height: number;
+		}) => Promise<void>;
 		onSelectedSourceChanged: (callback: (source: ProcessedDesktopSource) => void) => () => void;
 		getRecordingPrefs: () => Promise<import("./ipc/handlers").RecordingPrefs>;
 		setRecordingPrefs: (
@@ -144,6 +154,23 @@ interface Window {
 		getRecordingsDiskSpace: () => Promise<
 			import("../src/lib/recordingDiskSpace").RecordingDiskSpaceSnapshot
 		>;
+		/** Settings → "Save recordings to". `folder` is the default one when `isDefault`, and
+		 *  `available` is false while the chosen folder cannot take a new recording. */
+		getRecordingsFolder: () => Promise<{ folder: string; isDefault: boolean; available: boolean }>;
+		/** Opens the OS folder picker and resolves with the state after the user's answer. */
+		chooseRecordingsFolder: () => Promise<{
+			folder: string;
+			isDefault: boolean;
+			available: boolean;
+		}>;
+		resetRecordingsFolder: () => Promise<{
+			folder: string;
+			isDefault: boolean;
+			available: boolean;
+		}>;
+		/** Right before a take: false when the chosen folder is unavailable and the user declined
+		 *  to record into the default folder instead. */
+		confirmRecordingsFolder: () => Promise<boolean>;
 		setRecordingState: (
 			recording: boolean,
 			recordingId?: number,
@@ -385,6 +412,8 @@ interface Window {
 			filePath: string,
 			durationSec: number,
 		) => Promise<import("./media/audioPeaks").AudioPeaksResult>;
+		getMediaPoster: (filePath: string, atSec: number) => Promise<string | null>;
+		getProjectPoster: (projectId: string) => Promise<string | null>;
 		readFileChunk: (
 			filePath: string,
 			offset: number,
@@ -451,7 +480,13 @@ interface Window {
 		quitApp: () => void;
 		setTitleBarOverlay: (color: string, symbolColor: string) => void;
 		getPlatform: () => string;
-		getAppInfo: () => Promise<{ version: string; canCheckForUpdates: boolean }>;
+		getAppInfo: () => Promise<{
+			version: string;
+			canCheckForUpdates: boolean;
+			includePrereleases: boolean;
+		}>;
+		/** Settings → "Get pre-release builds". Resolves with the value main now holds. */
+		setIncludePrereleases: (value: boolean) => Promise<boolean>;
 		checkForUpdates: () => Promise<void>;
 		showAbout: () => Promise<void>;
 		canCheckForUpdatesNow: () => Promise<boolean>;
@@ -499,6 +534,12 @@ interface Window {
 			cancel: () => Promise<void>;
 			onStatus: (
 				callback: (event: import("./stt/transcriptionContract").SttStatusEvent) => void,
+			) => () => void;
+			listModels: () => Promise<import("./stt/transcriptionContract").SttModelsSnapshot>;
+			setModel: (id: import("./stt/transcriptionContract").SttModelId) => Promise<void>;
+			deleteModel: (id: import("./stt/transcriptionContract").SttModelId) => Promise<void>;
+			onModelProgress: (
+				callback: (event: import("./stt/transcriptionContract").SttModelProgressEvent) => void,
 			) => () => void;
 		};
 		// CLI mode (hidden runner windows; see electron/cli/)

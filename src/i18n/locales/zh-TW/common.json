@@ -75,6 +75,7 @@
 		"window": "視窗",
 		"screen": "螢幕",
 		"virtual": "虛擬顯示器",
+		"area": "區域 {{width}} × {{height}}",
 		"unknown": "螢幕錄製"
 	}
 }

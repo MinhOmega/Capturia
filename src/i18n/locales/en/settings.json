@@ -241,6 +241,17 @@
 		"title": "Camera layout",
 		"noWebcam": "No Webcam"
 	},
+	"looks": {
+		"title": "Saved looks",
+		"empty": "No saved looks yet.",
+		"saveAs": "Save look as preset…",
+		"namePlaceholder": "Preset name",
+		"includeAspectRatio": "Include format (aspect ratio)",
+		"defaultForNew": "Default for new projects",
+		"rename": "Rename",
+		"missingAsset": "An image or cursor in this look is no longer available, so it was reset to the default.",
+		"saveFailed": "Couldn't save the look. A custom background image may be too large to store."
+	},
 	"textAnimation": {
 		"slideLeft": "Slide Left",
 		"pulse": "Pulse",

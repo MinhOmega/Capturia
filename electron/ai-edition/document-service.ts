@@ -21,6 +21,7 @@ import {
 	documentSchema,
 	migrateRawDocumentToCurrent,
 } from "../../src/lib/ai-edition/schema";
+import { totalVirtualDuration } from "../../src/lib/ai-edition/timeline/virtual-preview";
 import {
 	LEGACY_PROJECT_FILE_EXTENSIONS,
 	PROJECT_FILE_EXTENSION,
@@ -33,6 +34,8 @@ export interface ProjectSummary {
 	title: string;
 	updatedAt: string;
 	assetCount: number;
+	/** Length of the edit; absent while the timeline is empty. */
+	durationSec?: number;
 }
 
 export interface AddAssetInput {
@@ -250,6 +253,7 @@ export class DocumentService {
 					title: parsed.project.title,
 					updatedAt: parsed.project.updatedAt,
 					assetCount: parsed.assets.length,
+					durationSec: totalVirtualDuration(parsed.timeline.clips) || undefined,
 				});
 			} catch (error) {
 				// ponytail: skip unreadable files rather than failing the whole list.
@@ -259,6 +263,24 @@ export class DocumentService {
 		}
 		summaries.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 		return summaries;
+	}
+
+	/**
+	 * The frame a project's poster shows: where its first clip starts, or the start
+	 * of its first video when the timeline is empty. Null for a project with no
+	 * video at all.
+	 *
+	 * Read straight from the stored JSON, without `getProject`'s relink: this runs
+	 * once per row of the project list, and media that moved just keeps the
+	 * placeholder until the project is opened and relinked.
+	 */
+	async posterSource(projectId: string): Promise<{ path: string; atSec: number } | null> {
+		const document = parseLoadedDocument(await this.readProjectFile(projectId));
+		const clip = document.timeline.clips[0];
+		const clipAsset = document.assets.find((a) => a.id === clip?.assetId && a.kind === "video");
+		if (clipAsset) return { path: clipAsset.originalPath, atSec: clip.sourceStartSec };
+		const firstVideo = document.assets.find((a) => a.kind === "video");
+		return firstVideo ? { path: firstVideo.originalPath, atSec: 0 } : null;
 	}
 
 	/**

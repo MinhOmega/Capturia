@@ -87,6 +87,11 @@
 		"videoFiles": "비디오 파일",
 		"audioFiles": "오디오 파일",
 		"openscreenProject": "Capturia 프로젝트",
-		"allFiles": "모든 파일"
+		"allFiles": "모든 파일",
+		"selectRecordingsFolder": "녹화 폴더 선택"
+	},
+	"recordingsFolder": {
+		"unavailable": "Capturia가 {{folder}}에 녹화를 저장할 수 없습니다. 드라이브가 분리되었거나 해당 위치에 쓸 권한이 없을 수 있습니다.",
+		"useDefault": "기본 폴더에 녹화"
 	}
 }

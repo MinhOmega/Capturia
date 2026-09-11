@@ -75,6 +75,7 @@
 		"window": "Ventana",
 		"screen": "Pantalla",
 		"virtual": "Pantalla virtual",
+		"area": "Área {{width}} × {{height}}",
 		"unknown": "Grabación de pantalla"
 	}
 }

@@ -191,7 +191,9 @@ it verbatim in the response.
    array.
 2. **DTW timestamp** — every non-special token carries `t_dtw` in
    centiseconds from whisper.cpp's native DTW
-   (`dtw_token_timestamps=true`, `dtw_aheads_preset=WHISPER_AHEADS_SMALL`,
+   (`dtw_token_timestamps=true`, `dtw_aheads_preset` matching the loaded
+   model's family — passed as `--dtw-preset base|small|large-v3-turbo`,
+   because a mismatched preset makes `whisper_init` fail outright —
    `flash_attn=false`, which together are the prerequisites for DTW to
    actually run). `t_dtw == -1` is the DTW-inactive guardrail: the helper
    fails the request rather than emit zero-quality timestamps.
@@ -239,11 +241,16 @@ linked above).
 
 ### Model
 
-The single shipped artifact is `ggml-small-q8_0.bin` from
-`ggerganov/whisper.cpp` on HuggingFace: Whisper `small`, multilingual (~99
-languages), q8_0 quantised, ~264 MB. Precision is baked into the GGML file —
-there is no runtime `--int8` flag. `electron/stt/modelManager.ts` downloads
-the file once into the user-data cache and writes it through an atomic
+AI settings → **Speech model** offers three files from `ggerganov/whisper.cpp`
+on HuggingFace, all multilingual (~99 languages) and pinned by SHA-256 at one
+commit: **Fast** `ggml-base-q8_0.bin` (81.8 MB), **Balanced**
+`ggml-small-q8_0.bin` (264.5 MB, the default and the only model before the
+choice existed) and **Accurate** `ggml-large-v3-turbo-q5_0.bin` (574.0 MB,
+several times slower than Balanced without a GPU). The choice lives in
+`stt-models/active-model.json` and only changes once the new file is verified
+on disk, so a failed switch leaves the previous model running. Precision is
+baked into the GGML file — there is no runtime `--int8` flag.
+`electron/stt/modelManager.ts` downloads each file once into the user-data cache and writes it through an atomic
 `.partial` rename, so a half-downloaded file can never be picked up as a
 usable model. The SHA-256 is checked on the cached copy too, not only on a
 fresh download, so a model corrupted after the fact is re-fetched rather than

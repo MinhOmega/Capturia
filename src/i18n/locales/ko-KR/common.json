@@ -75,6 +75,7 @@
 		"window": "창",
 		"screen": "화면",
 		"virtual": "가상 디스플레이",
+		"area": "영역 {{width}} × {{height}}",
 		"unknown": "화면 녹화"
 	}
 }

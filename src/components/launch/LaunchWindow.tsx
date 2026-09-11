@@ -28,7 +28,11 @@ import {
 	HudTrayLayoutButton,
 	HudWindowControls,
 } from "./HudControls";
-import { HudDeviceSettings, type HudDeviceSettingsLabels } from "./HudDeviceSettings";
+import {
+	HudDeviceSettings,
+	type HudDeviceSettingsLabels,
+	type RecordingsFolderState,
+} from "./HudDeviceSettings";
 import {
 	computeHudBarMaxHeight,
 	computeHudModalMaxHeight,
@@ -139,10 +143,13 @@ export function LaunchWindow() {
 	// Store/Flathub/Snap/Nix install is kept current by its package manager and is offered
 	// nothing (electron/install-channel.ts). Asked once: neither answer changes while the app
 	// runs, and the HUD is rebuilt for every recording anyway.
-	const [appInfo, setAppInfo] = useState<{ version: string; canCheckForUpdates: boolean } | null>(
-		null,
-	);
+	const [appInfo, setAppInfo] = useState<{
+		version: string;
+		canCheckForUpdates: boolean;
+		includePrereleases?: boolean;
+	} | null>(null);
 	const [isCheckingForUpdates, setIsCheckingForUpdates] = useState(false);
+	const [recordingsFolder, setRecordingsFolder] = useState<RecordingsFolderState | null>(null);
 	/**
 	 * Narrower than [`isLinuxHud`] on purpose: without the helper the recorder
 	 * falls back to Chromium's capture, which DOES take a source id, so the
@@ -283,6 +290,55 @@ export function LaunchWindow() {
 			})
 			.finally(() => {
 				setIsCheckingForUpdates(false);
+			});
+	}, []);
+
+	// Main is the only writer of this setting and the HUD its only editor, so the value main
+	// answers with is simply adopted.
+	const handleToggleIncludePrereleases = useCallback(() => {
+		window.electronAPI
+			?.setIncludePrereleases?.(!appInfo?.includePrereleases)
+			.then((includePrereleases) => {
+				setAppInfo((info) => (info ? { ...info, includePrereleases } : info));
+			})
+			.catch((error) => {
+				console.error("Failed to change the pre-release setting:", error);
+			});
+	}, [appInfo?.includePrereleases]);
+
+	// Asked each time the panel opens rather than once: the chosen folder can go away (a drive
+	// unplugged) while the HUD sits there, and the row should say so when the user looks.
+	useEffect(() => {
+		const getRecordingsFolder = window.electronAPI?.getRecordingsFolder;
+		if (!isDeviceSettingsOpen || !getRecordingsFolder) return;
+		let cancelled = false;
+		getRecordingsFolder()
+			.then((state) => {
+				if (!cancelled) setRecordingsFolder(state);
+			})
+			.catch((error) => {
+				console.warn("Failed to read the recordings folder:", error);
+			});
+		return () => {
+			cancelled = true;
+		};
+	}, [isDeviceSettingsOpen]);
+
+	const handleChooseRecordingsFolder = useCallback(() => {
+		window.electronAPI
+			?.chooseRecordingsFolder?.()
+			.then(setRecordingsFolder)
+			.catch((error) => {
+				console.error("Failed to choose a recordings folder:", error);
+			});
+	}, []);
+
+	const handleResetRecordingsFolder = useCallback(() => {
+		window.electronAPI
+			?.resetRecordingsFolder?.()
+			.then(setRecordingsFolder)
+			.catch((error) => {
+				console.error("Failed to reset the recordings folder:", error);
 			});
 	}, []);
 
@@ -936,6 +992,12 @@ export function LaunchWindow() {
 			about: t("deviceSettings.about"),
 			checkForUpdates: tCommon("actions.checkForUpdates"),
 			checkingForUpdates: t("deviceSettings.checkingForUpdates"),
+			prereleases: t("deviceSettings.prereleases"),
+			saveTo: t("deviceSettings.saveTo"),
+			changeFolder: t("deviceSettings.changeFolder"),
+			resetFolder: t("deviceSettings.resetFolder"),
+			folderUnavailable: t("deviceSettings.folderUnavailable"),
+			folderHint: t("deviceSettings.folderHint"),
 		}),
 		[t, tCommon],
 	);
@@ -1164,6 +1226,9 @@ export function LaunchWindow() {
 								// main process refuses the check then — an offered button would be dead.
 								canCheckForUpdates={(appInfo?.canCheckForUpdates ?? false) && !recording}
 								checkingForUpdates={isCheckingForUpdates}
+								includePrereleases={appInfo?.includePrereleases ?? false}
+								recordingsFolder={recordingsFolder}
+								recordingsFolderLocked={controlsLocked}
 								onSelectMic={handleSelectMicDevice}
 								onSelectCamera={handleSelectCameraDevice}
 								onSelectFrameRate={setCaptureFrameRate}
@@ -1171,6 +1236,9 @@ export function LaunchWindow() {
 								onSelectCountdown={setCountdownSeconds}
 								onSelectMicGain={setMicrophoneGain}
 								onCheckForUpdates={handleCheckForUpdates}
+								onToggleIncludePrereleases={handleToggleIncludePrereleases}
+								onChooseRecordingsFolder={handleChooseRecordingsFolder}
+								onResetRecordingsFolder={handleResetRecordingsFolder}
 								onClose={closeDeviceSettings}
 								panelRef={setPopoverEl}
 							/>

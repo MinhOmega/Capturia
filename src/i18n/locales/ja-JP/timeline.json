@@ -10,7 +10,8 @@
 		"addAnnotation": "注釈を追加 (A)",
 		"addSpeed": "再生速度を追加 (S)",
 		"addCameraFullscreen": "フルスクリーンカメラを追加 (C)",
-		"splitAtPlayhead": "再生ヘッドでクリップを分割"
+		"splitAtPlayhead": "再生ヘッドでクリップを分割",
+		"pasteAtPlayhead": "再生ヘッド位置に貼り付け"
 	},
 	"hints": {
 		"pressZoom": "Zキーを押してズームを追加",
@@ -66,6 +67,11 @@
 		"autoEnhance": "自動強化",
 		"automaticZooms": "自動ズーム",
 		"automaticZoomsHint": "記録されたカーソルの動きから",
+		"flaggedZooms": "マーカー位置にズーム",
+		"flaggedZoomsHint": "録画中に付けたマーカーごとにズームを 1 つ追加",
+		"flaggedZoomsNoFlags": "マーカーがありません — 録画中に「{{button}}」を使ってください",
+		"flagZoomsCovered": "既存のズームと重複: {{count}} 件",
+		"flagZoomsTrimmed": "トリム範囲内: {{count}} 件",
 		"smartZoomsAndCuts": "スマートカット",
 		"smartZoomsAndCutsHint": "AIを使用",
 		"roughCut": "無音部分をカット",

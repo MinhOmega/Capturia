@@ -1754,3 +1754,26 @@ describe("useTimeline.addZoomsBulk reads the document at write time", () => {
 		expect(bridgeMocks.save).not.toHaveBeenCalled();
 	});
 });
+
+describe("useTimeline.selectRegion (shift-click toggle)", () => {
+	beforeEach(() => {
+		useProjectStore.getState().clear();
+	});
+
+	// Click A, shift-click B, shift-click B again: B is out of the set, so it must be out
+	// of focus too. It used to stay focused, and the right-click menu then disabled Copy
+	// on A and deleted B, a pill the user had just deselected.
+	it("hands focus back to what is still selected when a shift-click removes a region", () => {
+		const { result } = renderTimeline();
+		act(() => result.current.selectRegion("zoom", "a"));
+		act(() => result.current.selectRegion("zoom", "b", { additive: true }));
+		act(() => result.current.selectRegion("zoom", "b", { additive: true }));
+
+		expect(result.current.multiSelection).toEqual([{ kind: "zoom", id: "a" }]);
+		expect(result.current.selection).toEqual({ kind: "zoom", id: "a" });
+
+		act(() => result.current.selectRegion("zoom", "a", { additive: true }));
+		expect(result.current.multiSelection).toEqual([]);
+		expect(result.current.selection).toBeNull();
+	});
+});

@@ -87,6 +87,11 @@
 		"videoFiles": "Fichiers vidéo",
 		"audioFiles": "Fichiers audio",
 		"openscreenProject": "Projet Capturia",
-		"allFiles": "Tous les fichiers"
+		"allFiles": "Tous les fichiers",
+		"selectRecordingsFolder": "Choisir le dossier des enregistrements"
+	},
+	"recordingsFolder": {
+		"unavailable": "Capturia ne peut pas enregistrer dans {{folder}}. Le disque est peut-être déconnecté, ou Capturia n'a pas l'autorisation d'y écrire.",
+		"useDefault": "Enregistrer dans le dossier par défaut"
 	}
 }

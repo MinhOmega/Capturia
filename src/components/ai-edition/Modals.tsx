@@ -8,12 +8,14 @@ import {
 } from "react";
 import type { CropRegion } from "@/components/video-editor/types";
 import { useScopedT } from "@/contexts/I18nContext";
+import { usePosterFrame } from "@/hooks/usePosterFrame";
 import type { AxcutClip } from "@/lib/ai-edition/schema";
 import { formatSeconds } from "@/lib/ai-edition/timeline/format";
 import {
 	cropDraftFromRegion,
 	cropDraftToPct,
 	displayPct,
+	MIN_CROP_PCT as MIN_PCT,
 	previewBoxStyle,
 	stepPct,
 } from "./cropDraft";
@@ -109,6 +111,32 @@ interface ProjectItem {
 	id: string;
 	title: string;
 	updatedAt: string;
+	durationSec?: number;
+}
+
+/** A project's poster frame; the folder tile until one arrives, or when there is none. */
+function ProjectPoster({ projectId }: { projectId: string }) {
+	const poster = usePosterFrame("project", projectId);
+	return (
+		<div
+			style={{
+				width: 64,
+				height: 36,
+				borderRadius: "var(--r-sm)",
+				overflow: "hidden",
+				background: "linear-gradient(135deg, var(--brand-lo), var(--brand))",
+				display: "grid",
+				placeItems: "center",
+				color: "var(--accent-on)",
+			}}
+		>
+			{poster ? (
+				<img src={poster} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+			) : (
+				<FolderOpen size={18} />
+			)}
+		</div>
+	);
 }
 
 interface OpenProjectModalProps extends BaseModalProps {
@@ -257,7 +285,7 @@ export function OpenProjectModal({
 										flex: 1,
 										minWidth: 0,
 										display: "grid",
-										gridTemplateColumns: "36px 1fr auto",
+										gridTemplateColumns: "64px 1fr auto",
 										alignItems: "center",
 										gap: 12,
 										padding: "10px 12px",
@@ -271,19 +299,7 @@ export function OpenProjectModal({
 										font: "inherit",
 									}}
 								>
-									<div
-										style={{
-											width: 36,
-											height: 36,
-											borderRadius: "var(--r-sm)",
-											background: "linear-gradient(135deg, var(--brand-lo), var(--brand))",
-											display: "grid",
-											placeItems: "center",
-											color: "var(--accent-on)",
-										}}
-									>
-										<FolderOpen size={18} />
-									</div>
+									<ProjectPoster projectId={p.id} />
 									<div style={{ minWidth: 0 }}>
 										<div
 											style={{
@@ -302,7 +318,7 @@ export function OpenProjectModal({
 												marginTop: 2,
 											}}
 										>
-											id: {p.id.slice(0, 8)}
+											{formatSeconds(p.durationSec ?? 0)}
 										</div>
 									</div>
 									<span
@@ -594,7 +610,6 @@ function centeredFitPct(fr: number): { x: number; y: number; w: number; h: numbe
 	return { x: (100 - w) / 2, y: 0, w, h: 100 };
 }
 
-const MIN_PCT = 4;
 const clampPct = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 type ResizeEdges = { left?: boolean; right?: boolean; top?: boolean; bottom?: boolean };
@@ -771,7 +786,22 @@ export function EditClipModal({
 
 	if (!clip) return null;
 
-	const sourceDurationSec = Math.max(assetMeta?.durationSec ?? 0, clip.sourceEndSec ?? 0, 0.001);
+	// The asset's own length, or null when the document never carried one
+	// (`durationSec` is optional in the schema, and an unprobed import has none).
+	// Only this may be shown as the original duration.
+	const assetDurationSec =
+		assetMeta?.durationSec && assetMeta.durationSec > 0 ? assetMeta.durationSec : null;
+	// What the track is drawn against. It has to hold the selection whatever the
+	// metadata says, so it falls back to the out-point — which is why it cannot
+	// double as the original-duration readout: with no asset duration it would
+	// report the current trim end as the source length.
+	const sourceDurationSec = Math.max(assetDurationSec ?? 0, clip.sourceEndSec ?? 0, 0.001);
+	// What the trim keeps, on the raw ruler — the same clock the timeline, the
+	// transport readout and the clip cards all run on. A speed region does change
+	// how long that span PLAYS (`outputDurationOfRawSpan` integrates 1/speed for
+	// the export and audio paths), but nothing in the editor's own chrome reports
+	// playback time, so scaling it here alone would disagree with the ruler
+	// directly above this dialog.
 	const durationSec = Math.max(0.001, draftEnd - draftStart);
 	const hasTrimChanges =
 		Math.abs(draftStart - clip.sourceStartSec) > 0.001 ||
@@ -1090,10 +1120,26 @@ export function EditClipModal({
 			</div>
 
 			<div style={{ flexShrink: 0 }}>
-				<div style={{ display: "flex", gap: 24, marginBottom: 10 }}>
-					<RangeStat label={t("editClipDialog.start")} value={formatSeconds(draftStart)} />
-					<RangeStat label={t("editClipDialog.end")} value={formatSeconds(draftEnd)} />
-					<RangeStat label={t("editClipDialog.duration")} value={formatSeconds(durationSec)} />
+				<div
+					style={{ display: "flex", gap: 24, marginBottom: 10 }}
+					aria-live="polite"
+					aria-atomic="true"
+				>
+					<RangeStat
+						label={t("editClipDialog.originalDuration")}
+						value={assetDurationSec === null ? "—" : formatSeconds(assetDurationSec)}
+						testId="edit-clip-original-duration"
+					/>
+					<RangeStat
+						label={t("editClipDialog.trimRange")}
+						value={`${formatSeconds(draftStart)}–${formatSeconds(draftEnd)}`}
+						testId="edit-clip-trim-range"
+					/>
+					<RangeStat
+						label={t("editClipDialog.duration")}
+						value={formatSeconds(durationSec)}
+						testId="edit-clip-final-duration"
+					/>
 				</div>
 
 				<div
@@ -1110,6 +1156,7 @@ export function EditClipModal({
 				</div>
 				<div
 					ref={trackRef}
+					data-testid="edit-clip-trim-track"
 					style={{
 						position: "relative",
 						height: 32,
@@ -1118,6 +1165,7 @@ export function EditClipModal({
 						borderRadius: "var(--r-sm)",
 					}}
 				>
+					{/* Dimmed, discarded head. Decoration only — see the tail below. */}
 					<div
 						style={{
 							position: "absolute",
@@ -1125,6 +1173,7 @@ export function EditClipModal({
 							width: `${(draftStart / sourceDurationSec) * 100}%`,
 							background: "var(--overlay-dark)",
 							borderRadius: "var(--r-sm) 0 0 var(--r-sm)",
+							pointerEvents: "none",
 						}}
 					/>
 					<div
@@ -1138,9 +1187,6 @@ export function EditClipModal({
 							background: "var(--accent-wash)",
 							border: "1px solid var(--accent)",
 							borderRadius: "var(--r-sm)",
-							display: "flex",
-							alignItems: "center",
-							justifyContent: "center",
 						}}
 					>
 						<button
@@ -1161,16 +1207,6 @@ export function EditClipModal({
 								padding: 0,
 							}}
 						/>
-						<span
-							style={{
-								font: "500 11px/1.4 var(--font-mono)",
-								color: "var(--accent-on)",
-								pointerEvents: "none",
-								whiteSpace: "nowrap",
-							}}
-						>
-							{formatSeconds(draftStart)}–{formatSeconds(draftEnd)}
-						</span>
 						<button
 							type="button"
 							onPointerDown={(e) => startDrag("end", e)}
@@ -1190,6 +1226,11 @@ export function EditClipModal({
 							}}
 						/>
 					</div>
+					{/* Dimmed, discarded tail. It is painted after the selection, so it sits
+					    ABOVE the end handle that overhangs the selection's right edge by 6px:
+					    without pointer-events:none it swallows the grab as soon as the range is
+					    narrower than the handle, and a range dragged down to the 0.05s minimum
+					    can then only be recovered with Reset. */}
 					<div
 						style={{
 							position: "absolute",
@@ -1199,6 +1240,7 @@ export function EditClipModal({
 							width: `${Math.max(0, ((sourceDurationSec - draftEnd) / sourceDurationSec) * 100)}%`,
 							background: "var(--overlay-dark)",
 							borderRadius: "0 var(--r-sm) var(--r-sm) 0",
+							pointerEvents: "none",
 						}}
 					/>
 				</div>
@@ -1331,9 +1373,9 @@ export function EditClipModal({
 	);
 }
 
-function RangeStat({ label, value }: { label: string; value: string }) {
+function RangeStat({ label, value, testId }: { label: string; value: string; testId?: string }) {
 	return (
-		<div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+		<div data-testid={testId} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
 			<strong style={{ font: "600 15px/1.2 var(--font-mono)", color: "var(--fg)" }}>{value}</strong>
 			<small style={{ font: "500 10px/1.4 var(--font-body)", color: "var(--muted)" }}>
 				{label}

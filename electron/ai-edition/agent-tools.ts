@@ -2216,11 +2216,18 @@ export function executeAgentTool(
 				);
 			}
 			const next = removeRegion(document, kind, id);
+			// Touching rows with the same styling render as ONE pill and removeRegion
+			// deletes the whole pill, so echoing `id` alone told the model one row
+			// went while several did. An audio id already is its pill's group key.
+			const removedIds = kind === "audio" ? [id] : droppedByEdit(document, next).droppedModifierIds;
 			return {
 				ok: true,
 				document: next,
-				resultJson: JSON.stringify({ removed: id, kind }),
-				summary: `removed ${kind} ${id}`,
+				resultJson: JSON.stringify({ removed: id, removedIds, kind }),
+				summary:
+					removedIds.length === 1
+						? `removed ${kind} ${id}`
+						: `removed ${removedIds.length} ${kind} rows: ${removedIds.join(", ")}`,
 			};
 		}
 

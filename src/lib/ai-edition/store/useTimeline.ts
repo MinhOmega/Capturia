@@ -1031,18 +1031,22 @@ export function useTimeline() {
 			setClipSelection(null);
 			setSelectedAudioTrackId(null);
 			if (opts?.additive) {
-				// Shift-click toggles membership; the focused region follows the click.
-				setMultiSelection((prev) => {
-					const exists = prev.some((h) => h.kind === kind && h.id === id);
-					return exists ? prev.filter((h) => !(h.kind === kind && h.id === id)) : [...prev, handle];
-				});
-				setSelection(handle);
+				// Shift-click toggles membership. Adding focuses the clicked region;
+				// removing it hands focus to the last one still selected. Focusing the
+				// region just REMOVED left it highlighted and acted on — Copy and Delete
+				// read `selection` — while the set said it was gone.
+				const exists = multiSelection.some((h) => h.kind === kind && h.id === id);
+				const next = exists
+					? multiSelection.filter((h) => !(h.kind === kind && h.id === id))
+					: [...multiSelection, handle];
+				setMultiSelection(next);
+				setSelection(exists ? (next.at(-1) ?? null) : handle);
 				return;
 			}
 			setMultiSelection([handle]);
 			setSelection(handle);
 		},
-		[setSelectedAudioTrackId],
+		[multiSelection, setSelectedAudioTrackId],
 	);
 
 	const clearSelection = useCallback(() => {

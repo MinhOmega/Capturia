@@ -75,6 +75,7 @@
 		"window": "窗口",
 		"screen": "屏幕",
 		"virtual": "虚拟显示器",
+		"area": "区域 {{width}} × {{height}}",
 		"unknown": "屏幕录制"
 	}
 }

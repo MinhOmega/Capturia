@@ -66,10 +66,14 @@
 		"loading": "Chargement des sources...",
 		"screens": "Écrans ({{count}})",
 		"windows": "Fenêtres ({{count}})",
+		"area": "Zone",
 		"emptyTitle": "Aucun écran ni fenêtre trouvé",
 		"emptyDescription": "Si vous venez d'accorder l'autorisation d'enregistrement d'écran, rechargez ce sélecteur. Sur macOS, il peut être nécessaire de rouvrir Capturia.",
 		"loadFailedDescription": "Capturia n'a pas pu charger les sources de capture. Rechargez ce sélecteur et réessayez.",
 		"defaultSourceName": "Écran"
+	},
+	"areaSelector": {
+		"hint": "Faites glisser pour sélectionner une zone. Entrée pour valider, Échap pour annuler."
 	},
 	"recording": {
 		"selectSource": "Veuillez sélectionner une source à enregistrer",
@@ -107,7 +111,13 @@
 		"previewUnavailable": "Aperçu indisponible",
 		"about": "À propos",
 		"version": "Version {{version}}",
-		"checkingForUpdates": "Recherche…"
+		"checkingForUpdates": "Recherche…",
+		"saveTo": "Emplacement des enregistrements",
+		"changeFolder": "Modifier…",
+		"resetFolder": "Réinitialiser",
+		"folderUnavailable": "Indisponible pour le moment — le dossier par défaut vous sera proposé à l'enregistrement.",
+		"folderHint": "Les enregistrements précédents restent à leur emplacement actuel.",
+		"prereleases": "Recevoir les préversions"
 	},
 	"permissions": {
 		"title": "Autorisations",

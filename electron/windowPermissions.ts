@@ -20,8 +20,8 @@
  *    audio layers (`AddAudioLayerDialog`) and meters the mic in the Rec stage —
  *    and to the CLI sources runner, which needs a short-lived grant to read
  *    device labels;
- *  - the source selector, the countdown overlay, the notes window and the bench
- *    window never capture anything. The bench renders App's default placeholder,
+ *  - the source selector, the area selector, the countdown overlay, the notes
+ *    window and the bench window never capture anything. The bench renders App's default placeholder,
  *    not the editor shell.
  *
  * Refusing a kind a window does use is not a quiet failure: `getUserMedia`
@@ -49,6 +49,7 @@ const WINDOW_TYPE_LIST = [
 	"editor",
 	"bench",
 	"source-selector",
+	"area-selector",
 	"countdown-overlay",
 	"notes",
 	"cli-record",

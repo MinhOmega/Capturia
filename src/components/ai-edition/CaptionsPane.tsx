@@ -28,6 +28,7 @@ import { firstTimelineBusyView } from "@/lib/ai-edition/transcription/status";
 import { nativeBridgeClient } from "@/native";
 import { ColorField } from "./ColorField";
 import { FontFamilyField } from "./FontFamilyField";
+import { LookPresetsMenu } from "./LookPresetsMenu";
 import styles from "./NewEditorShell.module.css";
 import { SliderCell, Toggle } from "./RightPanes";
 import { useTranscriptionLabel } from "./TranscriptionStatus";
@@ -189,18 +190,20 @@ export function CaptionsPane({ onClose }: { onClose?: () => void } = {}) {
 					<CaptionsIcon size={14} />
 				</span>
 				<h2>{t("facets.captions")}</h2>
-				{onClose ? (
-					<button
-						type="button"
-						className={styles.iconBtn}
-						style={{ marginLeft: "auto" }}
-						title={tc("actions.close")}
-						aria-label={tc("actions.close")}
-						onClick={onClose}
-					>
-						<X size={14} />
-					</button>
-				) : null}
+				<span style={{ marginLeft: "auto", display: "inline-flex", gap: 4, alignItems: "center" }}>
+					<LookPresetsMenu />
+					{onClose ? (
+						<button
+							type="button"
+							className={styles.iconBtn}
+							title={tc("actions.close")}
+							aria-label={tc("actions.close")}
+							onClick={onClose}
+						>
+							<X size={14} />
+						</button>
+					) : null}
+				</span>
 			</header>
 			<div
 				className={styles.paneBody}

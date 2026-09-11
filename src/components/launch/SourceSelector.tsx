@@ -19,6 +19,10 @@ export function SourceSelector() {
 	const [selectedSource, setSelectedSource] = useState<DesktopSource | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [loadFailed, setLoadFailed] = useState(false);
+	const [areaTab, setAreaTab] = useState(false);
+	// No overlay on Linux: Wayland lets no client place a window on a chosen display, and
+	// with the capture helper present the portal, not this picker, chooses the screen.
+	const offerArea = window.electronAPI?.getPlatform?.() !== "linux";
 
 	const fetchSources = useCallback(async () => {
 		setLoading(true);
@@ -63,8 +67,13 @@ export function SourceSelector() {
 	const hasNoSources = !loading && sources.length === 0;
 
 	const handleSourceSelect = (source: DesktopSource) => setSelectedSource(source);
+	const areaPickable = !areaTab || selectedSource?.id.startsWith("screen:") === true;
 	const handleShare = async () => {
-		if (selectedSource) await window.electronAPI.selectSource(selectedSource);
+		if (!selectedSource) return;
+		// An area pick closes this window only once the overlay confirms; Esc there
+		// leaves the picker open to try again.
+		if (areaTab) await window.electronAPI.selectArea(selectedSource);
+		else await window.electronAPI.selectSource(selectedSource);
 	};
 
 	if (loading) {
@@ -144,6 +153,7 @@ export function SourceSelector() {
 		<div className={`h-screen flex flex-col ${styles.glassContainer}`}>
 			<Tabs
 				defaultValue={screenSources.length === 0 ? "windows" : "screens"}
+				onValueChange={(value) => setAreaTab(value === "area")}
 				className="flex-1 flex flex-col min-h-0"
 			>
 				<TabsList className="flex items-center gap-1.5 h-auto p-3.5 rounded-none bg-transparent border-b border-[#191d24] flex-shrink-0">
@@ -159,6 +169,14 @@ export function SourceSelector() {
 					>
 						{t("sourceSelector.windows", { count: String(windowSources.length) })}
 					</TabsTrigger>
+					{offerArea && screenSources.length > 0 ? (
+						<TabsTrigger
+							value="area"
+							className="flex-1 h-10 rounded-[11px] text-[13.5px] font-medium text-[#828c99] border border-transparent transition-all data-[state=active]:bg-[#232830] data-[state=active]:border-[#333a45] data-[state=active]:text-[#ffffff] data-[state=active]:font-semibold data-[state=active]:shadow-none"
+						>
+							{t("sourceSelector.area")}
+						</TabsTrigger>
+					) : null}
 				</TabsList>
 				<div className="flex-1 min-h-0 px-[18px] pt-[18px] pb-1.5">
 					<TabsContent value="screens" className="h-full mt-0">
@@ -175,6 +193,13 @@ export function SourceSelector() {
 							{windowSources.map(renderSourceCard)}
 						</div>
 					</TabsContent>
+					<TabsContent value="area" className="h-full mt-0">
+						<div
+							className={`grid h-full auto-rows-min grid-cols-2 gap-3.5 overflow-y-auto pr-1.5 ${styles.sourceGridScroll}`}
+						>
+							{screenSources.map(renderSourceCard)}
+						</div>
+					</TabsContent>
 				</div>
 			</Tabs>
 			<div className="flex justify-end gap-2.5 border-t border-[#191d24] px-[18px] py-4">
@@ -189,7 +214,7 @@ export function SourceSelector() {
 				<Button
 					data-testid="source-selector-share-button"
 					onClick={handleShare}
-					disabled={!selectedSource}
+					disabled={!selectedSource || !areaPickable}
 					className="h-9 rounded-[9px] bg-[#10b981] px-5 text-[13px] font-semibold text-[#08090d] transition-transform duration-150 hover:bg-[#10b981]/85 active:scale-95 disabled:bg-[#232830] disabled:border disabled:border-[#242932] disabled:text-[#565f6b] disabled:opacity-100"
 				>
 					{tc("actions.share")}

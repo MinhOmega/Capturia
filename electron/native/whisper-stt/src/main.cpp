@@ -225,6 +225,9 @@ int main(int argc, char** argv) {
 	std::string host = "127.0.0.1";
 	bool host_from_flag = false;
 	bool force_cpu = false;
+	// Which model family's alignment heads DTW reads. Defaults to the model this
+	// helper shipped with, so an older Node side that never passes it still works.
+	std::string dtw_preset = "small";
 	int port = 0;
 	int threads = std::max(1u, std::thread::hardware_concurrency());
 
@@ -235,6 +238,7 @@ int main(int argc, char** argv) {
 		else if (a == "--port" && i + 1 < argc) port = std::atoi(argv[++i]);
 		else if (a == "--threads" && i + 1 < argc) threads = std::atoi(argv[++i]);
 		else if (a == "--cpu") force_cpu = true;
+		else if (a == "--dtw-preset" && i + 1 < argc) dtw_preset = argv[++i];
 	}
 	// ponytail: prefer env var (matches the prior native STT model env var
 	// shape; the Node wrapper passes both ways).
@@ -264,7 +268,20 @@ int main(int argc, char** argv) {
 		             "CAPTURIA_WHISPER_MODEL is required" << std::endl;
 		return 2;
 	}
-	log("boot: model=" + model_path + " host=" + host +
+	// Alignment heads are per model family, so the preset has to match the file.
+	// A mismatch is not a quality loss: whisper_init fails outright when the
+	// preset names a layer or head the model does not have (`small` on a `base`
+	// file: "tried to set alignment head on head 10, but model only has 8 heads").
+	whisper_alignment_heads_preset aheads_preset;
+	if (dtw_preset == "base") aheads_preset = WHISPER_AHEADS_BASE;
+	else if (dtw_preset == "small") aheads_preset = WHISPER_AHEADS_SMALL;
+	else if (dtw_preset == "large-v3-turbo") aheads_preset = WHISPER_AHEADS_LARGE_V3_TURBO;
+	else {
+		std::cerr << "FATAL: unknown --dtw-preset " << dtw_preset
+		          << " (expected base | small | large-v3-turbo)" << std::endl;
+		return 2;
+	}
+	log("boot: model=" + model_path + " dtw-preset=" + dtw_preset + " host=" + host +
 	    " port=" + (port > 0 ? std::to_string(port) : "(any)") +
 	    " threads=" + std::to_string(threads));
 
@@ -276,7 +293,7 @@ int main(int argc, char** argv) {
 	                             // /inference handler still runs, but skipping
 	                             // the request is wasted work.
 	cparams.dtw_token_timestamps = true;
-	cparams.dtw_aheads_preset    = WHISPER_AHEADS_SMALL;
+	cparams.dtw_aheads_preset    = aheads_preset;
 	whisper_context* ctx = whisper_init_from_file_with_params(model_path.c_str(), cparams);
 	if (!ctx && cparams.use_gpu) {
 		// Metal/Vulkan allocation can fail transiently when the editor or another

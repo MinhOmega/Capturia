@@ -241,6 +241,17 @@
 		"title": "Layout da câmera",
 		"noWebcam": "Sem Webcam"
 	},
+	"looks": {
+		"title": "Estilos salvos",
+		"empty": "Nenhum estilo salvo ainda.",
+		"saveAs": "Salvar estilo como predefinição…",
+		"namePlaceholder": "Nome da predefinição",
+		"includeAspectRatio": "Incluir formato (proporção)",
+		"defaultForNew": "Padrão para novos projetos",
+		"rename": "Renomear",
+		"missingAsset": "Uma imagem ou um cursor deste estilo não está mais disponível, então foi redefinido para o padrão.",
+		"saveFailed": "Não foi possível salvar o estilo. Uma imagem de fundo personalizada pode ser grande demais para ser armazenada."
+	},
 	"textAnimation": {
 		"slideLeft": "Deslizar à Esquerda",
 		"pulse": "Pulsar",

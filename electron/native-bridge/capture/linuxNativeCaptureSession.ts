@@ -148,6 +148,12 @@ export class LinuxNativeCaptureSession {
 			stdio: ["pipe", "pipe", "pipe"],
 		});
 		this.process = child;
+		// Writing to a helper that already died raises EPIPE asynchronously, past the
+		// try/catch in write(); with no listener that is an uncaught exception in
+		// the main process. Exit reporting already covers the helper being gone.
+		child.stdin.on("error", (error) => {
+			console.warn("[capture-linux] helper stdin error:", error);
+		});
 
 		child.stdout.setEncoding("utf8");
 		child.stdout.on("data", (chunk: string) => this.handleStdout(chunk));
@@ -286,6 +292,12 @@ export class LinuxNativeCaptureSession {
 	 */
 	get grantedSourceKind(): LinuxCaptureSourceKind | undefined {
 		return this.sourceKind;
+	}
+
+	/** Where this take is written, fixed when the session was created. Asked at discard rather
+	 *  than re-resolving the recordings folder, which can have changed since. */
+	get outputPath(): string {
+		return this.config.outputPath;
 	}
 
 	/**

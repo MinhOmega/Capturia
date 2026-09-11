@@ -115,6 +115,7 @@
 		"cursorHighlight": "Curseur en surbrillance",
 		"autoZoom": "Zoom automatique après l'enregistrement",
 		"autoZoomNeedsEditableCursor": "Le zoom automatique nécessite le curseur modifiable. Changez le mode du curseur pour l'activer.",
+		"drawArea": "Tracer une zone après l'enregistrement",
 		"on": "Activé",
 		"off": "Désactivé",
 		"loading": "Chargement…",
@@ -129,6 +130,7 @@
 		"sourceModal": {
 			"screens": "Écrans ({{count}})",
 			"windows": "Fenêtres ({{count}})",
+			"area": "Zone",
 			"loadingSources": "Chargement des sources…",
 			"noScreensFound": "Aucun écran trouvé",
 			"noWindowsFound": "Aucune fenêtre trouvée",
@@ -327,9 +329,9 @@
 		"title": "Modifier le clip",
 		"adjustStart": "Ajuster le début du clip",
 		"adjustEnd": "Ajuster la fin du clip",
-		"start": "Début",
-		"end": "Fin",
-		"duration": "Durée",
+		"originalDuration": "Durée d'origine",
+		"trimRange": "Plage de coupe",
+		"duration": "Durée finale",
 		"reset": "Réinitialiser",
 		"apply": "Appliquer",
 		"pickClipTitle": "Choisissez un clip à modifier",
@@ -417,5 +419,22 @@
 	"cpuCompositor": {
 		"notice": "Aucun GPU compatible — rendu sur CPU, la lecture est donc plus lente.",
 		"exportWarning": "Aucun GPU compatible : cet export tourne sur CPU et sera beaucoup plus long que d'habitude."
+	},
+	"speechModel": {
+		"title": "Modèle vocal",
+		"hint": "Transcrit la parole pour les transcriptions et les sous-titres. Les transcriptions existantes sont conservées ; régénérez-en une pour utiliser le nouveau modèle.",
+		"fast": "Rapide",
+		"fastNote": "Le plus rapide, mais manque plus de mots si la voix est bruitée ou accentuée",
+		"balanced": "Équilibré",
+		"balancedNote": "Bonne précision à vitesse modérée",
+		"accurate": "Précis",
+		"accurateNote": "Meilleure précision, mais le plus lent",
+		"cpuWarning": "Aucun GPU utilisé : Précis sera très lent sur cette machine",
+		"active": "Actif",
+		"downloaded": "Téléchargé",
+		"use": "Utiliser",
+		"delete": "Supprimer le modèle",
+		"switchFailed": "Impossible de changer de modèle vocal ; le précédent reste utilisé",
+		"deleteFailed": "Impossible de supprimer le modèle vocal"
 	}
 }

@@ -1,8 +1,9 @@
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import type { IpcMain } from "electron";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { RecordingStreamRegistry } from "./recordingStream";
+import { RecordingStreamRegistry, registerRecordingStreamHandlers } from "./recordingStream";
 
 describe("RecordingStreamRegistry", () => {
 	let dir: string;
@@ -80,5 +81,50 @@ describe("RecordingStreamRegistry", () => {
 		await registry.finalize("rec.webm");
 
 		expect(await readFile(pathFor("rec.webm"), "utf8")).toBe("second");
+	});
+
+	// A take that started while the chosen drive was unplugged streams into the default
+	// folder; the drive coming back mid-take moves where a fresh resolve points. Stop and
+	// discard must still find the file where it was opened.
+	describe("after the recordings folder changes mid-take", () => {
+		async function takeWithMovingFolder() {
+			await mkdir(pathFor("default"));
+			await mkdir(pathFor("chosen"));
+			let takeDir = pathFor("default");
+			const resolve = (name: string) => path.join(takeDir, name);
+			const registry = new RecordingStreamRegistry();
+			const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>();
+			const ipc = {
+				handle: (channel: string, fn: (...args: unknown[]) => Promise<unknown>) => {
+					handlers.set(channel, fn);
+				},
+			} as unknown as IpcMain;
+			registerRecordingStreamHandlers(ipc, registry, resolve);
+			const call = (channel: string, ...args: unknown[]) =>
+				handlers.get(channel)?.({}, ...args) as Promise<{ success: boolean }>;
+
+			expect(await call("open-recording-stream", "recording-1.webm")).toEqual({ success: true });
+			await call("append-recording-chunk", "recording-1.webm", new TextEncoder().encode("take"));
+			takeDir = pathFor("chosen");
+			return { registry, call };
+		}
+
+		it("finalizes at the path captured when the stream opened", async () => {
+			const { registry } = await takeWithMovingFolder();
+			const opened = path.join(pathFor("default"), "recording-1.webm");
+
+			expect(registry.pathOf("recording-1.webm")).toBe(opened);
+			expect(await registry.finalize("recording-1.webm")).toBe(true);
+			expect(await readFile(opened, "utf8")).toBe("take");
+			await expect(stat(path.join(pathFor("chosen"), "recording-1.webm"))).rejects.toThrow();
+		});
+
+		it("discards the file it opened, not one at the new folder", async () => {
+			const { registry, call } = await takeWithMovingFolder();
+
+			expect(await call("close-recording-stream", "recording-1.webm")).toEqual({ success: true });
+			expect(registry.has("recording-1.webm")).toBe(false);
+			await expect(stat(path.join(pathFor("default"), "recording-1.webm"))).rejects.toThrow();
+		});
 	});
 });

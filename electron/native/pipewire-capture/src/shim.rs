@@ -134,6 +134,8 @@ extern "C" {
         with_modifier: i32,
         producer_modifier: i64,
     ) -> i32;
+    #[cfg(test)]
+    fn osc_pw_frame_readable(is_dmabuf: i32, avail: usize, offset: u32, chunk_size: u32) -> u32;
     fn osc_pw_start(
         fd: i32,
         node_id: u32,
@@ -1103,7 +1105,7 @@ fn on_frame_inner(state: &CallbackState, frame: *const RawFrame) -> i32 {
     if rows > frame.size {
         return 0;
     }
-    // SAFETY: the shim clamped `size` against the mapping's `maxsize` before
+    // SAFETY: the shim clamped `size` against the mapping's length before
     // the callback, `rows <= size` was just checked, and the mapping stays
     // live until this returns.
     let pixels = unsafe { std::slice::from_raw_parts(frame.data, rows) };
@@ -1201,6 +1203,25 @@ mod tests {
     use std::sync::mpsc;
     use std::time::Duration;
 
+    /// A DMA-BUF frame is bounded by our mapping, not by the placeholder sizes
+    /// wlr / niri portals send, which rejected every 1080p frame (#287 follow-up).
+    #[test]
+    fn dmabuf_frames_are_bounded_by_the_mapping_not_the_chunk() {
+        let frame = 7680 * 1080;
+        // SAFETY: pure arithmetic on the C side.
+        let readable = |dmabuf, avail, offset, chunk| unsafe {
+            osc_pw_frame_readable(dmabuf, avail, offset, chunk)
+        };
+        // xdg-desktop-portal-wlr: chunk size 9 on an 8 MiB mapping.
+        assert!(readable(1, 8_388_608, 0, 9) as usize >= frame);
+        // Shared memory keeps trusting the chunk.
+        assert_eq!(readable(0, 8_388_608, 0, 9), 9);
+        // Never past the mapping, whatever the producer claims.
+        assert_eq!(readable(1, 8_388_608, 4096, u32::MAX), 8_388_608 - 4096);
+        assert_eq!(readable(1, 100, 200, 50), 0);
+        assert_eq!(readable(0, 100, 200, 50), 0);
+    }
+
     /// The bound that made Stage 1 produce nothing on the first real run.
     ///
     /// Compositors declare SPA_PARAM_META_size for the cursor as a FIXED
@@ -1273,16 +1294,24 @@ mod tests {
             );
         }
 
-        // The advertised modifier set is a real set, not a wildcard: a tiled or
-        // compressed buffer cannot be read through a plain mmap, so it must fail
-        // negotiation rather than be accepted and decoded into garbage.
-        // 0x0300000000000001 = a vendor (NVIDIA — modifier vendor byte 0x03) modifier,
-        // neither LINEAR nor INVALID.
+        // The advertised modifier set is a real set, not a wildcard: a modifier we
+        // did not offer (neither LINEAR, INVALID nor one the local GPU's EGL can
+        // import) must fail negotiation rather than be accepted and decoded into
+        // garbage.
+        //
+        // The probe must be foreign to EVERY host, and in its low 32 bits too. The
+        // vendored SPA 1.0.5 compares Long values as `(int)(a - b)`
+        // (spa/pod/compare.h; upstream now uses SPA_CMP), so two modifiers that
+        // differ only above bit 31 compare EQUAL. The old probe, 0x0300000000000001
+        // (NVIDIA Tegra tiled), therefore matched Intel's X_TILED
+        // (0x0100000000000001) on any Intel host whose EGL advertises it. Vendor
+        // byte 0x7f is unassigned, and 0xdeadbeef is not a low word any Intel, AMD
+        // or NVIDIA layout produces.
         assert_eq!(
-            enum_format_accepts_dmabuf_producer(true, 0x0300_0000_0000_0001),
+            enum_format_accepts_dmabuf_producer(true, 0x7f00_0000_dead_beef),
             0,
-            "a modifier we cannot mmap must not intersect — accepting it would ship \
-             a scrambled recording instead of an error"
+            "a modifier we never advertised must not intersect — accepting it would \
+             ship a scrambled recording instead of an error"
         );
     }
 

@@ -820,16 +820,29 @@ static void *osc_map_dmabuf(int fd, size_t *len, const char **why)
     return ptr == MAP_FAILED ? NULL : ptr;
 }
 
-static void *osc_find_dmabuf_map(struct osc_pw_session *session, int fd)
+static void *osc_find_dmabuf_map(struct osc_pw_session *session, int fd, size_t *len)
 {
     size_t i;
 
     for (i = 0; i < OSC_MAX_DMABUF_MAPS; i++) {
         if (session->dmabuf_maps[i].ptr != NULL && session->dmabuf_maps[i].fd == fd) {
+            *len = session->dmabuf_maps[i].len;
             return session->dmabuf_maps[i].ptr;
         }
     }
     return NULL;
+}
+
+uint32_t osc_pw_frame_readable(int is_dmabuf, size_t avail, uint32_t offset, uint32_t chunk_size)
+{
+    if (offset > avail) {
+        return 0;
+    }
+    avail -= offset;
+    if (avail > UINT32_MAX) {
+        avail = UINT32_MAX;
+    }
+    return is_dmabuf ? (uint32_t)avail : SPA_MIN(chunk_size, (uint32_t)avail);
 }
 
 /*
@@ -1095,7 +1108,8 @@ static int osc_read_cursor(const struct spa_buffer *buffer, struct osc_pw_cursor
  * Extracts the pixels of one buffer. Returns 1 when `out` describes a frame, 0
  * when this buffer carries none.
  *
- * The offset/size clamping against `maxsize` is the standard PipeWire consumer
+ * The offset/size clamping against `maxsize` (against our own mapping for a
+ * DMA-BUF) is the standard PipeWire consumer
  * idiom and is not paranoia: `chunk` lives in memory the PRODUCER writes, so its
  * fields are untrusted input from another process. A compositor bug — or a
  * malicious one — that reports a size past the end of the mapping would
@@ -1112,6 +1126,9 @@ static int osc_read_frame(struct osc_pw_session *session, const struct spa_buffe
     int32_t stride;
     int32_t height;
     int is_dmabuf_import = 0;
+    /* Bytes behind `base`: the producer's `maxsize` for shared memory, our own
+     * mapping's length for a DMA-BUF (see osc_pw_frame_readable). */
+    size_t avail;
 
     const uint8_t *base;
 
@@ -1125,6 +1142,7 @@ static int osc_read_frame(struct osc_pw_session *session, const struct spa_buffe
     if (data->chunk == NULL) {
         return 0;
     }
+    avail = data->maxsize;
 
     if (data->type == SPA_DATA_DmaBuf) {
         /*
@@ -1133,7 +1151,7 @@ static int osc_read_frame(struct osc_pw_session *session, const struct spa_buffe
          * osc_on_add_buffer. A miss means the mmap failed there — reported at
          * that point — and there is nothing readable here.
          */
-        base = osc_find_dmabuf_map(session, (int)data->fd);
+        base = osc_find_dmabuf_map(session, (int)data->fd, &avail);
         if (base == NULL) {
             if (!session->import_dmabuf) {
                 return 0;
@@ -1152,7 +1170,10 @@ static int osc_read_frame(struct osc_pw_session *session, const struct spa_buffe
         base = data->data;
     }
     /* A zero-sized chunk is how a compositor ships a cursor update with no new
-     * frame attached. Not an error, just not a frame. */
+     * frame attached. Not an error, just not a frame.
+     * ponytail: on DMA-BUF a producer may also leave a real frame's size at 0;
+     * none seen yet (wlr sends 9, niri 1). If one shows up, tell cursor-only
+     * buffers apart by `chunk->stride == 0` there instead. */
     if (data->chunk->size == 0) {
         return 0;
     }
@@ -1197,8 +1218,9 @@ static int osc_read_frame(struct osc_pw_session *session, const struct spa_buffe
                 (pd->chunk != NULL && pd->chunk->stride > 0) ? pd->chunk->stride : import_stride;
         }
     } else {
-        offset = SPA_MIN(data->chunk->offset, data->maxsize);
-        size = SPA_MIN(data->chunk->size, data->maxsize - offset);
+        offset = data->chunk->offset;
+        size = osc_pw_frame_readable(data->type == SPA_DATA_DmaBuf, avail, offset,
+                                     data->chunk->size);
         if (stride <= 0) {
             return 0;
         }

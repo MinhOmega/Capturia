@@ -66,10 +66,14 @@
 		"loading": "Cargando fuentes...",
 		"screens": "Pantallas ({{count}})",
 		"windows": "Ventanas ({{count}})",
+		"area": "Área",
 		"emptyTitle": "No se encontraron pantallas ni ventanas",
 		"emptyDescription": "Si acabas de conceder permiso de grabación de pantalla, recarga este selector. En macOS puede que debas volver a abrir Capturia.",
 		"loadFailedDescription": "Capturia no pudo cargar las fuentes de captura. Recarga este selector e inténtalo de nuevo.",
 		"defaultSourceName": "Pantalla"
+	},
+	"areaSelector": {
+		"hint": "Arrastra para seleccionar un área. Enter para confirmar, Esc para cancelar."
 	},
 	"recording": {
 		"selectSource": "Por favor selecciona una fuente para grabar",
@@ -107,7 +111,13 @@
 		"previewUnavailable": "Vista previa no disponible",
 		"about": "Acerca de",
 		"version": "Versión {{version}}",
-		"checkingForUpdates": "Buscando…"
+		"checkingForUpdates": "Buscando…",
+		"saveTo": "Guardar grabaciones en",
+		"changeFolder": "Cambiar…",
+		"resetFolder": "Restablecer",
+		"folderUnavailable": "No disponible ahora mismo: se te ofrecerá la carpeta predeterminada al grabar.",
+		"folderHint": "Las grabaciones anteriores se quedan donde se guardaron.",
+		"prereleases": "Recibir versiones preliminares"
 	},
 	"permissions": {
 		"title": "Permisos",

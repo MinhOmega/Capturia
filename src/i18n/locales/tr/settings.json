@@ -241,6 +241,17 @@
 		"title": "Kamera düzeni",
 		"noWebcam": "Web kamerası yok"
 	},
+	"looks": {
+		"title": "Kayıtlı görünümler",
+		"empty": "Henüz kayıtlı görünüm yok.",
+		"saveAs": "Görünümü ön ayar olarak kaydet…",
+		"namePlaceholder": "Ön ayar adı",
+		"includeAspectRatio": "Biçimi dahil et (en boy oranı)",
+		"defaultForNew": "Yeni projeler için varsayılan",
+		"rename": "Yeniden adlandır",
+		"missingAsset": "Bu görünümdeki bir görsel veya imleç artık kullanılamıyor, bu yüzden varsayılana sıfırlandı.",
+		"saveFailed": "Görünüm kaydedilemedi. Özel arka plan görseli saklanamayacak kadar büyük olabilir."
+	},
 	"textAnimation": {
 		"slideLeft": "Sola Kaydırma",
 		"pulse": "Nabız",

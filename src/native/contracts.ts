@@ -233,6 +233,8 @@ export interface AiEditionProjectSummary {
 	title: string;
 	updatedAt: string;
 	assetCount: number;
+	/** Length of the edit; absent while the timeline is empty. */
+	durationSec?: number;
 }
 
 export interface AiEditionAssetResult {

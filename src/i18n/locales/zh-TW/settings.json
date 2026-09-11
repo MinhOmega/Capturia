@@ -241,6 +241,17 @@
 		"title": "攝影機版面",
 		"noWebcam": "無網路攝影機"
 	},
+	"looks": {
+		"title": "已儲存的外觀",
+		"empty": "尚未儲存任何外觀。",
+		"saveAs": "將外觀儲存為預設集…",
+		"namePlaceholder": "預設集名稱",
+		"includeAspectRatio": "包含格式（長寬比）",
+		"defaultForNew": "新專案的預設外觀",
+		"rename": "重新命名",
+		"missingAsset": "此外觀中的圖片或游標已無法使用，已重設為預設值。",
+		"saveFailed": "無法儲存外觀。自訂背景圖片可能太大而無法儲存。"
+	},
 	"textAnimation": {
 		"slideLeft": "向左滑動",
 		"pulse": "脈動",

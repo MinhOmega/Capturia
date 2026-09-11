@@ -9,6 +9,10 @@ export interface CropDraft {
 	height: number;
 }
 
+/** Smallest crop side, in percent of the frame. Shared with the record-area overlay
+ * (`src/lib/recordingArea.ts`) so a crop seeded from a recording is one this dialog accepts. */
+export const MIN_CROP_PCT = 4;
+
 export function cropDraftFromRegion(region: CropDraft): CropDraft {
 	return { x: region.x, y: region.y, width: region.width, height: region.height };
 }

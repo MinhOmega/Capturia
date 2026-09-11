@@ -119,6 +119,11 @@ const DECLARED: WritePath[] = [
 		"gesture",
 	),
 
+	// Applying a saved look is a click in the "Saved looks" menu: one undo step.
+	w("src/components/ai-edition/LookPresetsMenu.tsx", "applyLookPreset", "save", "gesture"),
+	// ...and its optimistic half, so a pane edit during the save builds on the look.
+	w("src/components/ai-edition/LookPresetsMenu.tsx", "applyLookPreset", "set", "automatic"),
+
 	// The persist that follows an undo. Recording it would undo the undo.
 	w("src/components/ai-edition/NewEditorShell.tsx", "NewEditorShell", "save", "automatic"),
 	// "Save" on the unsaved-changes prompt.
@@ -137,6 +142,9 @@ const DECLARED: WritePath[] = [
 		"save",
 		"gesture",
 	),
+	// A recorded area seeded as the new clip's crop at import. Part of the import the
+	// editor did unattended; recording it would make the first Ctrl+Z empty the project.
+	w("src/components/ai-edition/recordingImport.ts", "importPendingRecording", "save", "automatic"),
 	// Renaming the project from the title field.
 	w("src/components/ai-edition/NewEditorShell.tsx", "handleRenameProject", "save", "gesture"),
 	// Ctrl+S / File > Save.

@@ -87,6 +87,11 @@
 		"videoFiles": "ملفات فيديو",
 		"audioFiles": "ملفات الصوت",
 		"openscreenProject": "مشروع Capturia",
-		"allFiles": "جميع الملفات"
+		"allFiles": "جميع الملفات",
+		"selectRecordingsFolder": "اختيار مجلد التسجيلات"
+	},
+	"recordingsFolder": {
+		"unavailable": "لا يمكن لـ Capturia حفظ التسجيلات في {{folder}}. ربما تم فصل القرص، أو لا يملك Capturia إذن الكتابة هناك.",
+		"useDefault": "التسجيل في المجلد الافتراضي"
 	}
 }

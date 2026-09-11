@@ -87,6 +87,11 @@
 		"videoFiles": "Video Dosyaları",
 		"audioFiles": "Ses dosyaları",
 		"openscreenProject": "Capturia Projesi",
-		"allFiles": "Tüm Dosyalar"
+		"allFiles": "Tüm Dosyalar",
+		"selectRecordingsFolder": "Kayıt Klasörünü Seç"
+	},
+	"recordingsFolder": {
+		"unavailable": "Capturia kayıtları {{folder}} konumuna kaydedemiyor. Sürücünün bağlantısı kesilmiş olabilir veya Capturia'nın oraya yazma izni olmayabilir.",
+		"useDefault": "Varsayılan Klasöre Kaydet"
 	}
 }

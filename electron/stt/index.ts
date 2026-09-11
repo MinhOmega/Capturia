@@ -1,9 +1,23 @@
+import { rm } from "node:fs/promises";
 import path from "node:path";
 import { app, type IpcMain } from "electron";
 import { planChunks } from "./chunking";
 import { extractMono16kPcm } from "./extractAudio";
-import { ensureModels, modelPaths } from "./modelManager";
+import { detectGpuBackend } from "./gpuDetector";
+import {
+	ensureModels,
+	isModelPresent,
+	isSttModelId,
+	modelPath,
+	readActiveModel,
+	STT_MODELS,
+	type SttModelId,
+	writeActiveModel,
+} from "./modelManager";
 import type {
+	SttBackend,
+	SttModelProgressEvent,
+	SttModelsSnapshot,
 	SttPhraseSegment,
 	SttStatusEvent,
 	SttTiming,
@@ -11,7 +25,7 @@ import type {
 	SttTranscribeResponse,
 	SttWordSegment,
 } from "./transcriptionContract";
-import { WhisperServerManager } from "./whisperServer";
+import { WhisperServerManager, type WhisperServerStartOptions } from "./whisperServer";
 
 /**
  * Owner of the long-lived STT pipeline. One instance per Electron app.
@@ -96,7 +110,15 @@ export class SttManager {
 	private readonly statusSinks = new Set<(event: SttStatusEvent) => void>();
 	private initPromise: Promise<void> | null = null;
 	/** Kept from `prepare()` so a chunk retry can respawn a helper that died mid-run. */
-	private modelPath: string | null = null;
+	private model: WhisperServerStartOptions | null = null;
+	/** What the last run actually bound; the settings' CPU warning trusts it over a guess. */
+	private lastBackend: SttBackend | null = null;
+	/**
+	 * Switches in flight, by the model they switch to. A second request for the
+	 * same model awaits the first: two downloads of one model share its `.partial`,
+	 * and two pipelines writing one inode can rename a truncated file into place.
+	 */
+	private readonly switching = new Map<SttModelId, Promise<void>>();
 	/**
 	 * Bumped by `cancel()`. The chunk loop compares it against the value it
 	 * captured on entry, so a cancel that lands after a new run started cannot
@@ -178,9 +200,11 @@ export class SttManager {
 
 	private async prepare(): Promise<void> {
 		const modelsDir = this.getModelsDir();
-		this.emit({ phase: "model", model: "whisper", downloadedBytes: 0, totalBytes: 0 });
+		const id = await readActiveModel(modelsDir);
+		this.emit({ phase: "model", model: id, downloadedBytes: 0, totalBytes: 0 });
 		await ensureModels({
 			baseDir: modelsDir,
+			only: [id],
 			onProgress: (event) => {
 				this.emit({
 					phase: "model",
@@ -192,10 +216,13 @@ export class SttManager {
 		});
 		if (this.shuttingDown) throw cancelledError();
 
-		const paths = modelPaths(modelsDir);
-		this.modelPath = paths.whisper;
+		const model = { modelPath: modelPath(modelsDir, id), dtwPreset: STT_MODELS[id].dtwPreset };
+		// `start()` is a no-op while a helper is up, and that helper holds the model
+		// it was spawned with — after a switch it has to go before the new one loads.
+		if (this.model && this.model.modelPath !== model.modelPath) await this.server.stop();
+		this.model = model;
 		try {
-			await this.server.start({ modelPath: paths.whisper });
+			await this.server.start(model);
 		} catch (error) {
 			if (this.shuttingDown) throw cancelledError();
 			throw error;
@@ -235,8 +262,8 @@ export class SttManager {
 				lastError = error;
 				if (this.shuttingDown) throw cancelledError();
 				if (attempt === CHUNK_ATTEMPTS) break;
-				if (this.modelPath) {
-					await this.server.start({ modelPath: this.modelPath }).catch(() => undefined);
+				if (this.model) {
+					await this.server.start(this.model).catch(() => undefined);
 				}
 				if (this.shuttingDown) throw cancelledError();
 				await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
@@ -405,6 +432,7 @@ export class SttManager {
 		//
 		// The per-chunk `rtf` emitted above is deliberately not held to this: it is
 		// a RATIO, not a total, and stays honest over whatever subset reported.
+		this.lastBackend = backend;
 		const timing: SttTiming | undefined =
 			timedChunks > 0 && untimedChunks === 0 && audioSec > 0
 				? { elapsedSec, audioSec, rtf: elapsedSec / audioSec }
@@ -424,6 +452,85 @@ export class SttManager {
 			backend,
 			timing,
 		};
+	}
+
+	/** The speech-model settings: the active model, what is downloaded, and the CPU verdict. */
+	async listModels(): Promise<SttModelsSnapshot> {
+		const modelsDir = this.getModelsDir();
+		const ids = Object.keys(STT_MODELS) as SttModelId[];
+		const models = await Promise.all(
+			ids.map(async (id) => ({
+				id,
+				bytes: STT_MODELS[id].files[0].approximateBytes,
+				downloaded: await isModelPresent(modelsDir, id),
+			})),
+		);
+		// Before any run this is only the platform's guess (a Vulkan binary on
+		// Windows/Linux may still fall back to CPU); after one it is what bound.
+		const backend = this.lastBackend ?? (await detectGpuBackend()).backend;
+		return {
+			active: await readActiveModel(modelsDir),
+			models,
+			cpuOnly: backend === "whispercpp-cpu",
+			inFlight: [...this.switching.keys()],
+		};
+	}
+
+	/**
+	 * Download and verify `id`, then make it the model the next run loads.
+	 *
+	 * The switch is written only once the file is on disk under its final name,
+	 * which `ensureModels` does only after the digest matched — so a failed,
+	 * cancelled or interrupted download throws out of here with the previous model
+	 * still active and nothing half-written left to pass for the new one.
+	 *
+	 * A run already in flight finishes on the model it started with; clearing
+	 * `initPromise` makes the next one re-prepare, and `prepare()` swaps the helper.
+	 *
+	 * Single-flight per model (see `switching`); a joining caller's `onProgress` is
+	 * not attached, but both requests come from the settings window, which listens
+	 * on `stt:model-progress` rather than per request.
+	 */
+	setModel(id: SttModelId, onProgress?: (event: SttModelProgressEvent) => void): Promise<void> {
+		const inFlight = this.switching.get(id);
+		if (inFlight) return inFlight;
+		const modelsDir = this.getModelsDir();
+		const run = (async () => {
+			await ensureModels({
+				baseDir: modelsDir,
+				only: [id],
+				onProgress: (event) =>
+					onProgress?.({
+						id,
+						downloadedBytes: event.downloadedBytes,
+						totalBytes: event.totalBytes,
+					}),
+			});
+			await writeActiveModel(modelsDir, id);
+			this.initPromise = null;
+		})().finally(() => this.switching.delete(id));
+		this.switching.set(id, run);
+		return run;
+	}
+
+	/**
+	 * Remove a downloaded model other than the active one. Refused while a switch
+	 * TO it is in flight (it would delete the download from under it); a switch
+	 * FROM it is covered by the active check, since a model stays active until the
+	 * switch replacing it has landed.
+	 */
+	async deleteModel(id: SttModelId): Promise<void> {
+		const modelsDir = this.getModelsDir();
+		if (id === (await readActiveModel(modelsDir))) {
+			throw new Error("The active speech model cannot be deleted");
+		}
+		// After the await, so a switch that started while it ran is seen too.
+		if (this.switching.has(id)) {
+			throw new Error("This speech model is still being switched to");
+		}
+		const file = modelPath(modelsDir, id);
+		await rm(file, { force: true });
+		await rm(`${file}.partial`, { force: true });
 	}
 
 	/** Best-effort shutdown; safe to call from `before-quit` hooks. */
@@ -493,5 +600,18 @@ export function registerSttIpc(ipcMain: IpcMain): void {
 	);
 	ipcMain.handle("stt:cancel", () => {
 		manager.cancel();
+	});
+	ipcMain.handle("stt:models", () => manager.listModels());
+	// Progress on its own channel: `stt:status` is read by a transcription in
+	// flight, which would take a settings download for its own.
+	ipcMain.handle("stt:set-model", async (event, id: unknown) => {
+		if (!isSttModelId(id)) throw new Error(`Unknown speech model: ${String(id)}`);
+		await manager.setModel(id, (progress) => {
+			if (!event.sender.isDestroyed()) event.sender.send("stt:model-progress", progress);
+		});
+	});
+	ipcMain.handle("stt:delete-model", async (_event, id: unknown) => {
+		if (!isSttModelId(id)) throw new Error(`Unknown speech model: ${String(id)}`);
+		await manager.deleteModel(id);
 	});
 }

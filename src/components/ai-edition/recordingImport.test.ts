@@ -1,6 +1,9 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { replaceTimeline as replaceTimelineOp } from "@/lib/ai-edition/document/timeline";
+import {
+	applyProbedDuration,
+	replaceTimeline as replaceTimelineOp,
+} from "@/lib/ai-edition/document/timeline";
 import { type AxcutDocument, createEmptyDocument } from "@/lib/ai-edition/schema";
 import { useProjectStore } from "@/lib/ai-edition/store/projectStore";
 import { undo } from "@/lib/ai-edition/store/undo";
@@ -55,12 +58,16 @@ const realActions = {
 function stubElectronApi(
 	screenVideoPath: string | null,
 	cursorCaptureMode: "editable-overlay" | "system" = "editable-overlay",
+	cropRegion?: { x: number; y: number; width: number; height: number },
 ) {
 	let session: {
 		screenVideoPath: string;
 		createdAt: number;
 		cursorCaptureMode: "editable-overlay" | "system";
-	} | null = screenVideoPath ? { screenVideoPath, createdAt: 0, cursorCaptureMode } : null;
+		cropRegion?: { x: number; y: number; width: number; height: number };
+	} | null = screenVideoPath
+		? { screenVideoPath, createdAt: 0, cursorCaptureMode, cropRegion }
+		: null;
 	const api = {
 		getCurrentRecordingSession: vi.fn(async () =>
 			session ? { success: true, session } : { success: false },
@@ -192,6 +199,23 @@ describe("what the recording import leaves on the undo stack", () => {
 		expect(undo()).toBe(false);
 	});
 
+	// A recorded area: the display was recorded whole and the main process handed over the
+	// rectangle as a crop. The clip has to carry it from the start, and still carry it once
+	// the <video> reports the duration (`NewEditorShell.handleLoadedMetadata`).
+	it("opens a recorded area already cropped, and keeps the crop once the duration arrives", async () => {
+		const cropRegion = { x: 0.25, y: 0.1, width: 0.5, height: 0.4 };
+		stubElectronApi(SCREEN_PATH, "editable-overlay", cropRegion);
+
+		await importPendingRecording();
+
+		const imported = useProjectStore.getState().document as AxcutDocument;
+		expect(imported.timeline.clips.map((clip) => clip.cropRegion)).toEqual([cropRegion]);
+		expect(past).toHaveLength(0);
+		expect(applyProbedDuration(imported, "asset_1", 42).timeline.clips).toMatchObject([
+			{ sourceStartSec: 0, sourceEndSec: 42, timelineEndSec: 42, cropRegion },
+		]);
+	});
+
 	it("still has its clip after the first Ctrl+Z", async () => {
 		await importPendingRecording();
 
@@ -321,6 +345,37 @@ describe("fresh-recording auto-zoom", () => {
 			focusMode: "auto",
 		});
 		expect(await applyPendingFreshRecordingAutoZooms(next, { enabled: true })).toBe(next);
+	});
+
+	// A recorded area's clip carries its crop into this pass: a dwell outside the area is
+	// not in the picture, and one inside it is framed in the crop's own fractions.
+	it("keeps a recorded area's zooms inside its crop", async () => {
+		const base = documentWithClip();
+		const cropped: AxcutDocument = {
+			...base,
+			timeline: {
+				...base.timeline,
+				clips: base.timeline.clips.map((clip) => ({
+					...clip,
+					cropRegion: { x: 0.5, y: 0, width: 0.5, height: 0.5 },
+				})),
+			},
+		};
+		markFreshRecordingAutoZoomPending(RECORDING_PATH);
+		const outside = await applyPendingFreshRecordingAutoZooms(cropped, {
+			enabled: true,
+			getTelemetry: async () => dwell(4000, 0.25, 0.25),
+		});
+		expect(outside.zoomRanges).toEqual([]);
+
+		markFreshRecordingAutoZoomPending(RECORDING_PATH);
+		const inside = await applyPendingFreshRecordingAutoZooms(cropped, {
+			enabled: true,
+			getTelemetry: async () => dwell(4000, 0.75, 0.25),
+			createId: (prefix) => `${prefix}_test`,
+		});
+		expect(inside.zoomRanges).toHaveLength(1);
+		expect(inside.zoomRanges[0].focus).toEqual({ cx: 0.5, cy: 0.5 });
 	});
 
 	it("skips when the HUD toggle is off", async () => {

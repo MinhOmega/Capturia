@@ -790,6 +790,30 @@ describe("executeAgentTool", () => {
 		expect(wrong.resultJson).toMatch(/removeTrim/);
 	});
 
+	it("removeModifier reports every touching row deleted with the pill", () => {
+		// Three touching zooms of one depth render as ONE pill, and removing any of
+		// them removes the pill. The result used to name only the id it was given.
+		let doc = fixtureDocument();
+		for (const [startSec, endSec] of [
+			[0, 10],
+			[10, 20],
+			[20, 30],
+		]) {
+			doc = executeAgentTool(doc, "addZoom", JSON.stringify({ startSec, endSec, depth: 3 }))
+				.document as AxcutDocument;
+		}
+		const ids = doc.zoomRanges.map((z) => z.id);
+		expect(ids).toHaveLength(3);
+
+		const removed = executeAgentTool(doc, "removeModifier", JSON.stringify({ id: ids[0] }));
+		expect(removed.document?.zoomRanges).toHaveLength(0);
+		expect(JSON.parse(removed.resultJson)).toMatchObject({
+			removed: ids[0],
+			removedIds: ids,
+			kind: "zoom",
+		});
+	});
+
 	it("addZoom reports the CLAMPED span, not the one it was asked for", () => {
 		// ponytail: the exact shape of D-HONEST. Ventilation trims the span to the
 		// clip; the tool used to echo back 20–40 while the document held 20–24.704

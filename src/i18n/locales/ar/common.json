@@ -75,6 +75,7 @@
 		"window": "نافذة",
 		"screen": "شاشة",
 		"virtual": "شاشة افتراضية",
+		"area": "منطقة {{width}} × {{height}}",
 		"unknown": "تسجيل الشاشة"
 	}
 }

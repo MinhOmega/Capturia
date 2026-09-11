@@ -10,7 +10,8 @@
 		"addAnnotation": "Add Annotation (A)",
 		"addSpeed": "Add Speed (S)",
 		"addCameraFullscreen": "Add Full Camera (C)",
-		"splitAtPlayhead": "Split Clip at Playhead"
+		"splitAtPlayhead": "Split Clip at Playhead",
+		"pasteAtPlayhead": "Paste at Playhead"
 	},
 	"hints": {
 		"pressZoom": "Press Z to add zoom",
@@ -66,6 +67,11 @@
 		"autoEnhance": "Auto-enhance",
 		"automaticZooms": "Automatic zooms",
 		"automaticZoomsHint": "From recorded cursor movement",
+		"flaggedZooms": "Zooms at flagged moments",
+		"flaggedZoomsHint": "One zoom per flag set while recording",
+		"flaggedZoomsNoFlags": "No flags yet — use “{{button}}” while recording",
+		"flagZoomsCovered": "{{count}} already covered",
+		"flagZoomsTrimmed": "{{count}} inside a trim",
 		"smartZoomsAndCuts": "Smart cuts",
 		"smartZoomsAndCutsHint": "With AI",
 		"roughCut": "Remove dead air",

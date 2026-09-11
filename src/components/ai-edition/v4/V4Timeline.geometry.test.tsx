@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import "@testing-library/jest-dom";
-import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { Profiler, type ProfilerOnRenderCallback } from "react";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 // The regression under test is geometric, so the environment has to have a size:
 // jsdom reports 0 for every box, which would leave `pxPerSec` at 0 (the
@@ -76,7 +77,11 @@ function renderTimeline(
 	clips = [clip(0, TOTAL_SEC)],
 	annotation = { id: "ann1", startMs: 10_000, endMs: 11_000 },
 	assets: Array<Record<string, unknown>> = [NO_CAMERA_ASSET],
+	onRender: ProfilerOnRenderCallback = () => {
+		/* only the scrub test counts commits */
+	},
 ) {
+	const setCurrentTime = vi.fn();
 	const tl = {
 		clips,
 		// Marks for added words are read straight off the transcript (see the pane's
@@ -106,26 +111,33 @@ function renderTimeline(
 	};
 	render(
 		<ShortcutsProvider>
-			<V4Timeline
-				// Only the members the lanes and the clip row read are mocked; the prop
-				// stays typed as the real API rather than widened to `any` (AGENTS.md).
-				tl={tl as unknown as ReturnType<typeof useTimeline>}
-				setCurrentTime={vi.fn()}
-				playing={false}
-				onTogglePlay={vi.fn()}
-				onPrevClip={vi.fn()}
-				onNextClip={vi.fn()}
-				onEditClip={vi.fn()}
-				onAddVoiceover={vi.fn()}
-			/>
+			<Profiler id="timeline" onRender={onRender}>
+				<V4Timeline
+					// Only the members the lanes and the clip row read are mocked; the prop
+					// stays typed as the real API rather than widened to `any` (AGENTS.md).
+					tl={tl as unknown as ReturnType<typeof useTimeline>}
+					setCurrentTime={setCurrentTime}
+					playing={false}
+					onTogglePlay={vi.fn()}
+					onPrevClip={vi.fn()}
+					onNextClip={vi.fn()}
+					onEditClip={vi.fn()}
+					onAddVoiceover={vi.fn()}
+				/>
+			</Profiler>
 		</ShortcutsProvider>,
 	);
 	return {
 		pill: screen.getByTitle("toolbar.newAnnotation"),
 		clipEls: Array.from(document.querySelectorAll<HTMLElement>("[data-clip-id]")),
 		tl,
+		setCurrentTime,
 	};
 }
+
+afterEach(() => {
+	vi.unstubAllGlobals();
+});
 
 /** Drag a handle by `dxPx`. The move/up listeners live on `window`, so the drag
  *  is driven by pointer deltas alone — the handle may re-mount under it. */
@@ -146,6 +158,54 @@ function wheelZoomOn(el: HTMLElement, notches: number) {
 function zoomIn(notches: number) {
 	wheelZoomOn(document.querySelector("[class*=tlTracks]") as HTMLElement, notches);
 }
+
+describe("V4Timeline scrubbing", () => {
+	it("publishes at most one React scrub-state update per animation frame", () => {
+		const frames = new Map<number, FrameRequestCallback>();
+		let nextFrameId = 1;
+		vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+			const frameId = nextFrameId++;
+			frames.set(frameId, callback);
+			return frameId;
+		});
+		vi.stubGlobal("cancelAnimationFrame", (frameId: number) => {
+			frames.delete(frameId);
+		});
+		const onRender = vi.fn<ProfilerOnRenderCallback>();
+		// Render passes WE schedule. Every commit of the timeline is followed by a
+		// "nested-update": Radix Slot (react-slot 1.2.3, `asChild` under each
+		// Tooltip) builds a fresh composeRefs callback per render, so React re-runs
+		// the trigger ref with null then the node, and TooltipRoot's setTrigger
+		// re-renders that root in the commit phase (~0.1 ms, measured). Mocking
+		// Tooltip removes it. Scrub code cannot schedule a commit-phase update, so
+		// the frame budget is counted on the "update" phase.
+		const updates = () => onRender.mock.calls.filter(([, phase]) => phase === "update").length;
+		const { setCurrentTime } = renderTimeline(undefined, undefined, undefined, onRender);
+		const ruler = document.querySelector<HTMLElement>("[class*=tlRulerRow]") as HTMLElement;
+
+		fireEvent.pointerDown(ruler, { button: 0, clientX: 90 });
+		const commitsAfterPointerDown = onRender.mock.calls.length;
+		const updatesAfterPointerDown = updates();
+		setCurrentTime.mockClear();
+
+		// Three pointer moves inside one frame: the playhead follows each in the DOM,
+		// but React and the store hear about the latest one only, once.
+		fireEvent.pointerMove(window, { clientX: 180 });
+		fireEvent.pointerMove(window, { clientX: 270 });
+		fireEvent.pointerMove(window, { clientX: 360 });
+		expect(onRender).toHaveBeenCalledTimes(commitsAfterPointerDown);
+		expect(setCurrentTime).not.toHaveBeenCalled();
+		expect(frames.size).toBe(1);
+
+		const [[frameId, frame]] = frames;
+		frames.delete(frameId);
+		act(() => frame(0));
+		expect(updates()).toBe(updatesAfterPointerDown + 1);
+		expect(setCurrentTime).toHaveBeenCalledTimes(1);
+		expect(setCurrentTime).toHaveBeenCalledWith(720); // 360 of 900 px over 1800 s
+		fireEvent.pointerUp(window);
+	});
+});
 
 describe("V4Timeline lane pills", () => {
 	it("draws a pill exactly as wide as its region, at any zoom", () => {
@@ -405,6 +465,39 @@ describe("V4Timeline clip row", () => {
 		zoomIn(40);
 		expect(clipEls.map((el) => el.style.left)).toEqual([startsAt(0), startsAt(600), startsAt(900)]);
 		expect(pill.style.left).toBe(clipEls[1].style.left);
+	});
+
+	it("shows each clip's edited duration on the card", () => {
+		renderTimeline(CLIPS);
+		// 600s / 300s / 900s of an 1800s source: each card reads the clip's own
+		// length on the timeline (out − in), not the asset's original length. A
+		// speed region over the clip changes how long it plays, not this number.
+		expect(screen.getByText("10:00.0")).toBeInTheDocument();
+		expect(screen.getByText("5:00.0")).toBeInTheDocument();
+		expect(screen.getByText("15:00.0")).toBeInTheDocument();
+	});
+
+	it("withholds the duration from a card too small to hold it", () => {
+		// 250s at this zoom is a 125px card: past the narrow gate, so it still shows
+		// its name and pencil, but not wide enough for the timecode — which would
+		// otherwise escape the label pill and sit on the delete button. Measured in
+		// the running window, not derived here.
+		renderTimeline([clip(0, 250), clip(250, TOTAL_SEC)]);
+
+		expect(screen.queryByText("4:10.0")).not.toBeInTheDocument();
+		// The card that does have the room still reads its length.
+		expect(screen.getByText("25:50.0")).toBeInTheDocument();
+	});
+
+	it("asks for the room this card's own timecode needs, not the shortest one", () => {
+		// 600s of 3965s is a ~130px card. `0:12.0` would fit there; `10:00.0` is a
+		// character wider and does not, and `formatSec` has no hour field to stop
+		// the string growing — a clip past a hundred minutes reads `100:00.0`. A
+		// single fixed width would have let those through onto the delete button.
+		renderTimeline([clip(0, 600), clip(600, 3965)]);
+
+		expect(screen.queryByText("10:00.0")).not.toBeInTheDocument();
+		expect(screen.getByText("56:05.0")).toBeInTheDocument();
 	});
 
 	it("takes the card gutter out of each clip's own width", () => {

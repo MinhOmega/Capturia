@@ -10,7 +10,8 @@
 		"addAnnotation": "إضافة شرح (A)",
 		"addSpeed": "إضافة سرعة (S)",
 		"addCameraFullscreen": "إضافة كاميرا كاملة الشاشة (C)",
-		"splitAtPlayhead": "تقسيم المقطع عند رأس التشغيل"
+		"splitAtPlayhead": "تقسيم المقطع عند رأس التشغيل",
+		"pasteAtPlayhead": "لصق عند رأس التشغيل"
 	},
 	"hints": {
 		"pressZoom": "اضغط Z لإضافة تكبير",
@@ -66,6 +67,11 @@
 		"autoEnhance": "تحسين تلقائي",
 		"automaticZooms": "تكبيرات تلقائية",
 		"automaticZoomsHint": "من حركة المؤشر المسجلة",
+		"flaggedZooms": "تكبيرات عند اللحظات المعلَّمة",
+		"flaggedZoomsHint": "تكبير واحد لكل علامة وُضعت أثناء التسجيل",
+		"flaggedZoomsNoFlags": "لا توجد علامات بعد — استخدم «{{button}}» أثناء التسجيل",
+		"flagZoomsCovered": "مغطاة مسبقًا: {{count}}",
+		"flagZoomsTrimmed": "داخل مقطع محذوف: {{count}}",
 		"smartZoomsAndCuts": "قصات ذكية",
 		"smartZoomsAndCutsHint": "باستخدام الذكاء الاصطناعي",
 		"roughCut": "إزالة الوقت الميت",

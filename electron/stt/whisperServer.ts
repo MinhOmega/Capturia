@@ -47,7 +47,7 @@ const REQUEST_TIMEOUT_MS = 280_000;
  * and the renderer doesn't move.
  *
  * Word timestamps come from whisper.cpp's native DTW token timestamps
- * (`t_dtw`, SMALL aheads preset, `flash_attn = false` so DTW is actually
+ * (`t_dtw`, the loaded model's aheads preset, `flash_attn = false` so DTW is actually
  * computed). The helper returns them already absolute, so no segment-offset
  * arithmetic is required.
  *
@@ -59,6 +59,8 @@ const REQUEST_TIMEOUT_MS = 280_000;
 export interface WhisperServerStartOptions {
 	/** Absolute path to the GGML model file (e.g. ggml-small-q8_0.bin). */
 	modelPath: string;
+	/** The model family's alignment heads (`STT_MODELS[id].dtwPreset`); the helper assumes `small`. */
+	dtwPreset?: string;
 	/** Externally-resolved binary path (skips gpuDetector on startup); null = auto. */
 	binaryPath?: string | null;
 	/** Externally-resolved backend (logs only); null = auto. */
@@ -271,6 +273,7 @@ export class WhisperServerManager {
 				"--threads",
 				String(Math.max(1, os.cpus().length)),
 			];
+			if (options.dtwPreset) args.push("--dtw-preset", options.dtwPreset);
 			if (forceCpu) args.push("--cpu");
 			const child = spawn(binaryPath, args, { stdio: ["ignore", "pipe", "pipe"] });
 			const activeBackend: SttBackend = forceCpu ? "whispercpp-cpu" : resolved.backend;

@@ -66,10 +66,14 @@
 		"loading": "Kaynaklar yükleniyor...",
 		"screens": "Ekranlar ({{count}})",
 		"windows": "Pencereler ({{count}})",
+		"area": "Alan",
 		"emptyTitle": "Ekran veya pencere bulunamadı",
 		"emptyDescription": "Ekran kaydı iznini az önce verdiyseniz bu seçiciyi yeniden yükleyin. macOS'ta Capturia'yı yeniden açmanız gerekebilir.",
 		"loadFailedDescription": "Capturia yakalama kaynaklarını yükleyemedi. Bu seçiciyi yeniden yükleyip tekrar deneyin.",
 		"defaultSourceName": "Ekran"
+	},
+	"areaSelector": {
+		"hint": "Bir alan seçmek için sürükleyin. Onaylamak için Enter, iptal için Esc."
 	},
 	"recording": {
 		"selectSource": "Lütfen kayıt için bir kaynak seçin",
@@ -107,7 +111,13 @@
 		"previewUnavailable": "Önizleme kullanılamıyor",
 		"about": "Hakkında",
 		"version": "Sürüm {{version}}",
-		"checkingForUpdates": "Denetleniyor…"
+		"checkingForUpdates": "Denetleniyor…",
+		"saveTo": "Kayıtları şuraya kaydet",
+		"changeFolder": "Değiştir…",
+		"resetFolder": "Sıfırla",
+		"folderUnavailable": "Şu anda kullanılamıyor — kayıt başlatırken varsayılan klasör önerilecek.",
+		"folderHint": "Önceki kayıtlar kaydedildikleri yerde kalır.",
+		"prereleases": "Ön sürüm yapılarını al"
 	},
 	"permissions": {
 		"title": "İzinler",

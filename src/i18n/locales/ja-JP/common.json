@@ -75,6 +75,7 @@
 		"window": "ウィンドウ",
 		"screen": "画面",
 		"virtual": "仮想ディスプレイ",
+		"area": "範囲 {{width}} × {{height}}",
 		"unknown": "画面録画"
 	}
 }

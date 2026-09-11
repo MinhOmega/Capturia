@@ -33,6 +33,7 @@ import {
 	checkForSelfUpdate,
 	downloadSelfUpdate,
 	installSelfUpdate,
+	selfUpdateMatches,
 	type UpdateOutcome,
 } from "./auto-updater";
 import {
@@ -69,7 +70,12 @@ import { scheduleRecordingsCleanup } from "./recordingsCleanup";
 import { installNavigationPolicy, installPermissionPolicy } from "./securityPolicy";
 import { registerSttIpc, shutdownStt } from "./stt";
 import { checkLatestRelease } from "./update-checker";
-import { loadUpdateMode, saveUpdateMode } from "./update-settings";
+import {
+	loadIncludePrereleases,
+	loadUpdateMode,
+	saveIncludePrereleases,
+	saveUpdateMode,
+} from "./update-settings";
 import {
 	createCountdownOverlayWindow,
 	createEditorWindow,
@@ -633,6 +639,8 @@ function runSaveDiagnostics() {
  *  install directory and NSIS cannot overwrite a running .exe. */
 let isRecording = false;
 let currentUpdateMode: UpdateMode = "notify";
+/** Settings → "Get pre-release builds": both the release check and the updater follow it. */
+let includePrereleases = false;
 let backgroundUpdateTimer: ReturnType<typeof setInterval> | null = null;
 
 function showUpdateSettingsMenu(): boolean {
@@ -789,7 +797,10 @@ async function probeSelfUpdate(): Promise<UpdateOutcome> {
 		timer.unref?.();
 	});
 	try {
-		return await Promise.race([checkForSelfUpdate(getInstallChannel()), timeout]);
+		return await Promise.race([
+			checkForSelfUpdate(getInstallChannel(), includePrereleases),
+			timeout,
+		]);
 	} finally {
 		if (timer) clearTimeout(timer);
 	}
@@ -809,6 +820,7 @@ async function checkForUpdates(onVerdict?: () => void) {
 			currentVersion: app.getVersion(),
 			fetchLatest: (url, init) => net.fetch(url, init),
 			signal,
+			includePrereleases,
 		});
 		if (result.kind === "current") {
 			await showMessageBox({
@@ -826,7 +838,16 @@ async function checkForUpdates(onVerdict?: () => void) {
 		// never update — can only be pointed at the download page. Ask the updater first so the
 		// buttons offered match what this install can actually do.
 		const selfUpdate = await probeSelfUpdate();
-		const canSelfUpdate = selfUpdate.kind === "downloaded";
+		// Only when the updater would install the very version the dialog names. Its feed can
+		// disagree with the release check (an RC install is kept on RCs, a stable install reads
+		// the feed head), and "Download Update" must not install a version the user never saw.
+		const canSelfUpdate = selfUpdateMatches(selfUpdate, result.latestVersion);
+		if (selfUpdate.kind === "downloaded" && !canSelfUpdate) {
+			console.warn("[updates] the updater offers a different version, showing the release page", {
+				checker: result.latestVersion,
+				updater: selfUpdate.version,
+			});
+		}
 		if (selfUpdate.kind === "failed") {
 			// A release published before the update feeds existed has no latest*.yml. Not worth a
 			// dialog — the download page below still works — but it must not vanish silently.
@@ -1260,7 +1281,16 @@ appReady?.then(async () => {
 	ipcMain.handle("get-app-info", () => ({
 		version: app.getVersion(),
 		canCheckForUpdates: channelAllowsUpdateCheck(),
+		includePrereleases,
 	}));
+
+	ipcMain.handle("set-include-prereleases", (_, value: unknown) => {
+		if (typeof value === "boolean") {
+			includePrereleases = value;
+			saveIncludePrereleases(app.getPath("userData"), value);
+		}
+		return includePrereleases;
+	});
 
 	// The FULL veto, permanent and transient, for a caller that can ask again at the moment it
 	// needs the answer. `get-app-info` deliberately carries only the permanent half because the
@@ -1307,6 +1337,7 @@ appReady?.then(async () => {
 	// all (see auto-updater.ts getUpdater) — every real update path applies
 	// its settings lazily on first use.
 	currentUpdateMode = loadUpdateMode(app.getPath("userData"));
+	includePrereleases = loadIncludePrereleases(app.getPath("userData"));
 	createTray();
 	updateTrayMenu();
 	startBackgroundUpdateTimer();
@@ -1318,6 +1349,8 @@ appReady?.then(async () => {
 	// repair scratch all accumulate until the disk is full — and a full disk is
 	// how a recording is lost. Deliberately not awaited: startup must not wait on
 	// a stat of every file in the folder, and a sweep that fails changes nothing.
+	// The default folder only, even when the user chose another in Settings: see the
+	// header of recordingsCleanup.ts for why a user's folder is never swept.
 	scheduleRecordingsCleanup({
 		recordingsDir: RECORDINGS_DIR,
 		userDataDir: app.getPath("userData"),

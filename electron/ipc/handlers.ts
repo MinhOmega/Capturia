@@ -31,6 +31,7 @@ import {
 	PROJECT_FILE_EXTENSION,
 	PROJECT_FILE_EXTENSIONS,
 } from "../../src/lib/projectFileExtension";
+import { type AreaRect, areaToCropRegion, toPhysicalArea } from "../../src/lib/recordingArea";
 import {
 	type CursorCaptureMode,
 	normalizeCursorCaptureMode,
@@ -73,6 +74,7 @@ import {
 	readCursorTelemetryFile as readCursorTelemetryFileFrom,
 } from "../media/cursorSidecar";
 import { findMediaLinksByFingerprint, registerMediaLinks } from "../media/mediaLinksRegistry";
+import { getPosterFrame } from "../media/posterFrames";
 import { relinkProjectMedia } from "../media/projectMediaRelinker";
 import { readRecordingMarkers, writeRecordingMarkers } from "../media/recordingMarkers";
 import {
@@ -108,7 +110,15 @@ import {
 } from "../recording/nativeWindowsCaptureStop";
 import { patchWebmDurationOnDisk } from "../recording/webm-duration";
 import { reindexRecordingOnDisk } from "../recording/webm-seek-index";
+import { loadRecordingsFolder, saveRecordingsFolder } from "../recording-settings";
+import {
+	isPathWithinDir,
+	isPathWithinRecordingRoots,
+	takeOutputPath,
+	validRecordingsFolder,
+} from "../recordingsFolder";
 import { settingsPaneUrl } from "../windowPermissions";
+import { createAreaSelectorWindow } from "../windows";
 import { registerNativeBridgeHandlers } from "./nativeBridge";
 import { registerRecordingPrefsHandlers } from "./recordingPrefs";
 import { RecordingStreamRegistry, registerRecordingStreamHandlers } from "./recordingStream";
@@ -165,20 +175,28 @@ function approveFilePath(filePath: string): void {
 	approvedPaths.add(path.resolve(filePath));
 }
 
-function getAllowedReadDirs(): string[] {
-	return [RECORDINGS_DIR];
+// Settings → "Save recordings to", as saved; null means the default folder. Only ever set from
+// the OS folder picker (see `choose-recordings-folder`), and re-validated on every use below.
+let chosenRecordingsFolder = loadRecordingsFolder(app.getPath("userData"));
+
+/** Where a new take is written: the chosen folder while it can take one, else the default. */
+function newTakeDir(): string {
+	return validRecordingsFolder(chosenRecordingsFolder, { writable: true }) ?? RECORDINGS_DIR;
 }
 
-function isPathWithinDir(filePath: string, dirPath: string): boolean {
-	const resolved = path.resolve(filePath);
-	const resolvedDir = path.resolve(dirPath);
-	return resolved === resolvedDir || resolved.startsWith(resolvedDir + path.sep);
+/** The default folder, plus the chosen one for files Capturia named — see recordingsFolder.ts. */
+function isWithinRecordingRoots(filePath: string): boolean {
+	return isPathWithinRecordingRoots(
+		filePath,
+		RECORDINGS_DIR,
+		validRecordingsFolder(chosenRecordingsFolder),
+	);
 }
 
 function isPathAllowed(filePath: string): boolean {
 	const resolved = path.resolve(filePath);
 	if (approvedPaths.has(resolved)) return true;
-	return getAllowedReadDirs().some((dir) => isPathWithinDir(resolved, dir));
+	return isWithinRecordingRoots(resolved);
 }
 
 function resolveApprovedVideoPath(videoPath?: string | null): string | null {
@@ -401,7 +419,7 @@ function approveReadableAudioPath(
  * the renderer could name any media file on the machine and have its bytes handed back,
  * which is a capability no generic handler should carry (CWE-200).
  *
- * Approval is granted in exactly three places now: the recordings directory, a file the user
+ * Approval is granted in exactly three places now: the recordings folders, a file the user
  * picked, and the assets a loaded project declares (`approveDocumentMedia`). Everything else
  * spends one.
  */
@@ -426,24 +444,13 @@ function approveDocumentMedia(document: AxcutDocument): void {
 	}
 }
 
-function resolveRecordingOutputPath(fileName: string): string {
-	const trimmed = fileName.trim();
-	if (!trimmed) {
-		throw new Error("Invalid recording file name");
-	}
-
-	const parsedPath = path.parse(trimmed);
-	const hasTraversalSegments = trimmed.split(/[\\/]+/).some((segment) => segment === "..");
-	const isNestedPath =
-		parsedPath.dir !== "" ||
-		path.isAbsolute(trimmed) ||
-		trimmed.includes("/") ||
-		trimmed.includes("\\");
-	if (hasTraversalSegments || isNestedPath || parsedPath.base !== trimmed) {
-		throw new Error("Recording file name must not contain path segments");
-	}
-
-	return path.join(RECORDINGS_DIR, parsedPath.base);
+function resolveRecordingOutputPath(fileName: string, takeDir = newTakeDir()): string {
+	return takeOutputPath(
+		fileName,
+		takeDir,
+		RECORDINGS_DIR,
+		validRecordingsFolder(chosenRecordingsFolder),
+	);
 }
 
 function isValidDurationMs(value: number | undefined): value is number {
@@ -594,6 +601,17 @@ type AttachNativeMacWebcamRecordingInput = {
 };
 
 let selectedSource: SelectedSource | null = null;
+// The crop an area pick seeds into the next recording, in fractions of the display's
+// frame. Set only from a rectangle this process validated (`finish-area-selection`) and
+// cleared by every plain pick, so nothing a renderer puts in `select-source` can reach it.
+let selectedAreaCrop: AreaRect | null = null;
+// The area overlay on screen, and whoever is waiting for its answer.
+let areaSelection: {
+	win: BrowserWindow;
+	display: Electron.Display;
+	source: SelectedSource;
+	resolve: (source: SelectedSource | null) => void;
+} | null = null;
 let selectedDesktopSource: DesktopCapturerSource | null = null;
 let lastEnumeratedSources = new Map<string, DesktopCapturerSource>();
 let currentProjectPath: string | null = null;
@@ -627,6 +645,12 @@ export interface RecordingPrefs {
 	cursorCaptureMode: CursorCaptureMode;
 	/** After a take, suggest cursor-dwell zooms. Default on, matching 1.5. */
 	autoZoomEnabled: boolean;
+	/**
+	 * "Record an area" where the ScreenCast portal picks the monitor: nothing can be
+	 * drawn on it before recording, so the editor opens the new clip's crop dialog
+	 * instead. Everywhere else the area is picked up front (`select-area`).
+	 */
+	drawAreaAfterRecording: boolean;
 }
 const defaultRecordingPrefs: RecordingPrefs = {
 	micEnabled: false,
@@ -637,6 +661,7 @@ const defaultRecordingPrefs: RecordingPrefs = {
 	systemAudioEnabled: false,
 	cursorCaptureMode: "editable-overlay",
 	autoZoomEnabled: true,
+	drawAreaAfterRecording: false,
 };
 
 // Cached source from the user's pick. Used by setDisplayMediaRequestHandler in main.ts for cursor-free capture.
@@ -789,7 +814,7 @@ async function removeNativeWindowsCaptureOutputs(
 	];
 
 	for (const target of targets) {
-		if (!target || !isPathWithinDir(target, RECORDINGS_DIR)) {
+		if (!target || !isWithinRecordingRoots(target)) {
 			continue;
 		}
 		try {
@@ -1578,6 +1603,15 @@ function attachNativeMacCaptureOutputDrain(
 	proc.stderr.on("data", drain);
 	proc.once("close", cleanup);
 	proc.once("error", cleanup);
+	// Same reason as attachNativeWindowsCaptureOutputDrain: writing "stop\n" to a
+	// helper that already died raises EPIPE on stdin, and an 'error' with no
+	// listener is an uncaught exception in the main process. The stop wait then
+	// never gets to report the helper's exit.
+	for (const stream of [proc.stdin, proc.stdout, proc.stderr]) {
+		stream.on("error", (error) => {
+			console.warn("[native-sck] helper pipe error:", error);
+		});
+	}
 	proc.once("exit", (code, signal) => {
 		const detail = `code=${code ?? "null"} signal=${signal ?? "null"}`;
 		notifyNativeCaptureHelperExit("darwin", recordingId, detail);
@@ -1901,6 +1935,15 @@ export function registerIpcHandlers(
 	onRecordingStateChange?: (recording: boolean, sourceName: string) => void,
 	_switchToHud?: () => void,
 ) {
+	// Every start and stop path reports through here, so this is main's own answer to "is a
+	// take running" — the HUD's lock lives in a renderer, and a folder dialog opened before a
+	// tray or hotkey start would otherwise move the recordings folder under the take.
+	let takeInProgress = false;
+	const reportRecordingState = (recording: boolean, sourceName: string) => {
+		takeInProgress = recording;
+		onRecordingStateChange?.(recording, sourceName);
+	};
+
 	async function requestScreenAccess() {
 		if (process.platform !== "darwin") {
 			return { success: true, granted: true, status: "granted" };
@@ -1913,24 +1956,25 @@ export function registerIpcHandlers(
 			}
 
 			// Screen recording has no askForMediaAccess equivalent, so trigger the
-			// TCC prompt without opening OpenScreen's source selector above it.
-			if (status === "not-determined") {
-				const mainWin = getMainWindow();
-				if (mainWin && !mainWin.isDestroyed()) {
-					if (!mainWin.isVisible()) {
-						mainWin.show();
-					}
-					mainWin.focus();
+			// TCC prompt without opening Capturia's source selector above it.
+			// Not gated on "not-determined": Chromium reads this permission with
+			// CGPreflightScreenCaptureAccess(), a bool, so a never-asked app reports
+			// "denied" too and that gate never let the prompt be raised. macOS draws
+			// the prompt once per app; after that this capture attempt is answered
+			// silently and the caller's Settings dialog is what the user sees.
+			const mainWin = getMainWindow();
+			if (mainWin && !mainWin.isDestroyed()) {
+				if (!mainWin.isVisible()) {
+					mainWin.show();
 				}
-				app.focus({ steal: true });
-				desktopCapturer
-					.getSources({ types: ["screen"], thumbnailSize: { width: 1, height: 1 } })
-					.catch(() => {
-						// Permission probing failure is reported by the explicit status check below.
-					});
-				return { success: true, granted: false, status: "not-determined" };
+				mainWin.focus();
 			}
-
+			app.focus({ steal: true });
+			desktopCapturer
+				.getSources({ types: ["screen"], thumbnailSize: { width: 1, height: 1 } })
+				.catch(() => {
+					// Permission probing failure is reported by the explicit status check below.
+				});
 			return { success: true, granted: false, status };
 		} catch (error) {
 			console.error("Failed to request screen access:", error);
@@ -1991,7 +2035,7 @@ export function registerIpcHandlers(
 		}));
 	});
 
-	ipcMain.handle("select-source", async (_, source: SelectedSource) => {
+	async function applySelectedSource(source: SelectedSource) {
 		selectedSource = source;
 		// Reuse the exact source object returned during enumeration to avoid
 		// Windows window-source id mismatches across separate getSources() calls.
@@ -2020,6 +2064,74 @@ export function registerIpcHandlers(
 			sourceSelectorWin.close();
 		}
 		return selectedSource;
+	}
+
+	ipcMain.handle("select-source", (_, source: SelectedSource) => {
+		selectedAreaCrop = null;
+		return applySelectedSource(source);
+	});
+
+	// "Record an area": the picked screen is recorded whole, exactly as a plain pick,
+	// and the rectangle only seeds the clip's crop at import (`set-current-recording-session`).
+	// Resolves with the selected source once the overlay confirms, or null when it is
+	// dismissed, so a picker can stay open on Esc.
+	ipcMain.handle("select-area", (_, source: SelectedSource) => {
+		const display =
+			typeof source?.id === "string" && source.id.startsWith("screen:")
+				? screen.getAllDisplays().find((each) => String(each.id) === String(source.display_id))
+				: undefined;
+		if (!display) return null;
+		// One overlay at a time, and the one already up keeps its caller.
+		if (areaSelection) {
+			areaSelection.win.focus();
+			return null;
+		}
+
+		return new Promise<SelectedSource | null>((resolve) => {
+			const win = createAreaSelectorWindow(display);
+			const selection = { win, display, source, resolve };
+			areaSelection = selection;
+			win.on("closed", () => {
+				if (areaSelection !== selection) return;
+				areaSelection = null;
+				resolve(null);
+			});
+		});
+	});
+
+	ipcMain.handle("finish-area-selection", async (event, rect: AreaRect) => {
+		const selection = areaSelection;
+		if (!selection || selection.win.isDestroyed() || event.sender !== selection.win.webContents) {
+			return;
+		}
+		areaSelection = null;
+		const { display } = selection;
+		// The rectangle is in the overlay's CSS pixels. Re-based on the display rather than
+		// on the overlay, which the OS may have placed a little off its origin, then
+		// validated and clamped to whole physical pixels of that display.
+		const content = selection.win.getContentBounds();
+		selection.win.close();
+		const area = toPhysicalArea(
+			{
+				x: content.x - display.bounds.x + rect?.x,
+				y: content.y - display.bounds.y + rect?.y,
+				width: rect?.width,
+				height: rect?.height,
+			},
+			display.size,
+			display.scaleFactor,
+		);
+		if (!area) {
+			selection.resolve(null);
+			return;
+		}
+		selectedAreaCrop = areaToCropRegion(area, display.size, display.scaleFactor);
+		selection.resolve(
+			await applySelectedSource({
+				...selection.source,
+				name: mainT("common", "recordingSource.area", { width: area.width, height: area.height }),
+			}),
+		);
 	});
 
 	ipcMain.handle("get-selected-source", () => {
@@ -2186,7 +2298,7 @@ export function registerIpcHandlers(
 					cancelId: 1,
 					message: "Screen Recording permission is required",
 					detail:
-						"Allow Capturia in macOS System Settings, then come back and choose a screen or window.",
+						"Allow Capturia in macOS System Settings, then quit and reopen Capturia: macOS reports the change to Capturia only after a fresh launch.",
 				} satisfies Electron.MessageBoxOptions;
 				const result =
 					mainWin && !mainWin.isDestroyed()
@@ -2352,11 +2464,12 @@ export function registerIpcHandlers(
 					typeof request?.recordingId === "number" && Number.isFinite(request.recordingId)
 						? request.recordingId
 						: Date.now();
-				const outputPath = path.join(RECORDINGS_DIR, `${RECORDING_FILE_PREFIX}${recordingId}.mp4`);
+				const takeDir = newTakeDir();
+				const outputPath = path.join(takeDir, `${RECORDING_FILE_PREFIX}${recordingId}.mp4`);
 				const cursorCaptureMode =
 					normalizeCursorCaptureMode(request?.cursor?.mode) ?? "editable-overlay";
 
-				await fs.mkdir(RECORDINGS_DIR, { recursive: true });
+				await fs.mkdir(takeDir, { recursive: true });
 
 				const session = new LinuxNativeCaptureSession({
 					outputPath,
@@ -2430,11 +2543,12 @@ export function registerIpcHandlers(
 					typeof request?.recordingId === "number" && Number.isFinite(request.recordingId)
 						? request.recordingId
 						: Date.now();
-				const outputPath = path.join(RECORDINGS_DIR, `${RECORDING_FILE_PREFIX}${recordingId}.mp4`);
+				const takeDir = newTakeDir();
+				const outputPath = path.join(takeDir, `${RECORDING_FILE_PREFIX}${recordingId}.mp4`);
 				const cursorCaptureMode =
 					normalizeCursorCaptureMode(request?.cursor?.mode) ?? "editable-overlay";
 
-				await fs.mkdir(RECORDINGS_DIR, { recursive: true });
+				await fs.mkdir(takeDir, { recursive: true });
 
 				// A session prepared before the countdown, if there was one. Taking
 				// it here rather than requiring it is what keeps every caller
@@ -2491,9 +2605,7 @@ export function registerIpcHandlers(
 				// "Screen" }`, so the tray confidently displayed the name of a
 				// window the capture had never been told about.
 				linuxNativeCaptureSourceLabel = linuxSourceLabel(session.grantedSourceKind);
-				if (onRecordingStateChange) {
-					onRecordingStateChange(true, linuxNativeCaptureSourceLabel);
-				}
+				reportRecordingState(true, linuxNativeCaptureSourceLabel);
 
 				return { success: true, recordingId, path: outputPath };
 			} catch (error) {
@@ -2534,7 +2646,7 @@ export function registerIpcHandlers(
 		try {
 			if (discard) {
 				session.discard();
-				const discarded = path.join(RECORDINGS_DIR, `${RECORDING_FILE_PREFIX}${recordingId}.mp4`);
+				const discarded = session.outputPath;
 				await Promise.all([
 					fs.rm(discarded, { force: true }),
 					fs.rm(`${discarded}.cursor.json`, { force: true }),
@@ -2564,7 +2676,7 @@ export function registerIpcHandlers(
 			currentProjectPath = null;
 
 			const sessionManifestPath = path.join(
-				RECORDINGS_DIR,
+				path.dirname(result.path),
 				`${path.parse(result.path).name}${RECORDING_SESSION_SUFFIX}`,
 			);
 			await fs.writeFile(sessionManifestPath, JSON.stringify(session_, null, 2), "utf-8");
@@ -2594,9 +2706,7 @@ export function registerIpcHandlers(
 			linuxNativeCaptureCursorMode = "editable-overlay";
 			const stoppedLabel = linuxNativeCaptureSourceLabel ?? linuxSourceLabel();
 			linuxNativeCaptureSourceLabel = null;
-			if (onRecordingStateChange) {
-				onRecordingStateChange(false, stoppedLabel);
-			}
+			reportRecordingState(false, stoppedLabel);
 		}
 	});
 
@@ -2630,9 +2740,10 @@ export function registerIpcHandlers(
 					typeof request.recordingId === "number" && Number.isFinite(request.recordingId)
 						? request.recordingId
 						: Date.now();
-				const outputPath = path.join(RECORDINGS_DIR, `${RECORDING_FILE_PREFIX}${recordingId}.mp4`);
+				const takeDir = newTakeDir();
+				const outputPath = path.join(takeDir, `${RECORDING_FILE_PREFIX}${recordingId}.mp4`);
 				const webcamOutputPath = path.join(
-					RECORDINGS_DIR,
+					takeDir,
 					`${RECORDING_FILE_PREFIX}${recordingId}-webcam.mp4`,
 				);
 				const sourceDisplay =
@@ -2728,7 +2839,7 @@ export function registerIpcHandlers(
 					outputPath,
 				});
 
-				await fs.mkdir(RECORDINGS_DIR, { recursive: true });
+				await fs.mkdir(takeDir, { recursive: true });
 				nativeWindowsCaptureOutput = "";
 				nativeWindowsCaptureTargetPath = outputPath;
 				nativeWindowsCaptureWebcamTargetPath = request.webcam.enabled ? webcamOutputPath : null;
@@ -2780,9 +2891,7 @@ export function registerIpcHandlers(
 				});
 
 				const source = selectedSource || { name: "Screen" };
-				if (onRecordingStateChange) {
-					onRecordingStateChange(true, source.name);
-				}
+				reportRecordingState(true, source.name);
 
 				// Reported at start, not at stop: the helper decides the camera is a
 				// lost cause during its own init — before it announces "Recording
@@ -2855,7 +2964,8 @@ export function registerIpcHandlers(
 				typeof request.recordingId === "number" && Number.isFinite(request.recordingId)
 					? request.recordingId
 					: Date.now();
-			const outputPath = path.join(RECORDINGS_DIR, `${RECORDING_FILE_PREFIX}${recordingId}.mp4`);
+			const takeDir = newTakeDir();
+			const outputPath = path.join(takeDir, `${RECORDING_FILE_PREFIX}${recordingId}.mp4`);
 			const cursorCaptureMode =
 				normalizeCursorCaptureMode(request.cursor?.mode) ?? "editable-overlay";
 			try {
@@ -2909,7 +3019,7 @@ export function registerIpcHandlers(
 				outputs: {
 					screenPath: outputPath,
 					manifestPath: path.join(
-						RECORDINGS_DIR,
+						takeDir,
 						`${RECORDING_FILE_PREFIX}${recordingId}${RECORDING_SESSION_SUFFIX}`,
 					),
 				},
@@ -2925,7 +3035,7 @@ export function registerIpcHandlers(
 				outputPath,
 			});
 
-			await fs.mkdir(RECORDINGS_DIR, { recursive: true });
+			await fs.mkdir(takeDir, { recursive: true });
 			nativeMacCaptureOutput = "";
 			nativeMacCaptureTargetPath = outputPath;
 			nativeMacCaptureRecordingId = recordingId;
@@ -2968,9 +3078,7 @@ export function registerIpcHandlers(
 					: 0;
 
 			const source = selectedSource || { name: "Screen" };
-			if (onRecordingStateChange) {
-				onRecordingStateChange(true, source.name);
-			}
+			reportRecordingState(true, source.name);
 
 			return {
 				success: true,
@@ -3125,9 +3233,7 @@ export function registerIpcHandlers(
 				// leaving the handle set would make every later recording fail
 				// with "already running" against a process nobody can stop.
 				resetNativeWindowsCaptureState();
-				if (onRecordingStateChange) {
-					onRecordingStateChange(false, (selectedSource || { name: "Screen" }).name);
-				}
+				reportRecordingState(false, (selectedSource || { name: "Screen" }).name);
 			}
 		}
 
@@ -3257,7 +3363,7 @@ export function registerIpcHandlers(
 			currentProjectPath = null;
 
 			const sessionManifestPath = path.join(
-				RECORDINGS_DIR,
+				path.dirname(screenVideoPath),
 				`${path.parse(screenVideoPath).name}${RECORDING_SESSION_SUFFIX}`,
 			);
 			await fs.writeFile(sessionManifestPath, JSON.stringify(session, null, 2), "utf-8");
@@ -3287,9 +3393,7 @@ export function registerIpcHandlers(
 		} finally {
 			resetNativeWindowsCaptureState();
 			const source = selectedSource || { name: "Screen" };
-			if (onRecordingStateChange) {
-				onRecordingStateChange(false, source.name);
-			}
+			reportRecordingState(false, source.name);
 		}
 	});
 
@@ -3346,7 +3450,7 @@ export function registerIpcHandlers(
 			currentProjectPath = null;
 
 			const sessionManifestPath = path.join(
-				RECORDINGS_DIR,
+				path.dirname(screenVideoPath),
 				`${path.parse(screenVideoPath).name}${RECORDING_SESSION_SUFFIX}`,
 			);
 			await fs.writeFile(sessionManifestPath, JSON.stringify(session, null, 2), "utf-8");
@@ -3374,9 +3478,7 @@ export function registerIpcHandlers(
 			nativeMacIsPaused = false;
 			activeMacCaptureBounds = null;
 			const source = selectedSource || { name: "Screen" };
-			if (onRecordingStateChange) {
-				onRecordingStateChange(false, source.name);
-			}
+			reportRecordingState(false, source.name);
 		}
 	});
 
@@ -3386,6 +3488,12 @@ export function registerIpcHandlers(
 	// finalize through the same registry.
 	const recordingStreams = new RecordingStreamRegistry();
 	registerRecordingStreamHandlers(ipcMain, recordingStreams, resolveRecordingOutputPath);
+
+	/** A take file's path at stop: where its stream was opened, if it streamed — never
+	 *  re-resolved, see `pathOf` — else a fresh resolve for the buffered bytes about to be
+	 *  written, beside `takeDir` when the take's own folder is already known. */
+	const takeFilePath = (fileName: string, takeDir?: string) =>
+		recordingStreams.pathOf(fileName) ?? resolveRecordingOutputPath(fileName, takeDir);
 
 	/**
 	 * Writes a browser-recorded webcam clip next to a natively-recorded screen
@@ -3407,7 +3515,7 @@ export function registerIpcHandlers(
 		try {
 			{
 				const screenVideoPath = normalizeVideoSourcePath(payload.screenVideoPath);
-				if (!screenVideoPath || !isPathWithinDir(screenVideoPath, RECORDINGS_DIR)) {
+				if (!screenVideoPath || !isWithinRecordingRoots(screenVideoPath)) {
 					return {
 						success: false,
 						error: `Native ${platformLabel} webcam attachment requires a recording output path.`,
@@ -3423,7 +3531,10 @@ export function registerIpcHandlers(
 					};
 				}
 
-				const webcamVideoPath = resolveRecordingOutputPath(payload.webcam.fileName);
+				const webcamVideoPath = takeFilePath(
+					payload.webcam.fileName,
+					path.dirname(screenVideoPath),
+				);
 				// A streamed webcam arrives with an empty buffer: its bytes are already on
 				// disk, so close the stream and keep the file rather than writing it here.
 				// Nothing multi-gigabyte crosses IPC or gets flattened into one Buffer (#253).
@@ -3469,7 +3580,7 @@ export function registerIpcHandlers(
 				currentProjectPath = null;
 
 				const sessionManifestPath = path.join(
-					RECORDINGS_DIR,
+					path.dirname(screenVideoPath),
 					`${path.parse(screenVideoPath).name}${RECORDING_SESSION_SUFFIX}`,
 				);
 				await fs.writeFile(sessionManifestPath, JSON.stringify(session, null, 2), "utf-8");
@@ -3534,7 +3645,7 @@ export function registerIpcHandlers(
 				? payload.createdAt
 				: Date.now();
 		const cursorCaptureMode = normalizeCursorCaptureMode(payload.cursorCaptureMode);
-		const screenVideoPath = resolveRecordingOutputPath(payload.screen.fileName);
+		const screenVideoPath = takeFilePath(payload.screen.fileName);
 		const screenStreamed = await finalizeRecordingFile(
 			recordingStreams,
 			payload.screen.fileName,
@@ -3545,7 +3656,7 @@ export function registerIpcHandlers(
 		let webcamVideoPath: string | undefined;
 		let webcamStreamed = false;
 		if (payload.webcam) {
-			webcamVideoPath = resolveRecordingOutputPath(payload.webcam.fileName);
+			webcamVideoPath = takeFilePath(payload.webcam.fileName, path.dirname(screenVideoPath));
 			webcamStreamed = await finalizeRecordingFile(
 				recordingStreams,
 				payload.webcam.fileName,
@@ -3622,7 +3733,7 @@ export function registerIpcHandlers(
 		currentProjectPath = null;
 
 		const sessionManifestPath = path.join(
-			RECORDINGS_DIR,
+			path.dirname(screenVideoPath),
 			`${path.parse(payload.screen.fileName).name}${RECORDING_SESSION_SUFFIX}`,
 		);
 		await fs.writeFile(sessionManifestPath, JSON.stringify(session, null, 2), "utf-8");
@@ -3690,7 +3801,7 @@ export function registerIpcHandlers(
 	// native paths, and a marker that disagreed with the file's own clock would
 	// send the user to the wrong frame.
 	ipcMain.handle("write-recording-markers", async (_, videoPath: unknown, markers: unknown) => {
-		if (typeof videoPath !== "string" || !isPathWithinDir(videoPath, RECORDINGS_DIR)) {
+		if (typeof videoPath !== "string" || !isWithinRecordingRoots(videoPath)) {
 			return { success: false, error: "Refusing to write markers outside the recordings dir." };
 		}
 		try {
@@ -3715,8 +3826,9 @@ export function registerIpcHandlers(
 		return { success: true, markers: await readRecordingMarkers(approved) };
 	});
 
-	// Free space on the recordings volume, asked for right before a recording
-	// starts. None of the three capture helpers watches for a full disk: they
+	// Free space on the volume the next take will be written to (the chosen folder's
+	// drive when there is one), asked for right before a recording starts. None of the
+	// three capture helpers watches for a full disk: they
 	// hand frames to their muxer and never inspect a write error, so a volume
 	// that fills mid-take leaves a file truncated wherever the writer was — on
 	// the native path an MP4 with no `moov` box, which opens nowhere. The HUD
@@ -3724,7 +3836,7 @@ export function registerIpcHandlers(
 	// left to make (`src/lib/recordingDiskSpace.ts` holds the thresholds).
 	ipcMain.handle("get-recordings-disk-space", async () => {
 		try {
-			const stats = await fs.statfs(RECORDINGS_DIR);
+			const stats = await fs.statfs(newTakeDir());
 			const blockSize = Number(stats.bsize);
 			// `bavail` is what an unprivileged process may use, which is what
 			// matters here: `bfree` includes the root reserve the recorder can
@@ -3741,6 +3853,85 @@ export function registerIpcHandlers(
 		}
 	});
 
+	// Settings → "Save recordings to". `available` is false when the chosen folder cannot take a
+	// new recording right now, in which case `newTakeDir` is already falling back to the default.
+	const recordingsFolderState = () => ({
+		folder: chosenRecordingsFolder ?? RECORDINGS_DIR,
+		isDefault: chosenRecordingsFolder === null,
+		available:
+			chosenRecordingsFolder === null ||
+			validRecordingsFolder(chosenRecordingsFolder, { writable: true }) !== null,
+	});
+
+	// Refused mid-take, checked again once a picker returns: a dialog opened before a tray or
+	// hotkey start can be answered after it, and a take's later writes (markers, the webcam
+	// attach, the editor's reads) are confined to the folders that were roots when it began.
+	const persistRecordingsFolder = (folder: string | null) => {
+		if (takeInProgress) return recordingsFolderState();
+		try {
+			saveRecordingsFolder(app.getPath("userData"), folder);
+			chosenRecordingsFolder = folder;
+		} catch (error) {
+			console.error("Failed to save the recordings folder:", error);
+		}
+		return recordingsFolderState();
+	};
+
+	const showRecordingsFolderMessage = (options: Electron.MessageBoxOptions) => {
+		const mainWin = getMainWindow();
+		return mainWin && !mainWin.isDestroyed()
+			? dialog.showMessageBox(mainWin, options)
+			: dialog.showMessageBox(options);
+	};
+
+	ipcMain.handle("get-recordings-folder", () => recordingsFolderState());
+
+	// The path comes from the OS folder picker, never from the renderer.
+	ipcMain.handle("choose-recordings-folder", async () => {
+		if (takeInProgress) return recordingsFolderState();
+		const result = await dialog.showOpenDialog(
+			buildDialogOptions(
+				{
+					title: mainT("dialogs", "fileDialogs.selectRecordingsFolder"),
+					defaultPath: newTakeDir(),
+					properties: ["openDirectory", "createDirectory"],
+				},
+				getMainWindow(),
+			),
+		);
+		const picked = result.canceled ? undefined : result.filePaths[0];
+		if (!picked) return recordingsFolderState();
+		const folder = validRecordingsFolder(picked, { writable: true });
+		if (!folder) {
+			await showRecordingsFolderMessage({
+				type: "error",
+				message: mainT("dialogs", "recordingsFolder.unavailable", { folder: picked }),
+			});
+			return recordingsFolderState();
+		}
+		return persistRecordingsFolder(folder);
+	});
+
+	ipcMain.handle("reset-recordings-folder", () => persistRecordingsFolder(null));
+
+	// Asked by the recorder right before a take starts, beside the disk check: never mid-take.
+	// A folder that was fine when picked can be gone by now (a drive unplugged, a permission
+	// revoked), and the take would then land in the default folder without a word. This is
+	// where the user hears about it, while nothing has been recorded yet.
+	ipcMain.handle("confirm-recordings-folder", async () => {
+		if (recordingsFolderState().available) return true;
+		const result = await showRecordingsFolderMessage({
+			type: "warning",
+			buttons: [mainT("dialogs", "recordingsFolder.useDefault"), mainT("common", "actions.cancel")],
+			defaultId: 0,
+			cancelId: 1,
+			message: mainT("dialogs", "recordingsFolder.unavailable", {
+				folder: chosenRecordingsFolder ?? "",
+			}),
+		});
+		return result.response === 0;
+	});
+
 	ipcMain.handle(
 		"set-recording-state",
 		async (_, recording: boolean, recordingId?: number, cursorCaptureMode?: CursorCaptureMode) => {
@@ -3753,9 +3944,7 @@ export function registerIpcHandlers(
 			}
 
 			const source = selectedSource || { name: "Screen" };
-			if (onRecordingStateChange) {
-				onRecordingStateChange(recording, source.name);
-			}
+			reportRecordingState(recording, source.name);
 		},
 	);
 
@@ -3916,7 +4105,7 @@ export function registerIpcHandlers(
 			const dialogOptions = buildDialogOptions(
 				{
 					title: mainT("dialogs", "fileDialogs.selectVideo"),
-					defaultPath: RECORDINGS_DIR,
+					defaultPath: newTakeDir(),
 					filters: [
 						{
 							name: mainT("dialogs", "fileDialogs.videoFiles"),
@@ -4137,6 +4326,18 @@ export function registerIpcHandlers(
 				// draws no waveform, which is correct, and logs its own warning.
 				return { success: false, message: String(error) };
 			}
+		},
+	);
+
+	// Poster frame for a media card (see media/posterFrames). Null keeps the
+	// card's placeholder: no ffmpeg, a missing file, or nothing decodable.
+	ipcMain.handle(
+		"get-media-poster",
+		async (_, filePath: string, atSec: number): Promise<string | null> => {
+			// Same approval gate as every other read of a renderer-supplied path.
+			const normalizedPath = readableApprovedPath(filePath);
+			if (!normalizedPath) return null;
+			return getPosterFrame(normalizedPath, Number.isFinite(atSec) ? atSec : 0).catch(() => null);
 		},
 	);
 
@@ -4450,7 +4651,18 @@ export function registerIpcHandlers(
 
 	ipcMain.handle("set-current-recording-session", (_, session: RecordingSession | null) => {
 		const normalizedSession = normalizeRecordingSession(session);
-		setCurrentRecordingSessionState(normalizedSession);
+		// The recorder's hand-off to the editor, so this is where an area pick joins the take
+		// it framed: the editor opens the clip already cropped to it.
+		//
+		// ponytail: the whole display is recorded and the area is only a crop, so the file
+		// stays full-size (which is also what lets the crop be widened later). Cropping at
+		// capture time -- a source rect for WGC / ScreenCaptureKit / the PipeWire helper --
+		// is the upgrade path if file size matters.
+		setCurrentRecordingSessionState(
+			normalizedSession && selectedAreaCrop
+				? { ...normalizedSession, cropRegion: selectedAreaCrop }
+				: normalizedSession,
+		);
 		currentVideoPath = normalizedSession?.screenVideoPath ?? null;
 		currentProjectPath = null;
 		return { success: true, session: currentRecordingSession };
@@ -4587,6 +4799,25 @@ export function registerIpcHandlers(
 		RECORDINGS_DIR,
 		approveDocumentMedia,
 	);
+
+	// Poster frame for a row of the project list. Keyed on the project id, not a
+	// path: the list shows projects that are not open, whose media was never
+	// approved, and approving it all just to draw thumbnails would widen every
+	// generic read. The path comes from the project's own file instead — the same
+	// trust `approveDocumentMedia` extends to a loaded document, and under the same
+	// extension gate — and only a thumbnail of it ever leaves this handler.
+	ipcMain.handle("get-project-poster", async (_, projectId: string): Promise<string | null> => {
+		try {
+			const source = await aiEditionDocuments.posterSource(projectId);
+			const media = normalizeVideoSourcePath(source?.path);
+			if (!source || !media || !path.isAbsolute(media) || !hasAllowedImportVideoExtension(media)) {
+				return null;
+			}
+			return await getPosterFrame(media, source.atSec);
+		} catch {
+			return null;
+		}
+	});
 
 	// LlmConfigStore is single-instance for a duller reason — its constructor does
 	// two sync readFileSync plus a safeStorage decrypt, and it was running on every

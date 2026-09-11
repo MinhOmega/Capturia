@@ -87,6 +87,11 @@
 		"videoFiles": "影片檔案",
 		"audioFiles": "音訊檔案",
 		"openscreenProject": "Capturia 專案",
-		"allFiles": "所有檔案"
+		"allFiles": "所有檔案",
+		"selectRecordingsFolder": "選擇錄製資料夾"
+	},
+	"recordingsFolder": {
+		"unavailable": "Capturia 無法將錄製內容儲存到 {{folder}}。磁碟機可能已中斷連線，或 Capturia 沒有寫入權限。",
+		"useDefault": "錄製到預設資料夾"
 	}
 }

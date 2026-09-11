@@ -10,7 +10,8 @@
 		"addAnnotation": "Ajouter une annotation (A)",
 		"addSpeed": "Ajouter une vitesse (S)",
 		"addCameraFullscreen": "Ajouter Caméra plein écran (C)",
-		"splitAtPlayhead": "Couper le clip à la tête de lecture"
+		"splitAtPlayhead": "Couper le clip à la tête de lecture",
+		"pasteAtPlayhead": "Coller à la tête de lecture"
 	},
 	"hints": {
 		"pressZoom": "Appuyez sur Z pour ajouter un zoom",
@@ -66,6 +67,11 @@
 		"autoEnhance": "Amélioration auto",
 		"automaticZooms": "Zooms automatiques",
 		"automaticZoomsHint": "Basé sur le mouvement du curseur enregistré",
+		"flaggedZooms": "Zooms aux instants marqués",
+		"flaggedZoomsHint": "Un zoom par marque posée pendant l’enregistrement",
+		"flaggedZoomsNoFlags": "Aucune marque — utilisez « {{button}} » pendant l’enregistrement",
+		"flagZoomsCovered": "Déjà couverts : {{count}}",
+		"flagZoomsTrimmed": "Dans une coupe : {{count}}",
 		"smartZoomsAndCuts": "Coupes intelligentes",
 		"smartZoomsAndCutsHint": "Avec l'IA",
 		"roughCut": "Supprimer les temps morts",

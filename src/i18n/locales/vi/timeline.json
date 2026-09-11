@@ -10,7 +10,8 @@
 		"addAnnotation": "Thêm Chú thích (A)",
 		"addSpeed": "Thêm Tốc độ (S)",
 		"addCameraFullscreen": "Thêm Camera Toàn màn hình (C)",
-		"splitAtPlayhead": "Cắt clip tại đầu phát"
+		"splitAtPlayhead": "Cắt clip tại đầu phát",
+		"pasteAtPlayhead": "Dán tại đầu phát"
 	},
 	"hints": {
 		"pressZoom": "Nhấn Z để thêm thu phóng",
@@ -66,6 +67,11 @@
 		"autoEnhance": "Tự động nâng cao",
 		"automaticZooms": "Thu phóng tự động",
 		"automaticZoomsHint": "Từ chuyển động con trỏ đã ghi",
+		"flaggedZooms": "Thu phóng tại các khoảnh khắc đã đánh dấu",
+		"flaggedZoomsHint": "Một lần thu phóng cho mỗi dấu đặt khi quay",
+		"flaggedZoomsNoFlags": "Chưa có dấu nào — dùng “{{button}}” khi đang quay",
+		"flagZoomsCovered": "Đã có thu phóng: {{count}}",
+		"flagZoomsTrimmed": "Nằm trong đoạn cắt: {{count}}",
 		"smartZoomsAndCuts": "Cắt thông minh",
 		"smartZoomsAndCutsHint": "Với AI",
 		"roughCut": "Cắt khoảng lặng",

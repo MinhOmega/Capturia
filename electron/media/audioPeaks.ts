@@ -264,9 +264,10 @@ async function decodePeaks(
 /**
  * Cache key: path plus size plus mtime. A recording is immutable in practice,
  * but keying on identity alone would serve stale peaks for a re-encoded or
- * replaced file, and that failure is silent and confusing.
+ * replaced file, and that failure is silent and confusing. Shared with the poster
+ * cache (`posterFrames.ts`), which has the same staleness problem.
  */
-async function cacheKey(filePath: string): Promise<string> {
+export async function cacheKey(filePath: string): Promise<string> {
 	const info = await stat(filePath);
 	return createHash("sha1")
 		.update(`${filePath}:${info.size}:${info.mtimeMs}`)

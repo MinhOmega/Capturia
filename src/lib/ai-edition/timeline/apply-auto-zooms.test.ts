@@ -5,6 +5,7 @@ import {
 	appendAutoZoomSuggestions,
 	collectAutoZoomSuggestionsForDocument,
 	collectAutoZoomSuggestionsForLatestDocument,
+	collectFlagZoomSuggestionsForLatestDocument,
 } from "./apply-auto-zooms";
 
 function dwell(
@@ -158,5 +159,108 @@ describe("collectAutoZoomSuggestionsForLatestDocument", () => {
 		const getTelemetry = vi.fn(async () => telemetry);
 		expect(await collectAutoZoomSuggestionsForLatestDocument(() => null, getTelemetry)).toBeNull();
 		expect(getTelemetry).not.toHaveBeenCalled();
+	});
+});
+
+describe("collectFlagZoomSuggestionsForLatestDocument", () => {
+	it("zooms a normal flag and counts the covered and trimmed ones it skips", async () => {
+		// A zoom already sits over 6s, and a cut removes 11-13s.
+		const withZoom = appendAutoZoomSuggestions(documentWithClip(20), [
+			{ span: { start: 5500, end: 6500 }, focus: { cx: 0.5, cy: 0.5 } },
+		]);
+		const document: AxcutDocument = {
+			...withZoom,
+			timeline: {
+				...withZoom.timeline,
+				trimRanges: [
+					{
+						id: "trim_1",
+						assetId: "asset_1",
+						startSec: 11,
+						endSec: 13,
+						reason: "",
+						origin: "user",
+					},
+				],
+			},
+		};
+		const paths: string[] = [];
+
+		const out = await collectFlagZoomSuggestionsForLatestDocument(
+			() => document,
+			async (videoPath) => {
+				paths.push(videoPath);
+				return dwell(2000, 0.25, 0.75);
+			},
+			[2000, 6000, 12000], // normal, covered, trimmed
+		);
+
+		expect(paths).toEqual(["C:\\recordings\\rec.mp4"]);
+		expect(out?.covered).toBe(1);
+		expect(out?.trimmed).toBe(1);
+		const [zoom] = out?.suggestions ?? [];
+		expect(out?.suggestions).toHaveLength(1);
+		// Starts slightly before the flag and is held past it.
+		expect(zoom.span.start).toBeGreaterThan(1000);
+		expect(zoom.span.start).toBeLessThan(2000);
+		expect(zoom.span.end).toBeGreaterThan(2000);
+		expect(zoom.depth).toBe(3);
+		// Focused where the pointer was at that instant.
+		expect(zoom.focus.cx).toBeCloseTo(0.25, 5);
+		expect(zoom.focus.cy).toBeCloseTo(0.75, 5);
+	});
+
+	// A recorded area is a crop over the whole display. A detected dwell outside it is
+	// dropped (zoom-suggestions.test.ts), but a flag is the user asking for a zoom: it
+	// keeps its zoom, focused at the nearest point of the crop.
+	it("keeps a flag outside a cropped clip's area and clamps its focus into the crop", async () => {
+		const base = documentWithClip(20);
+		const document: AxcutDocument = {
+			...base,
+			timeline: {
+				...base.timeline,
+				clips: base.timeline.clips.map((clip) => ({
+					...clip,
+					cropRegion: { x: 0.5, y: 0, width: 0.5, height: 0.5 },
+				})),
+			},
+		};
+
+		const out = await collectFlagZoomSuggestionsForLatestDocument(
+			() => document,
+			async () => [...dwell(2000, 0.25, 0.75), ...dwell(6000, 0.75, 0.25)],
+			[2000, 6000], // outside the crop, inside it
+		);
+
+		expect(out?.suggestions.map((zoom) => zoom.focus)).toEqual([
+			{ cx: 0, cy: 1 },
+			{ cx: 0.5, cy: 0.5 },
+		]);
+		expect(out?.covered).toBe(0);
+	});
+
+	// A system-cursor take has no telemetry, so a flag falls back to the centre -- of the
+	// AREA. The full frame's centre, mapped through a top-left-quarter crop, lands on the
+	// area's bottom-right corner.
+	it("centres a flag with no telemetry on a cropped clip's area, not the frame", async () => {
+		const base = documentWithClip(20);
+		const document: AxcutDocument = {
+			...base,
+			timeline: {
+				...base.timeline,
+				clips: base.timeline.clips.map((clip) => ({
+					...clip,
+					cropRegion: { x: 0, y: 0, width: 0.5, height: 0.5 },
+				})),
+			},
+		};
+
+		const out = await collectFlagZoomSuggestionsForLatestDocument(
+			() => document,
+			async () => [],
+			[2000],
+		);
+
+		expect(out?.suggestions.map((zoom) => zoom.focus)).toEqual([{ cx: 0.5, cy: 0.5 }]);
 	});
 });

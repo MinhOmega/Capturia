@@ -241,6 +241,17 @@
 		"title": "Disposición de cámara",
 		"noWebcam": "Sin cámara"
 	},
+	"looks": {
+		"title": "Estilos guardados",
+		"empty": "Aún no hay estilos guardados.",
+		"saveAs": "Guardar estilo como predefinido…",
+		"namePlaceholder": "Nombre del predefinido",
+		"includeAspectRatio": "Incluir formato (relación de aspecto)",
+		"defaultForNew": "Predeterminado para proyectos nuevos",
+		"rename": "Cambiar nombre",
+		"missingAsset": "Una imagen o un cursor de este estilo ya no está disponible, así que se restableció el valor predeterminado.",
+		"saveFailed": "No se pudo guardar el estilo. Puede que una imagen de fondo personalizada sea demasiado grande para almacenarla."
+	},
 	"textAnimation": {
 		"slideLeft": "Deslizar izquierda",
 		"pulse": "Pulso",
