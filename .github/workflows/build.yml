@@ -853,7 +853,30 @@ jobs:
           # deployment too. The rc walk-down above handles a skipped RC; nothing
           # handled a skipped stable, and it does not run at all for an rc.1.
           if ! git rev-parse -q --verify "refs/tags/${NOTES_START_TAG}" >/dev/null; then
-            # The nearest tag reachable from the release commit's parent, which
+            # First, the newest release tag of any LOWER version, RCs included.
+            # `git describe` alone is not enough: 2.0.0 shipped only RCs, cut on
+            # the frozen release/v2.0.0 branch, so no release tag is reachable
+            # from main and v2.1.0-rc.1 got the whole history, upstream's too --
+            # a body GitHub rejected as over 125000 characters. A non-ancestor
+            # tag is still a valid start: `git log A..B` and --notes-start-tag
+            # both work through reachability and the merge-base. Tags are walked
+            # newest-version first (versionsort.suffix puts v2.0.0 above
+            # v2.0.0-rc.3, where plain `sort -V` gets it backwards), a higher
+            # line is skipped by the numeric compare (v1.9.4-rc.1 must land on
+            # v1.9.3-rc.1, not v1.11.0), and the current line is never a
+            # candidate: its RCs are the walk-down's business. v0.0.0-* tags
+            # pin vendored binaries and are not releases.
+            NOTES_START_TAG=""
+            while read -r CANDIDATE; do
+              [[ "$CANDIDATE" == v0.0.0-* ]] && continue
+              [[ "$CANDIDATE" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)(-(rc|beta|alpha)\.[0-9]+)?$ ]] || continue
+              CX="${BASH_REMATCH[1]}" CY="${BASH_REMATCH[2]}" CZ="${BASH_REMATCH[3]}"
+              if (( CX < PX || (CX == PX && (CY < PY || (CY == PY && CZ < PZ))) )); then
+                NOTES_START_TAG="$CANDIDATE"
+                break
+              fi
+            done < <(git -c versionsort.suffix=- tag --list 'v*' --sort=-v:refname)
+            # Then the nearest tag reachable from the release commit's parent, which
             # is what "since the last release" meant in the first place. Left
             # EMPTY when no tag is reachable at all, rather than filled with the
             # root commit: the stable path hands this to `gh release create
@@ -861,7 +884,9 @@ jobs:
             # a tag NAME -- a commit SHA there is not a lenient fallback, it is
             # an invalid argument. Each consumer below decides what "no previous
             # release" means for it.
-            NOTES_START_TAG="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
+            if [[ -z "$NOTES_START_TAG" ]]; then
+              NOTES_START_TAG="$(git describe --tags --abbrev=0 "${TAG}^" 2>/dev/null || true)"
+            fi
             echo "Previous-release tag did not exist; using ${NOTES_START_TAG:-<none>}"
           fi
           echo "Computed notes_start_tag=${NOTES_START_TAG} for tag=${TAG}"
@@ -962,6 +987,17 @@ jobs:
                 echo
                 echo "$RC_LINK"
               } > "${RUNNER_TEMP}/rc-notes.md"
+              # GitHub rejects a release body over 125000 characters with a 422,
+              # after every platform has built. Cut at a line boundary with room
+              # to spare and point at the full range instead. Bytes are counted,
+              # which is never fewer than characters, so the cut is always safe.
+              # Only this composed body needs it: the stable path's
+              # --generate-notes is built server-side by GitHub.
+              if (( $(wc -c < "${RUNNER_TEMP}/rc-notes.md") > 120000 )); then
+                head -c 120000 "${RUNNER_TEMP}/rc-notes.md" | sed '$d' > "${RUNNER_TEMP}/rc-notes.cut"
+                echo "$RC_LINK (list truncated to fit GitHub's release body limit)" >> "${RUNNER_TEMP}/rc-notes.cut"
+                mv "${RUNNER_TEMP}/rc-notes.cut" "${RUNNER_TEMP}/rc-notes.md"
+              fi
               cat "${RUNNER_TEMP}/rc-notes.md"
               NOTES_ARGS=(--notes-file "${RUNNER_TEMP}/rc-notes.md")
             else
