@@ -1459,6 +1459,14 @@ impl VaapiEncoder {
         // cette frame mappe le dmabuf du slot : tant qu'elle vit, l'encodeur peut
         // encore lire cette memoire. L'appelant la garde et ne la relache — donc
         // ne recycle le slot — qu'apres avoir draine le paquet correspondant.
+        //
+        // Sauf si l'envoi a echoue : l'encodeur n'en a alors rien pris, et la
+        // frame perdue garderait en vie jusqu'a la fin du processus la surface
+        // VA qui importe le dmabuf, les deux contextes de frames et le device.
+        if r.is_err() {
+            let mut d = dst;
+            av_frame_free(&mut d);
+        }
         r.map(|()| dst)
     }
 
