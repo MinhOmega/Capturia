@@ -161,8 +161,13 @@ export async function applyPendingFreshRecordingAutoZooms(
 	if (markDecoratedIfZoomed(start)) return start;
 	if (!canApplyFreshRecordingAutoZooms(start)) return start;
 
+	// `getRecordingData`, not `getTelemetry`, for the same reason as the wand and the
+	// CLI's --auto-zoom: the telemetry projection drops `interactionType`, and the
+	// suggester frames clicks tighter than dwells. One feature, one reading of the take.
 	const inner =
-		deps.getTelemetry ?? ((videoPath: string) => nativeBridgeClient.cursor.getTelemetry(videoPath));
+		deps.getTelemetry ??
+		(async (videoPath: string) =>
+			(await nativeBridgeClient.cursor.getRecordingData(videoPath))?.samples ?? []);
 	let telemetryFailed = false;
 	const getTelemetry = async (videoPath: string) => {
 		try {

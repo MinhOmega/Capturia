@@ -20,12 +20,12 @@ const bridge = vi.hoisted(() => ({
 	create: vi.fn(),
 	addAsset: vi.fn(),
 	save: vi.fn(),
-	getTelemetry: vi.fn(async () => []),
+	getRecordingData: vi.fn(async () => ({ samples: [] })),
 }));
 vi.mock("@/native/client", () => ({
 	nativeBridgeClient: {
 		aiEdition: bridge,
-		cursor: { getTelemetry: bridge.getTelemetry },
+		cursor: { getRecordingData: bridge.getRecordingData },
 	},
 }));
 
