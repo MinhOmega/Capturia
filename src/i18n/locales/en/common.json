@@ -75,6 +75,7 @@
 		"window": "Window",
 		"screen": "Screen",
 		"virtual": "Virtual display",
+		"area": "Area {{width}} × {{height}}",
 		"unknown": "Screen recording"
 	}
 }

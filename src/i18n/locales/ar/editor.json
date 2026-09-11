@@ -115,6 +115,7 @@
 		"cursorHighlight": "إبراز المؤشر",
 		"autoZoom": "تكبير تلقائي بعد التسجيل",
 		"autoZoomNeedsEditableCursor": "التكبير التلقائي يحتاج إلى المؤشر القابل للتحرير. بدّل وضع المؤشر للتفعيل.",
+		"drawArea": "رسم منطقة بعد التسجيل",
 		"on": "تشغيل",
 		"off": "إيقاف",
 		"loading": "جارٍ التحميل...",
@@ -129,6 +130,7 @@
 		"sourceModal": {
 			"screens": "الشاشات ({{count}})",
 			"windows": "النوافذ ({{count}})",
+			"area": "منطقة",
 			"loadingSources": "جارٍ تحميل المصادر...",
 			"noScreensFound": "لم يتم العثور على شاشات",
 			"noWindowsFound": "لم يتم العثور على نوافذ",

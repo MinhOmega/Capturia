@@ -75,6 +75,7 @@
 		"window": "Finestra",
 		"screen": "Schermo",
 		"virtual": "Schermo virtuale",
+		"area": "Zona {{width}} × {{height}}",
 		"unknown": "Registrazione schermo"
 	}
 }

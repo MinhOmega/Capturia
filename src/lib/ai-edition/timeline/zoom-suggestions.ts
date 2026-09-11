@@ -421,8 +421,10 @@ export function buildAutoZoomSuggestions(options: {
 	totalMs: number;
 	existingRegions: { startMs: number; endMs: number }[];
 	defaultDurationMs: number;
+	/** The clip's crop, in fractions of the frame. See `placeZoomCandidates`. */
+	crop?: { x: number; y: number; width: number; height: number };
 }): AutoZoomSuggestion[] {
-	const { cursorTelemetry, totalMs, existingRegions, defaultDurationMs } = options;
+	const { cursorTelemetry, totalMs, existingRegions, defaultDurationMs, crop } = options;
 	if (totalMs <= 0 || cursorTelemetry.length < 2) {
 		return [];
 	}
@@ -441,6 +443,7 @@ export function buildAutoZoomSuggestions(options: {
 		totalMs,
 		existingRegions,
 		defaultDurationMs: defaultDuration,
+		crop,
 	});
 }
 
@@ -457,9 +460,18 @@ function placeZoomCandidates(
 		existingRegions: { startMs: number; endMs: number }[];
 		/** Width for a candidate that carries no `spanMs` of its own. */
 		defaultDurationMs: number;
+		/**
+		 * The clip's crop, in fractions of the frame. Telemetry is full-frame, a zoom's focus
+		 * is a fraction of the crop (the compositor's `screen_source_rect`), so every focus is
+		 * mapped into it. What falls outside is not in the picture: a detected moment there is
+		 * dropped, which keeps a recorded area's zooms inside the area -- but a flag is the
+		 * user asking for a zoom at that moment, so it keeps its zoom, focused at the
+		 * nearest point of the crop.
+		 */
+		crop?: { x: number; y: number; width: number; height: number };
 	},
 ): AutoZoomSuggestion[] {
-	const { totalMs, existingRegions, defaultDurationMs: defaultDuration } = options;
+	const { totalMs, existingRegions, defaultDurationMs: defaultDuration, crop } = options;
 	const reservedSpans = existingRegions
 		.map((region) => ({ start: region.startMs, end: region.endMs }))
 		.sort((a, b) => a.start - b.start);
@@ -468,6 +480,18 @@ function placeZoomCandidates(
 	const suggestions: AutoZoomSuggestion[] = [];
 
 	for (const candidate of candidates) {
+		// Before spacing, so a moment outside the crop cannot crowd out one inside it.
+		let focus = crop
+			? {
+					cx: (candidate.focus.cx - crop.x) / crop.width,
+					cy: (candidate.focus.cy - crop.y) / crop.height,
+				}
+			: candidate.focus;
+		if (!(focus.cx >= 0 && focus.cx <= 1 && focus.cy >= 0 && focus.cy <= 1)) {
+			if (candidate.reason !== "flag") continue;
+			focus = { cx: clamp01(focus.cx), cy: clamp01(focus.cy) };
+		}
+
 		const tooCloseToAccepted = acceptedCenters.some(
 			(center) => Math.abs(center - candidate.centerTimeMs) < SUGGESTION_SPACING_MS,
 		);
@@ -500,7 +524,7 @@ function placeZoomCandidates(
 		acceptedCenters.push(candidate.centerTimeMs);
 		suggestions.push({
 			span: { start: candidateStart, end: candidateEnd },
-			focus: candidate.focus,
+			focus,
 			depth: candidate.depth,
 			reason: candidate.reason,
 		});
@@ -559,7 +583,7 @@ export function buildAutoZoomSuggestionsForClips(options: {
 	return clips.flatMap((clip) =>
 		clip.assetId !== assetId
 			? []
-			: placeInClip(clip, existingRegions, (sourceOffsetMs, windowMs, clipRegions) =>
+			: placeInClip(clip, existingRegions, (sourceOffsetMs, windowMs, clipRegions, crop) =>
 					buildAutoZoomSuggestions({
 						cursorTelemetry: cursorTelemetry
 							.filter(
@@ -570,6 +594,7 @@ export function buildAutoZoomSuggestionsForClips(options: {
 						totalMs: windowMs,
 						existingRegions: clipRegions,
 						defaultDurationMs,
+						crop,
 					}),
 				),
 	);
@@ -588,6 +613,7 @@ function placeInClip(
 		sourceOffsetMs: number,
 		windowMs: number,
 		clipRegions: { startMs: number; endMs: number }[],
+		crop: AxcutClip["cropRegion"],
 	) => AutoZoomSuggestion[],
 ): AutoZoomSuggestion[] {
 	const sourceEndSec = clip.sourceEndSec ?? clip.sourceStartSec;
@@ -599,7 +625,7 @@ function placeInClip(
 		startMs: region.startMs - timelineOffsetMs,
 		endMs: region.endMs - timelineOffsetMs,
 	}));
-	return place(sourceOffsetMs, windowMs, clipRegions).map((suggestion) => ({
+	return place(sourceOffsetMs, windowMs, clipRegions, clip.cropRegion).map((suggestion) => ({
 		...suggestion,
 		span: {
 			start: suggestion.span.start + timelineOffsetMs,
@@ -638,7 +664,7 @@ export function buildFlagZoomSuggestions(options: {
 	const suggestions = clips.flatMap((clip) => {
 		const flags = live.filter((marker) => marker.clipId === clip.id);
 		if (flags.length === 0) return [];
-		return placeInClip(clip, existingRegions, (sourceOffsetMs, windowMs, clipRegions) =>
+		return placeInClip(clip, existingRegions, (sourceOffsetMs, windowMs, clipRegions, crop) =>
 			placeZoomCandidates(
 				flags.map((marker): ZoomCandidate => {
 					const atMs = marker.sourceSec * 1000 - sourceOffsetMs;
@@ -652,7 +678,7 @@ export function buildFlagZoomSuggestions(options: {
 					};
 				}),
 				// Every flag carries its own span, so there is no default width to fall back on.
-				{ totalMs: windowMs, existingRegions: clipRegions, defaultDurationMs: 0 },
+				{ totalMs: windowMs, existingRegions: clipRegions, defaultDurationMs: 0, crop },
 			),
 		);
 	});

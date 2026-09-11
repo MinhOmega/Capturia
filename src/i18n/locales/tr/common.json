@@ -75,6 +75,7 @@
 		"window": "Pencere",
 		"screen": "Ekran",
 		"virtual": "Sanal ekran",
+		"area": "Alan {{width}} × {{height}}",
 		"unknown": "Ekran kaydı"
 	}
 }

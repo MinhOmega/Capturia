@@ -331,13 +331,37 @@ export async function importPendingRecording(): Promise<boolean> {
 	// recording to the next editor window.
 	await api.setCurrentRecordingSession(null);
 
-	// ponytail: MediaRecorder WebMs ship with duration = NaN until
-	// fix-webm-duration patches the EBML header; until that flows through the
-	// asset, drop a default 60s clip into the timeline so the editor isn't stuck
-	// on "No clips yet" the moment the user lands in the project. Real duration
-	// overwrites this when handleLoadedMetadata fires with a finite value.
 	const doc = useProjectStore.getState().document;
-	if (doc && doc.timeline.clips.length === 0 && doc.assets.length > 0) {
+	const cropRegion = result.session?.cropRegion;
+	if (doc && cropRegion && doc.timeline.clips.length === 0 && doc.assets.length > 0) {
+		// A recorded area opens already cropped. Not through the seed below: `replaceTimeline`
+		// sizes clips from `asset.durationSec`, which import never has, so its clip only
+		// appears once the <video> reports a duration -- on a path that knows nothing of this
+		// crop. A clip with no source extent is instead what `applyProbedDuration` sizes IN
+		// PLACE, keeping every other field -- the crop included, which is how the fresh-take
+		// auto-zoom below (via `buildAutoZoomSuggestionsForClips`) keeps its zooms inside
+		// the area. `history: false` for the same reason as the seed below.
+		const clip = {
+			id: createId("clip"),
+			assetId: doc.project.primaryAssetId ?? doc.assets[0].id,
+			sourceStartSec: 0,
+			timelineStartSec: 0,
+			timelineEndSec: 0,
+			wordRefs: [],
+			origin: "system" as const,
+			reason: "Auto-imported recording",
+			cropRegion,
+		};
+		await useProjectStore
+			.getState()
+			.saveDocument({ ...doc, timeline: { ...doc.timeline, clips: [clip] } }, { history: false });
+	} else if (doc && doc.timeline.clips.length === 0 && doc.assets.length > 0) {
+		// ponytail: MediaRecorder WebMs ship with duration = NaN until
+		// fix-webm-duration patches the EBML header; until that flows through the
+		// asset, drop a default 60s clip into the timeline so the editor isn't stuck
+		// on "No clips yet" the moment the user lands in the project. Real duration
+		// overwrites this when handleLoadedMetadata fires with a finite value.
+		//
 		// `history: false`. Nothing here is an edit: the user finished a recording and the
 		// editor built them a project around it, unattended, on mount. Recording it left a
 		// brand-new project sitting at `past.length === 1` before the user had touched

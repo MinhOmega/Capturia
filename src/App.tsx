@@ -8,6 +8,7 @@ installBrowserShims();
 
 import { AppErrorBoundary } from "./components/app/AppErrorBoundary";
 import { GlobalErrorObserver } from "./components/app/GlobalErrorObserver";
+import { AreaSelector } from "./components/launch/AreaSelector";
 import { CountdownOverlay } from "./components/launch/CountdownOverlay.tsx";
 import { LaunchWindow } from "./components/launch/LaunchWindow";
 import { NotesWindow } from "./components/launch/NotesWindow.tsx";
@@ -52,7 +53,12 @@ export default function App() {
 			setWindowType(type);
 		}
 
-		if (type === "hud-overlay" || type === "source-selector" || type === "countdown-overlay") {
+		if (
+			type === "hud-overlay" ||
+			type === "source-selector" ||
+			type === "area-selector" ||
+			type === "countdown-overlay"
+		) {
 			document.body.style.background = "transparent";
 			document.documentElement.style.background = "transparent";
 			document.getElementById("root")?.style.setProperty("background", "transparent");
@@ -79,6 +85,8 @@ export default function App() {
 				return <LaunchWindow />;
 			case "source-selector":
 				return <SourceSelector />;
+			case "area-selector":
+				return <AreaSelector />;
 			case "countdown-overlay":
 				return <CountdownOverlay />;
 			case "cli-export":

@@ -57,10 +57,14 @@
 		"loading": "Đang tải nguồn...",
 		"screens": "Màn hình ({{count}})",
 		"windows": "Cửa sổ ({{count}})",
+		"area": "Vùng",
 		"emptyTitle": "Không tìm thấy màn hình hoặc cửa sổ nào",
 		"emptyDescription": "Nếu bạn vừa cấp quyền ghi màn hình, hãy tải lại bộ chọn này. Trên macOS, bạn có thể cần mở lại Capturia.",
 		"loadFailedDescription": "Capturia không thể tải các nguồn ghi hình. Hãy tải lại bộ chọn này và thử lại.",
 		"defaultSourceName": "Màn hình"
+	},
+	"areaSelector": {
+		"hint": "Kéo để chọn một vùng. Enter để xác nhận, Esc để hủy."
 	},
 	"recording": {
 		"selectSource": "Vui lòng chọn một nguồn để ghi",

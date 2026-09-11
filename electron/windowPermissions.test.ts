@@ -43,6 +43,7 @@ const CAPTURE_CALL_SITES: Record<
 	"cli-export": { kinds: [], why: "renders frames from files; no device access" },
 	"cli-captions": { kinds: [], why: "transcribes an existing file; no device access" },
 	"source-selector": { kinds: [], why: "desktopCapturer runs in the main process, not here" },
+	"area-selector": { kinds: [], why: "draws a rectangle over the live screen; captures nothing" },
 	"countdown-overlay": { kinds: [], why: "draws a countdown" },
 	notes: { kinds: [], why: "text only" },
 	bench: { kinds: [], why: "renders App's default placeholder, not the editor shell" },
@@ -136,7 +137,13 @@ describe("isPermissionAllowed", () => {
 	});
 
 	it("denies every capture kind to windows that only display", () => {
-		for (const windowType of ["source-selector", "countdown-overlay", "notes", "bench"] as const) {
+		for (const windowType of [
+			"source-selector",
+			"area-selector",
+			"countdown-overlay",
+			"notes",
+			"bench",
+		] as const) {
 			for (const permission of ["screen", "display-capture", "camera", "microphone"]) {
 				expect(allowed(permission, windowType)).toBe(false);
 			}

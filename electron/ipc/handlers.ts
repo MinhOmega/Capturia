@@ -31,6 +31,7 @@ import {
 	PROJECT_FILE_EXTENSION,
 	PROJECT_FILE_EXTENSIONS,
 } from "../../src/lib/projectFileExtension";
+import { type AreaRect, areaToCropRegion, toPhysicalArea } from "../../src/lib/recordingArea";
 import {
 	type CursorCaptureMode,
 	normalizeCursorCaptureMode,
@@ -117,6 +118,7 @@ import {
 	validRecordingsFolder,
 } from "../recordingsFolder";
 import { settingsPaneUrl } from "../windowPermissions";
+import { createAreaSelectorWindow } from "../windows";
 import { registerNativeBridgeHandlers } from "./nativeBridge";
 import { registerRecordingPrefsHandlers } from "./recordingPrefs";
 import { RecordingStreamRegistry, registerRecordingStreamHandlers } from "./recordingStream";
@@ -616,6 +618,17 @@ type AttachNativeMacWebcamRecordingInput = {
 };
 
 let selectedSource: SelectedSource | null = null;
+// The crop an area pick seeds into the next recording, in fractions of the display's
+// frame. Set only from a rectangle this process validated (`finish-area-selection`) and
+// cleared by every plain pick, so nothing a renderer puts in `select-source` can reach it.
+let selectedAreaCrop: AreaRect | null = null;
+// The area overlay on screen, and whoever is waiting for its answer.
+let areaSelection: {
+	win: BrowserWindow;
+	display: Electron.Display;
+	source: SelectedSource;
+	resolve: (source: SelectedSource | null) => void;
+} | null = null;
 let selectedDesktopSource: DesktopCapturerSource | null = null;
 let lastEnumeratedSources = new Map<string, DesktopCapturerSource>();
 let currentProjectPath: string | null = null;
@@ -649,6 +662,12 @@ export interface RecordingPrefs {
 	cursorCaptureMode: CursorCaptureMode;
 	/** After a take, suggest cursor-dwell zooms. Default on, matching 1.5. */
 	autoZoomEnabled: boolean;
+	/**
+	 * "Record an area" where the ScreenCast portal picks the monitor: nothing can be
+	 * drawn on it before recording, so the editor opens the new clip's crop dialog
+	 * instead. Everywhere else the area is picked up front (`select-area`).
+	 */
+	drawAreaAfterRecording: boolean;
 }
 const defaultRecordingPrefs: RecordingPrefs = {
 	micEnabled: false,
@@ -659,6 +678,7 @@ const defaultRecordingPrefs: RecordingPrefs = {
 	systemAudioEnabled: false,
 	cursorCaptureMode: "editable-overlay",
 	autoZoomEnabled: true,
+	drawAreaAfterRecording: false,
 };
 
 // Cached source from the user's pick. Used by setDisplayMediaRequestHandler in main.ts for cursor-free capture.
@@ -2023,7 +2043,7 @@ export function registerIpcHandlers(
 		}));
 	});
 
-	ipcMain.handle("select-source", async (_, source: SelectedSource) => {
+	async function applySelectedSource(source: SelectedSource) {
 		selectedSource = source;
 		// Reuse the exact source object returned during enumeration to avoid
 		// Windows window-source id mismatches across separate getSources() calls.
@@ -2052,6 +2072,74 @@ export function registerIpcHandlers(
 			sourceSelectorWin.close();
 		}
 		return selectedSource;
+	}
+
+	ipcMain.handle("select-source", (_, source: SelectedSource) => {
+		selectedAreaCrop = null;
+		return applySelectedSource(source);
+	});
+
+	// "Record an area": the picked screen is recorded whole, exactly as a plain pick,
+	// and the rectangle only seeds the clip's crop at import (`set-current-recording-session`).
+	// Resolves with the selected source once the overlay confirms, or null when it is
+	// dismissed, so a picker can stay open on Esc.
+	ipcMain.handle("select-area", (_, source: SelectedSource) => {
+		const display =
+			typeof source?.id === "string" && source.id.startsWith("screen:")
+				? screen.getAllDisplays().find((each) => String(each.id) === String(source.display_id))
+				: undefined;
+		if (!display) return null;
+		// One overlay at a time, and the one already up keeps its caller.
+		if (areaSelection) {
+			areaSelection.win.focus();
+			return null;
+		}
+
+		return new Promise<SelectedSource | null>((resolve) => {
+			const win = createAreaSelectorWindow(display);
+			const selection = { win, display, source, resolve };
+			areaSelection = selection;
+			win.on("closed", () => {
+				if (areaSelection !== selection) return;
+				areaSelection = null;
+				resolve(null);
+			});
+		});
+	});
+
+	ipcMain.handle("finish-area-selection", async (event, rect: AreaRect) => {
+		const selection = areaSelection;
+		if (!selection || selection.win.isDestroyed() || event.sender !== selection.win.webContents) {
+			return;
+		}
+		areaSelection = null;
+		const { display } = selection;
+		// The rectangle is in the overlay's CSS pixels. Re-based on the display rather than
+		// on the overlay, which the OS may have placed a little off its origin, then
+		// validated and clamped to whole physical pixels of that display.
+		const content = selection.win.getContentBounds();
+		selection.win.close();
+		const area = toPhysicalArea(
+			{
+				x: content.x - display.bounds.x + rect?.x,
+				y: content.y - display.bounds.y + rect?.y,
+				width: rect?.width,
+				height: rect?.height,
+			},
+			display.size,
+			display.scaleFactor,
+		);
+		if (!area) {
+			selection.resolve(null);
+			return;
+		}
+		selectedAreaCrop = areaToCropRegion(area, display.size, display.scaleFactor);
+		selection.resolve(
+			await applySelectedSource({
+				...selection.source,
+				name: mainT("common", "recordingSource.area", { width: area.width, height: area.height }),
+			}),
+		);
 	});
 
 	ipcMain.handle("get-selected-source", () => {
@@ -4575,7 +4663,18 @@ export function registerIpcHandlers(
 
 	ipcMain.handle("set-current-recording-session", (_, session: RecordingSession | null) => {
 		const normalizedSession = normalizeRecordingSession(session);
-		setCurrentRecordingSessionState(normalizedSession);
+		// The recorder's hand-off to the editor, so this is where an area pick joins the take
+		// it framed: the editor opens the clip already cropped to it.
+		//
+		// ponytail: the whole display is recorded and the area is only a crop, so the file
+		// stays full-size (which is also what lets the crop be widened later). Cropping at
+		// capture time -- a source rect for WGC / ScreenCaptureKit / the PipeWire helper --
+		// is the upgrade path if file size matters.
+		setCurrentRecordingSessionState(
+			normalizedSession && selectedAreaCrop
+				? { ...normalizedSession, cropRegion: selectedAreaCrop }
+				: normalizedSession,
+		);
 		currentVideoPath = normalizedSession?.screenVideoPath ?? null;
 		currentProjectPath = null;
 		return { success: true, session: currentRecordingSession };

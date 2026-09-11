@@ -209,4 +209,33 @@ describe("collectFlagZoomSuggestionsForLatestDocument", () => {
 		expect(zoom.focus.cx).toBeCloseTo(0.25, 5);
 		expect(zoom.focus.cy).toBeCloseTo(0.75, 5);
 	});
+
+	// A recorded area is a crop over the whole display. A detected dwell outside it is
+	// dropped (zoom-suggestions.test.ts), but a flag is the user asking for a zoom: it
+	// keeps its zoom, focused at the nearest point of the crop.
+	it("keeps a flag outside a cropped clip's area and clamps its focus into the crop", async () => {
+		const base = documentWithClip(20);
+		const document: AxcutDocument = {
+			...base,
+			timeline: {
+				...base.timeline,
+				clips: base.timeline.clips.map((clip) => ({
+					...clip,
+					cropRegion: { x: 0.5, y: 0, width: 0.5, height: 0.5 },
+				})),
+			},
+		};
+
+		const out = await collectFlagZoomSuggestionsForLatestDocument(
+			() => document,
+			async () => [...dwell(2000, 0.25, 0.75), ...dwell(6000, 0.75, 0.25)],
+			[2000, 6000], // outside the crop, inside it
+		);
+
+		expect(out?.suggestions.map((zoom) => zoom.focus)).toEqual([
+			{ cx: 0, cy: 1 },
+			{ cx: 0.5, cy: 0.5 },
+		]);
+		expect(out?.covered).toBe(0);
+	});
 });

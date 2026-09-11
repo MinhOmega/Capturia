@@ -57,10 +57,14 @@
 		"loading": "جاري تحميل المصادر...",
 		"screens": "الشاشات ({{count}})",
 		"windows": "النوافذ ({{count}})",
+		"area": "منطقة",
 		"emptyTitle": "لم يتم العثور على شاشات أو نوافذ",
 		"emptyDescription": "إذا كنت قد منحت للتو إذن تسجيل الشاشة، أعد تحميل هذه النافذة. قد تحتاج على macOS إلى إعادة فتح Capturia.",
 		"loadFailedDescription": "تعذّر على Capturia تحميل مصادر الالتقاط. أعد تحميل هذه النافذة وحاول مرة أخرى.",
 		"defaultSourceName": "الشاشة"
+	},
+	"areaSelector": {
+		"hint": "اسحب لتحديد منطقة. اضغط Enter للتأكيد وEsc للإلغاء."
 	},
 	"recording": {
 		"selectSource": "يرجى تحديد مصدر للتسجيل",

@@ -58,6 +58,16 @@ interface Window {
 		}>;
 		selectSource: (source: ProcessedDesktopSource) => Promise<ProcessedDesktopSource | null>;
 		getSelectedSource: () => Promise<ProcessedDesktopSource | null>;
+		/** Opens the area overlay on this screen source's display; the selected source once
+		 *  the user confirms a rectangle, null when they dismiss it. */
+		selectArea: (source: ProcessedDesktopSource) => Promise<ProcessedDesktopSource | null>;
+		/** The area overlay's answer, in its own CSS pixels. */
+		finishAreaSelection: (rect: {
+			x: number;
+			y: number;
+			width: number;
+			height: number;
+		}) => Promise<void>;
 		onSelectedSourceChanged: (callback: (source: ProcessedDesktopSource) => void) => () => void;
 		getRecordingPrefs: () => Promise<import("./ipc/handlers").RecordingPrefs>;
 		setRecordingPrefs: (

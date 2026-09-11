@@ -3,12 +3,15 @@
 OpenScreen is an Electron + React + TypeScript screen recorder and video editor. The
 main process lives in `electron/`; the renderer is a single Vite-built SPA whose entry
 point is `src/App.tsx`. `App.tsx` reads `?windowType=` from the URL and lazy-loads one
-window component. The four real window types — verified against `src/App.tsx:71-125`
+window component. The five real window types — verified against `src/App.tsx`
 and `electron/windows.ts` — are:
 
 - `editor` — the main studio (`AiEditionShell`, `createEditorWindow`).
 - `hud-overlay` — the floating record bar (`LaunchWindow`, `createHudOverlayWindow`).
 - `source-selector` — the screen/window picker (`SourceSelector`, `createSourceSelectorWindow`).
+- `area-selector` — the "record an area" overlay over one display (`AreaSelector`,
+  `createAreaSelectorWindow`). The display is recorded whole; the rectangle becomes the
+  clip's crop at import (`set-current-recording-session` → `importPendingRecording`).
 - `countdown-overlay` — the pre-roll overlay (`CountdownOverlay`, `createCountdownOverlayWindow`).
 
 A fifth, frameless `NotesWindow` is reached via a separate `showNotes=true` query,

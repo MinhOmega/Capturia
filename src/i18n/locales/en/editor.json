@@ -115,6 +115,7 @@
 		"cursorHighlight": "Cursor highlight",
 		"autoZoom": "Auto-zoom after recording",
 		"autoZoomNeedsEditableCursor": "Auto-zoom needs the editable cursor. Switch cursor mode to enable.",
+		"drawArea": "Draw an area after recording",
 		"on": "On",
 		"off": "Off",
 		"loading": "Loading…",
@@ -129,6 +130,7 @@
 		"sourceModal": {
 			"screens": "Screens ({{count}})",
 			"windows": "Windows ({{count}})",
+			"area": "Area",
 			"loadingSources": "Loading sources…",
 			"noScreensFound": "No screens found",
 			"noWindowsFound": "No windows found",

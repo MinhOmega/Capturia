@@ -115,6 +115,7 @@
 		"cursorHighlight": "光标高亮",
 		"autoZoom": "录制后自动缩放",
 		"autoZoomNeedsEditableCursor": "自动缩放需要可编辑光标。请先切换光标模式。",
+		"drawArea": "录制后框选区域",
 		"on": "开",
 		"off": "关",
 		"loading": "加载中…",
@@ -129,6 +130,7 @@
 		"sourceModal": {
 			"screens": "屏幕（{{count}}）",
 			"windows": "窗口（{{count}}）",
+			"area": "区域",
 			"loadingSources": "正在加载来源…",
 			"noScreensFound": "未找到屏幕",
 			"noWindowsFound": "未找到窗口",

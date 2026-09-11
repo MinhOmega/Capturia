@@ -75,6 +75,7 @@
 		"window": "Cửa sổ",
 		"screen": "Màn hình",
 		"virtual": "Màn hình ảo",
+		"area": "Vùng {{width}} × {{height}}",
 		"unknown": "Ghi màn hình"
 	}
 }

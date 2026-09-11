@@ -17,6 +17,12 @@ export type CursorCaptureMode = "editable-overlay" | "system";
 
 export interface RecordingSession extends ProjectMedia {
 	createdAt: number;
+	/**
+	 * The area the user picked to record, as the crop (fractions of the frame) the clip
+	 * opens with. Only ever set by the main process, from a rectangle it validated; the
+	 * display itself is recorded whole.
+	 */
+	cropRegion?: { x: number; y: number; width: number; height: number };
 }
 
 export interface RecordedVideoAssetInput {

@@ -66,10 +66,14 @@
 		"loading": "Caricamento sorgenti...",
 		"screens": "Schermi ({{count}})",
 		"windows": "Finestre ({{count}})",
+		"area": "Zona",
 		"emptyTitle": "Nessuno schermo o finestra trovati",
 		"emptyDescription": "Se hai appena concesso il permesso di registrazione dello schermo, ricarica questo selettore. Su macOS potrebbe essere necessario riaprire Capturia.",
 		"loadFailedDescription": "Capturia non è riuscito a caricare le sorgenti di cattura. Ricarica questo selettore e riprova.",
 		"defaultSourceName": "Schermo"
+	},
+	"areaSelector": {
+		"hint": "Trascina per selezionare una zona. Invio per confermare, Esc per annullare."
 	},
 	"recording": {
 		"selectSource": "Seleziona una sorgente da registrare",

@@ -15,6 +15,7 @@ import {
 	cropDraftFromRegion,
 	cropDraftToPct,
 	displayPct,
+	MIN_CROP_PCT as MIN_PCT,
 	previewBoxStyle,
 	stepPct,
 } from "./cropDraft";
@@ -609,7 +610,6 @@ function centeredFitPct(fr: number): { x: number; y: number; w: number; h: numbe
 	return { x: (100 - w) / 2, y: 0, w, h: 100 };
 }
 
-const MIN_PCT = 4;
 const clampPct = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 type ResizeEdges = { left?: boolean; right?: boolean; top?: boolean; bottom?: boolean };

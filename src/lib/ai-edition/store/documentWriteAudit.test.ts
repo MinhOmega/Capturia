@@ -140,6 +140,9 @@ const DECLARED: WritePath[] = [
 		"save",
 		"gesture",
 	),
+	// A recorded area seeded as the new clip's crop at import. Part of the import the
+	// editor did unattended; recording it would make the first Ctrl+Z empty the project.
+	w("src/components/ai-edition/recordingImport.ts", "importPendingRecording", "save", "automatic"),
 	// Renaming the project from the title field.
 	w("src/components/ai-edition/NewEditorShell.tsx", "handleRenameProject", "save", "gesture"),
 	// Ctrl+S / File > Save.

@@ -115,6 +115,7 @@
 		"cursorHighlight": "游標醒目提示",
 		"autoZoom": "錄製後自動縮放",
 		"autoZoomNeedsEditableCursor": "自動縮放需要可編輯游標。請先切換游標模式。",
+		"drawArea": "錄製後框選區域",
 		"on": "開",
 		"off": "關",
 		"loading": "載入中…",
@@ -129,6 +130,7 @@
 		"sourceModal": {
 			"screens": "螢幕（{{count}}）",
 			"windows": "視窗（{{count}}）",
+			"area": "區域",
 			"loadingSources": "正在載入來源…",
 			"noScreensFound": "找不到螢幕",
 			"noWindowsFound": "找不到視窗",

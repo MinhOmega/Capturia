@@ -126,6 +126,12 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	getSelectedSource: () => {
 		return ipcRenderer.invoke("get-selected-source");
 	},
+	selectArea: (source: ProcessedDesktopSource) => {
+		return ipcRenderer.invoke("select-area", source);
+	},
+	finishAreaSelection: (rect: { x: number; y: number; width: number; height: number }) => {
+		return ipcRenderer.invoke("finish-area-selection", rect);
+	},
 	getRecordingPrefs: () => {
 		return ipcRenderer.invoke("get-recording-prefs");
 	},

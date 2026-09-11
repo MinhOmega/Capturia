@@ -115,6 +115,7 @@
 		"cursorHighlight": "カーソルの強調表示",
 		"autoZoom": "録画後に自動ズーム",
 		"autoZoomNeedsEditableCursor": "自動ズームには編集可能なカーソルが必要です。カーソルモードを切り替えてください。",
+		"drawArea": "録画後に範囲を指定",
 		"on": "オン",
 		"off": "オフ",
 		"loading": "読み込み中…",
@@ -129,6 +130,7 @@
 		"sourceModal": {
 			"screens": "画面 ({{count}})",
 			"windows": "ウィンドウ ({{count}})",
+			"area": "範囲",
 			"loadingSources": "ソースを読み込み中…",
 			"noScreensFound": "画面が見つかりません",
 			"noWindowsFound": "ウィンドウが見つかりません",

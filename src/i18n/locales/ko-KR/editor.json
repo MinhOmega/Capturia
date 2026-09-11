@@ -115,6 +115,7 @@
 		"cursorHighlight": "커서 강조",
 		"autoZoom": "녹화 후 자동 확대",
 		"autoZoomNeedsEditableCursor": "자동 확대는 편집 가능한 커서가 필요합니다. 커서 모드를 전환하세요.",
+		"drawArea": "녹화 후 영역 지정",
 		"on": "켜짐",
 		"off": "꺼짐",
 		"loading": "로딩 중…",
@@ -129,6 +130,7 @@
 		"sourceModal": {
 			"screens": "화면 ({{count}}개)",
 			"windows": "창 ({{count}}개)",
+			"area": "영역",
 			"loadingSources": "소스 불러오는 중…",
 			"noScreensFound": "화면을 찾을 수 없음",
 			"noWindowsFound": "창을 찾을 수 없음",

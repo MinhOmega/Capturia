@@ -542,6 +542,58 @@ export function createSourceSelectorWindow(): BrowserWindow {
 }
 
 /**
+ * Transparent overlay covering one display, on which the user drags the area to record.
+ * Above every other window (the HUD and the source selector are always-on-top too), and
+ * closed before recording starts, so it never appears in a take.
+ */
+export function createAreaSelectorWindow(display: Electron.Display): BrowserWindow {
+	const win = new BrowserWindow({
+		...display.bounds,
+		frame: false,
+		resizable: false,
+		movable: false,
+		alwaysOnTop: true,
+		skipTaskbar: true,
+		transparent: true,
+		backgroundColor: "#00000000",
+		hasShadow: false,
+		// macOS otherwise keeps the window below the menu bar.
+		enableLargerThanScreen: true,
+		show: false,
+		webPreferences: {
+			preload: path.join(__dirname, "preload.mjs"),
+			nodeIntegration: false,
+			contextIsolation: true,
+		},
+	});
+
+	win.setAlwaysOnTop(true, "screen-saver");
+	if (process.platform === "darwin") {
+		win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+	}
+
+	win.once("ready-to-show", () => {
+		// Again, once it exists: a window created for a display whose scale factor differs
+		// from the one it was born on can come out sized by the wrong one.
+		win.setBounds(display.bounds);
+		if (!HEADLESS) win.show();
+		win.focus();
+	});
+	// Esc lives in the page. Without one, this is a screen-sized window nobody can dismiss.
+	win.webContents.once("did-fail-load", () => win.close());
+	win.webContents.once("render-process-gone", () => win.close());
+
+	const query = { windowType: "area-selector", displayId: String(display.id) };
+	if (VITE_DEV_SERVER_URL) {
+		win.loadURL(`${VITE_DEV_SERVER_URL}?${new URLSearchParams(query).toString()}`);
+	} else {
+		win.loadFile(path.join(RENDERER_DIST, "index.html"), { query });
+	}
+
+	return win;
+}
+
+/**
  * Centered transparent countdown overlay that sits above the HUD during
  * recording pre-roll.
  */

@@ -75,6 +75,7 @@
 		"window": "Janela",
 		"screen": "Tela",
 		"virtual": "Tela virtual",
+		"area": "Área {{width}} × {{height}}",
 		"unknown": "Gravação de tela"
 	}
 }

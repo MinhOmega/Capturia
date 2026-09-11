@@ -66,10 +66,14 @@
 		"loading": "Loading sources...",
 		"screens": "Screens ({{count}})",
 		"windows": "Windows ({{count}})",
+		"area": "Area",
 		"emptyTitle": "No screens or windows found",
 		"emptyDescription": "If you just granted screen recording permission, reload this picker. On macOS you may need to reopen Capturia.",
 		"loadFailedDescription": "Capturia could not load capture sources. Reload this picker and try again.",
 		"defaultSourceName": "Screen"
+	},
+	"areaSelector": {
+		"hint": "Drag to select an area. Enter to confirm, Esc to cancel."
 	},
 	"recording": {
 		"selectSource": "Please select a source to record",

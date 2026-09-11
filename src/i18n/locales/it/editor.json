@@ -115,6 +115,7 @@
 		"cursorHighlight": "Evidenzia cursore",
 		"autoZoom": "Zoom automatico dopo la registrazione",
 		"autoZoomNeedsEditableCursor": "Lo zoom automatico richiede il cursore modificabile. Cambia la modalità del cursore per attivarlo.",
+		"drawArea": "Disegna una zona dopo la registrazione",
 		"on": "Attivo",
 		"off": "Disattivo",
 		"loading": "Caricamento…",
@@ -129,6 +130,7 @@
 		"sourceModal": {
 			"screens": "Schermi ({{count}})",
 			"windows": "Finestre ({{count}})",
+			"area": "Zona",
 			"loadingSources": "Caricamento sorgenti…",
 			"noScreensFound": "Nessuno schermo trovato",
 			"noWindowsFound": "Nessuna finestra trovata",

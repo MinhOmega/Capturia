@@ -115,6 +115,7 @@
 		"cursorHighlight": "İmleç vurgusu",
 		"autoZoom": "Kayıttan sonra otomatik yakınlaştırma",
 		"autoZoomNeedsEditableCursor": "Otomatik yakınlaştırma düzenlenebilir imleç ister. Etkinleştirmek için imleç modunu değiştirin.",
+		"drawArea": "Kayıttan sonra alan çiz",
 		"on": "Açık",
 		"off": "Kapalı",
 		"loading": "Yükleniyor…",
@@ -129,6 +130,7 @@
 		"sourceModal": {
 			"screens": "Ekranlar ({{count}})",
 			"windows": "Pencereler ({{count}})",
+			"area": "Alan",
 			"loadingSources": "Kaynaklar yükleniyor…",
 			"noScreensFound": "Ekran bulunamadı",
 			"noWindowsFound": "Pencere bulunamadı",

@@ -163,6 +163,34 @@ describe("buildAutoZoomSuggestionsForClips", () => {
 		expect(suggestions.map((s) => s.span)).toEqual([{ start: 3000, end: 5000 }]);
 	});
 
+	// A recorded area is a crop over the whole display, and the cursor is recorded over the
+	// whole display too.
+	it("keeps a cropped clip's zooms inside its crop, in the crop's own fractions", () => {
+		const clips = [
+			{ ...clip("clip_1", "a1", 0, 10, 0), cropRegion: { x: 0.5, y: 0, width: 0.5, height: 0.5 } },
+		];
+		const inside = buildAutoZoomSuggestionsForClips({
+			cursorTelemetry: dwell(4000, 0.75, 0.25),
+			assetId: "a1",
+			clips,
+			existingRegions: [],
+			defaultDurationMs: 2000,
+		});
+		expect(inside.map((s) => s.span)).toEqual([{ start: 3000, end: 5000 }]);
+		expect(inside[0].focus.cx).toBeCloseTo(0.5, 5);
+		expect(inside[0].focus.cy).toBeCloseTo(0.5, 5);
+		// The same dwell outside the crop is not in the picture, so it gets no zoom.
+		expect(
+			buildAutoZoomSuggestionsForClips({
+				cursorTelemetry: dwell(4000, 0.25, 0.25),
+				assetId: "a1",
+				clips,
+				existingRegions: [],
+				defaultDurationMs: 2000,
+			}),
+		).toEqual([]);
+	});
+
 	it("ignores a dwell that falls outside every clip's source window", () => {
 		// The recording is long; the timeline keeps only its first 10s.
 		const clips = [clip("clip_1", "a1", 0, 10, 0)];

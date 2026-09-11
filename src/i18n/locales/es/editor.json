@@ -115,6 +115,7 @@
 		"cursorHighlight": "Resaltar cursor",
 		"autoZoom": "Zoom automático tras grabar",
 		"autoZoomNeedsEditableCursor": "El zoom automático necesita el cursor editable. Cambia el modo del cursor para activarlo.",
+		"drawArea": "Dibujar un área después de grabar",
 		"on": "Activado",
 		"off": "Desactivado",
 		"loading": "Cargando…",
@@ -129,6 +130,7 @@
 		"sourceModal": {
 			"screens": "Pantallas ({{count}})",
 			"windows": "Ventanas ({{count}})",
+			"area": "Área",
 			"loadingSources": "Cargando fuentes…",
 			"noScreensFound": "No se encontraron pantallas",
 			"noWindowsFound": "No se encontraron ventanas",

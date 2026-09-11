@@ -115,6 +115,7 @@
 		"cursorHighlight": "Подсветка курсора",
 		"autoZoom": "Автомасштабирование после записи",
 		"autoZoomNeedsEditableCursor": "Автомасштабирование требует редактируемый курсор. Переключите режим курсора.",
+		"drawArea": "Выбрать область после записи",
 		"on": "Вкл",
 		"off": "Выкл",
 		"loading": "Загрузка…",
@@ -129,6 +130,7 @@
 		"sourceModal": {
 			"screens": "Экраны ({{count}})",
 			"windows": "Окна ({{count}})",
+			"area": "Область",
 			"loadingSources": "Загрузка источников…",
 			"noScreensFound": "Экраны не найдены",
 			"noWindowsFound": "Окна не найдены",

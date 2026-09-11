@@ -21,6 +21,7 @@ if (
 	showNotes ||
 	windowType === "hud-overlay" ||
 	windowType === "source-selector" ||
+	windowType === "area-selector" ||
 	windowType === "countdown-overlay"
 ) {
 	document.body.style.background = "transparent";

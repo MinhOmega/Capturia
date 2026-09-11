@@ -66,10 +66,14 @@
 		"loading": "Chargement des sources...",
 		"screens": "Écrans ({{count}})",
 		"windows": "Fenêtres ({{count}})",
+		"area": "Zone",
 		"emptyTitle": "Aucun écran ni fenêtre trouvé",
 		"emptyDescription": "Si vous venez d'accorder l'autorisation d'enregistrement d'écran, rechargez ce sélecteur. Sur macOS, il peut être nécessaire de rouvrir Capturia.",
 		"loadFailedDescription": "Capturia n'a pas pu charger les sources de capture. Rechargez ce sélecteur et réessayez.",
 		"defaultSourceName": "Écran"
+	},
+	"areaSelector": {
+		"hint": "Faites glisser pour sélectionner une zone. Entrée pour valider, Échap pour annuler."
 	},
 	"recording": {
 		"selectSource": "Veuillez sélectionner une source à enregistrer",

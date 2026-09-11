@@ -262,6 +262,16 @@ export function NewEditorShell() {
 	// "Edit clip" rail button — a single shell-level instance instead of one
 	// mounted per trigger site.
 	const [editClipTarget, setEditClipTarget] = useState<AxcutClip | null>(null);
+	// "Record an area" where the portal picked the monitor (see RecStage): the area is
+	// drawn on the recording, in the new clip's crop dialog, once that clip has the real
+	// duration the dialog's trim range needs.
+	const drawAreaOnImport = useRef(false);
+	useEffect(() => {
+		const clip = document?.timeline.clips[0];
+		if (!drawAreaOnImport.current || !clip?.sourceEndSec) return;
+		drawAreaOnImport.current = false;
+		setEditClipTarget(clip);
+	}, [document]);
 	const [exportOpen, setExportOpen] = useState(false);
 	const [unsavedPrompt, setUnsavedPrompt] = useState<{
 		action: "close" | "new" | "open" | "record";
@@ -381,11 +391,17 @@ export function NewEditorShell() {
 		void (async () => {
 			if (!window.electronAPI) return;
 			try {
+				// Up before the import resolves: it awaits the fresh-take auto-zoom pass, and the
+				// clip can get its duration in the meantime.
+				const prefs = await window.electronAPI.getRecordingPrefs?.().catch(() => null);
+				drawAreaOnImport.current = prefs?.drawAreaAfterRecording === true;
 				if (await importPendingRecording()) {
 					toast.success("Recording added to a new project");
 					return;
 				}
+				drawAreaOnImport.current = false;
 			} catch (err) {
+				drawAreaOnImport.current = false;
 				toast.error("Could not auto-create project from recording", {
 					description: err instanceof Error ? err.message : String(err),
 				});

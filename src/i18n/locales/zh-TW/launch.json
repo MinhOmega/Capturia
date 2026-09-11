@@ -66,10 +66,14 @@
 		"loading": "正在載入來源...",
 		"screens": "螢幕 ({{count}})",
 		"windows": "視窗 ({{count}})",
+		"area": "區域",
 		"emptyTitle": "找不到螢幕或視窗",
 		"emptyDescription": "如果您剛授予螢幕錄製權限，請重新載入此選擇器。在 macOS 上，您可能需要重新開啟 Capturia。",
 		"loadFailedDescription": "Capturia 無法載入擷取來源。請重新載入此選擇器並再試一次。",
 		"defaultSourceName": "螢幕"
+	},
+	"areaSelector": {
+		"hint": "拖曳以選取區域。按 Enter 確認，按 Esc 取消。"
 	},
 	"recording": {
 		"selectSource": "請選擇要錄製的來源",
