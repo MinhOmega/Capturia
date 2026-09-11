@@ -1578,11 +1578,51 @@ mod cursor_sample_tests {
     /// stream; once pixels are flowing the encoder's rectangle wins.
     #[test]
     fn the_content_rect_prefers_the_encoder_once_it_has_started() {
+        // No encoder yet (cursor-only, or before the first frame): the whole
+        // negotiated stream, or nothing when the format is still unknown.
         assert_eq!(
             content_rect(&None, Some((1920, 1080))),
             Some(shim::CropRect { x: 0, y: 0, width: 1920, height: 1080 })
         );
         assert_eq!(content_rect(&None, None), None);
+
+        // Once a window frame has been staged, the encoder's content rect — the
+        // window carved out of the monitor-sized stream — wins over the stream
+        // size. This is the branch the fix turns on, so it is the one that has
+        // to be pinned.
+        let output = std::env::temp_dir().join("openscreen-content-rect-encoder.mp4");
+        let (mut capture, _) = Capture::start(
+            &output,
+            320,
+            240,
+            None,
+            30,
+            Some(1_000_000),
+            Some(encoder::Backend::Software),
+            Vec::new(),
+            None,
+        )
+        .expect("start");
+        let stride = 1920usize * 4;
+        capture
+            .stage(&shim::Frame {
+                pixels: vec![0x30; stride * 1080],
+                stride,
+                width: 1920,
+                height: 1080,
+                video_format: shim::constants().video_format_bgrx,
+                pts_ns: -1,
+                crop: shim::CropRect { x: 100, y: 50, width: 320, height: 240 },
+                has_crop: true,
+                dmabuf: None,
+            })
+            .expect("stage");
+        assert_eq!(
+            content_rect(&Some(capture), Some((1920, 1080))),
+            Some(shim::CropRect { x: 100, y: 50, width: 320, height: 240 }),
+            "a started encoder reports the window it read, not the monitor stream"
+        );
+        let _ = std::fs::remove_file(&output);
     }
 }
 

@@ -155,7 +155,7 @@ export class PipeWireCursorAccumulator {
 	addSample(payload: Extract<PipeWireHelperEvent, { event: "cursor-sample" }>) {
 		this.rememberAsset(payload.asset);
 
-		// Normalised against the RECORDED RECTANGLE, which the helper repeats on
+		// ponytail: normalised against the RECORDED RECTANGLE, which the helper repeats on
 		// every sample: the crop for a window stream, the whole stream for a
 		// screen. It reports its own because only it knows — for a window,
 		// mutter pins the stream to the monitor and carves the window out
