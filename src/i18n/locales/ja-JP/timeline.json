@@ -10,7 +10,8 @@
 		"addAnnotation": "注釈を追加 (A)",
 		"addSpeed": "再生速度を追加 (S)",
 		"addCameraFullscreen": "フルスクリーンカメラを追加 (C)",
-		"splitAtPlayhead": "再生ヘッドでクリップを分割"
+		"splitAtPlayhead": "再生ヘッドでクリップを分割",
+		"pasteAtPlayhead": "再生ヘッド位置に貼り付け"
 	},
 	"hints": {
 		"pressZoom": "Zキーを押してズームを追加",

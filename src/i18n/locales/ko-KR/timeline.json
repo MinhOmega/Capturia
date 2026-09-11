@@ -10,7 +10,8 @@
 		"addAnnotation": "주석 추가 (A)",
 		"addSpeed": "속도 추가 (S)",
 		"addCameraFullscreen": "전체 화면 카메라 추가 (C)",
-		"splitAtPlayhead": "재생 헤드에서 클립 분할"
+		"splitAtPlayhead": "재생 헤드에서 클립 분할",
+		"pasteAtPlayhead": "재생 헤드 위치에 붙여넣기"
 	},
 	"hints": {
 		"pressZoom": "Z를 눌러 줌 추가",

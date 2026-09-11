@@ -10,7 +10,8 @@
 		"addAnnotation": "Thêm Chú thích (A)",
 		"addSpeed": "Thêm Tốc độ (S)",
 		"addCameraFullscreen": "Thêm Camera Toàn màn hình (C)",
-		"splitAtPlayhead": "Cắt clip tại đầu phát"
+		"splitAtPlayhead": "Cắt clip tại đầu phát",
+		"pasteAtPlayhead": "Dán tại đầu phát"
 	},
 	"hints": {
 		"pressZoom": "Nhấn Z để thêm thu phóng",

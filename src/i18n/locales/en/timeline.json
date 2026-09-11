@@ -10,7 +10,8 @@
 		"addAnnotation": "Add Annotation (A)",
 		"addSpeed": "Add Speed (S)",
 		"addCameraFullscreen": "Add Full Camera (C)",
-		"splitAtPlayhead": "Split Clip at Playhead"
+		"splitAtPlayhead": "Split Clip at Playhead",
+		"pasteAtPlayhead": "Paste at Playhead"
 	},
 	"hints": {
 		"pressZoom": "Press Z to add zoom",

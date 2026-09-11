@@ -10,7 +10,8 @@
 		"addAnnotation": "Agregar anotación (A)",
 		"addSpeed": "Agregar velocidad (S)",
 		"addCameraFullscreen": "Agregar cámara a pantalla completa (C)",
-		"splitAtPlayhead": "Dividir el clip en el cursor de reproducción"
+		"splitAtPlayhead": "Dividir el clip en el cursor de reproducción",
+		"pasteAtPlayhead": "Pegar en el cursor de reproducción"
 	},
 	"hints": {
 		"pressZoom": "Presiona Z para agregar zoom",

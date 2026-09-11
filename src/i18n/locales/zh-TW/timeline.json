@@ -10,7 +10,8 @@
 		"addAnnotation": "新增標註 (A)",
 		"addSpeed": "新增速度 (S)",
 		"addCameraFullscreen": "新增全螢幕攝影機 (C)",
-		"splitAtPlayhead": "在播放磁頭處分割片段"
+		"splitAtPlayhead": "在播放磁頭處分割片段",
+		"pasteAtPlayhead": "貼上至播放磁頭處"
 	},
 	"hints": {
 		"pressZoom": "按 Z 新增縮放",

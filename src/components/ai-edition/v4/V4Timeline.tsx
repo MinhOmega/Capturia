@@ -85,6 +85,7 @@ import { nativeBridgeClient } from "@/native/client";
 import { TransportBar } from "../TransportBar";
 import type { VideoSource } from "../VirtualPreview";
 import styles from "./EditorShellV4.module.css";
+import { RegionContextMenu, type RegionMenuTarget } from "./RegionContextMenu";
 
 // The AI option's prompt — sent straight to the chat agent via the prompt-bus.
 //
@@ -469,6 +470,7 @@ const AudioLanePill = memo(function AudioLanePill({
 	selected,
 	onStartDrag,
 	onSelect,
+	onContextMenu,
 	label,
 	slipHint,
 	slipArmed,
@@ -495,6 +497,7 @@ const AudioLanePill = memo(function AudioLanePill({
 	selected: boolean;
 	onStartDrag: (e: ReactPointerEvent, track: AxcutAudioTrack, mode: "move" | "l" | "r") => void;
 	onSelect: (id: string) => void;
+	onContextMenu: (e: React.MouseEvent, kind: "audio", id: string) => void;
 	label: string;
 	/** Appended to the pill's tooltip. A modifier is never discoverable on its own —
 	 *  you either read it somewhere or you never find it — and the tooltip is where a
@@ -545,6 +548,7 @@ const AudioLanePill = memo(function AudioLanePill({
 			<div
 				role="button"
 				tabIndex={0}
+				data-pill-id={track.id}
 				className={`${styles.lanePill} ${styles.laneAudio}${
 					selected ? ` ${styles.lanePillSel}` : ""
 				}${slipArmed ? ` ${styles.laneAudioSlip}` : ""}`}
@@ -557,6 +561,7 @@ const AudioLanePill = memo(function AudioLanePill({
 				}}
 				// Body drag moves the track; it also selects and stops the .tlTracks scrub.
 				onPointerDown={(e) => onStartDrag(e, track, "move")}
+				onContextMenu={(e) => onContextMenu(e, "audio", track.id)}
 				onKeyDown={(e) => {
 					if (e.key !== "Enter" && e.key !== " ") return;
 					e.preventDefault();
@@ -634,6 +639,9 @@ export function V4Timeline({
 	onNextClip,
 	onEditClip,
 	onAddVoiceover,
+	onCopyRegion,
+	onPasteRegion,
+	onDeleteSelection,
 }: {
 	tl: TimelineApi;
 	setCurrentTime: (sec: number) => void;
@@ -650,6 +658,11 @@ export function V4Timeline({
 	/** Opens the voiceover recorder. Shell-level like the clip editor: the
 	 *  dialog owns the microphone and the shell owns the transport. */
 	onAddVoiceover: () => void;
+	/** The shell's own copy / paste / delete — what its shortcuts call — for the
+	 *  right-click menu, so the menu cannot do anything the keys would not. */
+	onCopyRegion?: () => void;
+	onPasteRegion?: () => void;
+	onDeleteSelection?: () => void;
 }) {
 	const t = useScopedT("timeline");
 	// The live bindings, not the defaults: these keys are remappable, and a menu
@@ -1077,6 +1090,9 @@ export function V4Timeline({
 
 	const startPillDrag = useCallback(
 		(e: ReactPointerEvent, pill: LanePill, dragMode: "move" | "l" | "r") => {
+			// A right-button press is the context menu's, and must not collapse a
+			// multi-selection or arm a drag the menu would then leave running.
+			if (e.button !== 0) return;
 			e.preventDefault();
 			e.stopPropagation();
 			selectPill(pill, e.shiftKey);
@@ -1264,6 +1280,7 @@ export function V4Timeline({
 	// once, on pointerup.
 	const startAudioDrag = useCallback(
 		(e: ReactPointerEvent, track: AxcutAudioTrack, mode: "move" | "l" | "r") => {
+			if (e.button !== 0) return;
 			e.preventDefault();
 			e.stopPropagation();
 			tl.selectAudioTrack(track.id);
@@ -1843,6 +1860,23 @@ export function V4Timeline({
 
 	const isPillSelected = (id: string) =>
 		tl.selection?.id === id || tl.multiSelection.some((m) => m.id === id);
+
+	// Right-click: select what was clicked unless it is already part of the selection — a
+	// multi-selection has to survive the click to be deleted as one — then open the menu at
+	// the pointer.
+	const [regionMenu, setRegionMenu] = useState<RegionMenuTarget | null>(null);
+	const openRegionMenu = useCallback(
+		(e: React.MouseEvent, kind: RegionMenuTarget["kind"], id: string) => {
+			e.preventDefault();
+			e.stopPropagation();
+			if (kind === "clip") tl.selectClip(id);
+			else if (kind === "audio") tl.selectAudioTrack(id);
+			else if (tl.selection?.id !== id && !tl.multiSelection.some((m) => m.id === id))
+				tl.selectRegion(kind, id);
+			setRegionMenu({ kind, id, x: e.clientX, y: e.clientY });
+		},
+		[tl],
+	);
 	// Optimistic preview: during a clip-reorder drag, slide each region pill by
 	// the same amount as the clip it sits on — mirroring the clip transforms so
 	// zoom/speed/annotation/trim pills travel with their content in real time,
@@ -1889,6 +1923,7 @@ export function V4Timeline({
 				key={seg.key}
 				role={seg.interactive ? "button" : undefined}
 				tabIndex={seg.interactive ? 0 : undefined}
+				data-pill-id={seg.interactive ? p.id : undefined}
 				className={`${styles.lanePill} ${laneOf(p.kind)}${
 					compact ? ` ${styles.lanePillCompact}` : ""
 				}${seg.interactive && isPillSelected(p.id) ? ` ${styles.lanePillSel}` : ""}`}
@@ -1911,6 +1946,7 @@ export function V4Timeline({
 						: {}),
 				}}
 				onPointerDown={seg.interactive ? (e) => startPillDrag(e, p, "move") : undefined}
+				onContextMenu={seg.interactive ? (e) => openRegionMenu(e, p.kind, p.id) : undefined}
 				// A pill is focusable and announced as a button, so Enter and Space have to
 				// activate it — without this a keyboard user could tab to a region and then
 				// reach nothing that acts on a selection: Delete, copy/paste, the inspector.
@@ -2483,6 +2519,7 @@ export function V4Timeline({
 													selected={tl.selectedAudioTrackId === track.id}
 													onStartDrag={startAudioDrag}
 													onSelect={tl.selectAudioTrack}
+													onContextMenu={openRegionMenu}
 													label={track.label || asset?.label || ts("audioTrack.defaultLabel")}
 													slipHint={ts("audioTrack.slipHint")}
 													slipArmed={slipArmed}
@@ -2585,6 +2622,8 @@ export function V4Timeline({
 											transform: clipTransform,
 										}}
 										onPointerDown={(e) => startClipDrag(e, c)}
+										// Split needs a playhead, which only the Edit surface has.
+										onContextMenu={showLanes ? (e) => openRegionMenu(e, "clip", c.id) : undefined}
 										onClick={(e) => {
 											e.stopPropagation();
 											// A completed reorder-drag also fires a click; don't let it
@@ -2700,6 +2739,14 @@ export function V4Timeline({
 					</div>
 				</div>
 			) : null}
+			<RegionContextMenu
+				target={regionMenu}
+				onTargetChange={setRegionMenu}
+				tl={tl}
+				onCopy={onCopyRegion}
+				onPaste={onPasteRegion}
+				onDelete={onDeleteSelection}
+			/>
 			{/* The crop readout, at the component ROOT rather than in the lane: the lane
 			    sits inside the zoomed canvas transform, which would scale a chip placed
 			    there. `in -> out / length` — 0:00.0 and out = length are the boundary

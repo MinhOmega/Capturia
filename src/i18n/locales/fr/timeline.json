@@ -10,7 +10,8 @@
 		"addAnnotation": "Ajouter une annotation (A)",
 		"addSpeed": "Ajouter une vitesse (S)",
 		"addCameraFullscreen": "Ajouter Caméra plein écran (C)",
-		"splitAtPlayhead": "Couper le clip à la tête de lecture"
+		"splitAtPlayhead": "Couper le clip à la tête de lecture",
+		"pasteAtPlayhead": "Coller à la tête de lecture"
 	},
 	"hints": {
 		"pressZoom": "Appuyez sur Z pour ajouter un zoom",

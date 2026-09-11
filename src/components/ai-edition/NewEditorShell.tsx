@@ -1172,7 +1172,11 @@ export function NewEditorShell() {
 	// document with a ternary chain that mapped a trim to "zoom" and sent
 	// cameraFullscreen down the speed branch, where neither could ever be found.
 	const handleCopyRegion = useCallback(async () => {
-		const sel = tl.selection;
+		// An audio pill is selected through its own channel, never `selection` (see
+		// selectAudioTrack), so without this the audio branch below was unreachable.
+		const sel =
+			tl.selection ??
+			(tl.selectedAudioTrackId ? { kind: "audio" as const, id: tl.selectedAudioTrackId } : null);
 		if (!sel) return;
 		const { copyRegion } = await import("@/lib/ai-edition/store/regionClipboard");
 
@@ -1223,6 +1227,27 @@ export function NewEditorShell() {
 		// One clipboard wins at a time: a copied pill retires the copied clip.
 		setCopiedClipId(null);
 		toast.success("Region copied");
+	}, [tl]);
+
+	// Shared by the Delete keys and the timeline's right-click menu.
+	const deleteSelection = useCallback(() => {
+		// F2.7 — a shift-click multi-selection deletes as one batch (one
+		// undo snapshot); a single selection keeps the original path.
+		if (tl.multiSelection.length > 1) {
+			void tl.removeRegions(tl.multiSelection);
+			return;
+		}
+		if (tl.selection) {
+			void tl.removeRegion(tl.selection.kind, tl.selection.id);
+			return;
+		}
+		// An audio track is selected through its OWN channel, not `selection`
+		// (the two are mutually exclusive — see addAudioTrack), so it needs its
+		// own branch here or Delete does nothing on the one lane that looks
+		// exactly like every other.
+		if (tl.selectedAudioTrackId) {
+			void tl.removeAudioTrack(tl.selectedAudioTrackId);
+		}
 	}, [tl]);
 
 	useEffect(() => {
@@ -1278,26 +1303,6 @@ export function NewEditorShell() {
 				return;
 			}
 
-			const deleteSelection = () => {
-				// F2.7 — a shift-click multi-selection deletes as one batch (one
-				// undo snapshot); a single selection keeps the original path.
-				if (tl.multiSelection.length > 1) {
-					void tl.removeRegions(tl.multiSelection);
-					return;
-				}
-				if (tl.selection) {
-					void tl.removeRegion(tl.selection.kind, tl.selection.id);
-					return;
-				}
-				// An audio track is selected through its OWN channel, not `selection`
-				// (the two are mutually exclusive — see addAudioTrack), so it needs its
-				// own branch here or Delete does nothing on the one lane that looks
-				// exactly like every other.
-				if (tl.selectedAudioTrackId) {
-					void tl.removeAudioTrack(tl.selectedAudioTrackId);
-				}
-			};
-
 			// F2.9 — configurable actions read the user's saved bindings instead
 			// of hardcoded keys, so rebinding in the shortcuts dialog actually
 			// changes runtime behavior.
@@ -1305,7 +1310,7 @@ export function NewEditorShell() {
 				// A pill and a clip can no longer both be selected (see selectRegion /
 				// selectClip), so this reads the one the user actually picked instead
 				// of preferring clips whatever was clicked last.
-				if (tl.selection) {
+				if (tl.selection || tl.selectedAudioTrackId) {
 					e.preventDefault();
 					void handleCopyRegion();
 					return;
@@ -1462,6 +1467,7 @@ export function NewEditorShell() {
 	}, [
 		hasProject,
 		handleCopyRegion,
+		deleteSelection,
 		handleSave,
 		pasteRegion,
 		tl,
@@ -1738,6 +1744,9 @@ export function NewEditorShell() {
 						onNextClip={handleNextClip}
 						onAddVoiceover={openVoiceoverFlow}
 						onEditClip={setEditClipTarget}
+						onCopyRegion={handleCopyRegion}
+						onPasteRegion={pasteRegion}
+						onDeleteSelection={deleteSelection}
 					/>
 				</div>
 			) : null}

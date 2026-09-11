@@ -10,7 +10,8 @@
 		"addAnnotation": "Açıklama Ekle (A)",
 		"addSpeed": "Hız Ekle (S)",
 		"addCameraFullscreen": "Tam Ekran Kamera Ekle (C)",
-		"splitAtPlayhead": "Klibi oynatma çizgisinde böl"
+		"splitAtPlayhead": "Klibi oynatma çizgisinde böl",
+		"pasteAtPlayhead": "Oynatma çizgisine yapıştır"
 	},
 	"hints": {
 		"pressZoom": "Yakınlaştırma eklemek için Z tuşuna basın",
