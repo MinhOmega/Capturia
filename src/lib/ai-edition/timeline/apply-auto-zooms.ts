@@ -2,13 +2,23 @@
 // timeline wand both end here. Suggestion math stays in zoom-suggestions.ts;
 // this file only collects per-asset telemetry and appends the resulting regions.
 
-import type { CursorTelemetryPoint } from "@/components/video-editor/types";
 import { createId } from "../document/ids";
 import type { AxcutAsset, AxcutDocument } from "../schema";
 import { anchorRegionsWithDerivedMs } from "./timelineMap";
-import { type AutoZoomSuggestion, buildAutoZoomSuggestionsForClips } from "./zoom-suggestions";
+import {
+	type AutoZoomSuggestion,
+	buildAutoZoomSuggestionsForClips,
+	type ZoomSuggestionSample,
+} from "./zoom-suggestions";
 
 export const AUTO_ZOOM_DEFAULT_DURATION_MS = 2000;
+
+/** Reads one recording's cursor samples. Typed to what the suggester reads, so both
+ *  `getTelemetry` (positions) and `getRecordingData` (positions plus clicks, with a
+ *  nullable `cursorType` the suggester never looks at) satisfy it without a cast. */
+export type AutoZoomTelemetryReader = (
+	videoPath: string,
+) => Promise<ZoomSuggestionSample[] | null | undefined>;
 
 /** Which assets to read telemetry for. The wand takes every video on the document;
  *  the fresh-recording import narrows it to the take it is pending on, so a project
@@ -17,7 +27,7 @@ export type AutoZoomAssetFilter = (asset: AxcutAsset) => boolean;
 
 export async function collectAutoZoomSuggestionsForDocument(
 	document: AxcutDocument,
-	getTelemetry: (videoPath: string) => Promise<CursorTelemetryPoint[] | null | undefined>,
+	getTelemetry: AutoZoomTelemetryReader,
 	includeAsset: AutoZoomAssetFilter = () => true,
 ): Promise<AutoZoomSuggestion[]> {
 	const existingRegions = document.zoomRanges.map((region) => ({
@@ -75,7 +85,7 @@ export function clipExtentSignature(document: AxcutDocument): string {
  */
 export async function collectAutoZoomSuggestionsForLatestDocument(
 	readDocument: () => AxcutDocument | null,
-	getTelemetry: (videoPath: string) => Promise<CursorTelemetryPoint[] | null | undefined>,
+	getTelemetry: AutoZoomTelemetryReader,
 	includeAsset?: AutoZoomAssetFilter,
 ): Promise<{ document: AxcutDocument; suggestions: AutoZoomSuggestion[] } | null> {
 	const start = readDocument();

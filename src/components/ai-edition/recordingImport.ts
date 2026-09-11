@@ -14,7 +14,6 @@
 // derived `currentVideoPath`); the only renderer that still needs the session
 // after this point is the CLI runner, which lives in its own process.
 
-import type { CursorTelemetryPoint } from "@/components/video-editor/types";
 import { createId } from "@/lib/ai-edition/document/ids";
 import { clipAwaitsProbedDuration } from "@/lib/ai-edition/document/timeline";
 import type { AxcutDocument } from "@/lib/ai-edition/schema";
@@ -25,6 +24,7 @@ import {
 	waitForDocumentSaves,
 } from "@/lib/ai-edition/store/projectStore";
 import {
+	type AutoZoomTelemetryReader,
 	appendAutoZoomSuggestions,
 	collectAutoZoomSuggestionsForLatestDocument,
 } from "@/lib/ai-edition/timeline/apply-auto-zooms";
@@ -69,7 +69,7 @@ export function consumeFreshRecordingAutoZoomPending(): boolean {
 
 export type ApplyFreshRecordingAutoZoomsDeps = {
 	enabled?: boolean;
-	getTelemetry?: (videoPath: string) => Promise<CursorTelemetryPoint[] | null | undefined>;
+	getTelemetry?: AutoZoomTelemetryReader;
 	createId?: (prefix: string) => string;
 	/** Deadline for this path's own write. Tests use a short one. */
 	saveTimeoutMs?: number;
