@@ -1340,7 +1340,7 @@ mod tests {
         // must hold that privacy boundary — the staged picture freezes.
         let output = std::env::temp_dir().join("openscreen-capture-pause-stage.mp4");
         let (mut capture, _) =
-            Capture::start(&output, 320, 240, 30, Some(1_000_000), Some(Backend::Software), Vec::new())
+            Capture::start(&output, 320, 240, None, 30, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
                 .expect("start");
 
         // Pause BEFORE any frame is staged, then a frame arrives during the pause.
@@ -1368,7 +1368,7 @@ mod tests {
         // both safe and required while paused.
         let output = std::env::temp_dir().join("openscreen-capture-pause-finish.mp4");
         let (mut capture, _) =
-            Capture::start(&output, 320, 240, 60, Some(1_000_000), Some(Backend::Software), Vec::new())
+            Capture::start(&output, 320, 240, None, 60, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
                 .expect("start");
         capture
             .stage(&frame(320, 240, shim::constants().video_format_bgrx))
@@ -1403,7 +1403,7 @@ mod tests {
         // keeps duration ~= elapsed, and the wall-clock telemetry agrees with it.
         let output = std::env::temp_dir().join("openscreen-capture-sparse.mp4");
         let (mut capture, _) =
-            Capture::start(&output, 320, 240, None, 60, Some(1_000_000), Some(Backend::Software), Vec::new())
+            Capture::start(&output, 320, 240, None, 60, Some(1_000_000), Some(Backend::Software), Vec::new(), None)
                 .expect("start");
         capture
             .stage(&frame(320, 240, shim::constants().video_format_bgrx))
