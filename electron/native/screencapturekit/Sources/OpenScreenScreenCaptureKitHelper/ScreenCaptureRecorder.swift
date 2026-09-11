@@ -818,7 +818,13 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			request.audio.microphone.deviceId?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 		let deviceName =
 			request.audio.microphone.deviceName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-		return (!deviceId.isEmpty && deviceId != "default") || !deviceName.isEmpty
+		// "default" has to veto the name, not sit beside it. Chromium's picker
+		// persists BOTH fields from whichever entry was clicked, and its Default
+		// entry is labelled "Default - Microphone (…)" — a string no AVCaptureDevice
+		// localizedName ever matches. Reading the name here meant that picking
+		// "Default" warned about a microphone the user never chose.
+		if deviceId == "default" { return false }
+		return !deviceId.isEmpty || !deviceName.isEmpty
 	}
 
 	private func resolveMicrophoneCaptureDeviceID() -> String? {
