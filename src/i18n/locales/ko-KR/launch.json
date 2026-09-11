@@ -107,7 +107,12 @@
 		"previewUnavailable": "미리 보기를 사용할 수 없습니다",
 		"about": "정보",
 		"version": "버전 {{version}}",
-		"checkingForUpdates": "확인 중…"
+		"checkingForUpdates": "확인 중…",
+		"saveTo": "녹화 저장 위치",
+		"changeFolder": "변경…",
+		"resetFolder": "초기화",
+		"folderUnavailable": "지금은 사용할 수 없습니다. 녹화할 때 기본 폴더를 제안합니다.",
+		"folderHint": "이전 녹화는 저장된 위치에 그대로 남습니다."
 	},
 	"permissions": {
 		"title": "권한",

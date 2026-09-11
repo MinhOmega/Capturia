@@ -1318,6 +1318,8 @@ appReady?.then(async () => {
 	// repair scratch all accumulate until the disk is full — and a full disk is
 	// how a recording is lost. Deliberately not awaited: startup must not wait on
 	// a stat of every file in the folder, and a sweep that fails changes nothing.
+	// The default folder only, even when the user chose another in Settings: see the
+	// header of recordingsCleanup.ts for why a user's folder is never swept.
 	scheduleRecordingsCleanup({
 		recordingsDir: RECORDINGS_DIR,
 		userDataDir: app.getPath("userData"),

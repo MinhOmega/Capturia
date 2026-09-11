@@ -107,7 +107,12 @@
 		"previewUnavailable": "المعاينة غير متاحة",
 		"about": "حول",
 		"version": "الإصدار {{version}}",
-		"checkingForUpdates": "جارٍ التحقق…"
+		"checkingForUpdates": "جارٍ التحقق…",
+		"saveTo": "حفظ التسجيلات في",
+		"changeFolder": "تغيير…",
+		"resetFolder": "إعادة تعيين",
+		"folderUnavailable": "غير متاح حاليًا — سيُقترح المجلد الافتراضي عند بدء التسجيل.",
+		"folderHint": "تبقى التسجيلات السابقة في المكان الذي حُفظت فيه."
 	},
 	"permissions": {
 		"title": "الأذونات",

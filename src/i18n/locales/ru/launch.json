@@ -107,7 +107,12 @@
 		"previewUnavailable": "Предпросмотр недоступен",
 		"about": "О программе",
 		"version": "Версия {{version}}",
-		"checkingForUpdates": "Проверка…"
+		"checkingForUpdates": "Проверка…",
+		"saveTo": "Сохранять записи в",
+		"changeFolder": "Изменить…",
+		"resetFolder": "Сбросить",
+		"folderUnavailable": "Сейчас недоступна — при записи будет предложена папка по умолчанию.",
+		"folderHint": "Прежние записи остаются там, где были сохранены."
 	},
 	"permissions": {
 		"title": "Разрешения",

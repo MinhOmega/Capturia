@@ -43,6 +43,18 @@ export interface HudDeviceSettingsLabels {
 	about: string;
 	checkForUpdates: string;
 	checkingForUpdates: string;
+	saveTo: string;
+	changeFolder: string;
+	resetFolder: string;
+	folderUnavailable: string;
+	folderHint: string;
+}
+
+/** What main reports for Settings → "Save recordings to" (`get-recordings-folder`). */
+export interface RecordingsFolderState {
+	folder: string;
+	isDefault: boolean;
+	available: boolean;
 }
 
 /** Segmented input-level bar, driven by the live analyser. */
@@ -140,6 +152,8 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	versionLabel,
 	canCheckForUpdates,
 	checkingForUpdates,
+	recordingsFolder,
+	recordingsFolderLocked,
 	onSelectMic,
 	onSelectCamera,
 	onSelectFrameRate,
@@ -147,6 +161,8 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	onSelectCountdown,
 	onSelectMicGain,
 	onCheckForUpdates,
+	onChooseRecordingsFolder,
+	onResetRecordingsFolder,
 	onClose,
 	panelRef,
 }: {
@@ -166,6 +182,10 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	versionLabel: string | null;
 	canCheckForUpdates: boolean;
 	checkingForUpdates: boolean;
+	/** Null until main answers; the row stays out rather than showing a blank path. */
+	recordingsFolder: RecordingsFolderState | null;
+	/** Mid-take: the take already has its folder, and its stop paths expect it unchanged. */
+	recordingsFolderLocked: boolean;
 	onSelectMic: (device: MicrophoneDevice) => void;
 	onSelectCamera: (device: CameraDevice) => void;
 	onSelectFrameRate: (fps: CaptureFrameRate) => void;
@@ -173,6 +193,8 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 	onSelectCountdown: (seconds: CountdownSeconds) => void;
 	onSelectMicGain: (gain: MicrophoneGain) => void;
 	onCheckForUpdates: () => void;
+	onChooseRecordingsFolder: () => void;
+	onResetRecordingsFolder: () => void;
 	onClose: () => void;
 	panelRef: (el: HTMLDivElement | null) => void;
 }) {
@@ -333,6 +355,45 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 				))}
 			</div>
 			<div className={styles.hudModalHint}>{labels.captureHint}</div>
+
+			{/* Where the next take is written — the same kind of choice as the rows above. Main
+			    owns the path: Change opens the OS picker there, and nothing here types one in. */}
+			{recordingsFolder ? (
+				<>
+					<div className={styles.hudMenuSectionLabel}>{labels.saveTo}</div>
+					<div className={styles.hudModalAboutRow}>
+						<span
+							className={`${styles.hudModalVersion} min-w-0 truncate`}
+							title={recordingsFolder.folder}
+						>
+							{recordingsFolder.folder}
+						</span>
+						<span className="flex shrink-0">
+							<button
+								type="button"
+								onClick={onChooseRecordingsFolder}
+								disabled={recordingsFolderLocked}
+								className={styles.hudModalAboutAction}
+							>
+								{labels.changeFolder}
+							</button>
+							{recordingsFolder.isDefault ? null : (
+								<button
+									type="button"
+									onClick={onResetRecordingsFolder}
+									disabled={recordingsFolderLocked}
+									className={styles.hudModalAboutAction}
+								>
+									{labels.resetFolder}
+								</button>
+							)}
+						</span>
+					</div>
+					<div className={styles.hudModalHint}>
+						{recordingsFolder.available ? labels.folderHint : labels.folderUnavailable}
+					</div>
+				</>
+			) : null}
 
 			{/* This panel is the app's only settings surface, so the permission list
 			    lives here rather than behind a window of its own: it is the same

@@ -107,7 +107,12 @@
 		"previewUnavailable": "Không thể xem trước",
 		"about": "Giới thiệu",
 		"version": "Phiên bản {{version}}",
-		"checkingForUpdates": "Đang kiểm tra…"
+		"checkingForUpdates": "Đang kiểm tra…",
+		"saveTo": "Lưu bản ghi vào",
+		"changeFolder": "Thay đổi…",
+		"resetFolder": "Đặt lại",
+		"folderUnavailable": "Hiện không khả dụng — thư mục mặc định sẽ được đề xuất khi bạn ghi.",
+		"folderHint": "Các bản ghi trước vẫn nằm ở nơi đã được lưu."
 	},
 	"permissions": {
 		"title": "Quyền truy cập",

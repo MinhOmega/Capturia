@@ -10,6 +10,13 @@
 // This file does two things that need a filesystem: work out which recordings a
 // saved project still needs, and delete.
 //
+// ONLY THE DEFAULT FOLDER IS EVER SWEPT, never one chosen in Settings (see
+// `recordingsFolder.ts`). Files are recognised by name (`recordingsCleanupPolicy.ts`),
+// and that is enough in a folder only Capturia writes to. It is not in `~/Videos`:
+// another tool's `recording-20240101.mp4` fits the same pattern, and even Capturia's
+// own takes there are ones the user moved out of app storage on purpose — the age and
+// size passes below would delete finished recordings the user chose to keep.
+//
 // THE ONE RULE THAT MATTERS: if the protected set cannot be computed in full,
 // nothing is deleted. A partial answer is worse than no cleanup, because it
 // looks like a successful run while removing exactly the media whose project

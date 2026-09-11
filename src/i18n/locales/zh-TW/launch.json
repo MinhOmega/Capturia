@@ -107,7 +107,12 @@
 		"previewUnavailable": "預覽無法使用",
 		"about": "關於",
 		"version": "版本 {{version}}",
-		"checkingForUpdates": "檢查中…"
+		"checkingForUpdates": "檢查中…",
+		"saveTo": "錄製儲存位置",
+		"changeFolder": "變更…",
+		"resetFolder": "重設",
+		"folderUnavailable": "目前無法使用——錄製時將建議改用預設資料夾。",
+		"folderHint": "先前的錄製內容仍保留在原本的儲存位置。"
 	},
 	"permissions": {
 		"title": "權限",

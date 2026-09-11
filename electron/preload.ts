@@ -189,6 +189,18 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	getRecordingsDiskSpace: () => {
 		return ipcRenderer.invoke("get-recordings-disk-space");
 	},
+	getRecordingsFolder: () => {
+		return ipcRenderer.invoke("get-recordings-folder");
+	},
+	chooseRecordingsFolder: () => {
+		return ipcRenderer.invoke("choose-recordings-folder");
+	},
+	resetRecordingsFolder: () => {
+		return ipcRenderer.invoke("reset-recordings-folder");
+	},
+	confirmRecordingsFolder: () => {
+		return ipcRenderer.invoke("confirm-recordings-folder");
+	},
 	writeRecordingMarkers: (videoPath: string, markers: number[]) => {
 		return ipcRenderer.invoke("write-recording-markers", videoPath, markers);
 	},

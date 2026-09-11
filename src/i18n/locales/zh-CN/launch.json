@@ -107,7 +107,12 @@
 		"previewUnavailable": "预览不可用",
 		"about": "关于",
 		"version": "版本 {{version}}",
-		"checkingForUpdates": "正在检查…"
+		"checkingForUpdates": "正在检查…",
+		"saveTo": "录制保存位置",
+		"changeFolder": "更改…",
+		"resetFolder": "重置",
+		"folderUnavailable": "当前不可用——录制时将建议使用默认文件夹。",
+		"folderHint": "之前的录制内容仍保留在原来的保存位置。"
 	},
 	"permissions": {
 		"title": "权限",

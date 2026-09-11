@@ -107,7 +107,12 @@
 		"previewUnavailable": "Preview unavailable",
 		"about": "About",
 		"version": "Version {{version}}",
-		"checkingForUpdates": "Checking…"
+		"checkingForUpdates": "Checking…",
+		"saveTo": "Save recordings to",
+		"changeFolder": "Change…",
+		"resetFolder": "Reset",
+		"folderUnavailable": "Unavailable right now — the default folder will be offered when you record.",
+		"folderHint": "Earlier recordings stay where they were saved."
 	},
 	"permissions": {
 		"title": "Permissions",

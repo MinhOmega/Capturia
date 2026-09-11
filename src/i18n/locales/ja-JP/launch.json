@@ -107,7 +107,12 @@
 		"previewUnavailable": "プレビューを利用できません",
 		"about": "情報",
 		"version": "バージョン {{version}}",
-		"checkingForUpdates": "確認中…"
+		"checkingForUpdates": "確認中…",
+		"saveTo": "録画の保存先",
+		"changeFolder": "変更…",
+		"resetFolder": "リセット",
+		"folderUnavailable": "現在利用できません。録画時にデフォルトのフォルダーを提案します。",
+		"folderHint": "以前の録画は保存された場所にそのまま残ります。"
 	},
 	"permissions": {
 		"title": "アクセス権限",

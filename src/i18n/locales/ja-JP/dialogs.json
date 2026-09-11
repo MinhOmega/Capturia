@@ -87,6 +87,11 @@
 		"videoFiles": "動画ファイル",
 		"audioFiles": "オーディオファイル",
 		"openscreenProject": "Capturia プロジェクト",
-		"allFiles": "すべてのファイル"
+		"allFiles": "すべてのファイル",
+		"selectRecordingsFolder": "録画の保存フォルダーを選択"
+	},
+	"recordingsFolder": {
+		"unavailable": "Capturia は {{folder}} に録画を保存できません。ドライブが取り外されているか、書き込み権限がない可能性があります。",
+		"useDefault": "デフォルトのフォルダーに録画"
 	}
 }

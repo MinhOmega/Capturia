@@ -107,7 +107,12 @@
 		"previewUnavailable": "Pré-visualização indisponível",
 		"about": "Sobre",
 		"version": "Versão {{version}}",
-		"checkingForUpdates": "Verificando…"
+		"checkingForUpdates": "Verificando…",
+		"saveTo": "Salvar gravações em",
+		"changeFolder": "Alterar…",
+		"resetFolder": "Redefinir",
+		"folderUnavailable": "Indisponível no momento — a pasta padrão será oferecida ao gravar.",
+		"folderHint": "As gravações anteriores continuam onde foram salvas."
 	},
 	"permissions": {
 		"title": "Permissões",

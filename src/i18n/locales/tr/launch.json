@@ -107,7 +107,12 @@
 		"previewUnavailable": "Önizleme kullanılamıyor",
 		"about": "Hakkında",
 		"version": "Sürüm {{version}}",
-		"checkingForUpdates": "Denetleniyor…"
+		"checkingForUpdates": "Denetleniyor…",
+		"saveTo": "Kayıtları şuraya kaydet",
+		"changeFolder": "Değiştir…",
+		"resetFolder": "Sıfırla",
+		"folderUnavailable": "Şu anda kullanılamıyor — kayıt başlatırken varsayılan klasör önerilecek.",
+		"folderHint": "Önceki kayıtlar kaydedildikleri yerde kalır."
 	},
 	"permissions": {
 		"title": "İzinler",

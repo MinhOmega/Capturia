@@ -144,6 +144,23 @@ interface Window {
 		getRecordingsDiskSpace: () => Promise<
 			import("../src/lib/recordingDiskSpace").RecordingDiskSpaceSnapshot
 		>;
+		/** Settings → "Save recordings to". `folder` is the default one when `isDefault`, and
+		 *  `available` is false while the chosen folder cannot take a new recording. */
+		getRecordingsFolder: () => Promise<{ folder: string; isDefault: boolean; available: boolean }>;
+		/** Opens the OS folder picker and resolves with the state after the user's answer. */
+		chooseRecordingsFolder: () => Promise<{
+			folder: string;
+			isDefault: boolean;
+			available: boolean;
+		}>;
+		resetRecordingsFolder: () => Promise<{
+			folder: string;
+			isDefault: boolean;
+			available: boolean;
+		}>;
+		/** Right before a take: false when the chosen folder is unavailable and the user declined
+		 *  to record into the default folder instead. */
+		confirmRecordingsFolder: () => Promise<boolean>;
 		setRecordingState: (
 			recording: boolean,
 			recordingId?: number,

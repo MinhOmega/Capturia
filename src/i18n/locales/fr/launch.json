@@ -107,7 +107,12 @@
 		"previewUnavailable": "Aperçu indisponible",
 		"about": "À propos",
 		"version": "Version {{version}}",
-		"checkingForUpdates": "Recherche…"
+		"checkingForUpdates": "Recherche…",
+		"saveTo": "Emplacement des enregistrements",
+		"changeFolder": "Modifier…",
+		"resetFolder": "Réinitialiser",
+		"folderUnavailable": "Indisponible pour le moment — le dossier par défaut vous sera proposé à l'enregistrement.",
+		"folderHint": "Les enregistrements précédents restent à leur emplacement actuel."
 	},
 	"permissions": {
 		"title": "Autorisations",

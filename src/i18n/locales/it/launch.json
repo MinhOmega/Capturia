@@ -107,7 +107,12 @@
 		"previewUnavailable": "Anteprima non disponibile",
 		"about": "Info",
 		"version": "Versione {{version}}",
-		"checkingForUpdates": "Controllo…"
+		"checkingForUpdates": "Controllo…",
+		"saveTo": "Salva le registrazioni in",
+		"changeFolder": "Cambia…",
+		"resetFolder": "Ripristina",
+		"folderUnavailable": "Non disponibile al momento: all'avvio della registrazione verrà proposta la cartella predefinita.",
+		"folderHint": "Le registrazioni precedenti restano dove sono state salvate."
 	},
 	"permissions": {
 		"title": "Autorizzazioni",

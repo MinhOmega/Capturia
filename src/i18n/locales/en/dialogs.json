@@ -87,6 +87,11 @@
 		"videoFiles": "Video Files",
 		"audioFiles": "Audio Files",
 		"openscreenProject": "Capturia Project",
-		"allFiles": "All Files"
+		"allFiles": "All Files",
+		"selectRecordingsFolder": "Select Recordings Folder"
+	},
+	"recordingsFolder": {
+		"unavailable": "Capturia can't save recordings to {{folder}}. The drive may be disconnected, or Capturia may not have permission to write there.",
+		"useDefault": "Record to Default Folder"
 	}
 }

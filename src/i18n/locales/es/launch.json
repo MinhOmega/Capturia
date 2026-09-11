@@ -107,7 +107,12 @@
 		"previewUnavailable": "Vista previa no disponible",
 		"about": "Acerca de",
 		"version": "Versión {{version}}",
-		"checkingForUpdates": "Buscando…"
+		"checkingForUpdates": "Buscando…",
+		"saveTo": "Guardar grabaciones en",
+		"changeFolder": "Cambiar…",
+		"resetFolder": "Restablecer",
+		"folderUnavailable": "No disponible ahora mismo: se te ofrecerá la carpeta predeterminada al grabar.",
+		"folderHint": "Las grabaciones anteriores se quedan donde se guardaron."
 	},
 	"permissions": {
 		"title": "Permisos",

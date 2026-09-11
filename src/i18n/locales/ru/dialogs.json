@@ -87,6 +87,11 @@
 		"videoFiles": "Видеофайлы",
 		"audioFiles": "Аудиофайлы",
 		"openscreenProject": "Проект Capturia",
-		"allFiles": "Все файлы"
+		"allFiles": "Все файлы",
+		"selectRecordingsFolder": "Выбрать папку для записей"
+	},
+	"recordingsFolder": {
+		"unavailable": "Capturia не может сохранять записи в {{folder}}. Возможно, диск отключён или у Capturia нет прав на запись в эту папку.",
+		"useDefault": "Записать в папку по умолчанию"
 	}
 }
