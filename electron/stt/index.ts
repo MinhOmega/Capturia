@@ -114,6 +114,12 @@ export class SttManager {
 	/** What the last run actually bound; the settings' CPU warning trusts it over a guess. */
 	private lastBackend: SttBackend | null = null;
 	/**
+	 * Switches in flight, by the model they switch to. A second request for the
+	 * same model awaits the first: two downloads of one model share its `.partial`,
+	 * and two pipelines writing one inode can rename a truncated file into place.
+	 */
+	private readonly switching = new Map<SttModelId, Promise<void>>();
+	/**
 	 * Bumped by `cancel()`. The chunk loop compares it against the value it
 	 * captured on entry, so a cancel that lands after a new run started cannot
 	 * kill that new run.
@@ -479,27 +485,47 @@ export class SttManager {
 	 *
 	 * A run already in flight finishes on the model it started with; clearing
 	 * `initPromise` makes the next one re-prepare, and `prepare()` swaps the helper.
+	 *
+	 * Single-flight per model (see `switching`); a joining caller's `onProgress` is
+	 * not attached, but both requests come from the settings window, which listens
+	 * on `stt:model-progress` rather than per request.
 	 */
-	async setModel(
-		id: SttModelId,
-		onProgress?: (event: SttModelProgressEvent) => void,
-	): Promise<void> {
+	setModel(id: SttModelId, onProgress?: (event: SttModelProgressEvent) => void): Promise<void> {
+		const inFlight = this.switching.get(id);
+		if (inFlight) return inFlight;
 		const modelsDir = this.getModelsDir();
-		await ensureModels({
-			baseDir: modelsDir,
-			only: [id],
-			onProgress: (event) =>
-				onProgress?.({ id, downloadedBytes: event.downloadedBytes, totalBytes: event.totalBytes }),
-		});
-		await writeActiveModel(modelsDir, id);
-		this.initPromise = null;
+		const run = (async () => {
+			await ensureModels({
+				baseDir: modelsDir,
+				only: [id],
+				onProgress: (event) =>
+					onProgress?.({
+						id,
+						downloadedBytes: event.downloadedBytes,
+						totalBytes: event.totalBytes,
+					}),
+			});
+			await writeActiveModel(modelsDir, id);
+			this.initPromise = null;
+		})().finally(() => this.switching.delete(id));
+		this.switching.set(id, run);
+		return run;
 	}
 
-	/** Remove a downloaded model other than the active one. */
+	/**
+	 * Remove a downloaded model other than the active one. Refused while a switch
+	 * TO it is in flight (it would delete the download from under it); a switch
+	 * FROM it is covered by the active check, since a model stays active until the
+	 * switch replacing it has landed.
+	 */
 	async deleteModel(id: SttModelId): Promise<void> {
 		const modelsDir = this.getModelsDir();
 		if (id === (await readActiveModel(modelsDir))) {
 			throw new Error("The active speech model cannot be deleted");
+		}
+		// After the await, so a switch that started while it ran is seen too.
+		if (this.switching.has(id)) {
+			throw new Error("This speech model is still being switched to");
 		}
 		const file = modelPath(modelsDir, id);
 		await rm(file, { force: true });

@@ -512,6 +512,40 @@ describe("SttManager", () => {
 		}
 	});
 
+	it("runs one download for two switches to the same model, and refuses to delete it meanwhile", async () => {
+		const { ensureModels } = await import("./modelManager");
+		const dir = mkdtempSync(path.join(tmpdir(), "capturia-stt-single-flight-"));
+		try {
+			const mgr = new SttManager();
+			await mgr.init({ modelsBaseDir: dir });
+			const mocked = vi.mocked(ensureModels);
+			mocked.mockClear();
+			let finish: () => void = () => undefined;
+			mocked.mockImplementationOnce(
+				() =>
+					new Promise<void>((resolve) => {
+						finish = resolve;
+					}),
+			);
+
+			// "Use accurate", close and reopen AI settings, "Use accurate" again.
+			const first = mgr.setModel("accurate");
+			const second = mgr.setModel("accurate");
+			expect(second).toBe(first);
+			await expect(mgr.deleteModel("accurate")).rejects.toThrow(/being switched to/);
+
+			finish();
+			await Promise.all([first, second]);
+			expect(mocked).toHaveBeenCalledOnce();
+			expect((await mgr.listModels()).active).toBe("accurate");
+			// Settled, so the next switch is a real one again.
+			await mgr.setModel("fast");
+			expect(mocked).toHaveBeenCalledTimes(2);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	it("fans status out to every sink, and detaching one leaves the others", async () => {
 		const mgr = new SttManager();
 		const a = vi.fn<(e: SttStatusEvent) => void>();
