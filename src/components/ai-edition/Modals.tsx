@@ -8,6 +8,7 @@ import {
 } from "react";
 import type { CropRegion } from "@/components/video-editor/types";
 import { useScopedT } from "@/contexts/I18nContext";
+import { usePosterFrame } from "@/hooks/usePosterFrame";
 import type { AxcutClip } from "@/lib/ai-edition/schema";
 import { formatSeconds } from "@/lib/ai-edition/timeline/format";
 import {
@@ -109,6 +110,32 @@ interface ProjectItem {
 	id: string;
 	title: string;
 	updatedAt: string;
+	durationSec?: number;
+}
+
+/** A project's poster frame; the folder tile until one arrives, or when there is none. */
+function ProjectPoster({ projectId }: { projectId: string }) {
+	const poster = usePosterFrame("project", projectId);
+	return (
+		<div
+			style={{
+				width: 64,
+				height: 36,
+				borderRadius: "var(--r-sm)",
+				overflow: "hidden",
+				background: "linear-gradient(135deg, var(--brand-lo), var(--brand))",
+				display: "grid",
+				placeItems: "center",
+				color: "var(--accent-on)",
+			}}
+		>
+			{poster ? (
+				<img src={poster} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+			) : (
+				<FolderOpen size={18} />
+			)}
+		</div>
+	);
 }
 
 interface OpenProjectModalProps extends BaseModalProps {
@@ -257,7 +284,7 @@ export function OpenProjectModal({
 										flex: 1,
 										minWidth: 0,
 										display: "grid",
-										gridTemplateColumns: "36px 1fr auto",
+										gridTemplateColumns: "64px 1fr auto",
 										alignItems: "center",
 										gap: 12,
 										padding: "10px 12px",
@@ -271,19 +298,7 @@ export function OpenProjectModal({
 										font: "inherit",
 									}}
 								>
-									<div
-										style={{
-											width: 36,
-											height: 36,
-											borderRadius: "var(--r-sm)",
-											background: "linear-gradient(135deg, var(--brand-lo), var(--brand))",
-											display: "grid",
-											placeItems: "center",
-											color: "var(--accent-on)",
-										}}
-									>
-										<FolderOpen size={18} />
-									</div>
+									<ProjectPoster projectId={p.id} />
 									<div style={{ minWidth: 0 }}>
 										<div
 											style={{
@@ -302,7 +317,7 @@ export function OpenProjectModal({
 												marginTop: 2,
 											}}
 										>
-											id: {p.id.slice(0, 8)}
+											{formatSeconds(p.durationSec ?? 0)}
 										</div>
 									</div>
 									<span

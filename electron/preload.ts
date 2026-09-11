@@ -334,6 +334,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	getAudioPeaks: (filePath: string, durationSec: number) => {
 		return ipcRenderer.invoke("get-audio-peaks", filePath, durationSec);
 	},
+	/** Poster frames as `data:` URLs, disk-cached. See electron/media/posterFrames.ts. */
+	getMediaPoster: (filePath: string, atSec: number): Promise<string | null> => {
+		return ipcRenderer.invoke("get-media-poster", filePath, atSec);
+	},
+	getProjectPoster: (projectId: string): Promise<string | null> => {
+		return ipcRenderer.invoke("get-project-poster", projectId);
+	},
 	readFileChunk: (filePath: string, offset: number, length: number) => {
 		return ipcRenderer.invoke("read-file-chunk", filePath, offset, length);
 	},

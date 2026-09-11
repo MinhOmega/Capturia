@@ -385,6 +385,8 @@ interface Window {
 			filePath: string,
 			durationSec: number,
 		) => Promise<import("./media/audioPeaks").AudioPeaksResult>;
+		getMediaPoster: (filePath: string, atSec: number) => Promise<string | null>;
+		getProjectPoster: (projectId: string) => Promise<string | null>;
 		readFileChunk: (
 			filePath: string,
 			offset: number,

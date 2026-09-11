@@ -73,6 +73,7 @@ import {
 	readCursorTelemetryFile as readCursorTelemetryFileFrom,
 } from "../media/cursorSidecar";
 import { findMediaLinksByFingerprint, registerMediaLinks } from "../media/mediaLinksRegistry";
+import { getPosterFrame } from "../media/posterFrames";
 import { relinkProjectMedia } from "../media/projectMediaRelinker";
 import { readRecordingMarkers, writeRecordingMarkers } from "../media/recordingMarkers";
 import {
@@ -4150,6 +4151,18 @@ export function registerIpcHandlers(
 		},
 	);
 
+	// Poster frame for a media card (see media/posterFrames). Null keeps the
+	// card's placeholder: no ffmpeg, a missing file, or nothing decodable.
+	ipcMain.handle(
+		"get-media-poster",
+		async (_, filePath: string, atSec: number): Promise<string | null> => {
+			// Same approval gate as every other read of a renderer-supplied path.
+			const normalizedPath = readableApprovedPath(filePath);
+			if (!normalizedPath) return null;
+			return getPosterFrame(normalizedPath, Number.isFinite(atSec) ? atSec : 0).catch(() => null);
+		},
+	);
+
 	// Cap renderer-requested chunk sizes so a buggy or compromised renderer
 	// cannot make the main process allocate an arbitrarily large buffer.
 	const MAX_IPC_CHUNK_BYTES = 64 * 1024 * 1024;
@@ -4597,6 +4610,25 @@ export function registerIpcHandlers(
 		RECORDINGS_DIR,
 		approveDocumentMedia,
 	);
+
+	// Poster frame for a row of the project list. Keyed on the project id, not a
+	// path: the list shows projects that are not open, whose media was never
+	// approved, and approving it all just to draw thumbnails would widen every
+	// generic read. The path comes from the project's own file instead — the same
+	// trust `approveDocumentMedia` extends to a loaded document, and under the same
+	// extension gate — and only a thumbnail of it ever leaves this handler.
+	ipcMain.handle("get-project-poster", async (_, projectId: string): Promise<string | null> => {
+		try {
+			const source = await aiEditionDocuments.posterSource(projectId);
+			const media = normalizeVideoSourcePath(source?.path);
+			if (!source || !media || !path.isAbsolute(media) || !hasAllowedImportVideoExtension(media)) {
+				return null;
+			}
+			return await getPosterFrame(media, source.atSec);
+		} catch {
+			return null;
+		}
+	});
 
 	// LlmConfigStore is single-instance for a duller reason — its constructor does
 	// two sync readFileSync plus a safeStorage decrypt, and it was running on every
