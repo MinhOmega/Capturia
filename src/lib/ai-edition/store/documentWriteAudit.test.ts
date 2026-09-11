@@ -119,6 +119,9 @@ const DECLARED: WritePath[] = [
 		"gesture",
 	),
 
+	// Applying a saved look is a click in the "Saved looks" menu: one undo step.
+	w("src/components/ai-edition/LookPresetsMenu.tsx", "apply", "save", "gesture"),
+
 	// The persist that follows an undo. Recording it would undo the undo.
 	w("src/components/ai-edition/NewEditorShell.tsx", "NewEditorShell", "save", "automatic"),
 	// "Save" on the unsaved-changes prompt.

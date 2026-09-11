@@ -131,7 +131,9 @@ export function applyLook(doc: AxcutDocument, look: Look): AxcutDocument {
 	return look.captions ? patchCaptionSettings(next, look.captions) : next;
 }
 
-const PROBE_DOC = createEmptyDocument({ projectId: "look-preset", title: "" });
+// The schema rejects an empty title, and this runs at import time: an invalid probe
+// would take projectStore (which imports this module) down with it.
+const PROBE_DOC = createEmptyDocument({ projectId: "look-preset", title: "Look preset" });
 
 /** A stored preset, rebuilt from known fields only — so a field a newer build wrote is
  *  ignored, and a hand-edited value lands in range — or `null` when it is not a preset. */
