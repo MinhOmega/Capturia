@@ -472,6 +472,7 @@ export class SttManager {
 			active: await readActiveModel(modelsDir),
 			models,
 			cpuOnly: backend === "whispercpp-cpu",
+			inFlight: [...this.switching.keys()],
 		};
 	}
 

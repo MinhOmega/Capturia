@@ -6,7 +6,7 @@
 // whichever model is active when it runs.
 
 import { AlertTriangle, Check, Loader2, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useScopedT } from "@/contexts/I18nContext";
 import { formatBytes } from "@/utils/formatBytes";
@@ -22,37 +22,67 @@ export function SpeechModelSettings() {
 	/** The model being downloaded, and how far along it is (0-1). */
 	const [pending, setPending] = useState<{ id: SttModelId; fraction: number } | null>(null);
 
+	/** Switches this mount is awaiting, so a stream of progress events waits once. */
+	const following = useRef(new Set<SttModelId>());
+
 	const refresh = useCallback(async () => {
 		const stt = sttBridge();
 		if (stt?.listModels) setSnapshot(await stt.listModels().catch(() => null));
 	}, []);
+
+	/**
+	 * Await the switch to `id` and settle the section when it lands. It may be one
+	 * an earlier mount started: the section unmounts with the dialog (and behind
+	 * the provider form) while the download carries on in main, and `setModel`
+	 * joins that in-flight switch rather than starting another. Only the mount that
+	 * started a switch reports its failure, so it is not toasted twice.
+	 */
+	const follow = useCallback(
+		async (id: SttModelId, reportFailure: boolean) => {
+			if (following.current.has(id)) return;
+			following.current.add(id);
+			setPending((current) => current ?? { id, fraction: 0 });
+			try {
+				await sttBridge()?.setModel(id);
+			} catch (err) {
+				if (reportFailure) {
+					toast.error(te("speechModel.switchFailed"), {
+						description: err instanceof Error ? err.message : String(err),
+					});
+				}
+			} finally {
+				following.current.delete(id);
+				setPending(null);
+				await refresh();
+			}
+		},
+		[refresh, te],
+	);
+
 	useEffect(() => {
 		void refresh();
 	}, [refresh]);
+	// A switch already running when this mounted: hold every button from the start,
+	// not from whenever its next progress event happens to arrive.
+	useEffect(() => {
+		for (const id of snapshot?.inFlight ?? []) void follow(id, false);
+	}, [snapshot, follow]);
 	useEffect(
 		() =>
-			sttBridge()?.onModelProgress?.(({ id, downloadedBytes, totalBytes }) =>
-				setPending({ id, fraction: totalBytes > 0 ? downloadedBytes / totalBytes : 0 }),
-			),
-		[],
+			sttBridge()?.onModelProgress?.(({ id, downloadedBytes, totalBytes }) => {
+				setPending({ id, fraction: totalBytes > 0 ? downloadedBytes / totalBytes : 0 });
+				void follow(id, false);
+			}),
+		[follow],
 	);
 
 	const stt = sttBridge();
 	// No STT bridge (browser preview, tests): nothing to choose between.
 	if (!stt || !snapshot) return null;
 
-	const use = async (id: SttModelId) => {
+	const use = (id: SttModelId) => {
 		setPending({ id, fraction: 0 });
-		try {
-			await stt.setModel(id);
-		} catch (err) {
-			toast.error(te("speechModel.switchFailed"), {
-				description: err instanceof Error ? err.message : String(err),
-			});
-		} finally {
-			setPending(null);
-			await refresh();
-		}
+		return follow(id, true);
 	};
 
 	const remove = async (id: SttModelId) => {

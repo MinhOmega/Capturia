@@ -532,6 +532,8 @@ describe("SttManager", () => {
 			const first = mgr.setModel("accurate");
 			const second = mgr.setModel("accurate");
 			expect(second).toBe(first);
+			// What a settings section mounted mid-download reads to find the switch to join.
+			expect((await mgr.listModels()).inFlight).toEqual(["accurate"]);
 			await expect(mgr.deleteModel("accurate")).rejects.toThrow(/being switched to/);
 
 			finish();

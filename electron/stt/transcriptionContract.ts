@@ -69,6 +69,8 @@ export interface SttModelsSnapshot {
 	models: { id: SttModelId; bytes: number; downloaded: boolean }[];
 	/** No GPU backend is known to bind, so the bigger models run slowly. */
 	cpuOnly: boolean;
+	/** Models a switch is downloading right now, possibly started by an earlier mount. */
+	inFlight: SttModelId[];
 }
 
 /** Progress of a speech-model download started from the settings (`stt:set-model`). */
