@@ -133,6 +133,8 @@ type UseScreenRecorderReturn = {
 	setCountdownSeconds: (seconds: CountdownSeconds) => void;
 	microphoneGain: MicrophoneGain;
 	setMicrophoneGain: (gain: MicrophoneGain) => void;
+	autoZoomEnabled: boolean;
+	setAutoZoomEnabled: (enabled: boolean) => void;
 	softwareEncoderFallbackNoticeVisible: boolean;
 	dismissSoftwareEncoderFallbackNotice: (dontShowAgain?: boolean) => void;
 	/** Flags this instant in the running capture. A no-op while paused or idle. */
@@ -289,6 +291,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const [microphoneGain, setMicrophoneGainState] = useState<MicrophoneGain>(
 		() => loadUserPreferences().microphoneGain,
 	);
+	const [autoZoomEnabled, setAutoZoomEnabled] = useState(true);
 	const [softwareEncoderFallbackNoticeVisible, setSoftwareEncoderFallbackNoticeVisible] =
 		useState(false);
 
@@ -314,6 +317,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				if (prefs.camDeviceId) setWebcamDeviceId(prefs.camDeviceId);
 				setSystemAudioEnabled(prefs.systemAudioEnabled);
 				setCursorCaptureMode(prefs.cursorCaptureMode);
+				setAutoZoomEnabled(prefs.autoZoomEnabled !== false);
 			})
 			.catch((err) => {
 				// Bare ipcRenderer.invoke — rejects if the main handler throws. Falling
@@ -1531,6 +1535,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				await window.electronAPI.stopNativeMacRecording(true);
 				return true;
 			}
+			if (result.microphoneDefaulted) {
+				toast.error(t("recording.microphoneDefaulted"));
+			}
 
 			// The IPC call above only resolves once the helper's stdout confirms its
 			// screen capture has truly started (see waitForNativeMacCaptureStart in
@@ -2590,6 +2597,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		setCountdownSeconds,
 		microphoneGain,
 		setMicrophoneGain,
+		autoZoomEnabled,
+		setAutoZoomEnabled,
 		softwareEncoderFallbackNoticeVisible,
 		dismissSoftwareEncoderFallbackNotice,
 		addRecordingMarker,

@@ -21,7 +21,10 @@ import {
 	type NativeLinuxRecordingRequest,
 	portalCursorMode,
 } from "../../src/lib/nativeLinuxRecording";
-import type { NativeMacRecordingRequest } from "../../src/lib/nativeMacRecording";
+import {
+	collectMacCaptureExcludedWindowIds,
+	type NativeMacRecordingRequest,
+} from "../../src/lib/nativeMacRecording";
 import type { NativeWindowsRecordingRequest } from "../../src/lib/nativeWindowsRecording";
 import {
 	isProjectFilePath,
@@ -107,6 +110,7 @@ import { patchWebmDurationOnDisk } from "../recording/webm-duration";
 import { reindexRecordingOnDisk } from "../recording/webm-seek-index";
 import { settingsPaneUrl } from "../windowPermissions";
 import { registerNativeBridgeHandlers } from "./nativeBridge";
+import { registerRecordingPrefsHandlers } from "./recordingPrefs";
 import { RecordingStreamRegistry, registerRecordingStreamHandlers } from "./recordingStream";
 
 export const SHORTCUTS_FILE = path.join(app.getPath("userData"), "shortcuts.json");
@@ -600,8 +604,8 @@ let currentRecordingSession: RecordingSession | null = null;
 // useScreenRecorder (a separate renderer, own process, own React tree) picks
 // up those choices instead of silently reverting to its own defaults when
 // startNewRecording() switches windows. Mirrors the selectedSource pattern
-// above (in-memory, broadcast on change) rather than persisting to disk —
-// this is a live session preference, not project content.
+// above (in-memory, broadcast on change). Auto-zoom is the one durable choice;
+// the device selections remain session preferences, not project content.
 export interface RecordingPrefs {
 	micEnabled: boolean;
 	micDeviceId: string | null;
@@ -621,8 +625,10 @@ export interface RecordingPrefs {
 	camDeviceId: string | null;
 	systemAudioEnabled: boolean;
 	cursorCaptureMode: CursorCaptureMode;
+	/** After a take, suggest cursor-dwell zooms. Default on, matching 1.5. */
+	autoZoomEnabled: boolean;
 }
-let recordingPrefs: RecordingPrefs = {
+const defaultRecordingPrefs: RecordingPrefs = {
 	micEnabled: false,
 	micDeviceId: null,
 	micDeviceName: null,
@@ -630,6 +636,7 @@ let recordingPrefs: RecordingPrefs = {
 	camDeviceId: null,
 	systemAudioEnabled: false,
 	cursorCaptureMode: "editable-overlay",
+	autoZoomEnabled: true,
 };
 
 // Cached source from the user's pick. Used by setDisplayMediaRequestHandler in main.ts for cursor-free capture.
@@ -2019,18 +2026,7 @@ export function registerIpcHandlers(
 		return selectedSource;
 	});
 
-	ipcMain.handle("get-recording-prefs", () => {
-		return recordingPrefs;
-	});
-
-	ipcMain.handle("set-recording-prefs", (_, prefs: Partial<RecordingPrefs>) => {
-		recordingPrefs = { ...recordingPrefs, ...prefs };
-		const mainWin = getMainWindow();
-		if (mainWin && !mainWin.isDestroyed()) {
-			mainWin.webContents.send("recording-prefs-changed", recordingPrefs);
-		}
-		return recordingPrefs;
-	});
+	registerRecordingPrefsHandlers(defaultRecordingPrefs, getMainWindow);
 
 	ipcMain.handle("request-camera-access", async () => {
 		if (process.platform !== "darwin") {
@@ -2882,10 +2878,19 @@ export function registerIpcHandlers(
 						null)
 					: getSelectedDisplay();
 			const bounds = request.source.bounds ?? sourceDisplay?.bounds ?? getSelectedSourceBounds();
+			const captureExcludedWindowSourceIds: string[] = [];
+			if (request.source.type === "display") {
+				for (const window of [getMainWindow(), getNotesWindow()]) {
+					if (window && !window.isDestroyed()) {
+						captureExcludedWindowSourceIds.push(window.getMediaSourceId());
+					}
+				}
+			}
 			const config: NativeMacRecordingRequest = {
 				...request,
 				schemaVersion: 1,
 				recordingId,
+				excludedWindowIds: collectMacCaptureExcludedWindowIds(captureExcludedWindowSourceIds),
 				source: {
 					...request.source,
 					bounds,
@@ -2913,6 +2918,7 @@ export function registerIpcHandlers(
 			console.info("[native-sck] starting macOS capture", {
 				helperPath,
 				source: config.source,
+				excludedWindowIds: config.excludedWindowIds,
 				audio: config.audio,
 				webcam: config.webcam,
 				cursor: config.cursor,
@@ -2948,6 +2954,14 @@ export function registerIpcHandlers(
 
 			await waitForNativeMacCaptureStart(proc);
 			const captureStartedAtMs = Date.now();
+			const microphoneDefaulted =
+				request.audio.microphone.enabled && readMicrophoneDefaulted(nativeMacCaptureOutput);
+			if (microphoneDefaulted) {
+				console.warn("[native-sck] recording the default input; microphone was not resolved", {
+					deviceId: request.audio.microphone.deviceId,
+					deviceName: request.audio.microphone.deviceName,
+				});
+			}
 			nativeMacCursorOffsetMs =
 				cursorCaptureMode === "editable-overlay"
 					? Math.max(0, captureStartedAtMs - cursorStartTimeMs)
@@ -2963,6 +2977,7 @@ export function registerIpcHandlers(
 				recordingId,
 				path: outputPath,
 				helperPath,
+				microphoneDefaulted,
 			};
 		} catch (error) {
 			console.error("Failed to start native macOS recording:", error);
@@ -3596,10 +3611,15 @@ export function registerIpcHandlers(
 					...(cursorCaptureMode ? { cursorCaptureMode } : {}),
 				}
 			: { screenVideoPath, createdAt, ...(cursorCaptureMode ? { cursorCaptureMode } : {}) };
+		// Sidecar BEFORE the session is published, as the three native stop paths already
+		// do it. Publishing first opens a window where `getCurrentRecordingSession` hands
+		// the editor a take whose `.cursor.json` is not on disk yet, and the editor's
+		// fresh-take auto-zoom reads that file the moment it imports -- an empty read there
+		// is indistinguishable from a take with no dwell, so the zooms are silently
+		// skipped.
+		await writePendingCursorTelemetry(screenVideoPath);
 		setCurrentRecordingSessionState(session);
 		currentProjectPath = null;
-
-		await writePendingCursorTelemetry(screenVideoPath);
 
 		const sessionManifestPath = path.join(
 			RECORDINGS_DIR,
