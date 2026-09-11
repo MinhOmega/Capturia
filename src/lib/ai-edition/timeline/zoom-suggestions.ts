@@ -670,7 +670,13 @@ export function buildFlagZoomSuggestions(options: {
 					const atMs = marker.sourceSec * 1000 - sourceOffsetMs;
 					return {
 						centerTimeMs: atMs,
-						focus: interpolateCursorAt(telemetry, marker.sourceSec * 1000) ?? { cx: 0.5, cy: 0.5 },
+						// No pointer to follow: the centre of what is in the picture. In full-frame
+						// units, like telemetry, because `placeZoomCandidates` maps it into the crop.
+						focus:
+							interpolateCursorAt(telemetry, marker.sourceSec * 1000) ??
+							(crop
+								? { cx: crop.x + crop.width / 2, cy: crop.y + crop.height / 2 }
+								: { cx: 0.5, cy: 0.5 }),
 						strength: 0,
 						reason: "flag",
 						depth: DEFAULT_ZOOM_DEPTH,

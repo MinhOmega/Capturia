@@ -238,4 +238,29 @@ describe("collectFlagZoomSuggestionsForLatestDocument", () => {
 		]);
 		expect(out?.covered).toBe(0);
 	});
+
+	// A system-cursor take has no telemetry, so a flag falls back to the centre -- of the
+	// AREA. The full frame's centre, mapped through a top-left-quarter crop, lands on the
+	// area's bottom-right corner.
+	it("centres a flag with no telemetry on a cropped clip's area, not the frame", async () => {
+		const base = documentWithClip(20);
+		const document: AxcutDocument = {
+			...base,
+			timeline: {
+				...base.timeline,
+				clips: base.timeline.clips.map((clip) => ({
+					...clip,
+					cropRegion: { x: 0, y: 0, width: 0.5, height: 0.5 },
+				})),
+			},
+		};
+
+		const out = await collectFlagZoomSuggestionsForLatestDocument(
+			() => document,
+			async () => [],
+			[2000],
+		);
+
+		expect(out?.suggestions.map((zoom) => zoom.focus)).toEqual([{ cx: 0.5, cy: 0.5 }]);
+	});
 });
