@@ -56,10 +56,11 @@ async function getUpdater() {
 
 /** Is an update available, and can this install apply it itself?
  *
- *  `allowPrerelease` is the "Get pre-release builds" setting, set on every check. Left to
- *  electron-updater it would follow the running version instead — an RC install would chase
- *  RCs the release check (update-checker.ts) never offered, and download one of those while
- *  the dialog named a stable. */
+ *  `allowPrerelease` is the "Get pre-release builds" setting, set on every check. That alone
+ *  does not make the updater pick what the release check (update-checker.ts) picked: its
+ *  GitHub feed keeps an RC install on RCs and reads a stable install's feed head, whatever
+ *  version that is. So the version here is only ever the updater's own, and a caller naming
+ *  a version to the user must hold it against `selfUpdateMatches`. */
 export async function checkForSelfUpdate(
 	channel: InstallChannel,
 	allowPrerelease = false,
@@ -69,15 +70,24 @@ export async function checkForSelfUpdate(
 		const autoUpdater = await getUpdater();
 		autoUpdater.allowPrerelease = allowPrerelease;
 		const result = await autoUpdater.checkForUpdates();
-		// null when no feed resolved; equal versions come back with no downloadPromise.
+		// null when no feed resolved. A feed version the updater will not install (equal, or
+		// older than the running one) must not read as an update: `downloadUpdate` would then
+		// reject with "Please check update first".
 		const version = result?.updateInfo?.version;
-		if (!version || version === app.getVersion()) return { kind: "current" };
+		if (!version || !result?.isUpdateAvailable) return { kind: "current" };
 		return { kind: "downloaded", version };
 	} catch (error) {
 		// A missing or malformed feed is the expected failure on any release published before
 		// this shipped. The caller falls back to opening the release page, which still works.
 		return { kind: "failed", error: error instanceof Error ? error : new Error(String(error)) };
 	}
+}
+
+/** Whether the updater would install exactly the version the release check named — the one
+ *  the dialog shows the user. Anything else is not theirs to approve with that button. */
+export function selfUpdateMatches(outcome: UpdateOutcome, latestVersion: string): boolean {
+	const bare = (version: string) => version.trim().replace(/^v/, "");
+	return outcome.kind === "downloaded" && bare(outcome.version) === bare(latestVersion);
 }
 
 /** Download the pending update. Separate from the check so the user approves the transfer. */

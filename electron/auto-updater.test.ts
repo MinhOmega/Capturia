@@ -5,6 +5,7 @@ import {
 	downloadSelfUpdate,
 	type InstallReadiness,
 	installSelfUpdate,
+	selfUpdateMatches,
 } from "./auto-updater";
 
 const mocks = vi.hoisted(() => ({
@@ -131,7 +132,10 @@ describe("self-update flow", () => {
 	});
 
 	it("reports current when the feed offers the running version", async () => {
-		mocks.autoUpdater.checkForUpdates.mockResolvedValue({ updateInfo: { version: "1.9.2" } });
+		mocks.autoUpdater.checkForUpdates.mockResolvedValue({
+			updateInfo: { version: "1.9.2" },
+			isUpdateAvailable: false,
+		});
 		await expect(checkForSelfUpdate("appimage")).resolves.toEqual({ kind: "current" });
 	});
 
@@ -141,11 +145,25 @@ describe("self-update flow", () => {
 	});
 
 	it("surfaces an available version", async () => {
-		mocks.autoUpdater.checkForUpdates.mockResolvedValue({ updateInfo: { version: "1.10.0" } });
+		mocks.autoUpdater.checkForUpdates.mockResolvedValue({
+			updateInfo: { version: "1.10.0" },
+			isUpdateAvailable: true,
+		});
 		await expect(checkForSelfUpdate("dmg")).resolves.toEqual({
 			kind: "downloaded",
 			version: "1.10.0",
 		});
+	});
+
+	// A stable 2.1.0 with pre-releases on: the release check offers 2.2.0-rc.1, but the feed
+	// head the updater reads is an older hotfix it will not install. Reporting that as an
+	// update made `downloadUpdate` reject with "Please check update first".
+	it("reports current when the feed's version is one the updater will not install", async () => {
+		mocks.autoUpdater.checkForUpdates.mockResolvedValue({
+			updateInfo: { version: "2.0.2" },
+			isUpdateAvailable: false,
+		});
+		await expect(checkForSelfUpdate("nsis", true)).resolves.toEqual({ kind: "current" });
 	});
 
 	// A release published before the update feeds existed has no latest*.yml. That must degrade
@@ -170,5 +188,22 @@ describe("self-update flow", () => {
 	it("hands over to the installer non-silently and relaunches", async () => {
 		await installSelfUpdate();
 		expect(mocks.autoUpdater.quitAndInstall).toHaveBeenCalledWith(false, true);
+	});
+});
+
+describe("selfUpdateMatches", () => {
+	// An RC install with pre-releases on, feed [2.1.0, 2.1.0-rc.3]: the release check names
+	// 2.1.0, the updater keeps the RC on its channel and would install 2.1.0-rc.3.
+	it("refuses a self-update of a version other than the one the dialog names", () => {
+		expect(selfUpdateMatches({ kind: "downloaded", version: "2.1.0-rc.3" }, "2.1.0")).toBe(false);
+		expect(selfUpdateMatches({ kind: "current" }, "2.1.0")).toBe(false);
+		expect(selfUpdateMatches({ kind: "failed", error: new Error("no feed") }, "2.1.0")).toBe(false);
+	});
+
+	it("allows it when both name the same version, with or without a leading v", () => {
+		expect(selfUpdateMatches({ kind: "downloaded", version: "2.1.0" }, "2.1.0")).toBe(true);
+		expect(selfUpdateMatches({ kind: "downloaded", version: "v2.2.0-rc.1" }, "2.2.0-rc.1")).toBe(
+			true,
+		);
 	});
 });

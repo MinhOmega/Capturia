@@ -33,6 +33,7 @@ import {
 	checkForSelfUpdate,
 	downloadSelfUpdate,
 	installSelfUpdate,
+	selfUpdateMatches,
 	type UpdateOutcome,
 } from "./auto-updater";
 import {
@@ -837,7 +838,16 @@ async function checkForUpdates(onVerdict?: () => void) {
 		// never update — can only be pointed at the download page. Ask the updater first so the
 		// buttons offered match what this install can actually do.
 		const selfUpdate = await probeSelfUpdate();
-		const canSelfUpdate = selfUpdate.kind === "downloaded";
+		// Only when the updater would install the very version the dialog names. Its feed can
+		// disagree with the release check (an RC install is kept on RCs, a stable install reads
+		// the feed head), and "Download Update" must not install a version the user never saw.
+		const canSelfUpdate = selfUpdateMatches(selfUpdate, result.latestVersion);
+		if (selfUpdate.kind === "downloaded" && !canSelfUpdate) {
+			console.warn("[updates] the updater offers a different version, showing the release page", {
+				checker: result.latestVersion,
+				updater: selfUpdate.version,
+			});
+		}
 		if (selfUpdate.kind === "failed") {
 			// A release published before the update feeds existed has no latest*.yml. Not worth a
 			// dialog — the download page below still works — but it must not vanish silently.
