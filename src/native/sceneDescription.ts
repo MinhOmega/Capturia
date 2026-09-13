@@ -363,6 +363,9 @@ export interface SceneCursor {
 	/** 0..1. */
 	motionBlur: number;
 	clickBounce: number;
+	/** 0..1 opacity of the click highlight ring (0 = off). The sprite itself is resolved
+	 *  in main, next to the cursor sprites — see `compositorViewService`. */
+	clickRing: number;
 	clipToBounds: boolean;
 	/** Cursor theme id (sprite set). */
 	theme: string;
@@ -1024,6 +1027,7 @@ export function buildSceneDescription(
 			smoothing: settings.cursor.smoothing,
 			motionBlur: settings.cursor.motionBlur,
 			clickBounce: settings.cursor.clickBounce,
+			clickRing: settings.cursor.clickRing,
 			clipToBounds: settings.cursor.clipToBounds,
 			theme: settings.cursorTheme,
 		},

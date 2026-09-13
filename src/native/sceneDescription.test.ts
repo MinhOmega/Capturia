@@ -997,6 +997,7 @@ describe("buildSceneDescription.settings mapping", () => {
 				cursorSmoothing: 0.9,
 				cursorMotionBlur: 0.5,
 				cursorClickBounce: 1.5,
+				cursorClickRing: 0.7,
 				cursorClipToBounds: true,
 			},
 		});
@@ -1005,7 +1006,12 @@ describe("buildSceneDescription.settings mapping", () => {
 		expect(cursor.smoothing).toBe(0.9);
 		expect(cursor.motionBlur).toBe(0.5);
 		expect(cursor.clickBounce).toBe(1.5);
+		expect(cursor.clickRing).toBe(0.7);
 		expect(cursor.clipToBounds).toBe(true);
+	});
+
+	it("emits clickRing off for a document that never set it", () => {
+		expect(buildSceneDescription(makeDoc({ legacyEditor: {} })).cursor.clickRing).toBe(0);
 	});
 
 	it("maps show / theme / shape / mirror through to layout+cursor", () => {
