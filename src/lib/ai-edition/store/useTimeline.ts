@@ -203,12 +203,20 @@ export function useTimeline() {
 				!probedAssetIdsRef.current.has(a.id),
 		);
 		if (missing.length === 0) return;
-		let cancelled = false;
+		// Mark every candidate BEFORE the first await, like the audio twin below, and
+		// keep going when the effect re-runs. Marking each as its turn came and then
+		// dropping the results on a `cancelled` flag lost them BOTH ways: any document
+		// change — a slider write, a transcript landing — re-entered the effect, the
+		// finished probes were thrown away, and the next pass skipped the assets it had
+		// already marked. Their `video` stayed empty for the rest of the session, which
+		// is the exact symptom this backfill exists to fix. The `getState()` re-read
+		// below is the real guard against stomping a concurrent edit; the flag added
+		// nothing to it.
+		for (const a of missing) probedAssetIdsRef.current.add(a.id);
 		void (async () => {
 			type Dims = { width: number; height: number };
 			const probed: Record<string, { video?: Dims; camera?: Dims }> = {};
 			for (const a of missing) {
-				probedAssetIdsRef.current.add(a.id);
 				const entry: { video?: Dims; camera?: Dims } = {};
 				if (needsScreen(a)) {
 					const dims = await probeVideoDimensions(toFileUrl(a.originalPath));
@@ -222,7 +230,7 @@ export function useTimeline() {
 				}
 				if (entry.video || entry.camera) probed[a.id] = entry;
 			}
-			if (cancelled || Object.keys(probed).length === 0) return;
+			if (Object.keys(probed).length === 0) return;
 			// Re-read fresh state so a concurrent edit made while probing isn't stomped.
 			const current = useProjectStore.getState().document;
 			if (!current) return;
@@ -248,9 +256,6 @@ export function useTimeline() {
 				{ history: false },
 			);
 		})();
-		return () => {
-			cancelled = true;
-		};
 	}, [document]);
 
 	// Backfill the real duration of imported audio assets (issue #350), the audio
@@ -277,14 +282,17 @@ export function useTimeline() {
 		// came meant a document change that re-entered this effect while asset #1 was
 		// still awaiting found #2+ unmarked and probed them a second time.
 		for (const a of missing) probedAudioAssetIdsRef.current.add(a.id);
-		let cancelled = false;
 		void (async () => {
 			const probed: Record<string, number> = {};
 			for (const a of missing) {
 				const durationSec = await probeAudioDuration(toFileUrl(a.originalPath));
 				if (durationSec != null && durationSec > 0) probed[a.id] = durationSec;
 			}
-			if (cancelled || Object.keys(probed).length === 0) return;
+			// No `cancelled` flag, for the same reason as the dimension twin above: the
+			// assets are already marked, so results dropped here are results lost for
+			// the session, and the `getState()` re-read is what protects a concurrent
+			// edit.
+			if (Object.keys(probed).length === 0) return;
 			const current = useProjectStore.getState().document;
 			if (!current) return;
 			await useProjectStore.getState().saveDocument(
@@ -302,9 +310,6 @@ export function useTimeline() {
 				{ history: false },
 			);
 		})();
-		return () => {
-			cancelled = true;
-		};
 	}, [document]);
 
 	/**
