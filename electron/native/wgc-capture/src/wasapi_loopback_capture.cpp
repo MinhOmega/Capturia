@@ -343,8 +343,6 @@ bool WasapiLoopbackCapture::start(AudioCallback callback) {
     callback_ = std::move(callback);
     stopRequested_ = false;
     writtenFrames_ = 0;
-    lastDevicePositionEnd_ = 0;
-    hasLastDevicePosition_ = false;
 
     HRESULT hr = audioClient_->Start();
     if (!succeeded(hr, "IAudioClient::Start")) {
@@ -375,23 +373,25 @@ const std::wstring& WasapiLoopbackCapture::selectedDeviceName() const {
     return selectedDeviceName_;
 }
 
+/**
+ * Reads packets and hands them to the callback. Real packets only.
+ *
+ * A gap -- the device position jumping past where the last packet ended, which
+ * is what AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY reports -- used to be filled
+ * here with `gapFrames` of zeros. That silence was counted twice. AudioMixer
+ * runs on steady_clock and emits a chunk for every chunk of real time whether
+ * or not a queue has data (audio_sample_utils.cpp's mixLoop), so it had already
+ * emitted zeros for exactly that wall time; the padding then arrived as extra
+ * frames at the back of the queue and pushed everything after it later by the
+ * length of the gap. Permanently -- the mixer never trims -- so one 500 ms
+ * glitch left the microphone 500 ms behind the picture for the rest of the
+ * take, growing with each further glitch.
+ *
+ * The queue is a stream of samples, not a timeline: `timestampHns` is passed
+ * for the encoder's benefit and the mixer ignores it. So whoever fills the
+ * silence has to be the one holding the clock, and that is the mixer.
+ */
 void WasapiLoopbackCapture::captureLoop() {
-    auto emitSilenceFrames = [&](uint64_t frames, int64_t timestampHns) {
-        constexpr uint64_t MaxSilenceChunkFrames = 4800;
-        uint64_t remainingFrames = frames;
-        int64_t currentTimestampHns = timestampHns;
-        while (remainingFrames > 0 && !stopRequested_) {
-            const uint64_t chunkFrames = std::min<uint64_t>(remainingFrames, MaxSilenceChunkFrames);
-            const DWORD chunkBytes = static_cast<DWORD>(chunkFrames * inputFormat_.blockAlign);
-            const int64_t chunkDurationHns =
-                static_cast<int64_t>((chunkFrames * HnsPerSecond) / inputFormat_.sampleRate);
-            silenceBuffer_.assign(chunkBytes, 0);
-            callback_(silenceBuffer_.data(), chunkBytes, currentTimestampHns, chunkDurationHns);
-            remainingFrames -= chunkFrames;
-            currentTimestampHns += chunkDurationHns;
-        }
-    };
-
     while (!stopRequested_) {
         UINT32 packetFrames = 0;
         HRESULT hr = captureClient_->GetNextPacketSize(&packetFrames);
@@ -416,14 +416,6 @@ void WasapiLoopbackCapture::captureLoop() {
             }
 
             (void)qpcPosition;
-            if (hasLastDevicePosition_ && devicePosition > lastDevicePositionEnd_) {
-                const uint64_t gapFrames = devicePosition - lastDevicePositionEnd_;
-                if ((flags & AUDCLNT_BUFFERFLAGS_DATA_DISCONTINUITY) != 0 || gapFrames > framesAvailable) {
-                    const int64_t gapTimestampHns =
-                        static_cast<int64_t>((lastDevicePositionEnd_ * HnsPerSecond) / inputFormat_.sampleRate);
-                    emitSilenceFrames(gapFrames, gapTimestampHns);
-                }
-            }
 
             const DWORD byteCount = framesAvailable * inputFormat_.blockAlign;
             const int64_t timestampHns =
@@ -442,8 +434,6 @@ void WasapiLoopbackCapture::captureLoop() {
             }
 
             writtenFrames_ += framesAvailable;
-            lastDevicePositionEnd_ = devicePosition + framesAvailable;
-            hasLastDevicePosition_ = true;
             captureClient_->ReleaseBuffer(framesAvailable);
 
             hr = captureClient_->GetNextPacketSize(&packetFrames);
