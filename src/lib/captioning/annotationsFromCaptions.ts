@@ -18,8 +18,6 @@ const WORD_RUN_BREAK_GAP_SEC = 0.24;
 /** Same text again with almost no gap or overlap; common Whisper/chunk artifact. */
 const DEDUPE_SAME_TEXT_MAX_GAP_SEC = 0.55;
 
-export const SAME_CONTENT_ECHO_MAX_GAP_SEC = 1.15;
-
 function normalizeCaptionKey(text: string): string {
 	return text
 		.trim()
@@ -28,35 +26,6 @@ function normalizeCaptionKey(text: string): string {
 		.replace(/[\u201C\u201D]/g, '"')
 		.toLowerCase()
 		.replace(/[.!?,;:]+$/g, "");
-}
-
-/** Legacy echo-collapse helper kept for reference while phrase timing uses raw model spans. */
-export function collapseSameContentEchoes(segments: CaptionSegment[]): CaptionSegment[] {
-	const sorted = [...segments]
-		.filter((s) => s.text.trim())
-		.sort((a, b) => a.startSec - b.startSec || a.endSec - b.endSec);
-	const out: CaptionSegment[] = [];
-	const lastIndexByKey = new Map<string, number>();
-
-	for (const seg of sorted) {
-		const key = normalizeCaptionKey(seg.text);
-		const hit = lastIndexByKey.get(key);
-		if (hit !== undefined) {
-			const prev = out[hit]!;
-			if (seg.startSec < prev.endSec + SAME_CONTENT_ECHO_MAX_GAP_SEC) {
-				prev.startSec = Math.min(prev.startSec, seg.startSec);
-				prev.endSec = Math.max(prev.endSec, seg.endSec);
-				continue;
-			}
-		}
-		out.push({
-			startSec: seg.startSec,
-			endSec: seg.endSec,
-			text: seg.text.trim(),
-		});
-		lastIndexByKey.set(key, out.length - 1);
-	}
-	return out;
 }
 
 /**
@@ -108,43 +77,6 @@ export function finalizeCaptionSegmentsForPlayback(segments: CaptionSegment[]): 
 	}
 
 	return a;
-}
-
-/** Join phrases that are close in time so the editor does not create dozens of separate overlays. */
-export function mergeAdjacentCaptionSegments(
-	segments: CaptionSegment[],
-	options?: { maxGapSec?: number; maxChars?: number; maxBlockDurationSec?: number },
-): CaptionSegment[] {
-	const maxGapSec = options?.maxGapSec ?? 1.35;
-	const maxChars = options?.maxChars ?? 320;
-	const maxBlockDurationSec = options?.maxBlockDurationSec ?? 12;
-
-	const sorted = [...segments].sort((a, b) => a.startSec - b.startSec);
-	const out: CaptionSegment[] = [];
-
-	for (const seg of sorted) {
-		const text = seg.text.trim();
-		if (!text) continue;
-
-		const prev = out[out.length - 1];
-		if (!prev) {
-			out.push({ startSec: seg.startSec, endSec: seg.endSec, text });
-			continue;
-		}
-
-		const gap = seg.startSec - prev.endSec;
-		const mergedText = `${prev.text} ${text}`.trim();
-		const mergedEnd = Math.max(prev.endSec, seg.endSec);
-		const wouldSpan = mergedEnd - prev.startSec;
-		if (gap <= maxGapSec && mergedText.length <= maxChars && wouldSpan <= maxBlockDurationSec) {
-			prev.endSec = mergedEnd;
-			prev.text = mergedText;
-		} else {
-			out.push({ startSec: seg.startSec, endSec: seg.endSec, text });
-		}
-	}
-
-	return out;
 }
 
 function partitionPhraseCaptionSegments(
