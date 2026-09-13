@@ -18,6 +18,7 @@ import type {
 	RemuxStats,
 	SegmentationSupport,
 } from "../../native/compositor-view/addon";
+import { isPathWithinDir } from "../../recordingsFolder";
 
 /**
  * ESM-safe `require` for loading the native addon
@@ -84,7 +85,11 @@ function sceneAssetBaseDirs(): string[] {
 export function resolveSceneAssetPath(relativePath: string): string | null {
 	for (const base of sceneAssetBaseDirs()) {
 		const candidate = path.join(base, relativePath);
-		if (realExistsSync(candidate)) {
+		// `relativePath` comes out of the scene JSON, which the renderer authors, and
+		// `path.join` normalises a `../..` away silently — so the join alone would hand the
+		// addon any file on the machine to decode. Same containment rule the recordings
+		// roots use.
+		if (isPathWithinDir(candidate, base) && realExistsSync(candidate)) {
 			return candidate;
 		}
 	}

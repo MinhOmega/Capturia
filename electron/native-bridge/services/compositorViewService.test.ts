@@ -330,6 +330,21 @@ describe("resolveSceneAssetPaths", () => {
 		expect(out.webcamEffect.mode).toBe("transparent");
 	});
 
+	// The scene JSON is authored by the renderer, so `background.path` is a renderer-named
+	// string. `path.join` normalises `..` away without complaint, and the addon then
+	// `image::open`s whatever came out.
+	it("refuses to climb out of the asset tree, leaving the scene's own value alone", () => {
+		const outside = path.join(resources, "..", "escaped.jpg");
+		fs.writeFileSync(outside, "jpg");
+		try {
+			const out = resolved({ background: { kind: "image", path: "/../escaped.jpg" } });
+
+			expect(out.background.path).toBe("/../escaped.jpg");
+		} finally {
+			fs.rmSync(outside, { force: true });
+		}
+	});
+
 	it("resolves a bundled wallpaper to the extraResources copy, not the unreadable asar path", () => {
 		const out = resolved({ background: { kind: "image", path: "/wallpapers/wallpaper1.jpg" } });
 

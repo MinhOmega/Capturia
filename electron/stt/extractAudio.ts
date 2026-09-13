@@ -74,7 +74,9 @@ export async function extractMono16kPcm(
 			"-loglevel",
 			"error",
 			"-i",
-			filePath,
+			// Pinned to the file protocol, exactly as `media/posterFrames.ts` does: a path
+			// that happens to read as a URL (`http://…`, `concat:…`) is never fetched.
+			`file:${filePath}`,
 			"-vn",
 			"-ac",
 			"1",

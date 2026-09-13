@@ -453,7 +453,7 @@ function approveReadableAudioPath(
  * picked, and the assets a loaded project declares (`approveDocumentMedia`). Everything else
  * spends one.
  */
-function readableApprovedPath(filePath?: string | null): string | null {
+export function readableApprovedPath(filePath?: string | null): string | null {
 	const normalizedPath = normalizeVideoSourcePath(filePath);
 	if (!normalizedPath) return null;
 	if (!isPathAllowed(normalizedPath)) return null;
@@ -1193,10 +1193,23 @@ function isWindowsGraphicsCaptureOsSupported() {
 	return Number.isFinite(build) && build >= 19041;
 }
 
+/**
+ * The real `reg.exe`, named absolutely.
+ *
+ * A bare `"reg.exe"` is resolved against `PATH` — and on Windows, `CreateProcess` searches
+ * the current directory first. Anything that can drop a `reg.exe` where Capturia happens to
+ * be running gets to run it with Capturia's privileges instead of the system tool.
+ */
+export const REG_EXE_PATH = path.join(
+	process.env.SystemRoot ?? "C:\\Windows",
+	"System32",
+	"reg.exe",
+);
+
 function queryDirectShowVideoInputRegistry() {
 	return new Promise<string>((resolve) => {
 		const proc = spawn(
-			"reg.exe",
+			REG_EXE_PATH,
 			["query", "HKCR\\CLSID\\{860BB310-5D01-11D0-BD3B-00A0C911CE86}\\Instance", "/s"],
 			{ windowsHide: true },
 		);
@@ -1953,6 +1966,41 @@ export async function exportDiagnosticFile(payload: {
 	}
 }
 
+/**
+ * Rebuild `desktopCapturer.getSources`'s options from what the renderer is allowed to ask
+ * for, rather than forwarding its object. Two reasons: a thumbnail is a bitmap this process
+ * allocates and then base64s into the reply, so an unclamped `thumbnailSize` is a
+ * main-process OOM the renderer can request (`{ width: 1e6, height: 1e6 }` is ~4 TB), and a
+ * `types` entry outside `screen`/`window` is not something any caller here needs.
+ *
+ * 1024 is comfortably above the largest thumbnail any picker asks for (320x180).
+ */
+const MAX_THUMBNAIL_PX = 1024;
+
+function clampThumbnailPx(value: unknown, fallback: number): number {
+	const size = Math.trunc(Number(value));
+	if (!Number.isFinite(size)) return fallback;
+	return Math.min(MAX_THUMBNAIL_PX, Math.max(0, size));
+}
+
+function sanitizeGetSourcesOptions(opts: unknown): Electron.SourcesOptions {
+	const raw = (opts ?? {}) as Partial<Electron.SourcesOptions>;
+	const types = (Array.isArray(raw.types) ? raw.types : []).filter(
+		(type): type is "screen" | "window" => type === "screen" || type === "window",
+	);
+	const thumbnailSize: Partial<Electron.Size> = raw.thumbnailSize ?? {};
+	return {
+		// Electron rejects an empty list, and every caller here wants both.
+		types: types.length > 0 ? types : ["screen", "window"],
+		// 150 is Electron's own default, kept for a caller that names no size.
+		thumbnailSize: {
+			width: clampThumbnailPx(thumbnailSize.width, 150),
+			height: clampThumbnailPx(thumbnailSize.height, 150),
+		},
+		fetchWindowIcons: raw.fetchWindowIcons === true,
+	};
+}
+
 export function registerIpcHandlers(
 	createEditorWindow: () => void,
 	createSourceSelectorWindow: () => BrowserWindow,
@@ -2012,7 +2060,8 @@ export function registerIpcHandlers(
 		}
 	}
 
-	ipcMain.handle("get-sources", async (_, opts) => {
+	ipcMain.handle("get-sources", async (_, rawOpts) => {
+		const opts = sanitizeGetSourcesOptions(rawOpts);
 		// desktopCapturer.getSources can never settle where the GL stack cannot be
 		// reached -- a container, a CI runner, a host whose ANGLE fails to
 		// initialise. Bounded here rather than per-caller because every caller has
@@ -2045,14 +2094,14 @@ export function registerIpcHandlers(
 				// The deadline error carries its own wording.
 				const reason = error instanceof Error ? error.message : String(error);
 				console.info(
-					`[get-sources] failed after ${Date.now() - startedAt}ms (types=${(opts?.types ?? []).join(",")}): ${reason}`,
+					`[get-sources] failed after ${Date.now() - startedAt}ms (types=${opts.types.join(",")}): ${reason}`,
 				);
 			}
 			throw error;
 		}
 		if (diagnostic) {
 			console.info(
-				`[get-sources] returned ${sources.length} source(s) in ${Date.now() - startedAt}ms (types=${(opts?.types ?? []).join(",")})`,
+				`[get-sources] returned ${sources.length} source(s) in ${Date.now() - startedAt}ms (types=${opts.types.join(",")})`,
 			);
 		}
 		lastEnumeratedSources = new Map(sources.map((source) => [source.id, source]));
@@ -4269,6 +4318,14 @@ export function registerIpcHandlers(
 	});
 
 	ipcMain.handle("reveal-in-folder", async (_, filePath: string) => {
+		// Reveal opens a file manager on whatever it is handed, so the renderer must not
+		// name it freely. The only two things it ever reveals are an export whose
+		// destination the user chose and a recording — which is exactly the union of the
+		// two approval sets, and nothing else on the machine.
+		if (!readableApprovedPath(filePath) && !approvedExportPaths.isApproved(filePath)) {
+			console.warn("Refused to reveal an unapproved path:", filePath);
+			return { success: false, error: "Path is not approved" };
+		}
 		try {
 			// showItemInFolder returns nothing, it throws on error
 			shell.showItemInFolder(filePath);
@@ -4913,6 +4970,7 @@ export function registerIpcHandlers(
 		resolveAssetBasePath,
 		resolveVideoPath: (videoPath?: string | null) =>
 			normalizeVideoSourcePath(videoPath ?? currentVideoPath),
+		readableApprovedPath,
 		loadCursorRecordingData: readCursorRecordingFile,
 		loadCursorTelemetry: readCursorTelemetryFile,
 		// compositor view's createView needs the renderer-owning
