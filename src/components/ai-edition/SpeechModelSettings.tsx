@@ -97,7 +97,10 @@ export function SpeechModelSettings() {
 	};
 
 	return (
-		<section style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 8 }}>
+		<section
+			data-testid="speech-model-settings"
+			style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 8 }}
+		>
 			<h3 style={{ margin: 0, font: "600 14px var(--font-body)", color: "var(--fg)" }}>
 				{te("speechModel.title")}
 			</h3>
