@@ -1,10 +1,11 @@
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
+import { type ChildProcessWithoutNullStreams, execFile, spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 import type { DesktopCapturerSource, Rectangle } from "electron";
 import {
 	app,
@@ -256,23 +257,28 @@ function hasAllowedImportMediaExtension(filePath: string): boolean {
 	return hasAllowedImportVideoExtension(filePath) || hasAllowedImportAudioExtension(filePath);
 }
 
-function runProcess(
+const execFileAsync = promisify(execFile);
+
+/** afinfo/afconvert report "no" with a non-zero exit, so execFile's rejection for
+ *  that is folded back into the resolved shape both callers read. A spawn failure
+ *  (string `code`, e.g. ENOENT) still rejects, as it did before. `maxBuffer:
+ *  Infinity` keeps the unbounded output accumulation this used to do by hand. */
+async function runProcess(
 	command: string,
 	args: string[],
 ): Promise<{ code: number | null; stdout: string; stderr: string }> {
-	return new Promise((resolve, reject) => {
-		const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
-		let stdout = "";
-		let stderr = "";
-		child.stdout.on("data", (chunk) => {
-			stdout += chunk.toString();
-		});
-		child.stderr.on("data", (chunk) => {
-			stderr += chunk.toString();
-		});
-		child.on("error", reject);
-		child.on("close", (code) => resolve({ code, stdout, stderr }));
-	});
+	try {
+		const { stdout, stderr } = await execFileAsync(command, args, { maxBuffer: Infinity });
+		return { code: 0, stdout, stderr };
+	} catch (error) {
+		const failure = error as Error & { code?: number | string; stdout?: string; stderr?: string };
+		if (typeof failure.code === "string") throw error;
+		return {
+			code: failure.code ?? null,
+			stdout: failure.stdout ?? "",
+			stderr: failure.stderr ?? "",
+		};
+	}
 }
 
 function parseAfinfoAudioTrackBitrates(output: string): number[] {
