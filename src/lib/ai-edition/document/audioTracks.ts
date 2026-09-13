@@ -213,7 +213,9 @@ export function dropUnusedGeneratedMedia(doc: AxcutDocument): AxcutDocument {
 export function patchAudioTrack(
 	doc: AxcutDocument,
 	trackId: string,
-	patch: Partial<Pick<AxcutAudioTrack, "gainDb" | "muted" | "loop" | "fadeInMs" | "fadeOutMs">> & {
+	patch: Partial<
+		Pick<AxcutAudioTrack, "gainDb" | "muted" | "loop" | "fadeInMs" | "fadeOutMs" | "label">
+	> & {
 		offsetMs?: number;
 	},
 ): AxcutDocument {
@@ -233,6 +235,9 @@ export function patchAudioTrack(
 				...(patch.gainDb === undefined ? {} : { gainDb: patch.gainDb }),
 				...(patch.muted === undefined ? {} : { muted: patch.muted }),
 				...(patch.loop === undefined ? {} : { loop: patch.loop }),
+				// The lane draws ONE label per pill, so a fragment holding a different
+				// one would show or hide depending on which half survived a split.
+				...(patch.label === undefined ? {} : { label: patch.label }),
 				// Fades live on the outer edges; an interior fragment keeps none.
 				...(patch.fadeInMs === undefined ? {} : { fadeInMs: isFirst ? patch.fadeInMs : 0 }),
 				...(patch.fadeOutMs === undefined ? {} : { fadeOutMs: isLast ? patch.fadeOutMs : 0 }),

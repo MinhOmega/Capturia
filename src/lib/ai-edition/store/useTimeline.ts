@@ -12,6 +12,7 @@ import {
 	DEFAULT_BLUR_DATA,
 } from "@/components/video-editor/types";
 import { useScopedT } from "@/contexts/I18nContext";
+import { convertAnnotationKind } from "../annotations/convertKind";
 import {
 	collapseTracksToPills,
 	patchAudioTrack,
@@ -987,6 +988,83 @@ export function useTimeline() {
 		[document, saveDocument],
 	);
 
+	/**
+	 * "Paste attributes" — write a copied region's payload onto pills that already exist.
+	 *
+	 * The targets keep their `id`, span and clip anchor; `attrs` (from
+	 * `pickPasteableAttributes`) is everything else the clipboard carries. ONE save for
+	 * the whole list, so pasting onto a multi-selection is one undo step rather than one
+	 * per pill — the same rule `removeRegions` follows.
+	 *
+	 * Routes to the patchers the single-value setters already use, so a pasted depth and
+	 * a depth set in the inspector land through identical code: `patchPillById` reaches
+	 * every fragment of a pill, and `patchAudioTrack` every fragment of a track.
+	 */
+	const applyRegionAttributes = useCallback(
+		async (kind: RegionKind, ids: string[], attrs: Record<string, unknown>) => {
+			// An empty patch is a no-op with an undo step attached — trim and
+			// cameraFullscreen carry nothing, and the menu hides on the same emptiness.
+			if (!document || ids.length === 0 || Object.keys(attrs).length === 0) return;
+			let next: AxcutDocument;
+			if (kind === "zoom") {
+				next = {
+					...document,
+					zoomRanges: ids.reduce(
+						(regions, id) =>
+							patchPillById(regions, id, attrs as Partial<AxcutDocument["zoomRanges"][number]>),
+						document.zoomRanges,
+					),
+				};
+			} else if (kind === "annotation") {
+				next = {
+					...document,
+					annotations: ids.reduce((regions, id) => {
+						const target = regions.find((r) => r.id === id);
+						if (!target) return regions;
+						// A type mismatch is a CONVERSION, not just a field write: the target's own
+						// text or image is parked in its typed slot before the copied payload lands
+						// on top, exactly as the inspector's type <select> does it. `attrs` never
+						// carries the parking slots, so the target's parked content survives.
+						const type = attrs.type as AnnotationType | undefined;
+						const patch = type ? { ...convertAnnotationKind(target, type), ...attrs } : attrs;
+						return patchPillById(
+							regions,
+							id,
+							patch as Partial<AxcutDocument["annotations"][number]>,
+						);
+					}, document.annotations),
+				};
+			} else if (kind === "speed") {
+				const legacy = (document.legacyEditor as Record<string, unknown>) ?? {};
+				const prev = ((legacy.speedRegions as unknown[]) ?? []) as Array<{
+					id: string;
+					startMs: number;
+					endMs: number;
+					speed: number;
+				}>;
+				next = {
+					...document,
+					legacyEditor: {
+						...legacy,
+						speedRegions: ids.reduce(
+							(regions, id) => patchPillById(regions, id, attrs as Partial<(typeof prev)[number]>),
+							prev,
+						),
+					},
+				};
+			} else if (kind === "audio") {
+				next = ids.reduce(
+					(doc, id) => patchAudioTrack(doc, id, attrs as Parameters<typeof patchAudioTrack>[2]),
+					document,
+				);
+			} else {
+				return;
+			}
+			await saveDocument(next, { history: true });
+		},
+		[document, saveDocument],
+	);
+
 	const removeRegion = useCallback(
 		async (kind: RegionKind, id: string) => {
 			if (!document) return;
@@ -1581,6 +1659,7 @@ export function useTimeline() {
 		addSpeed,
 		addSpeedRegionsBulk,
 		addCameraFullscreen,
+		applyRegionAttributes,
 		removeRegion,
 		removeRegions,
 		addAudioTrack,

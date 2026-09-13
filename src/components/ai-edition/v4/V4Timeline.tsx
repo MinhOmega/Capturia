@@ -643,6 +643,7 @@ export function V4Timeline({
 	onAddVoiceover,
 	onCopyRegion,
 	onPasteRegion,
+	onPasteRegionAttributes,
 	onDeleteSelection,
 }: {
 	tl: TimelineApi;
@@ -664,6 +665,7 @@ export function V4Timeline({
 	 *  right-click menu, so the menu cannot do anything the keys would not. */
 	onCopyRegion?: () => void;
 	onPasteRegion?: () => void;
+	onPasteRegionAttributes?: () => void;
 	onDeleteSelection?: () => void;
 }) {
 	const t = useScopedT("timeline");
@@ -2790,6 +2792,7 @@ export function V4Timeline({
 				tl={tl}
 				onCopy={onCopyRegion}
 				onPaste={onPasteRegion}
+				onPasteAttributes={onPasteRegionAttributes}
 				onDelete={onDeleteSelection}
 			/>
 			{/* The crop readout, at the component ROOT rather than in the lane: the lane

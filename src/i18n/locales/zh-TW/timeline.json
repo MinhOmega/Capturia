@@ -11,7 +11,8 @@
 		"addSpeed": "新增速度 (S)",
 		"addCameraFullscreen": "新增全螢幕攝影機 (C)",
 		"splitAtPlayhead": "在播放磁頭處分割片段",
-		"pasteAtPlayhead": "貼上至播放磁頭處"
+		"pasteAtPlayhead": "貼上至播放磁頭處",
+		"pasteAttributes": "貼上屬性"
 	},
 	"hints": {
 		"pressZoom": "按 Z 新增縮放",

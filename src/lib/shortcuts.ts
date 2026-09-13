@@ -13,6 +13,7 @@ export const SHORTCUT_ACTIONS = [
 	"playPause",
 	"copySelected",
 	"paste",
+	"pasteAttributes",
 ] as const;
 
 export type ShortcutAction = (typeof SHORTCUT_ACTIONS)[number];
@@ -188,6 +189,11 @@ export const DEFAULT_SHORTCUTS: ShortcutsConfig = {
 	playPause: { key: " " },
 	copySelected: { key: "c", ctrl: true },
 	paste: { key: "v", ctrl: true },
+	// Paste's shift form, the way every editor that has both spells it. `matchesShortcut`
+	// compares each modifier exactly, so neither binding can swallow the other as they
+	// stand — but the editor still tests this one FIRST, because a rebind is free to make
+	// them ambiguous and the more specific chord is the one that should win.
+	pasteAttributes: { key: "v", ctrl: true, shift: true },
 };
 
 export const SHORTCUT_LABELS: Record<ShortcutAction, string> = {
@@ -205,6 +211,7 @@ export const SHORTCUT_LABELS: Record<ShortcutAction, string> = {
 	playPause: "Play / Pause",
 	copySelected: "Copy Selected",
 	paste: "Paste",
+	pasteAttributes: "Paste Attributes",
 };
 
 export function matchesShortcut(

@@ -31,7 +31,8 @@
 		"deleteSelected": "Eliminar seleccionado",
 		"playPause": "Reproducir / Pausar",
 		"copySelected": "Copiar selección",
-		"paste": "Pegar"
+		"paste": "Pegar",
+		"pasteAttributes": "Pegar atributos"
 	},
 	"fixedActions": {
 		"undo": "Deshacer",

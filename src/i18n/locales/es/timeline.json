@@ -11,7 +11,8 @@
 		"addSpeed": "Agregar velocidad (S)",
 		"addCameraFullscreen": "Agregar cámara a pantalla completa (C)",
 		"splitAtPlayhead": "Dividir el clip en el cursor de reproducción",
-		"pasteAtPlayhead": "Pegar en el cursor de reproducción"
+		"pasteAtPlayhead": "Pegar en el cursor de reproducción",
+		"pasteAttributes": "Pegar atributos"
 	},
 	"hints": {
 		"pressZoom": "Presiona Z para agregar zoom",
