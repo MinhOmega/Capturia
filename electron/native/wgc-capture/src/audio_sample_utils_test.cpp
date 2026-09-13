@@ -639,11 +639,11 @@ int main() {
                 std::to_string(fromCold.size()));
     }
 
-    // WASAPI delivers no packets while a loopback source is silent; the capture
-    // layer synthesizes zero frames and pushes them through the SAME callback
-    // (emitSilenceFrames in wasapi_loopback_capture.cpp). Those frames have to be
-    // CONSUMED rather than skipped: skipping them would slide the decimation
-    // phase and shorten the take. Ragged packets, two silent stretches, and a
+    // A loopback source that is playing silence still delivers packets, flagged
+    // AUDCLNT_BUFFERFLAGS_SILENT; the capture layer substitutes zeros and pushes
+    // them through the SAME callback (wasapi_loopback_capture.cpp's captureLoop).
+    // Those frames have to be CONSUMED rather than skipped: skipping them would
+    // slide the decimation phase and shorten the take. Ragged packets, two silent stretches, and a
     // total that is deliberately not a multiple of the factor.
     {
         const size_t totalFrames = 7777;
@@ -1407,6 +1407,127 @@ int main() {
 
         runMixer(false, "-system-only");
         runMixer(true, "-with-mic");
+    }
+
+    // --- The mixer owns the clock, so nobody else may fill a gap ------------
+    //
+    // mixLoop emits a chunk for every chunk of real time whether or not a queue
+    // has data, which is what keeps a recording that begins in silence from
+    // starting at timestamp zero. The consequence is that a stalled device
+    // needs no help: the silence for it is already in the output by the time
+    // the device comes back.
+    //
+    // wasapi_loopback_capture's captureLoop used to help anyway, pushing
+    // `gapFrames` of zeros on a DATA_DISCONTINUITY. Those frames go to the back
+    // of a queue that is a stream of samples, not a timeline -- pushSystem does
+    // not take a timestamp -- so they did not fill the hole, they moved
+    // everything after it. And the mixer never trims, so the shift is
+    // permanent: one 500 ms glitch, and the microphone is 500 ms behind the
+    // picture for the rest of the take.
+    //
+    // Measured against the wall clock rather than against a constant, so the
+    // check does not turn into a test of how promptly this machine schedules.
+    {
+        const AudioInputFormat pcm48k = makeFormat(MFAudioFormat_PCM, 48000, 2, 16);
+        const size_t toneFrames = 4800;   // 100 ms
+        const size_t stallMs = 500;
+        const auto tone = [&](size_t frames) {
+            std::vector<BYTE> buf(frames * pcm48k.blockAlign, 0);
+            auto* samples = reinterpret_cast<int16_t*>(buf.data());
+            for (size_t i = 0; i < frames * pcm48k.channels; i += 1) {
+                samples[i] = 12000;
+            }
+            return buf;
+        };
+
+        // Plays a stall: tone, `stallMs` of nothing, then `padFrames` of zeros
+        // (what the capture loop used to insert) followed by the same tone.
+        // Returns where the second tone landed in the output and where the wall
+        // clock says it should have landed, both in milliseconds.
+        const auto runStall = [&](size_t padFrames, double& observedMs, double& expectedMs) {
+            std::mutex guard;
+            std::vector<BYTE> collected;
+            AudioMixer mixer(
+                pcm48k, pcm48k, pcm48k, true, false, 1.0,
+                [&](const BYTE* data, DWORD byteCount, int64_t, int64_t) {
+                    std::scoped_lock lock(guard);
+                    collected.insert(collected.end(), data, data + byteCount);
+                    return true;
+                });
+            mixer.start();
+            mixer.beginTimeline();
+            const auto timelineStart = std::chrono::steady_clock::now();
+
+            const std::vector<BYTE> burst = tone(toneFrames);
+            mixer.pushSystem(burst.data(), static_cast<DWORD>(burst.size()));
+            std::this_thread::sleep_for(std::chrono::milliseconds(stallMs));
+
+            const std::vector<BYTE> pad(padFrames * pcm48k.blockAlign, 0);
+            if (padFrames > 0) {
+                mixer.pushSystem(pad.data(), static_cast<DWORD>(pad.size()));
+            }
+            const auto resumed = std::chrono::steady_clock::now();
+            mixer.pushSystem(burst.data(), static_cast<DWORD>(burst.size()));
+            expectedMs =
+                std::chrono::duration<double, std::milli>(resumed - timelineStart).count();
+
+            const size_t needed =
+                static_cast<size_t>(expectedMs * 48.0) + padFrames + toneFrames + 4800;
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+            for (;;) {
+                {
+                    std::scoped_lock lock(guard);
+                    if (collected.size() / pcm48k.blockAlign >= needed) {
+                        break;
+                    }
+                }
+                if (std::chrono::steady_clock::now() > deadline) {
+                    break;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
+            }
+            mixer.stop();
+
+            std::vector<BYTE> out;
+            {
+                std::scoped_lock lock(guard);
+                out = collected;
+            }
+            // Start of the second run of non-silence: past the first tone, past
+            // the gap, wherever it ended up.
+            const auto* samples = reinterpret_cast<const int16_t*>(out.data());
+            const size_t frames = out.size() / pcm48k.blockAlign;
+            size_t index = 0;
+            while (index < frames && samples[index * pcm48k.channels] != 0) index += 1;
+            while (index < frames && samples[index * pcm48k.channels] == 0) index += 1;
+            observedMs = index >= frames ? -1.0 : static_cast<double>(index) / 48.0;
+        };
+
+        double cleanObserved = 0.0;
+        double cleanExpected = 0.0;
+        runStall(0, cleanObserved, cleanExpected);
+        double paddedObserved = 0.0;
+        double paddedExpected = 0.0;
+        runStall(24000, paddedObserved, paddedExpected);  // 500 ms of gap filler
+
+        char detail[192]{};
+        sprintf_s(
+            detail, "unpadded observed=%.1f ms expected=%.1f ms; padded observed=%.1f ms "
+            "expected=%.1f ms",
+            cleanObserved, cleanExpected, paddedObserved, paddedExpected);
+        std::cout << "GAP_RAW " << detail << std::endl;
+
+        // 40 ms of slack: beginTimeline only wakes mixLoop, which anchors its
+        // clock on its next pass (up to 20 ms later), and chunks are 10 ms.
+        expect(
+            "gap-silence-is-not-double-counted",
+            cleanObserved >= 0.0 && std::abs(cleanObserved - cleanExpected) < 40.0, detail);
+        // The other half of the same claim: pushed silence does not fill the
+        // hole, it displaces everything behind it, by its own length, for good.
+        expect(
+            "pushed-gap-silence-displaces-the-rest",
+            paddedObserved >= 0.0 && std::abs(paddedObserved - (paddedExpected + 500.0)) < 40.0,
+            detail);
     }
 
     HRESULT mfHr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
