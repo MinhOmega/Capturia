@@ -1052,7 +1052,14 @@ fn on_frame_inner(state: &CallbackState, frame: *const RawFrame) -> i32 {
         let mut planes = Vec::with_capacity(n);
         for i in 0..n {
             let fd = frame.plane_fd[i];
-            if fd < 0 {
+            // The producer writes `chunk->offset` as a `uint32_t`; `pw_shim.c` casts it to
+            // `int32_t`, so anything from 2^31 up arrives NEGATIVE — and
+            // `dmabuf_import::import` does `offset as isize` straight into the DRM
+            // descriptor, pointing VAAPI BEFORE the buffer. A zero or negative pitch is
+            // equally unusable. Declining re-queues the buffer and drops one frame; the
+            // comment in the C shim claiming "the importer validates the rest" did not
+            // hold, so the validation is here, where the values first cross into Rust.
+            if fd < 0 || frame.plane_offset[i] < 0 || frame.plane_stride[i] <= 0 {
                 return 0;
             }
             // Dup the plane fd so the descriptor owns a handle independent of the
@@ -1202,6 +1209,50 @@ mod tests {
     use std::os::unix::net::UnixStream;
     use std::sync::mpsc;
     use std::time::Duration;
+
+    /// A producer-written plane offset or pitch goes into a DRM descriptor unchanged.
+    ///
+    /// `chunk->offset` is a `uint32_t` in shared memory; the C shim narrows it to
+    /// `int32_t`, so >= 2^31 arrives negative and the importer would hand VAAPI a plane
+    /// starting before the buffer. Declined here instead.
+    #[test]
+    fn a_plane_with_a_negative_offset_or_a_dead_stride_is_declined() {
+        let mailbox = std::sync::Arc::new(FrameMailbox::default());
+        let state = CallbackState { sink: Box::new(|_| {}), frames: Some(mailbox.clone()) };
+
+        // SAFETY: `RawFrame` is a `repr(C)` POD whose pointers are valid when null.
+        let mut frame: RawFrame = unsafe { std::mem::zeroed() };
+        frame.is_dmabuf = 1;
+        frame.buffer_generation = 1;
+        frame.buffer_handle = 1 as *mut c_void;
+        frame.n_planes = 1;
+        frame.width = 1920;
+        frame.height = 1080;
+        frame.drm_fourcc = 0x3432_5258;
+        // fd 0 is a real descriptor in a test binary, so the dup below succeeds and the
+        // only thing that can decline the frame is the offset/stride check.
+        frame.plane_fd = [0, -1, -1, -1];
+        frame.plane_stride = [7680, 0, 0, 0];
+
+        frame.plane_offset = [-1, 0, 0, 0];
+        assert_eq!(on_frame_inner(&state, &frame), 0, "a negative plane offset must be declined");
+        assert!(mailbox.take().is_none(), "the declined frame must not reach the encoder");
+
+        frame.plane_offset = [0, 0, 0, 0];
+        frame.plane_stride = [0, 0, 0, 0];
+        assert_eq!(on_frame_inner(&state, &frame), 0, "a zero pitch must be declined");
+        assert!(mailbox.take().is_none());
+
+        frame.plane_stride = [-7680, 0, 0, 0];
+        assert_eq!(on_frame_inner(&state, &frame), 0, "a negative pitch must be declined");
+        assert!(mailbox.take().is_none());
+
+        // The guard-rail: a well-formed plane must STILL be taken, or the three
+        // assertions above would hold for a callback that declines everything.
+        frame.plane_stride = [7680, 0, 0, 0];
+        assert_eq!(on_frame_inner(&state, &frame), 1, "a valid dmabuf plane must be taken");
+        assert!(mailbox.take().is_some());
+    }
 
     /// A DMA-BUF frame is bounded by our mapping, not by the placeholder sizes
     /// wlr / niri portals send, which rejected every 1080p frame (#287 follow-up).
