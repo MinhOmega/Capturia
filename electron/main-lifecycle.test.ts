@@ -103,6 +103,7 @@ const handlersMock = vi.hoisted(() => ({
 vi.mock("./ipc/handlers", async () => ({
 	exportDiagnosticFile: vi.fn(),
 	getSelectedDesktopSource: vi.fn(() => null),
+	readableApprovedPath: () => null,
 	pendingRecordingWrites: () => handlersMock.pending,
 	recordingStreams: { endAll: handlersMock.endAll },
 	registerIpcHandlers: (...args: unknown[]) => {
