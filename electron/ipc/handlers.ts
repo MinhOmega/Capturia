@@ -159,7 +159,7 @@ const GET_SOURCES_TIMEOUT_MS = 30_000;
  * whole available remedy: an unbounded await leaves a caller with no error and no
  * way out, which is strictly worse than a late failure it can report.
  */
-function withDeadline<T>(work: Promise<T>, ms: number, message: string): Promise<T> {
+export function withDeadline<T>(work: Promise<T>, ms: number, message: string): Promise<T> {
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	return Promise.race([
 		work,
