@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
-import { createReadStream, existsSync } from "node:fs";
+import { createReadStream, createWriteStream } from "node:fs";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
+import { setTimeout as sleep } from "node:timers/promises";
 import type { SttModelId } from "./transcriptionContract";
 
 export type { SttModelId } from "./transcriptionContract";
@@ -176,10 +177,6 @@ export async function sha256OfFile(filePath: string): Promise<string> {
 const MAX_ATTEMPTS = 6;
 const RETRYABLE_STATUS = new Set([408, 425, 429, 500, 502, 503, 504]);
 
-function sleep(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function backoffMs(attempt: number, retryAfter: string | null): number {
 	if (retryAfter) {
 		const secs = Number(retryAfter);
@@ -239,18 +236,21 @@ async function ensureFile(
 	expectedSha256: string | null,
 	options: DownloadOptions = {},
 ): Promise<void> {
-	if (existsSync(filePath)) {
-		const s = await stat(filePath);
-		if (s.isFile() && s.size > 0) {
-			if (!expectedSha256) return;
-			const actual = await sha256OfFile(filePath);
-			if (actual.toLowerCase() === expectedSha256.toLowerCase()) return;
-			// Deliberately leave the stale file where it is. Moving it aside now
-			// would buy nothing — the rename at the end of this function is already
-			// atomic, so there is no window to close — while costing the user their
-			// only model if the replacement never lands (offline, HF 5xx, ENOSPC)
-			// and stranding 264 MB that nothing ever cleans up.
-		}
+	// No existsSync probe first: stat answers both questions, and ENOENT is the
+	// "not there" branch. Any other stat error still propagates.
+	const existing = await stat(filePath).catch((error: NodeJS.ErrnoException) => {
+		if (error.code === "ENOENT") return null;
+		throw error;
+	});
+	if (existing?.isFile() && existing.size > 0) {
+		if (!expectedSha256) return;
+		const actual = await sha256OfFile(filePath);
+		if (actual.toLowerCase() === expectedSha256.toLowerCase()) return;
+		// Deliberately leave the stale file where it is. Moving it aside now
+		// would buy nothing — the rename at the end of this function is already
+		// atomic, so there is no window to close — while costing the user their
+		// only model if the replacement never lands (offline, HF 5xx, ENOSPC)
+		// and stranding 264 MB that nothing ever cleans up.
 	}
 
 	await mkdir(path.dirname(filePath), { recursive: true });
@@ -265,7 +265,6 @@ async function ensureFile(
 		downloaded += chunk.length;
 		options.onProgress?.(downloaded);
 	});
-	const { createWriteStream } = await import("node:fs");
 	try {
 		await pipeline(source, createWriteStream(tmp));
 	} catch (error) {
