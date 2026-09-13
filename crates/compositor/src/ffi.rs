@@ -103,6 +103,52 @@ impl Drop for InputGuard {
     }
 }
 
+/// RAII pour les ressources de muxage de sortie : contexte, fichier ouvert, paquet.
+///
+/// Même problème que `InputGuard`, côté écriture, et une conséquence de plus : `avio_open`
+/// tient le fichier de sortie, donc un `?` survenu pendant la marche de timeline (codec
+/// absent, dossier disparu, annulation) laissait un MP4 sans `moov` sur le disque **et**
+/// son descripteur ouvert — sur Windows, `discard_partial_output` échouait alors à le
+/// supprimer (ffmpeg n'ouvre pas en `FILE_SHARE_DELETE`) et l'utilisateur gardait un
+/// fichier illisible portant son nom.
+///
+/// `pb` n'est pas un champ : il est déjà dans `octx`, et le lire au moment du `Drop` évite
+/// la seule chose qui puisse désynchroniser les deux.
+///
+/// Linux garde son `Muxer` à lui : il porte en plus l'`AVStream` et l'encodeur AAC parce
+/// qu'il est DÉPLACÉ vers le thread d'encodage. Les deux autres pipelines encodent sur
+/// place et n'ont besoin que de ces trois pointeurs.
+pub struct OutputGuard {
+    pub octx: *mut AVFormatContext,
+    pub opkt: *mut AVPacket,
+}
+
+impl OutputGuard {
+    /// Guard qui possède `octx` dès son `avformat_alloc_output_context2`.
+    pub fn new(octx: *mut AVFormatContext) -> OutputGuard {
+        OutputGuard { octx, opkt: std::ptr::null_mut() }
+    }
+}
+
+impl Drop for OutputGuard {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.opkt.is_null() {
+                av_packet_free(&mut self.opkt);
+            }
+            if !self.octx.is_null() {
+                let mut pb = sn_fmt_get_pb(self.octx);
+                if !pb.is_null() {
+                    avio_closep(&mut pb);
+                    sn_fmt_set_pb(self.octx, std::ptr::null_mut());
+                }
+                avformat_free_context(self.octx);
+                self.octx = std::ptr::null_mut();
+            }
+        }
+    }
+}
+
 /// Un code de retour d'`av_read_frame` qui met fin à la lecture — EOF **ou** erreur.
 ///
 /// La règle est la même pour tous les démuxages du crate : ce qui a déjà été lu est bon,

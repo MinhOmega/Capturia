@@ -1184,6 +1184,12 @@ unsafe fn run_c1_inner(
         avformat_alloc_output_context2(&mut octx, ptr::null(), ptr::null(), outc.as_ptr()),
         "alloc_output_context2",
     )?;
+    // RAII dès l'alloc : tout `?` d'ici à la fin -- la marche de timeline, `enc.send`,
+    // l'encodage audio, une annulation -- sautait le démontage plus bas et laissait `octx`,
+    // le paquet et SURTOUT le fichier ouvert par `avio_open`. C'est ce descripteur qui
+    // faisait échouer la suppression de `partial_output` (ffmpeg n'ouvre pas en
+    // `FILE_SHARE_DELETE`), donc survivre un MP4 tronqué et sans `moov`.
+    let mut mux = crate::ffi::OutputGuard::new(octx);
     let ostream = avformat_new_stream(octx, ptr::null());
     averr(avcodec_parameters_from_context((*ostream).codecpar, ectx), "params_from_ctx")?;
     (*ostream).time_base = (*ectx).time_base;
@@ -1192,7 +1198,11 @@ unsafe fn run_c1_inner(
     sn_fmt_set_pb(octx, pb);
     averr(avformat_write_header(octx, ptr::null_mut()), "write_header")?;
 
-    let opkt = av_packet_alloc();
+    mux.opkt = av_packet_alloc();
+    if mux.opkt.is_null() {
+        bail!("av_packet_alloc");
+    }
+    let opkt = mux.opkt;
     let mut frames: u64 = 0;
 
     let t0 = Instant::now();
@@ -1226,13 +1236,8 @@ unsafe fn run_c1_inner(
 
     let wall_s = t0.elapsed().as_secs_f64();
 
-    av_packet_free(&mut (opkt as *mut _));
-    let mut pb2 = sn_fmt_get_pb(octx);
-    if !pb2.is_null() {
-        avio_closep(&mut pb2);
-        sn_fmt_set_pb(octx, ptr::null_mut());
-    }
-    avformat_free_context(octx);
+    // Même ordre qu'avant : le guard ferme le fichier puis libère le contexte et le paquet.
+    drop(mux);
     // `enc` est libéré par son Drop en fin de portée (voir run_multi_inner).
     av_buffer_unref(&mut enc_frames);
     av_buffer_unref(&mut enc_hwdev);
@@ -1661,6 +1666,12 @@ unsafe fn run_multi_inner(
         avformat_alloc_output_context2(&mut octx, ptr::null(), ptr::null(), outc.as_ptr()),
         "alloc_output_context2",
     )?;
+    // RAII dès l'alloc : tout `?` d'ici à la fin -- la marche de timeline, `enc.send`,
+    // l'encodage audio, une annulation -- sautait le démontage plus bas et laissait `octx`,
+    // le paquet et SURTOUT le fichier ouvert par `avio_open`. C'est ce descripteur qui
+    // faisait échouer la suppression de `partial_output` (ffmpeg n'ouvre pas en
+    // `FILE_SHARE_DELETE`), donc survivre un MP4 tronqué et sans `moov`.
+    let mut mux = crate::ffi::OutputGuard::new(octx);
     let ostream = avformat_new_stream(octx, ptr::null());
     if ostream.is_null() {
         bail!("video avformat_new_stream");
@@ -1675,7 +1686,11 @@ unsafe fn run_multi_inner(
     sn_fmt_set_pb(octx, pb);
     averr(avformat_write_header(octx, ptr::null_mut()), "write_header")?;
 
-    let opkt = av_packet_alloc();
+    mux.opkt = av_packet_alloc();
+    if mux.opkt.is_null() {
+        bail!("av_packet_alloc");
+    }
+    let opkt = mux.opkt;
     let mut clip_frame_counts = vec![0u64; clips.len()];
     let mut audio_jobs: ClipAudioJobs<Option<PlanarPcm>> = ClipAudioJobs::new(clips.len());
     let t0 = Instant::now();
@@ -1771,14 +1786,9 @@ unsafe fn run_multi_inner(
     averr(av_write_trailer(octx), "write_trailer")?;
     let wall_s = t0.elapsed().as_secs_f64();
 
-    // teardown (les décodeurs du cache sont droppés en fin de scope).
-    av_packet_free(&mut (opkt as *mut _));
-    let mut pb2 = sn_fmt_get_pb(octx);
-    if !pb2.is_null() {
-        avio_closep(&mut pb2);
-        sn_fmt_set_pb(octx, ptr::null_mut());
-    }
-    avformat_free_context(octx);
+    // teardown (les décodeurs du cache sont droppés en fin de scope). Même ordre
+    // qu'avant : le guard ferme le fichier puis libère le contexte et le paquet.
+    drop(mux);
     // `enc` (donc le contexte encodeur) est libéré par son Drop en fin de portée — après
     // ces unref, ce qui est l'ordre voulu : il garde sa propre référence sur le pool.
     av_buffer_unref(&mut enc_frames);
