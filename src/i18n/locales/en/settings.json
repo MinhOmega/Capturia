@@ -328,6 +328,7 @@
 	"cursor": {
 		"smoothing": "Smoothing",
 		"clickBounce": "Click Bounce",
+		"clickRing": "Click Highlight",
 		"help": "Cursor rendering from the recorded telemetry: theme, size, smoothing, motion blur, and click-bounce emphasis.",
 		"clipToBoundsDescription": "Keeps the cursor inside the video frame. Turn off to let the cursor extend past the edges - useful when zoomed in or panned.",
 		"size": "Size",

@@ -227,6 +227,8 @@ export interface CursorVisualSettings {
 	smoothing: number;
 	motionBlur: number;
 	clickBounce: number;
+	/** 0..1 opacity of the click highlight ring (0 = off). */
+	clickRing: number;
 	clipToBounds: boolean;
 }
 
@@ -234,6 +236,9 @@ export const DEFAULT_CURSOR_SIZE = 3.0;
 export const DEFAULT_CURSOR_SMOOTHING = 0.67;
 export const DEFAULT_CURSOR_MOTION_BLUR = 0.35;
 export const DEFAULT_CURSOR_CLICK_BOUNCE = 2.5;
+// Off by default: a ring on every click is noise in a recording made by someone who
+// never opened the Cursor pane. Opt-in, and carried by Looks.
+export const DEFAULT_CURSOR_CLICK_RING = 0;
 // false lets the cursor overflow into the background; true clips it to the canvas bounds.
 export const DEFAULT_CURSOR_CLIP_TO_BOUNDS = false;
 export const DEFAULT_ZOOM_MOTION_BLUR = 0.35;

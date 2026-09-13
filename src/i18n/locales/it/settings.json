@@ -328,6 +328,7 @@
 	"cursor": {
 		"smoothing": "Smussatura",
 		"clickBounce": "Rimbalzo clic",
+		"clickRing": "Evidenziazione clic",
 		"help": "Resa del cursore dalla telemetria registrata: tema, dimensione, smussatura, sfocatura di movimento e rimbalzo al clic.",
 		"clipToBoundsDescription": "Mantiene il cursore all'interno del fotogramma video. Disattiva per lasciare che il cursore superi i bordi — utile quando si esegue zoom o panoramica.",
 		"size": "Dimensione",
