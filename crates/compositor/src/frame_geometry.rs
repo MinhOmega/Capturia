@@ -17,13 +17,6 @@
 //! Effet de bord immédiat : cette géométrie et ses tests, qui n'avaient jamais été
 //! exécutés ailleurs que sur Windows, tournent maintenant aussi dans le job macOS.
 
-// Sur macOS, la moitié de ce module est encore sans consommateur : le moteur Metal
-// n'a pas de `compose_frame` en couches, donc rien n'appelle encore `screen_source_rect`,
-// `cover_uv_rect`, les fractions d'ombre ou `CursorPlacement`. Ce n'est PAS du code mort —
-// c'est du code que le port n'a pas encore atteint, et il est exercé par ses tests sur les
-// deux plateformes. Le `allow` saute quand le pilotage des couches arrive côté Metal.
-#![allow(dead_code)]
-
 use crate::config::Cfg;
 use crate::scene::{Scene, SceneCrop};
 
@@ -277,6 +270,11 @@ pub(crate) fn remap_box(base: [f32; 4], cut_ref: [f32; 4], cut: [f32; 4]) -> [f3
 /// Retourne `(u0, v0, u1, v1)`. Quand la boîte a déjà le ratio de la source, la coupe
 /// est la frame entière — donc aucun changement de pixel sur les placements qui étaient
 /// déjà corrects.
+// Windows-only pour l'instant : c'est `compositor_windows` qui pose la coupe
+// de la caméra, le port Metal et le port wgpu ne sont pas encore arrivés à ce
+// calque. Le `cfg` remplace un `allow(dead_code)` de module qui masquait aussi
+// tout le reste.
+#[cfg(any(windows, test))]
 pub(crate) fn cover_crop_uv(visible: [f32; 2], tex: [f32; 2], box_ar: f32) -> (f32, f32, f32, f32) {
     let (cam_w, cam_h) = (visible[0].max(1.0), visible[1].max(1.0));
     let (tex_w, tex_h) = (tex[0].max(1.0), tex[1].max(1.0));
@@ -336,8 +334,6 @@ pub(crate) fn cover_uv_rect(uv: [f32; 4], tex: [f32; 2], box_ar: f32) -> [f32; 4
     let (cx, cy) = (uv[0] + w_uv * 0.5, uv[1] + h_uv * 0.5);
     [cx - new_w * 0.5, cy - new_h * 0.5, cx + new_w * 0.5, cy + new_h * 0.5]
 }
-pub const HALF_W: u32 = OUT_W / 2;
-pub const HALF_H: u32 = OUT_H / 2;
 pub const FIXTURE_FRAMES: u32 = 360;
 pub(crate) const FPS: f32 = 60.0;
 /// Longueurs de style exprimées en FRACTION du petit côté du cadre, et non en pixels.
