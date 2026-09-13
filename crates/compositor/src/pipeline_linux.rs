@@ -9,7 +9,7 @@
 //! encodeur SOFTWARE (`libopenh264` H264 / `libkvazaar` H265 -- les seuls du
 //! build LGPL BtbN qui marchent sans device HW, VAAPI/Vulkan-encode = suivi),
 //! la frame composée est relue en RGBA (ring de staging à 2, cf.
-//! `Compositor::set_readback_depth`) puis convertie
+//! `Compositor::set_readback_yuv_depth`) puis convertie
 //! YUV420P par `sws_scale`. La marche de timeline est PARTAGÉE
 //! (`timeline_walk::walk_composited_timeline`) et le muxer passe par le shim C
 //! `sn_fmt_set_pb` (comme Windows/macOS). **L'audio AAC n'est pas encore muxé**
@@ -524,7 +524,9 @@ struct Muxer {
     pb: *mut crate::ffi::AVIOContext,
     ostream: *mut crate::ffi::AVStream,
     opkt: *mut crate::ffi::AVPacket,
-    aac: AacEncoder,
+    /// `None` seulement entre l'`avio_open` et l'ouverture de l'encodeur AAC, le temps
+    /// que `open_muxer` finisse de garnir le muxer. Un export qui tourne en a toujours un.
+    aac: Option<AacEncoder>,
 }
 
 // SAFETY : aucun de ces pointeurs n'a d'affinite de thread. Le muxer est DEPLACE
@@ -557,6 +559,61 @@ impl Muxer {
     unsafe fn finish(&mut self) -> Result<()> {
         crate::ffi::averr(crate::ffi::av_write_trailer(self.octx), "write_trailer")
     }
+}
+
+/// Ouvre le conteneur de sortie complet : flux video, fichier, flux AAC, header.
+///
+/// FONCTION A PART, ET QUI REND UN `Muxer` DEJA CONSTRUIT. En ligne dans
+/// `run_composited_multi_inner`, les quarante lignes de reglage vivaient ENTRE
+/// `avformat_alloc_output_context2` et la construction du `Muxer` -- donc hors de portee
+/// de son `Drop`. Chacun de leurs `?` fuitait le contexte, et ceux d'apres l'`avio_open`
+/// fuitaient en plus le fichier ouvert (un `write_header` refuse des que le conteneur ne
+/// peut pas porter les deux flux). Ici le muxer est bati des l'alloc et garni ensuite :
+/// il n'existe plus d'instant ou une ressource ouverte n'appartient a personne.
+unsafe fn open_muxer(out: &str, ectx: *mut crate::ffi::AVCodecContext) -> Result<Muxer> {
+    let outc = CString::new(out)?;
+    let mut octx: *mut crate::ffi::AVFormatContext = ptr::null_mut();
+    crate::ffi::averr(
+        crate::ffi::avformat_alloc_output_context2(&mut octx, ptr::null(), ptr::null(), outc.as_ptr()),
+        "alloc_output_context2",
+    )?;
+    // A partir d'ici tout appartient au muxer, y compris sur les chemins d'erreur.
+    let mut mux = Muxer {
+        octx,
+        pb: ptr::null_mut(),
+        ostream: ptr::null_mut(),
+        opkt: ptr::null_mut(),
+        aac: None,
+    };
+    mux.ostream = crate::ffi::avformat_new_stream(octx, ptr::null());
+    if mux.ostream.is_null() {
+        bail!("avformat_new_stream");
+    }
+    crate::ffi::averr(
+        crate::ffi::avcodec_parameters_from_context((*mux.ostream).codecpar, ectx),
+        "params_from_ctx",
+    )?;
+    (*mux.ostream).time_base = (*ectx).time_base;
+    crate::ffi::averr(
+        crate::ffi::avio_open(&mut mux.pb, outc.as_ptr(), crate::ffi::AVIO_FLAG_WRITE as i32),
+        "avio_open",
+    )?;
+    crate::ffi::sn_fmt_set_pb(octx, mux.pb);
+    // Le flux AAC doit exister AVANT l'en-tete (le muxer y fige sa table de flux).
+    // Meme si aucun clip n'a d'audio, on ecrit une piste silencieuse -- parite
+    // avec Windows/macOS, qui muxent toujours l'AAC.
+    mux.aac = Some(AacEncoder::open(octx)?);
+    crate::ffi::averr(
+        crate::ffi::avformat_write_header(octx, ptr::null_mut()),
+        "write_header",
+    )?;
+    // Jamais verifie : un `av_packet_alloc` a court de memoire rendait NULL et le
+    // premier `drain` le dereférait.
+    mux.opkt = crate::ffi::av_packet_alloc();
+    if mux.opkt.is_null() {
+        bail!("av_packet_alloc");
+    }
+    Ok(mux)
 }
 
 impl Drop for Muxer {
@@ -970,43 +1027,8 @@ fn run_composited_multi_inner(
     let mut webcam_decs: HashMap<String, Decoder> = HashMap::new();
 
     // ---- muxer MP4 (flux video + flux AAC) ----
-    let outc = CString::new(out)?;
-    let mut octx: *mut crate::ffi::AVFormatContext = ptr::null_mut();
-    let mut pb: *mut crate::ffi::AVIOContext = ptr::null_mut();
-    let ostream;
-    let opkt;
-    let audio_encoder;
-    unsafe {
-        crate::ffi::averr(
-            crate::ffi::avformat_alloc_output_context2(&mut octx, ptr::null(), ptr::null(), outc.as_ptr()),
-            "alloc_output_context2",
-        )?;
-        ostream = crate::ffi::avformat_new_stream(octx, ptr::null());
-        if ostream.is_null() {
-            bail!("avformat_new_stream");
-        }
-        crate::ffi::averr(
-            crate::ffi::avcodec_parameters_from_context((*ostream).codecpar, ectx),
-            "params_from_ctx",
-        )?;
-        (*ostream).time_base = (*ectx).time_base;
-        crate::ffi::averr(
-            crate::ffi::avio_open(&mut pb, outc.as_ptr(), crate::ffi::AVIO_FLAG_WRITE as i32),
-            "avio_open",
-        )?;
-        crate::ffi::sn_fmt_set_pb(octx, pb);
-        // Le flux AAC doit exister AVANT l'en-tete (le muxer y fige sa table de flux).
-        // Meme si aucun clip n'a d'audio, on ecrit une piste silencieuse -- parite
-        // avec Windows/macOS, qui muxent toujours l'AAC.
-        audio_encoder = AacEncoder::open(octx)?;
-        crate::ffi::averr(
-            crate::ffi::avformat_write_header(octx, ptr::null_mut()),
-            "write_header",
-        )?;
-        opkt = crate::ffi::av_packet_alloc();
-    }
-    // A partir d'ici le muxer est un seul objet, et il part avec l'encodeur.
-    let mux = Muxer { octx, pb, ostream, opkt, aac: audio_encoder };
+    // Un seul objet des le depart, donc un seul proprietaire sur tous les chemins.
+    let mux = unsafe { open_muxer(out, ectx)? };
     // Profondeur 3 : deux frames en vol suffisent a couvrir l'encodeur, la
     // troisieme absorbe les a-coups de la marche (une fin de clip y decode tout
     // l'audio du clip d'un coup, cf. `on_clip_end`).
@@ -1043,7 +1065,7 @@ fn run_composited_multi_inner(
         .map(|scene| scene.audio_tracks.clone())
         .unwrap_or_default();
     // Ring de staging a 2 : l'export ne veut que du debit, une frame de latence
-    // ne se voit pas dans un fichier. Voir `Compositor::set_readback_depth` pour
+    // ne se voit pas dans un fichier. Voir `Compositor::set_readback_yuv_depth` pour
     // la raison pour laquelle la preview, elle, reste a 1.
     comp.set_readback_yuv_depth(2)?;
     // pts d'encodage : DECOUPLE de l'index de marche `n`, puisque la frame
@@ -1229,7 +1251,7 @@ fn run_composited_multi_inner(
         let declared_audio: Vec<bool> = clips.iter().map(|c| c.has_audio).collect();
         let plan = build_audio_concat_plan(&clip_frame_counts, &declared_audio, out_fps as f64);
         let octx = mux.octx;
-        mux.aac.encode(
+        mux.aac.as_mut().expect("encodeur AAC du muxer").encode(
             &finish_audio(
                 mix_external_tracks(assemble_concatenated_pcm(&clip_pcm, &plan), &audio_tracks),
                 audio_settings,
@@ -1636,6 +1658,72 @@ mod tests {
 
     const W: i32 = 320;
     const H: i32 = 180;
+
+    /// Descripteurs ouverts par le processus.
+    fn fd_count() -> usize {
+        std::fs::read_dir("/proc/self/fd").expect("/proc/self/fd").count()
+    }
+
+    /// Contexte d'encodage minimal : `avcodec_parameters_from_context` lit les champs,
+    /// il n'a pas besoin d'un codec ouvert. Monter un vrai encodeur ferait dépendre le
+    /// test de la présence de `libopenh264`, qui n'a rien à voir avec ce qu'il mesure.
+    unsafe fn dummy_video_ctx() -> *mut crate::ffi::AVCodecContext {
+        let ctx = crate::ffi::avcodec_alloc_context3(ptr::null());
+        assert!(!ctx.is_null());
+        (*ctx).codec_type = crate::ffi::AVMediaType::AVMEDIA_TYPE_VIDEO;
+        (*ctx).codec_id = crate::ffi::AVCodecID::AV_CODEC_ID_H264;
+        (*ctx).width = W;
+        (*ctx).height = H;
+        (*ctx).time_base = crate::ffi::AVRational { num: 1, den: 30 };
+        ctx
+    }
+
+    /// Un export qui échoue à l'ouverture du conteneur ne doit rien laisser derrière lui.
+    ///
+    /// Les deux échecs sont ceux du terrain : le dossier de destination a disparu (rien
+    /// n'est ouvert, le contexte fuyait quand même), et le conteneur refuse de porter les
+    /// deux flux (le fichier EST ouvert — c'est là que partait le descripteur).
+    #[test]
+    fn a_muxer_that_fails_to_open_leaks_neither_context_nor_file() {
+        let dir = std::env::temp_dir().join("capturia-muxer-open");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let missing = dir.join("pas-de-dossier").join("x.mp4");
+        let missing = missing.to_str().unwrap().to_string();
+        // WAV ne porte qu'un flux : `open_muxer` y ajoute la vidéo PUIS l'AAC, donc
+        // `write_header` refuse — APRÈS l'`avio_open`, fichier ouvert en main.
+        let two_streams = dir.join("x.wav");
+        let two_streams_s = two_streams.to_str().unwrap().to_string();
+
+        unsafe {
+            let ctx = dummy_video_ctx();
+            // Un tour à vide : ffmpeg charge ses tables au premier appel.
+            let _ = open_muxer(&missing, ctx);
+            let _ = open_muxer(&two_streams_s, ctx);
+            let _ = std::fs::remove_file(&two_streams);
+
+            let before = fd_count();
+            for _ in 0..50 {
+                assert!(open_muxer(&missing, ctx).is_err(), "dossier absent");
+                assert!(open_muxer(&two_streams_s, ctx).is_err(), "deux flux dans un WAV");
+            }
+            let after = fd_count();
+            assert!(
+                after <= before + 2,
+                "50 ouvertures ratées ont laissé {} fd ouverts ({before} -> {after})",
+                after as i64 - before as i64
+            );
+            let mut ctx = ctx;
+            crate::ffi::avcodec_free_context(&mut ctx);
+        }
+
+        assert!(!missing.starts_with("/nonexistent"), "chemin de test sous /tmp");
+        assert!(
+            !std::path::Path::new(&missing).exists(),
+            "un export vers un dossier absent a créé un fichier"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     /// Sortie d'un encodage de test : les drapeaux « image clé » paquet par paquet,
     /// et l'extradata (le SPS, en Annex-B, puisque `try_open` pose

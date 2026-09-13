@@ -366,6 +366,35 @@ pub struct ClipInput {
     pub has_audio: bool,
 }
 
+/// Bornes de taille d'export, en pixels. 16 parce qu'en dessous il n'y a plus de place
+/// pour un macrobloc ; 8192 parce que c'est `wgpu::Limits::default().max_texture_dimension_2d`,
+/// et que `d3d_linux::create_async` ouvre le device avec exactement ces limites — au-delà,
+/// `Compositor::new_sized` déclenche une erreur de validation. (D3D11 et Metal montent à
+/// 16384, mais le plafond commun est celui du backend le plus bas : le même JSON d'export
+/// doit rendre le même fichier sur les trois.)
+const EXPORT_PX: std::ops::RangeInclusive<u32> = 16..=8192;
+/// Bornes de cadence. 240 est déjà au-delà de tout écran que l'app enregistre.
+const EXPORT_FPS: std::ops::RangeInclusive<u32> = 1..=240;
+
+/// Taille d'export ramenée à ce que le GPU accepte, et paire.
+///
+/// C'est la FRONTIÈRE IPC : `width`/`height`/`fps` arrivent d'un objet JS non validé et
+/// allaient droit dans `Compositor::new_sized` (wgpu) puis dans le time base de
+/// l'encodeur. `width: 10000` → erreur de validation wgpu → panic du gestionnaire par
+/// défaut sur un worker libuv → abort du processus Electron, pas une `Promise` rejetée.
+/// Les paliers du renderer bornent ça aujourd'hui, mais c'est ici que ça se borne.
+///
+/// Pair : NV12 est 4:2:0, un côté impair n'a pas de plan chroma entier.
+fn clamp_export_px(v: u32) -> u32 {
+    v.clamp(*EXPORT_PX.start(), *EXPORT_PX.end()) & !1
+}
+
+/// Cadence d'export bornée. `fps: 0` donnait `out_fps = 0` : un time base 1/0 et une
+/// fenêtre qui ne produit aucune frame, soit un export vide au message opaque.
+fn clamp_export_fps(fps: u32) -> u32 {
+    fps.clamp(*EXPORT_FPS.start(), *EXPORT_FPS.end())
+}
+
 /// Taille/cadence/codec de sortie voulus par l'app (modale d'export). Tous optionnels :
 /// absent → comportement historique (1920x1080, fps du 1er clip, h264). `width`/`height`
 /// sont arrondis au pair le plus proche (exigence NV12 4:2:0) côté `export_multi`.
@@ -423,12 +452,12 @@ impl Task for ExportMultiTask {
         let mut export_params = pipeline::ExportParams::default();
         if let Some(p) = &self.params {
             if let Some(w) = p.width {
-                export_params.width = w.max(2) & !1; // pair le plus proche (>=2, NV12)
+                export_params.width = clamp_export_px(w);
             }
             if let Some(h) = p.height {
-                export_params.height = h.max(2) & !1;
+                export_params.height = clamp_export_px(h);
             }
-            export_params.fps = p.fps;
+            export_params.fps = p.fps.map(clamp_export_fps);
             if let Some(codec) = &p.codec {
                 export_params.codec = match codec.as_str() {
                     "h264" => pipeline::ExportCodec::H264,
@@ -667,9 +696,9 @@ pub fn export_gif(
         .collect();
     let gif_params = params
         .map(|p| GifExportParams {
-            width: p.width,
-            height: p.height,
-            fps: p.fps,
+            width: p.width.map(clamp_export_px),
+            height: p.height.map(clamp_export_px),
+            fps: p.fps.map(clamp_export_fps),
             loop_count: p.loop_count,
             dither: p.dither.unwrap_or(false),
         })
@@ -745,4 +774,32 @@ pub fn remux_seekable(input_path: String, output_path: String) -> AsyncTask<Remu
         input_path,
         output_path,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// La frontière IPC borne ce qui part dans wgpu et dans l'encodeur.
+    #[test]
+    fn export_params_are_clamped_before_they_reach_the_gpu() {
+        // Le défaut : 10000 px passait tel quel dans `Compositor::new_sized`.
+        assert!(clamp_export_px(10_000) <= *EXPORT_PX.end());
+        assert!(clamp_export_px(u32::MAX) <= *EXPORT_PX.end());
+        assert!(clamp_export_px(0) >= *EXPORT_PX.start());
+        // Et 0 fps donnait un time base 1/0.
+        assert_eq!(clamp_export_fps(0), 1);
+        assert_eq!(clamp_export_fps(10_000), *EXPORT_FPS.end());
+
+        // Tout ce qui sort est pair (NV12 4:2:0) et dans les bornes.
+        for v in [0, 1, 15, 16, 17, 1919, 1920, 3841, 8191, 8192, 8193, u32::MAX] {
+            let c = clamp_export_px(v);
+            assert_eq!(c % 2, 0, "{v} -> {c} impair");
+            assert!(EXPORT_PX.contains(&c), "{v} -> {c} hors bornes");
+        }
+        // Une taille déjà légitime n'est pas touchée.
+        assert_eq!(clamp_export_px(1920), 1920);
+        assert_eq!(clamp_export_px(1080), 1080);
+        assert_eq!(clamp_export_fps(30), 30);
+    }
 }

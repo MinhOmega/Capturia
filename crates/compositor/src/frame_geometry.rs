@@ -17,13 +17,6 @@
 //! Effet de bord immédiat : cette géométrie et ses tests, qui n'avaient jamais été
 //! exécutés ailleurs que sur Windows, tournent maintenant aussi dans le job macOS.
 
-// Sur macOS, la moitié de ce module est encore sans consommateur : le moteur Metal
-// n'a pas de `compose_frame` en couches, donc rien n'appelle encore `screen_source_rect`,
-// `cover_uv_rect`, les fractions d'ombre ou `CursorPlacement`. Ce n'est PAS du code mort —
-// c'est du code que le port n'a pas encore atteint, et il est exercé par ses tests sur les
-// deux plateformes. Le `allow` saute quand le pilotage des couches arrive côté Metal.
-#![allow(dead_code)]
-
 use crate::config::Cfg;
 use crate::scene::{Scene, SceneCrop};
 
@@ -277,6 +270,11 @@ pub(crate) fn remap_box(base: [f32; 4], cut_ref: [f32; 4], cut: [f32; 4]) -> [f3
 /// Retourne `(u0, v0, u1, v1)`. Quand la boîte a déjà le ratio de la source, la coupe
 /// est la frame entière — donc aucun changement de pixel sur les placements qui étaient
 /// déjà corrects.
+// Windows-only pour l'instant : c'est `compositor_windows` qui pose la coupe
+// de la caméra, le port Metal et le port wgpu ne sont pas encore arrivés à ce
+// calque. Le `cfg` remplace un `allow(dead_code)` de module qui masquait aussi
+// tout le reste.
+#[cfg(any(windows, test))]
 pub(crate) fn cover_crop_uv(visible: [f32; 2], tex: [f32; 2], box_ar: f32) -> (f32, f32, f32, f32) {
     let (cam_w, cam_h) = (visible[0].max(1.0), visible[1].max(1.0));
     let (tex_w, tex_h) = (tex[0].max(1.0), tex[1].max(1.0));
@@ -336,8 +334,6 @@ pub(crate) fn cover_uv_rect(uv: [f32; 4], tex: [f32; 2], box_ar: f32) -> [f32; 4
     let (cx, cy) = (uv[0] + w_uv * 0.5, uv[1] + h_uv * 0.5);
     [cx - new_w * 0.5, cy - new_h * 0.5, cx + new_w * 0.5, cy + new_h * 0.5]
 }
-pub const HALF_W: u32 = OUT_W / 2;
-pub const HALF_H: u32 = OUT_H / 2;
 pub const FIXTURE_FRAMES: u32 = 360;
 pub(crate) const FPS: f32 = 60.0;
 /// Longueurs de style exprimées en FRACTION du petit côté du cadre, et non en pixels.
@@ -782,8 +778,21 @@ pub struct FrameGeometry {
 /// Metal et D3D (leur `draw_annotations` prend le rect en paramètre). Seul Linux part
 /// directement de `FrameGeometry`. Passer `s_dst` ici reste donc possible sur deux
 /// backends sur trois — d'où le nom du paramètre côté appelants, et les tests.
+///
+/// La taille est **bornée au cadre de sortie** : `w`/`h` viennent du JSON de scène, non
+/// vérifié, et les trois backends en font un `box_px` puis un `vec![0u8; w * h * 4]`. Un
+/// `{"w": 100}` (unités relatives, donc 100 × la largeur) rendait 192 000 px à 1080p, soit
+/// 83 Go d'allocation ; `1e9` saturait le `as u32` et faisait déborder le produit. Le
+/// plafond est ici parce que c'est le seul point par où les trois passent — un `min` dans
+/// chaque backend serait trois fois le même oubli en puissance. `min` traite aussi le NaN :
+/// `f32::min(NaN, 1.0) == 1.0`.
 pub fn annotation_dst_in(anchor: [f32; 4], x: f32, y: f32, w: f32, h: f32) -> [f32; 4] {
-    [anchor[0] + x * anchor[2], anchor[1] + y * anchor[3], w * anchor[2], h * anchor[3]]
+    [
+        anchor[0] + x * anchor[2],
+        anchor[1] + y * anchor[3],
+        (w * anchor[2]).min(1.0),
+        (h * anchor[3]).min(1.0),
+    ]
 }
 
 impl FrameGeometry {
@@ -1621,6 +1630,23 @@ mod tests {
                  si les deux coïncident, ce test ne prouve plus rien"
             );
         }
+    }
+
+    /// Une annotation ne peut pas être plus grande que le cadre de sortie.
+    ///
+    /// `w`/`h` viennent du JSON de scène : `{"w": 100}` en unités relatives faisait
+    /// 192 000 px de large à 1080p, donc `vec![0u8; 192_000 * 108_000 * 4]` dans le
+    /// rastériseur de texte. Le plafond est ici, pas dans les trois backends.
+    #[test]
+    fn an_annotation_box_is_clamped_to_the_output_frame() {
+        let dst = annotation_dst_in([0.0, 0.0, 1.0, 1.0], 0.0, 0.0, 100.0, 100.0);
+        assert!(dst[2] <= 1.0 && dst[3] <= 1.0, "boîte non bornée : {dst:?}");
+        // Un `w` non fini ne doit pas non plus passer en `as u32` chez l'appelant.
+        let nan = annotation_dst_in([0.0, 0.0, 1.0, 1.0], 0.0, 0.0, f32::NAN, f32::INFINITY);
+        assert!(nan[2] <= 1.0 && nan[3] <= 1.0, "boîte non finie : {nan:?}");
+        // Et une boîte normale n'est pas touchée.
+        let ok = annotation_dst_in([0.1, 0.2, 0.8, 0.5], 0.0, 0.0, 0.5, 0.5);
+        assert_eq!([ok[2], ok[3]], [0.4, 0.25]);
     }
 
     /// **Le golden iso-render.**

@@ -41,6 +41,7 @@ add_executable(wgc-capture
   src/dpi_awareness.h
   src/dshow_webcam_capture.cpp
   src/dshow_webcam_capture.h
+  src/hresult_log.h
   src/main.cpp
   src/mf_encoder.cpp
   src/mf_encoder.h

@@ -1,5 +1,7 @@
 #include "wgc_session.h"
 
+#include "hresult_log.h"
+
 #include <Windows.Graphics.Capture.Interop.h>
 #include <d3d10.h>
 #include <dxgi1_2.h>
@@ -20,16 +22,6 @@ extern "C" HRESULT __stdcall CreateDirect3D11DeviceFromDXGIDevice(
     ::IInspectable** graphicsDevice);
 
 namespace {
-
-bool succeeded(HRESULT hr, const char* label) {
-    if (SUCCEEDED(hr)) {
-        return true;
-    }
-
-    std::cerr << "ERROR: " << label << " failed (hr=0x" << std::hex << hr << std::dec << ")"
-              << std::endl;
-    return false;
-}
 
 int64_t timeSpanToHns(wf::TimeSpan const& value) {
     return value.count();
@@ -217,15 +209,8 @@ bool WgcSession::applySessionOptions(bool captureCursor) {
     return true;
 }
 
-bool WgcSession::initialize(HMONITOR monitor, int fps, bool captureCursor) {
-    fps_ = fps > 0 ? fps : 60;
-    if (!createD3DDevice()) {
-        return false;
-    }
-    if (!createCaptureItem(monitor)) {
-        return false;
-    }
-
+// Everything both initialize() overloads do once the capture item exists.
+bool WgcSession::createSession(bool captureCursor) {
     framePool_ = wgcap::Direct3D11CaptureFramePool::CreateFreeThreaded(
         winrtDevice_,
         wgdx::DirectXPixelFormat::B8G8R8A8UIntNormalized,
@@ -233,34 +218,15 @@ bool WgcSession::initialize(HMONITOR monitor, int fps, bool captureCursor) {
         winrt::Windows::Graphics::SizeInt32{width_, height_});
     session_ = framePool_.CreateCaptureSession(item_);
 
-    if (!applySessionOptions(captureCursor)) {
-        return false;
-    }
-
-    return true;
+    return applySessionOptions(captureCursor);
 }
 
-bool WgcSession::initialize(HWND window, int fps, bool captureCursor) {
-    fps_ = fps > 0 ? fps : 60;
-    if (!createD3DDevice()) {
-        return false;
-    }
-    if (!createCaptureItem(window)) {
-        return false;
-    }
+bool WgcSession::initialize(HMONITOR monitor, bool captureCursor) {
+    return createD3DDevice() && createCaptureItem(monitor) && createSession(captureCursor);
+}
 
-    framePool_ = wgcap::Direct3D11CaptureFramePool::CreateFreeThreaded(
-        winrtDevice_,
-        wgdx::DirectXPixelFormat::B8G8R8A8UIntNormalized,
-        2,
-        winrt::Windows::Graphics::SizeInt32{width_, height_});
-    session_ = framePool_.CreateCaptureSession(item_);
-
-    if (!applySessionOptions(captureCursor)) {
-        return false;
-    }
-
-    return true;
+bool WgcSession::initialize(HWND window, bool captureCursor) {
+    return createD3DDevice() && createCaptureItem(window) && createSession(captureCursor);
 }
 
 bool WgcSession::start() {

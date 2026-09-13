@@ -6,17 +6,16 @@ use crate::config::Cfg;
 // pour le pourquoi. `pub use` sur les constantes : `pipeline_windows.rs`, `live.rs` et
 // `crates/poc-d3d/src/app.rs` les lisent via `crate::compositor::…`, et ce chemin doit
 // rester valable.
-pub use crate::frame_geometry::{live_params_from_scene, webcam_shape_code, LayerCB,
-    LiveParams, FIXTURE_FRAMES, HALF_H, HALF_W, OUT_H, OUT_W};
+pub use crate::frame_geometry::{
+    live_params_from_scene, webcam_shape_code, LayerCB, LiveParams, FIXTURE_FRAMES, OUT_H, OUT_W,
+};
 use crate::frame_geometry::{
-    cover_crop_uv, cover_uv_rect, cursor_sprite_dst, decode_data_uri, ease_in_out_cubic, lerp,
-    lerp4, parse_hex, preset_placements, remap_box, screen_source_rect, timeline, CursorPlacement,
-    FrameParams, Placement, CURSOR_BASE_SIZE_FRAC, FPS, SCREEN_SHADOW_OFFSET_FRAC,
-    SCREEN_SHADOW_SPREAD_FRAC, SHADOW_TUNING_REF_PX, WEBCAM_SHADOW_OFFSET_FRAC,
+    cover_crop_uv, cursor_sprite_dst, decode_data_uri, lerp, parse_hex, CursorPlacement, FPS,
+    SCREEN_SHADOW_OFFSET_FRAC, SCREEN_SHADOW_SPREAD_FRAC, WEBCAM_SHADOW_OFFSET_FRAC,
     WEBCAM_SHADOW_OPACITY, WEBCAM_SHADOW_SPREAD_FRAC,
 };
 use crate::cursor::CursorTrack;
-use crate::scene::{Scene, SceneBackground, SceneCrop, SceneCursorSprite};
+use crate::scene::{Scene, SceneBackground, SceneCursorSprite};
 use crate::d3d::Gpu;
 use crate::ffi::AVFrame;
 use anyhow::{bail, Result};
@@ -38,21 +37,6 @@ use windows::Win32::Graphics::Dxgi::Common::*;
 /// rendre de mémoire sans toucher au jeu actif, ce qu'elle refuse de faire. 512 Mo borne la fuite
 /// (1 774 Mo mesurés en parcourant les 18 wallpapers livrés) en laissant le jeu actif résident.
 const IMG_CACHE_BUDGET_BYTES: u64 = 512 * 1024 * 1024;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 /// Cadence de l'inférence. Pas 60 : une silhouette ne bouge pas de façon perceptible en
 /// 16 ms, et c'est le seul levier mesuré qui divise le coût par deux sans toucher au modèle.
@@ -115,7 +99,6 @@ pub struct Compositor {
     ann_copy: ID3D11Texture2D,
     ann_copy_srv: ID3D11ShaderResourceView,
     // accumulateur pour le flou de mouvement (supersampling temporel)
-    accum: ID3D11Texture2D,
     accum_rtv: ID3D11RenderTargetView,
     accum_srv: ID3D11ShaderResourceView,
     blend_add: ID3D11BlendState,
@@ -232,17 +215,6 @@ struct ResizeTarget {
     nv12_rtv_y: ID3D11RenderTargetView,
     nv12_rtv_uv: ID3D11RenderTargetView,
 }
-
-
-
-
-
-
-
-
-
-
-
 
 unsafe fn compile(src: &[u8], entry: &[u8], target: &[u8]) -> Result<ID3DBlob> {
     let mut code: Option<ID3DBlob> = None;
@@ -599,7 +571,6 @@ impl Compositor {
             e_srv,
             ann_copy,
             ann_copy_srv: ann_copy_srv.unwrap(),
-            accum,
             accum_rtv: accum_rtv.unwrap(),
             accum_srv: accum_srv.unwrap(),
             blend_add: blend_add.unwrap(),
@@ -649,13 +620,6 @@ impl Compositor {
     #[inline]
     fn rh(&self) -> f32 {
         self.render_size.get().1 as f32
-    }
-
-    /// Dimensions entières du render target — pour les viewports et les boucles
-    /// de readback, qui veulent des `u32` et non des `f32`.
-    #[inline]
-    fn render_dims(&self) -> (u32, u32) {
-        self.render_size.get()
     }
 
     /// Taille à laquelle ce compositeur rastérise, après l'arrondi au pair de
@@ -788,7 +752,7 @@ impl Compositor {
         // le rayon effectif du flou changerait avec la résolution de sortie (un
         // demi de 1080 n'est pas un demi de 2160), et le fond flouté ne serait plus
         // le même effet d'un format à l'autre.
-        let (rw_i, rh_i) = self.render_dims();
+        let (rw_i, rh_i) = self.render_size();
         let (half_w, half_h) = (rw_i / 2, rh_i / 2);
         let hw = half_w as f32;
         let hh = half_h as f32;
@@ -1366,11 +1330,6 @@ impl Compositor {
         // Et le masque que le worker démonté avait peut-être déjà déposé : il vient de l'autre
         // mode, il n'a rien à faire sur la première frame de celui-ci.
         *self.seg_inbox.lock().unwrap() = None;
-    }
-
-    /// Éteint l'effet : la webcam se redessine telle quelle à la frame suivante.
-    pub fn clear_webcam_mask(&self) {
-        *self.webcam_mask.borrow_mut() = None;
     }
 
     pub fn set_cursor(&self, track: CursorTrack) {
@@ -2341,48 +2300,6 @@ impl Compositor {
         self.ctx.PSSetShaderResources(2, Some(&[None]));
     }
 
-    /// Flou de mouvement (§8) : moyenne de `n` sous-frames aux temps intermédiaires
-    /// (mêmes textures vidéo, params d'animation à frame+k/n). Résultat laissé dans le RT.
-    pub unsafe fn compose_frame_mb(
-        &self,
-        screen: *const AVFrame,
-        webcam: *const AVFrame,
-        frame: u32,
-        cfg: &Cfg,
-    ) -> Result<()> {
-        let n = cfg.mblur_n;
-        if n <= 1 {
-            return self.compose_frame(screen, webcam, frame as f32, cfg);
-        }
-        // accumulateur à zéro
-        self.ctx.ClearRenderTargetView(&self.accum_rtv, &[0.0, 0.0, 0.0, 0.0]);
-        let w = 1.0 / n as f32;
-        for k in 0..n {
-            let tf = frame as f32 + (k as f32 + 0.5) / n as f32 - 0.5;
-            self.compose_frame(screen, webcam, tf, cfg)?; // -> self.rt
-            // accum += rt * (1/n)  (blend factor = 1/n, dest = ONE)
-            self.ctx.OMSetRenderTargets(Some(&[Some(self.accum_rtv.clone())]), None);
-            self.ctx.PSSetShaderResources(0, Some(&[Some(self.rt_srv.clone())]));
-            self.ctx.VSSetShader(&self.vs_fs, None);
-            self.ctx.PSSetShader(&self.ps_tex, None);
-            self.ctx.PSSetSamplers(0, Some(&[Some(self.sampler.clone())]));
-            let vp = D3D11_VIEWPORT {
-                TopLeftX: 0.0, TopLeftY: 0.0,
-                Width: self.rw(), Height: self.rh(), MinDepth: 0.0, MaxDepth: 1.0,
-            };
-            self.ctx.RSSetViewports(Some(&[vp]));
-            self.ctx.OMSetBlendState(&self.blend_add, Some(&[w, w, w, w]), 0xffffffff);
-            self.upload_cb(&LayerCB::default());
-            self.ctx.Draw(3, 0);
-            self.ctx.PSSetShaderResources(0, Some(&[None]));
-        }
-        // recopie l'accumulateur dans le RT (pour rgb_to_nv12 qui échantillonne rt_srv)
-        let src: ID3D11Resource = self.accum.cast()?;
-        let dst: ID3D11Resource = self.rt.cast()?;
-        self.ctx.CopyResource(&dst, &src);
-        Ok(())
-    }
-
     /// Rend le RT RGBA vers notre texture NV12 puis copie vers la surface `out_tex`/`slice`.
     pub unsafe fn rgb_to_nv12(&self, out_tex: *mut c_void, slice: u32) -> Result<()> {
         self.render_nv12();
@@ -2501,10 +2418,9 @@ impl Compositor {
     ///
     /// Pourquoi un helper dédié plutôt qu'un open-coding dans `live.rs` : tout le
     /// pattern GPU→CPU de ce fichier (staging `D3D11_USAGE_STAGING`, `CopyResource`,
-    /// `Map`/`D3D11_MAP_READ` + copie ligne par ligne qui respecte `RowPitch`) vit déjà
-    /// dans `dump_nv12`/`dump_raw` — le partager garde la connaissance D3D11 confinée
-    /// à ce fichier et assure que le live et l'export ne divergent pas sur un détail de
-    /// copie. La staging est cachée par taille (`live_readback_staging`) — recréée quand
+    /// `Map`/`D3D11_MAP_READ` + copie ligne par ligne qui respecte `RowPitch`) vit dans
+    /// ce fichier — le partager garde la connaissance D3D11 confinée à ce fichier et
+    /// assure que le live et l'export ne divergent pas sur un détail de copie. La staging est cachée par taille (`live_readback_staging`) — recréée quand
     /// `target_w`/`target_h` changent — pour ne pas payer une allocation par frame.
     ///
     /// Pré-requis : `target_w`/`target_h` ≥ 1. Aucun effet sur le pipeline d'export
@@ -2581,7 +2497,7 @@ impl Compositor {
         };
 
         // 3) GPU → CPU : `CopyResource` resize_target → staging, puis `Map` + copie
-        //    ligne par ligne qui respecte `RowPitch` (cf. `dump_nv12`/`dump_raw`).
+        //    ligne par ligne qui respecte `RowPitch` (cf. `readback_direct`).
         // `ID3D11Texture2D` hérite réellement de `ID3D11Resource` (contrairement au
         // SRV plus haut) donc ce `.cast()` est valide.
         let dst: ID3D11Resource = staging.cast()?;
@@ -2606,7 +2522,7 @@ impl Compositor {
     /// Contrairement à `readback_resized` (qui passe par `blit_resized` → un `resize_target`
     /// incluant une texture NV12 jamais lue par ce chemin RGBA-only, puis une staging séparée),
     /// on copie directement `rt → staging` : la `staging` du compositeur est DÉJÀ dimensionnée
-    /// à la résolution de rendu (`new_inner`), exactement le patron de `dump_raw`. Depuis la
+    /// à la résolution de rendu (`new_inner`). Depuis la
     /// refonte ratio, le RT est rastérisé à la géométrie de sortie ramenée au panneau — soit
     /// précisément la taille que la preview veut afficher —, donc le resize de `readback_resized`
     /// était devenu une copie identité doublée d'une alloc NV12 inutile, du coût pur à chaque
@@ -2617,12 +2533,12 @@ impl Compositor {
     /// canvas côté JS se dimensionne dessus (frame auto-descriptive), donc aucun couplage de
     /// taille à maintenir des deux côtés.
     pub unsafe fn readback_direct(&self) -> Result<(u32, u32, Vec<u8>)> {
-        let (rw, rh) = self.render_dims();
+        let (rw, rh) = self.render_size();
         self.ctx.CopyResource(&self.staging, &self.rt);
         let mut m = D3D11_MAPPED_SUBRESOURCE::default();
         self.ctx.Map(&self.staging, 0, D3D11_MAP_READ, 0, Some(&mut m))?;
         // Copie ligne par ligne qui respecte `RowPitch` (la staging peut être paddée par le
-        // driver) — même idiome que `dump_raw`/`readback_resized`.
+        // driver) — même idiome que `readback_resized`.
         let row = (rw * 4) as usize;
         let mut out = vec![0u8; row * rh as usize];
         for y in 0..rh as usize {
@@ -2668,7 +2584,7 @@ impl Compositor {
     /// backends produisent le MÊME NV12 — sinon l'export CPU dériverait du matériel sur
     /// un détail de conversion, exactement ce que l'iso doit empêcher.
     unsafe fn nv12_source(&self, target_w: u32, target_h: u32) -> Result<ID3D11Texture2D> {
-        let (rw_i, rh_i) = self.render_dims();
+        let (rw_i, rh_i) = self.render_size();
         if target_w == rw_i && target_h == rh_i {
             self.render_nv12();
             return Ok(self.nv12.clone());
@@ -2796,63 +2712,6 @@ impl Compositor {
 
         // libère le SRV du RT (il redevient RTV au prochain begin())
         self.ctx.PSSetShaderResources(0, Some(&[None]));
-    }
-
-    /// Debug : dump notre NV12 (Y puis UV entrelacé) en RAW, pour inspecter la conversion.
-    pub unsafe fn dump_nv12(&self, path: &str) -> Result<()> {
-        let sd = D3D11_TEXTURE2D_DESC {
-            Width: OUT_W,
-            Height: OUT_H,
-            MipLevels: 1,
-            ArraySize: 1,
-            Format: DXGI_FORMAT_NV12,
-            SampleDesc: DXGI_SAMPLE_DESC { Count: 1, Quality: 0 },
-            Usage: D3D11_USAGE_STAGING,
-            BindFlags: 0,
-            CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
-            MiscFlags: 0,
-        };
-        let mut stg: Option<ID3D11Texture2D> = None;
-        self.dev.CreateTexture2D(&sd, None, Some(&mut stg))?;
-        let stg = stg.unwrap();
-        let src: ID3D11Resource = self.nv12.cast()?;
-        let dstr: ID3D11Resource = stg.cast()?;
-        self.ctx.CopyResource(&dstr, &src);
-        let mut m = D3D11_MAPPED_SUBRESOURCE::default();
-        self.ctx.Map(&stg, 0, D3D11_MAP_READ, 0, Some(&mut m))?;
-        let (rw_i, rh_i) = self.render_dims();
-        let mut out = Vec::with_capacity((rw_i * rh_i * 3 / 2) as usize);
-        // plan Y
-        for y in 0..rh_i as usize {
-            let row = (m.pData as *const u8).add(y * m.RowPitch as usize);
-            out.extend_from_slice(std::slice::from_raw_parts(row, rw_i as usize));
-        }
-        // plan UV : commence à RowPitch*Height (offset donné par le pitch), demi-hauteur
-        let uv_off = m.RowPitch as usize * rh_i as usize;
-        for y in 0..(rh_i / 2) as usize {
-            let row = (m.pData as *const u8).add(uv_off + y * m.RowPitch as usize);
-            out.extend_from_slice(std::slice::from_raw_parts(row, rw_i as usize));
-        }
-        self.ctx.Unmap(&stg, 0);
-        std::fs::write(path, &out)?;
-        Ok(())
-    }
-
-    /// Recopie le RT en RAM (RGBA tightly-packed) — vérification uniquement.
-    pub unsafe fn dump_raw(&self, path: &str) -> Result<()> {
-        self.ctx.CopyResource(&self.staging, &self.rt);
-        let mut m = D3D11_MAPPED_SUBRESOURCE::default();
-        self.ctx.Map(&self.staging, 0, D3D11_MAP_READ, 0, Some(&mut m))?;
-        let (rw_i, rh_i) = self.render_dims();
-        let mut out = vec![0u8; (rw_i * rh_i * 4) as usize];
-        for y in 0..rh_i as usize {
-            let src = (m.pData as *const u8).add(y * m.RowPitch as usize);
-            let dst = out.as_mut_ptr().add(y * rw_i as usize * 4);
-            std::ptr::copy_nonoverlapping(src, dst, rw_i as usize * 4);
-        }
-        self.ctx.Unmap(&self.staging, 0);
-        std::fs::write(path, &out)?;
-        Ok(())
     }
 
     /// Blit du RT composité (RGBA) vers un render target externe (backbuffer swapchain),

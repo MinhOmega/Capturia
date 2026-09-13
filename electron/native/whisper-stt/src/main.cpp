@@ -35,6 +35,7 @@
 // this is a belt-and-braces guarantee against a future bug or parallel invoker).
 
 #include "whisper.h"
+#include "wav_pcm16.h"
 
 #include <algorithm>
 #include <atomic>
@@ -59,11 +60,6 @@
 
 namespace {
 
-void log(const std::string& msg) {
-	std::cerr << "[whisper-stt] " << msg << std::endl;
-	std::cerr.flush();
-}
-
 std::string json_escape(const std::string& s) {
 	std::string out;
 	out.reserve(s.size() + 8);
@@ -85,84 +81,6 @@ std::string json_escape(const std::string& s) {
 		}
 	}
 	return out;
-}
-
-// Minimal WAV reader: PCM16, any channel count, any sample rate. Fixtures
-// (and the renderer's writeSamplesAsWav) are guaranteed PCM16 mono 16 kHz.
-// ponytail: v1.9.1 of whisper.cpp dropped `examples/dr_wav.h` in favour of
-// miniaudio, but pulling in the full miniaudio.h (4 MB header) just to read
-// a 16 kHz mono PCM16 stream would be silly. The format is dead simple; this
-// parser is the same one the POC harness shipped.
-bool read_wav_pcm16(const std::string& path, std::vector<float>& pcm,
-                    int& sample_rate_out, int& channels_out) {
-	std::ifstream f(path, std::ios::binary);
-	if (!f) { log("cannot open " + path); return false; }
-
-	auto read_u32 = [&]()-> uint32_t {
-		uint32_t v = 0; f.read(reinterpret_cast<char*>(&v), 4); return v;
-	};
-	auto read_u16 = [&]()-> uint16_t {
-		uint16_t v = 0; f.read(reinterpret_cast<char*>(&v), 2); return v;
-	};
-	auto read_i16 = [&]()-> int16_t {
-		int16_t v = 0; f.read(reinterpret_cast<char*>(&v), 2); return v;
-	};
-
-	char tag[4];
-	f.read(tag, 4);
-	if (f.gcount() != 4 || std::memcmp(tag, "RIFF", 4) != 0) { log("not RIFF"); return false; }
-	(void)read_u32();
-	f.read(tag, 4);
-	if (std::memcmp(tag, "WAVE", 4) != 0) { log("not WAVE"); return false; }
-
-	uint16_t fmt_format = 0, fmt_channels = 0, fmt_bits = 0;
-	uint32_t fmt_sample_rate = 0;
-	bool got_fmt = false;
-
-	while (f) {
-		char chunk_tag[4];
-		f.read(chunk_tag, 4);
-		if (f.gcount() != 4) break;
-		const uint32_t chunk_size = read_u32();
-		if (std::memcmp(chunk_tag, "fmt ", 4) == 0) {
-			fmt_format      = read_u16();
-			fmt_channels    = read_u16();
-			fmt_sample_rate = read_u32();
-			(void)read_u32();
-			(void)read_u16();
-			fmt_bits        = read_u16();
-			const uint32_t fmt_extra = chunk_size - 16;
-			if (fmt_extra) f.seekg(fmt_extra, std::ios::cur);
-			got_fmt = true;
-		} else if (std::memcmp(chunk_tag, "data", 4) == 0) {
-			if (!got_fmt || fmt_format != 1 || fmt_bits != 16) {
-				log("expected PCM16, got format=" + std::to_string(fmt_format) +
-				    " bits=" + std::to_string(fmt_bits));
-				return false;
-			}
-			sample_rate_out = static_cast<int>(fmt_sample_rate);
-			channels_out    = fmt_channels;
-			const size_t frames = chunk_size / 2 / fmt_channels;
-			pcm.resize(frames);
-			if (fmt_channels == 1) {
-				for (size_t i = 0; i < frames; ++i) pcm[i] = static_cast<float>(read_i16()) / 32768.0f;
-			} else {
-				std::vector<int> count(frames, 0);
-				for (size_t ch = 0; ch < fmt_channels; ++ch) {
-					for (size_t i = 0; i < frames; ++i) {
-						pcm[i] += static_cast<float>(read_i16()) / 32768.0f;
-						++count[i];
-					}
-				}
-				for (size_t i = 0; i < frames; ++i) pcm[i] /= count[i];
-			}
-			return true;
-		} else {
-			f.seekg(chunk_size + (chunk_size & 1), std::ios::cur);
-		}
-	}
-	log("data chunk not found in " + path);
-	return false;
 }
 
 // Write the runtime-detected ggml device name to a stable string the JSON
@@ -249,6 +167,13 @@ int main(int argc, char** argv) {
 		if (const char* p = std::getenv("CAPTURIA_WHISPER_PORT")) port = std::atoi(p);
 	}
 	if (const char* p = std::getenv("CAPTURIA_WHISPER_THREADS")) threads = std::atoi(p);
+	// Both of the above are `atoi`, which answers 0 for "--threads abc" as
+	// readily as for "--threads 0", and ggml asserts on n_threads < 1 rather
+	// than correcting it — so a typo in the env var killed the server on the
+	// first request. Oversubscription is refused for the same reason it is not
+	// offered: whisper.cpp is compute-bound and more workers than cores only
+	// costs context switches.
+	threads = std::clamp(threads, 1, static_cast<int>(std::max(1u, std::thread::hardware_concurrency())));
 	// Only a fallback, never an override: the app always passes --host 127.0.0.1,
 	// and an env var that can widen a shipped binary's bind address behind an
 	// explicit flag is a hole, not a knob. Anything but loopback is refused

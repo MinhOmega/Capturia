@@ -15,10 +15,12 @@
 //! façon. Une façade qui enveloppe l'appel les couvre tous sans toucher au
 //! corps.
 //!
-//! ponytail: seul le fichier est nettoyé ; les contextes ffmpeg alloués dans les
-//! `*_inner` fuient toujours sur ces sorties-là (il faudrait une garde RAII par
-//! pointeur, comme `FrameGuard`). Un export raté est rare et ne boucle pas — à
-//! reprendre si ça devient un mode de marche.
+//! Les contextes ffmpeg, eux, sont libérés par leurs gardes RAII
+//! (`ffi::OutputGuard`, `ffi::InputGuard`, `pipeline_linux::Muxer`), qui se
+//! déclenchent PENDANT le `run` ci-dessous — donc avant la suppression. C'est
+//! ce qui la rend possible sur Windows : ffmpeg n'ouvre pas la sortie en
+//! `FILE_SHARE_DELETE`, et tant que son descripteur restait ouvert le
+//! `remove_file` échouait en silence et le MP4 sans `moov` survivait.
 
 use anyhow::Result;
 use std::path::Path;

@@ -7,8 +7,8 @@
 //! compose_frame, readback_direct}`) pour que `live.rs` et `compositor-view-napi`
 //! (cfg-re-exportes via `crate::compositor`) l'utilisent sans connaitre la
 //! plateforme. S'y ajoutent, specifiques a ce backend, les trois entrees de la
-//! ring de staging (`set_readback_depth`, `readback_submit`, `readback_take`) :
-//! seul l'export Linux les utilise, cf. `ReadbackRing`.
+//! ring de staging (`set_readback_yuv_depth`, `readback_submit`,
+//! `readback_take`) : seul l'export Linux les utilise, cf. `ReadbackRing`.
 //!
 //! **Iso-render.** La GEOMETRIE (placement de chaque calque) vient de
 //! `frame_geometry::plan_frame` -- la MEME fonction que Windows/macOS, au pixel
@@ -118,7 +118,8 @@ struct PendingCopy {
 /// 12,6 ms mesures) et il depasse deja largement la chaine GPU (3,8 a 6,2 ms).
 /// Une 3e frame n'ajouterait que 8 Mo de memoire mappable et une frame de
 /// latence de plus. La profondeur reste parametrable parce que la POLITIQUE
-/// differe par chemin (cf. `set_readback_depth`), pas pour empiler les buffers.
+/// differe par chemin (cf. `set_readback_yuv_depth`), pas pour empiler les
+/// buffers.
 ///
 /// UN SEUL RT. Le RT n'est pas double-bufferise : la copie de la frame N est
 /// soumise AVANT les commandes de composition de la frame N+1, sur la meme
@@ -363,6 +364,43 @@ pub struct Compositor {
     seg_scratch: RefCell<Vec<u8>>,
     /// Le chargement du modele a echoue : ne pas reessayer a chaque frame.
     seg_failed: RefCell<bool>,
+}
+
+/// Rect englobant de quatre coins deja projetes : `(min_x, min_y, max_x, max_y)`.
+/// Trois sites le calculaient a l'identique avant de passer aux coins locaux.
+fn corners_bbox(corners: &[(f32, f32); 4]) -> (f32, f32, f32, f32) {
+    let (min_x, max_x) =
+        corners.iter().fold((f32::MAX, f32::MIN), |(mn, mx), &(x, _)| (mn.min(x), mx.max(x)));
+    let (min_y, max_y) =
+        corners.iter().fold((f32::MAX, f32::MIN), |(mn, mx), &(_, y)| (mn.min(y), mx.max(y)));
+    (min_x, min_y, max_x, max_y)
+}
+
+/// `LayerCB` d'un fond degrade (mode 5), `c0` -> `c1` dans la direction donnee
+/// par l'angle CSS. La bulle et le fond plein rendent le meme degrade, a la
+/// boite pres.
+fn gradient_cb(
+    dst: [f32; 4],
+    quad_px: [f32; 2],
+    radius_px: f32,
+    angle_deg: f32,
+    c0: [f32; 4],
+    c1: [f32; 4],
+) -> LayerCB {
+    // angle CSS -> direction unitaire, meme convention que le fond d'ecran
+    // (dont la direction se lit en espace SORTIE : le degrade traverse le
+    // cadre, la bulle n'en montre que sa tranche).
+    let a = angle_deg.to_radians();
+    LayerCB {
+        dst,
+        src: c1,
+        quad_px,
+        radius_px,
+        mode: 5.0,
+        color: c0,
+        fx: [a.sin(), -a.cos(), 0.0, 0.0],
+        ..Default::default()
+    }
 }
 
 impl Compositor {
@@ -626,9 +664,9 @@ impl Compositor {
 
         let (rt, rt_view, accum, accum_view, readback_bpr) = Self::make_targets(&gpu, w, h);
         let (ann_copy, ann_copy_view, ann_copy_mips) = Self::make_ann_copy(&gpu, w, h);
-        // Profondeur 1 par defaut = chemin synchrone historique, a l'octet et a
-        // la latence pres. C'est l'export qui demande explicitement 2 (cf.
-        // `set_readback_depth`) ; tout autre appelant garde l'ancien contrat.
+        // Profondeur 1 = chemin synchrone historique, a l'octet et a la latence
+        // pres, et la ring RGBA n'en sort jamais : seul l'export change de
+        // profondeur, et il le fait sur la ring YUV (`set_readback_yuv_depth`).
         let readback = RefCell::new(ReadbackRing {
             depth: 1,
             free: vec![Self::make_staging(&gpu, readback_bpr, h)],
@@ -1056,10 +1094,7 @@ impl Compositor {
         opacity: f32,
     ) -> LayerCB {
         let (rw, rh) = (self.render_w as f32, self.render_h as f32);
-        let (min_x, max_x) =
-            corners.iter().fold((f32::MAX, f32::MIN), |(mn, mx), &(x, _)| (mn.min(x), mx.max(x)));
-        let (min_y, max_y) =
-            corners.iter().fold((f32::MAX, f32::MIN), |(mn, mx), &(_, y)| (mn.min(y), mx.max(y)));
+        let (min_x, min_y, max_x, max_y) = corners_bbox(corners);
         // La boite doit contenir la penombre entiere, sinon elle se coupe net.
         let box_w = (max_x - min_x) + 2.0 * spread;
         let box_h = (max_y - min_y) + 2.0 * spread;
@@ -1105,10 +1140,7 @@ impl Compositor {
         // le rayon, pour qu'il reste constant le long du bord au lieu de s'etirer
         // avec la perspective.
         let plane_px = [s_px[0] * quad.scale, s_px[1] * quad.scale];
-        let (min_x, max_x) =
-            corners.iter().fold((f32::MAX, f32::MIN), |(mn, mx), &(x, _)| (mn.min(x), mx.max(x)));
-        let (min_y, max_y) =
-            corners.iter().fold((f32::MAX, f32::MIN), |(mn, mx), &(_, y)| (mn.min(y), mx.max(y)));
+        let (min_x, min_y, max_x, max_y) = corners_bbox(&corners);
         let bbox_w = (max_x - min_x).max(1.0);
         let bbox_h = (max_y - min_y).max(1.0);
         // Coins en px LOCAUX a la bbox, pour matcher `i.local` du shader.
@@ -1362,20 +1394,7 @@ impl Compositor {
             Some(SceneBackground::Gradient { angle_deg, stops }) => {
                 let c0 = stops.first().and_then(|s| parse_hex(s)).unwrap_or(BLACK);
                 let c1 = stops.last().and_then(|s| parse_hex(s)).unwrap_or(c0);
-                // angle CSS -> direction unitaire, meme convention que le fond
-                // d'ecran (dont la direction se lit en espace SORTIE : le degrade
-                // traverse le cadre, la bulle n'en montre que sa tranche).
-                let a = angle_deg.to_radians();
-                flat(LayerCB {
-                    dst,
-                    src: [c1[0], c1[1], c1[2], c1[3]],
-                    quad_px,
-                    radius_px,
-                    mode: 5.0,
-                    color: c0,
-                    fx: [a.sin(), -a.cos(), 0.0, 0.0],
-                    ..Default::default()
-                })
+                flat(gradient_cb(dst, quad_px, radius_px, *angle_deg, c0, c1))
             }
             Some(SceneBackground::Image { path }) => {
                 // Le cover-fit se mesure sur la BULLE, pas sur la sortie : c'est
@@ -1916,16 +1935,7 @@ impl Compositor {
             Some(SceneBackground::Gradient { angle_deg, stops }) => {
                 let c0 = stops.first().and_then(|s| parse_hex(s)).unwrap_or(lp.bg_color);
                 let c1 = stops.last().and_then(|s| parse_hex(s)).unwrap_or(c0);
-                let a = angle_deg.to_radians();
-                let cb = LayerCB {
-                    dst: [0.0, 0.0, 1.0, 1.0],
-                    src: [c1[0], c1[1], c1[2], c1[3]],
-                    quad_px: [rw, rh],
-                    mode: 5.0,
-                    color: c0,
-                    fx: [a.sin(), -a.cos(), 0.0, 0.0],
-                    ..Default::default()
-                };
+                let cb = gradient_cb([0.0, 0.0, 1.0, 1.0], [rw, rh], 0.0, angle_deg, c0, c1);
                 ([0.0, 0.0, 0.0, 1.0], Some(BgLayer::Gradient(cb)))
             }
             Some(SceneBackground::Image { path }) => {
@@ -2642,12 +2652,7 @@ impl Compositor {
                             let (px, py) = quad.point_px(fx, fy);
                             (center_px[0] + px, center_px[1] + py)
                         });
-                    let (min_x, max_x) = corners
-                        .iter()
-                        .fold((f32::MAX, f32::MIN), |(mn, mx), &(x, _)| (mn.min(x), mx.max(x)));
-                    let (min_y, max_y) = corners
-                        .iter()
-                        .fold((f32::MAX, f32::MIN), |(mn, mx), &(_, y)| (mn.min(y), mx.max(y)));
+                    let (min_x, min_y, max_x, max_y) = corners_bbox(&corners);
                     // Le quad projete d'un sprite peut etre tres fin de biais : une bbox
                     // d'un pixel de large ferait diverger le warp inverse, d'ou le
                     // plancher a 1 px.
@@ -2988,44 +2993,6 @@ impl Compositor {
             view_formats: &[],
         });
         t.create_view(&wgpu::TextureViewDescriptor::default())
-    }
-
-    /// Regle la profondeur de la ring de staging. A appeler AVANT la premiere
-    /// relecture (elle vide la ring, donc toute frame encore en vol serait
-    /// perdue -- d'ou le drain explicite plutot qu'un silence).
-    ///
-    /// POLITIQUE PAR CHEMIN, et c'est volontaire :
-    ///
-    /// - **Export** (`pipeline_linux::run_composited_multi`) : profondeur 2. Il
-    ///   ne veut que du DEBIT, la latence d'une frame ne se voit nulle part
-    ///   puisque la sortie est un fichier. Il draine la ring a la fin, donc
-    ///   aucune frame ne manque au montage.
-    /// - **Preview live** (`live.rs`) : profondeur 1, inchangee. Une frame de
-    ///   retard y est perceptible -- le canvas afficherait l'avant-derniere
-    ///   frame composee, et surtout la boucle ne relit QUE quand elle a avance
-    ///   (`stepped`) : au repos (fin d'un scrub, pause) la derniere frame
-    ///   resterait coincee dans la ring et le canvas figerait sur la
-    ///   precedente jusqu'au prochain evenement. Le pipeline demanderait donc
-    ///   un drain sur inactivite pour n'etre que neutre visuellement, pour un
-    ///   gain qui n'est pas le goulot mesure ici. On ne l'impose pas.
-    ///
-    /// A profondeur 1 le chemin est exactement l'ancien : soumettre, attendre,
-    /// mapper, depadder.
-    pub fn set_readback_depth(&self, depth: usize) -> Result<()> {
-        let depth = depth.max(1);
-        // Draine d'abord : les frames en vol appartiennent a l'appelant
-        // precedent, les jeter en silence serait une perte de donnees muette.
-        while unsafe { self.readback_take()? }.is_some() {}
-        let mut ring = self.readback.borrow_mut();
-        ring.depth = depth;
-        while ring.free.len() > depth {
-            ring.free.pop();
-        }
-        while ring.free.len() < depth {
-            let buf = Self::make_staging(&self.gpu, self.readback_bpr, self.render_h);
-            ring.free.push(buf);
-        }
-        Ok(())
     }
 
     /// Construit (ou reconstruit apres resize) les cibles et pipelines YUV.
@@ -3393,12 +3360,31 @@ impl Compositor {
         r.map(|()| true)
     }
 
-    /// Profondeur de la ring YUV. Meme role et memes raisons que
-    /// `set_readback_depth` pour la ring RGBA.
+    /// Regle la profondeur de la ring YUV. A appeler AVANT la premiere
+    /// relecture (elle vide la ring, donc toute frame encore en vol serait
+    /// perdue -- d'ou le drain explicite plutot qu'un silence).
+    ///
+    /// POLITIQUE PAR CHEMIN, et c'est volontaire :
+    ///
+    /// - **Export** (`pipeline_linux::run_composited_multi`) : profondeur 2. Il
+    ///   ne veut que du DEBIT, la latence d'une frame ne se voit nulle part
+    ///   puisque la sortie est un fichier. Il draine la ring a la fin, donc
+    ///   aucune frame ne manque au montage.
+    /// - **Preview live** (`live.rs`) : profondeur 1, inchangee. Une frame de
+    ///   retard y est perceptible -- le canvas afficherait l'avant-derniere
+    ///   frame composee, et surtout la boucle ne relit QUE quand elle a avance
+    ///   (`stepped`) : au repos (fin d'un scrub, pause) la derniere frame
+    ///   resterait coincee dans la ring et le canvas figerait sur la
+    ///   precedente jusqu'au prochain evenement. Le pipeline demanderait donc
+    ///   un drain sur inactivite pour n'etre que neutre visuellement, pour un
+    ///   gain qui n'est pas le goulot mesure ici. On ne l'impose pas.
+    ///
+    /// A profondeur 1 le chemin est exactement l'ancien : soumettre, attendre,
+    /// mapper, depadder.
     pub fn set_readback_yuv_depth(&self, depth: usize) -> Result<()> {
         let depth = depth.max(1);
-        // SAFETY : meme contrat que `set_readback_depth` — le drain ne touche que
-        // des buffers dont la soumission est terminee.
+        // SAFETY : le drain ne touche que des buffers dont la soumission est
+        // terminee.
         while unsafe { self.readback_take_yuv_with(|_, _, _| Ok(()))? } {}
         let mut ring = self.readback_yuv.borrow_mut();
         ring.depth = depth;

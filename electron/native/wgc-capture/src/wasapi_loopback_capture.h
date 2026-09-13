@@ -48,6 +48,7 @@ private:
     Microsoft::WRL::ComPtr<IAudioClient> audioClient_;
     Microsoft::WRL::ComPtr<IAudioCaptureClient> captureClient_;
     WAVEFORMATEX* mixFormat_ = nullptr;
+    WasapiCaptureEndpoint endpoint_ = WasapiCaptureEndpoint::SystemLoopback;
     AudioInputFormat inputFormat_{};
     std::wstring selectedDeviceName_;
     AudioCallback callback_;
@@ -55,6 +56,4 @@ private:
     std::atomic<bool> stopRequested_ = false;
     std::vector<BYTE> silenceBuffer_;
     uint64_t writtenFrames_ = 0;
-    uint64_t lastDevicePositionEnd_ = 0;
-    bool hasLastDevicePosition_ = false;
 };

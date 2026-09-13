@@ -159,6 +159,19 @@ async fn create_async(want: Backend) -> Result<Gpu> {
             (d, q, false)
         }
     };
+    // SANS ce gestionnaire, wgpu appelle le sien : il `panic!`. Le compositeur tourne sur
+    // un worker libuv (export napi) ou sur le thread de `LiveView` -- un panic y devient un
+    // abort du processus Electron, donc l'enregistrement en cours perdu, pour une erreur de
+    // validation qui n'aurait du etre qu'un export en echec. Le gestionnaire n'a aucun
+    // moyen de rendre un `Result` (wgpu l'appelle de maniere asynchrone), donc il trace et
+    // laisse l'operation suivante echouer normalement.
+    //
+    // ponytail: trace seulement. La vraie garde est en amont -- `clamp_export_px` borne la
+    // taille a la frontiere IPC ; remonter l'erreur jusqu'a l'appelant demanderait un canal
+    // dans `Gpu`, a ajouter le jour ou une erreur non bornee arrive ici.
+    device.on_uncaptured_error(Box::new(|e| {
+        eprintln!("[wgpu] erreur non capturee : {e}");
+    }));
     // Windows loggue son repli (`d3d_windows.rs`), Linux ne loggait rien : un hote
     // tombe sur lavapipe rendait a quelques fps sans que rien -- ni log, ni rapport
     // de bug -- ne permette de l'etablir a distance.

@@ -52,8 +52,10 @@ public:
     WgcSession(const WgcSession&) = delete;
     WgcSession& operator=(const WgcSession&) = delete;
 
-    bool initialize(HMONITOR monitor, int fps, bool captureCursor);
-    bool initialize(HWND window, int fps, bool captureCursor);
+    // No fps parameter: the session has no frame rate of its own -- the caller
+    // polls tryGetNextFrame() on whatever cadence it wants.
+    bool initialize(HMONITOR monitor, bool captureCursor);
+    bool initialize(HWND window, bool captureCursor);
     bool start();
     // Returns the most recently arrived frame's texture and timestamp, or
     // false if none is available since the last call. The returned pointer
@@ -85,6 +87,7 @@ private:
     bool createD3DDevice();
     bool createCaptureItem(HMONITOR monitor);
     bool createCaptureItem(HWND window);
+    bool createSession(bool captureCursor);
     bool applySessionOptions(bool captureCursor);
     void onFrameArrived(
         winrt::Windows::Graphics::Capture::Direct3D11CaptureFramePool const& sender,
@@ -111,7 +114,6 @@ private:
     bool quiesced_ = false;
     int width_ = 0;
     int height_ = 0;
-    int fps_ = 60;
     bool captureCursor_ = false;
     bool started_ = false;
 };

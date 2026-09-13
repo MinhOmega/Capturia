@@ -27,154 +27,6 @@ use std::ptr;
 use std::time::Instant;
 use windows::core::Interface;
 
-#[cfg(test)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum DecodeFrameTestFault {
-    AfterAllocations,
-    PacketAllocNull,
-    FrameAllocNull,
-    CloneNull,
-    EofSendError,
-    AttachBufferRefNull,
-}
-
-#[cfg(test)]
-thread_local! {
-    static DECODE_FRAME_TEST_FAULT: std::cell::Cell<Option<DecodeFrameTestFault>> =
-        const { std::cell::Cell::new(None) };
-    static DECODE_FRAME_TEST_PACKET_RELEASED: std::cell::RefCell<
-        Option<std::sync::Arc<std::sync::atomic::AtomicBool>>
-    > = const { std::cell::RefCell::new(None) };
-    static DECODE_FRAME_TEST_FRAME_RELEASED: std::cell::RefCell<
-        Option<std::sync::Arc<std::sync::atomic::AtomicBool>>
-    > = const { std::cell::RefCell::new(None) };
-    static DECODE_FRAME_TEST_HWDEV_OBSERVER: std::cell::Cell<*mut AVBufferRef> =
-        const { std::cell::Cell::new(ptr::null_mut()) };
-}
-
-#[cfg(test)]
-unsafe extern "C" fn observe_test_buffer_release(opaque: *mut c_void, data: *mut u8) {
-    let released = Box::from_raw(opaque as *mut std::sync::Arc<std::sync::atomic::AtomicBool>);
-    released.store(true, std::sync::atomic::Ordering::SeqCst);
-    drop(Box::from_raw(data));
-}
-
-#[cfg(test)]
-unsafe fn install_decode_frame_lifetime_probes(
-    hwdev: *mut AVBufferRef,
-    pkt: *mut AVPacket,
-    frame: *mut AVFrame,
-) -> Result<()> {
-    let should_fail = DECODE_FRAME_TEST_FAULT
-        .with(|fault| fault.get() == Some(DecodeFrameTestFault::AfterAllocations));
-    if !should_fail {
-        return Ok(());
-    }
-
-    let packet_released = DECODE_FRAME_TEST_PACKET_RELEASED.with(|signal| {
-        signal
-            .borrow()
-            .as_ref()
-            .expect("packet release signal")
-            .clone()
-    });
-    let frame_released = DECODE_FRAME_TEST_FRAME_RELEASED.with(|signal| {
-        signal
-            .borrow()
-            .as_ref()
-            .expect("frame release signal")
-            .clone()
-    });
-    let packet_data = Box::into_raw(Box::new(0u8));
-    let packet_opaque = Box::into_raw(Box::new(packet_released));
-    let packet_buf = av_buffer_create(
-        packet_data,
-        1,
-        Some(observe_test_buffer_release),
-        packet_opaque as *mut c_void,
-        0,
-    );
-    if packet_buf.is_null() {
-        drop(Box::from_raw(packet_data));
-        drop(Box::from_raw(packet_opaque));
-        bail!("test av_buffer_create(packet)");
-    }
-    (*pkt).buf = packet_buf;
-    (*pkt).data = packet_data;
-    (*pkt).size = 1;
-
-    let frame_data = Box::into_raw(Box::new(0u8));
-    let frame_opaque = Box::into_raw(Box::new(frame_released));
-    let frame_buf = av_buffer_create(
-        frame_data,
-        1,
-        Some(observe_test_buffer_release),
-        frame_opaque as *mut c_void,
-        0,
-    );
-    if frame_buf.is_null() {
-        drop(Box::from_raw(frame_data));
-        drop(Box::from_raw(frame_opaque));
-        bail!("test av_buffer_create(frame)");
-    }
-    (*frame).buf[0] = frame_buf;
-    (*frame).data[0] = frame_data;
-
-    let observer = av_buffer_ref(hwdev);
-    if observer.is_null() {
-        bail!("test av_buffer_ref(hwdev)");
-    }
-    DECODE_FRAME_TEST_HWDEV_OBSERVER.with(|slot| slot.set(observer));
-    bail!("injected failure after decode allocations")
-}
-
-#[cfg(test)]
-fn decode_frame_test_fault_is(expected: DecodeFrameTestFault) -> bool {
-    DECODE_FRAME_TEST_FAULT.with(|fault| fault.get() == Some(expected))
-}
-
-unsafe fn decode_packet_alloc() -> *mut AVPacket {
-    #[cfg(test)]
-    if decode_frame_test_fault_is(DecodeFrameTestFault::PacketAllocNull) {
-        return ptr::null_mut();
-    }
-    av_packet_alloc()
-}
-
-unsafe fn decode_frame_alloc() -> *mut AVFrame {
-    #[cfg(test)]
-    if decode_frame_test_fault_is(DecodeFrameTestFault::FrameAllocNull) {
-        return ptr::null_mut();
-    }
-    av_frame_alloc()
-}
-
-unsafe fn clone_decoded_frame(frame: *const AVFrame) -> *mut AVFrame {
-    #[cfg(test)]
-    if decode_frame_test_fault_is(DecodeFrameTestFault::CloneNull) {
-        return ptr::null_mut();
-    }
-    av_frame_clone(frame)
-}
-
-unsafe fn send_decode_eof(dctx: *mut AVCodecContext) -> i32 {
-    #[cfg(test)]
-    if decode_frame_test_fault_is(DecodeFrameTestFault::EofSendError) {
-        return AVERROR_INVALIDDATA;
-    }
-    avcodec_send_packet(dctx, ptr::null())
-}
-
-unsafe fn ref_decode_hw_device(hwdev: *const AVBufferRef) -> *mut AVBufferRef {
-    #[cfg(test)]
-    if decode_frame_test_fault_is(DecodeFrameTestFault::AttachBufferRefNull) {
-        let observer = av_buffer_ref(hwdev);
-        DECODE_FRAME_TEST_HWDEV_OBSERVER.with(|slot| slot.set(observer));
-        return ptr::null_mut();
-    }
-    av_buffer_ref(hwdev)
-}
-
 // Macros libav non générées par bindgen (function-like). Valeurs Windows/MSVC.
 // `AVERROR(EAGAIN)` dépend de la plateforme (cf. `crate::ffi`) ; ce fichier est
 // Windows-only, mais garder une troisième copie de la valeur est ce qui a laissé
@@ -197,129 +49,6 @@ pub struct Stats {
     /// Durée de la vidéo exportée (secondes) = frames / cadence de sortie. Distincte de
     /// `wall_s` (temps de rendu réel) — sert au message de succès ("vidéo de Xs exportée en Ys").
     pub video_duration_s: f64,
-}
-
-/// Garde RAII sur une AVFrame (la libère au Drop).
-pub struct FrameGuard(pub *mut AVFrame);
-impl Drop for FrameGuard {
-    fn drop(&mut self) {
-        unsafe { av_frame_free(&mut self.0) };
-    }
-}
-
-struct PacketGuard(*mut AVPacket);
-impl Drop for PacketGuard {
-    fn drop(&mut self) {
-        unsafe { av_packet_free(&mut self.0) };
-    }
-}
-
-/// Décode la n-ième frame d'une source sur NOTRE device (textures échantillonnables).
-/// Sert le harnais de composition (S3+), hors mesure. Retourne une frame indépendante.
-pub fn decode_frame_n(path: &str, gpu: &Gpu, n: u32) -> Result<FrameGuard> {
-    unsafe { decode_frame_n_inner(path, gpu, n) }
-}
-
-unsafe fn decode_frame_n_inner(path: &str, gpu: &Gpu, n: u32) -> Result<FrameGuard> {
-    let mut fmt: *mut AVFormatContext = ptr::null_mut();
-    let cpath = CString::new(path)?;
-    averr(
-        avformat_open_input(&mut fmt, cpath.as_ptr(), ptr::null_mut(), ptr::null_mut()),
-        "open_input",
-    )?;
-    let mut resources = DecoderOpenResources {
-        fmt,
-        dctx: ptr::null_mut(),
-        hwdev: ptr::null_mut(),
-    };
-    averr(
-        avformat_find_stream_info(resources.fmt, ptr::null_mut()),
-        "find_stream_info",
-    )?;
-    let vidx = av_find_best_stream(
-        resources.fmt,
-        AVMediaType::AVMEDIA_TYPE_VIDEO,
-        -1,
-        -1,
-        ptr::null_mut(),
-        0,
-    );
-    if vidx < 0 {
-        bail!("aucun flux vidéo");
-    }
-    let stream = sn_fmt_stream(resources.fmt, vidx);
-    let codecpar = (*stream).codecpar;
-    let codec_id = (*codecpar).codec_id;
-    if !d3d11va_for_codec(codec_id) {
-        bail!(
-            "decode_frame_n only supports H.264 D3D11VA (codec_id {})",
-            codec_id as i32
-        );
-    }
-    let (dec, dctx) = require_decoder(codecpar)?;
-    resources.dctx = dctx;
-    averr(
-        avcodec_parameters_to_context(resources.dctx, codecpar),
-        "params_to_ctx",
-    )?;
-    allow_d3d11va_h264_baseline(resources.dctx);
-
-    resources.hwdev = attach_d3d11va(resources.dctx, gpu)?;
-    averr(
-        avcodec_open2(resources.dctx, dec, ptr::null_mut()),
-        "avcodec_open2",
-    )?;
-
-    let pkt = PacketGuard(decode_packet_alloc());
-    if pkt.0.is_null() {
-        bail!("av_packet_alloc");
-    }
-    let frame = FrameGuard(decode_frame_alloc());
-    if frame.0.is_null() {
-        bail!("av_frame_alloc");
-    }
-    #[cfg(test)]
-    install_decode_frame_lifetime_probes(resources.hwdev, pkt.0, frame.0)?;
-    let mut got: u32 = 0;
-    let mut result: *mut AVFrame = ptr::null_mut();
-
-    'outer: loop {
-        let r = av_read_frame(resources.fmt, pkt.0);
-        if r == AVERROR_EOF {
-            averr(send_decode_eof(resources.dctx), "send_eof")?;
-        } else {
-            averr(r, "read_frame")?;
-            if (*pkt.0).stream_index != vidx {
-                av_packet_unref(pkt.0);
-                continue;
-            }
-            averr(avcodec_send_packet(resources.dctx, pkt.0), "send_packet")?;
-            av_packet_unref(pkt.0);
-        }
-        loop {
-            let r = avcodec_receive_frame(resources.dctx, frame.0);
-            if r == AVERROR_EAGAIN || r == AVERROR_EOF {
-                if r == AVERROR_EOF {
-                    break 'outer;
-                }
-                break;
-            }
-            averr(r, "receive_frame")?;
-            if got == n {
-                result = clone_decoded_frame(frame.0);
-                if result.is_null() {
-                    bail!("av_frame_clone");
-                }
-                break 'outer;
-            }
-            got += 1;
-        }
-    }
-
-    if result.is_null() {
-        bail!("frame {n} introuvable");
-    }
-    Ok(FrameGuard(result))
 }
 
 fn averr(ret: i32, ctx: &str) -> Result<()> {
@@ -389,7 +118,7 @@ unsafe fn attach_d3d11va(dctx: *mut AVCodecContext, gpu: &Gpu) -> Result<*mut AV
         av_buffer_unref(&mut hwdev);
         return Err(error);
     }
-    let dctx_hwdev = ref_decode_hw_device(hwdev);
+    let dctx_hwdev = av_buffer_ref(hwdev);
     if dctx_hwdev.is_null() {
         av_buffer_unref(&mut hwdev);
         bail!("av_buffer_ref(hw_device_ctx)");
@@ -861,20 +590,6 @@ impl Decoder {
         }
     }
 
-    /// Repositionne le flux à la première keyframe (t=0) et vide le codec — pour boucler
-    /// la playback sans réallouer les décodeurs. La fixture démarre sur un IDR (§11).
-    pub(crate) unsafe fn rewind(&mut self) -> Result<()> {
-        // Même règle que `seek_to` : tout repositionnement invalide le peek en attente.
-        // Il portait sur « la frame d'après l'ancienne position », qui n'a plus de sens
-        // ici — sans ça le `next()` suivant promouvait une frame décodée avant le rewind,
-        // avec son ancien `cur_pts`.
-        self.has_peek = false;
-        averr(av_seek_frame(self.fmt, self.vidx, 0, AVSEEK_FLAG_BACKWARD), "seek")?;
-        avcodec_flush_buffers(self.dctx);
-        self.sent_eof = false;
-        Ok(())
-    }
-
     /// Time_base du flux vidéo (secondes par unité de pts).
     unsafe fn tb_sec(&self) -> f64 {
         let tb = (*sn_fmt_stream(self.fmt, self.vidx)).time_base;
@@ -1184,6 +899,12 @@ unsafe fn run_c1_inner(
         avformat_alloc_output_context2(&mut octx, ptr::null(), ptr::null(), outc.as_ptr()),
         "alloc_output_context2",
     )?;
+    // RAII dès l'alloc : tout `?` d'ici à la fin -- la marche de timeline, `enc.send`,
+    // l'encodage audio, une annulation -- sautait le démontage plus bas et laissait `octx`,
+    // le paquet et SURTOUT le fichier ouvert par `avio_open`. C'est ce descripteur qui
+    // faisait échouer la suppression de `partial_output` (ffmpeg n'ouvre pas en
+    // `FILE_SHARE_DELETE`), donc survivre un MP4 tronqué et sans `moov`.
+    let mut mux = crate::ffi::OutputGuard::new(octx);
     let ostream = avformat_new_stream(octx, ptr::null());
     averr(avcodec_parameters_from_context((*ostream).codecpar, ectx), "params_from_ctx")?;
     (*ostream).time_base = (*ectx).time_base;
@@ -1192,7 +913,11 @@ unsafe fn run_c1_inner(
     sn_fmt_set_pb(octx, pb);
     averr(avformat_write_header(octx, ptr::null_mut()), "write_header")?;
 
-    let opkt = av_packet_alloc();
+    mux.opkt = av_packet_alloc();
+    if mux.opkt.is_null() {
+        bail!("av_packet_alloc");
+    }
+    let opkt = mux.opkt;
     let mut frames: u64 = 0;
 
     let t0 = Instant::now();
@@ -1226,13 +951,8 @@ unsafe fn run_c1_inner(
 
     let wall_s = t0.elapsed().as_secs_f64();
 
-    av_packet_free(&mut (opkt as *mut _));
-    let mut pb2 = sn_fmt_get_pb(octx);
-    if !pb2.is_null() {
-        avio_closep(&mut pb2);
-        sn_fmt_set_pb(octx, ptr::null_mut());
-    }
-    avformat_free_context(octx);
+    // Même ordre qu'avant : le guard ferme le fichier puis libère le contexte et le paquet.
+    drop(mux);
     // `enc` est libéré par son Drop en fin de portée (voir run_multi_inner).
     av_buffer_unref(&mut enc_frames);
     av_buffer_unref(&mut enc_hwdev);
@@ -1661,6 +1381,12 @@ unsafe fn run_multi_inner(
         avformat_alloc_output_context2(&mut octx, ptr::null(), ptr::null(), outc.as_ptr()),
         "alloc_output_context2",
     )?;
+    // RAII dès l'alloc : tout `?` d'ici à la fin -- la marche de timeline, `enc.send`,
+    // l'encodage audio, une annulation -- sautait le démontage plus bas et laissait `octx`,
+    // le paquet et SURTOUT le fichier ouvert par `avio_open`. C'est ce descripteur qui
+    // faisait échouer la suppression de `partial_output` (ffmpeg n'ouvre pas en
+    // `FILE_SHARE_DELETE`), donc survivre un MP4 tronqué et sans `moov`.
+    let mut mux = crate::ffi::OutputGuard::new(octx);
     let ostream = avformat_new_stream(octx, ptr::null());
     if ostream.is_null() {
         bail!("video avformat_new_stream");
@@ -1675,7 +1401,11 @@ unsafe fn run_multi_inner(
     sn_fmt_set_pb(octx, pb);
     averr(avformat_write_header(octx, ptr::null_mut()), "write_header")?;
 
-    let opkt = av_packet_alloc();
+    mux.opkt = av_packet_alloc();
+    if mux.opkt.is_null() {
+        bail!("av_packet_alloc");
+    }
+    let opkt = mux.opkt;
     let mut clip_frame_counts = vec![0u64; clips.len()];
     let mut audio_jobs: ClipAudioJobs<Option<PlanarPcm>> = ClipAudioJobs::new(clips.len());
     let t0 = Instant::now();
@@ -1771,14 +1501,9 @@ unsafe fn run_multi_inner(
     averr(av_write_trailer(octx), "write_trailer")?;
     let wall_s = t0.elapsed().as_secs_f64();
 
-    // teardown (les décodeurs du cache sont droppés en fin de scope).
-    av_packet_free(&mut (opkt as *mut _));
-    let mut pb2 = sn_fmt_get_pb(octx);
-    if !pb2.is_null() {
-        avio_closep(&mut pb2);
-        sn_fmt_set_pb(octx, ptr::null_mut());
-    }
-    avformat_free_context(octx);
+    // teardown (les décodeurs du cache sont droppés en fin de scope). Même ordre
+    // qu'avant : le guard ferme le fichier puis libère le contexte et le paquet.
+    drop(mux);
     // `enc` (donc le contexte encodeur) est libéré par son Drop en fin de portée — après
     // ces unref, ce qui est l'ordre voulu : il garde sa propre référence sur le pool.
     av_buffer_unref(&mut enc_frames);
@@ -1791,39 +1516,6 @@ unsafe fn run_multi_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    struct DecodeFrameFaultReset;
-
-    impl Drop for DecodeFrameFaultReset {
-        fn drop(&mut self) {
-            DECODE_FRAME_TEST_FAULT.with(|fault| fault.set(None));
-            DECODE_FRAME_TEST_PACKET_RELEASED.with(|signal| *signal.borrow_mut() = None);
-            DECODE_FRAME_TEST_FRAME_RELEASED.with(|signal| *signal.borrow_mut() = None);
-            DECODE_FRAME_TEST_HWDEV_OBSERVER.with(|slot| unsafe {
-                let mut observer = slot.replace(ptr::null_mut());
-                av_buffer_unref(&mut observer);
-            });
-        }
-    }
-
-    fn install_decode_frame_fault(
-        fault: DecodeFrameTestFault,
-        packet_released: std::sync::Arc<std::sync::atomic::AtomicBool>,
-        frame_released: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    ) -> DecodeFrameFaultReset {
-        DECODE_FRAME_TEST_FAULT.with(|slot| slot.set(Some(fault)));
-        DECODE_FRAME_TEST_PACKET_RELEASED.with(|slot| *slot.borrow_mut() = Some(packet_released));
-        DECODE_FRAME_TEST_FRAME_RELEASED.with(|slot| *slot.borrow_mut() = Some(frame_released));
-        DecodeFrameFaultReset
-    }
-
-    fn install_simple_decode_frame_fault(fault: DecodeFrameTestFault) -> DecodeFrameFaultReset {
-        install_decode_frame_fault(
-            fault,
-            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        )
-    }
 
     #[derive(Debug, PartialEq, Eq)]
     enum HardwarePrerequisite {
@@ -1894,13 +1586,6 @@ mod tests {
                 "{test_name}: raw D3D11 hardware preflight failed with non-skippable HRESULT {:#010X}: {error}",
                 error.code().0 as u32
             ),
-        }
-    }
-
-    fn decode_frame_error(path: &std::path::Path, gpu: &Gpu, n: u32) -> anyhow::Error {
-        match decode_frame_n(path.to_str().expect("utf8 path"), gpu, n) {
-            Ok(_) => panic!("decode_frame_n unexpectedly succeeded"),
-            Err(error) => error,
         }
     }
 
@@ -2149,173 +1834,6 @@ mod tests {
             av_buffer_unref(&mut hwdev);
             avformat_close_input(&mut fmt);
         }
-    }
-
-    #[test]
-    fn decode_frame_n_failure_paths_release_resources() {
-        use std::sync::atomic::{AtomicBool, Ordering};
-        use std::sync::Arc;
-
-        let Some(gpu) = strict_hardware_gpu("decode_frame_n_failure_paths_release_resources")
-        else {
-            return;
-        };
-        let path = encode_color(
-            &["-c:v", "libopenh264", "-b:v", "200k"],
-            "decode-frame-n-lifetime.mp4",
-        );
-        let packet_released = Arc::new(AtomicBool::new(false));
-        let frame_released = Arc::new(AtomicBool::new(false));
-        let _fault = install_decode_frame_fault(
-            DecodeFrameTestFault::AfterAllocations,
-            Arc::clone(&packet_released),
-            Arc::clone(&frame_released),
-        );
-
-        let error = decode_frame_error(&path, &gpu, 0);
-        assert!(
-            format!("{error:#}").contains("injected failure after decode allocations"),
-            "unexpected injected error: {error:#}"
-        );
-        let mut observer =
-            DECODE_FRAME_TEST_HWDEV_OBSERVER.with(|slot| slot.replace(ptr::null_mut()));
-        assert!(
-            !observer.is_null(),
-            "hardware-device observer was not installed"
-        );
-        let hwdev_ref_count = unsafe { av_buffer_get_ref_count(observer) };
-        let input_handle_released = std::fs::remove_file(&path).is_ok();
-        let packet_was_released = packet_released.load(Ordering::SeqCst);
-        let frame_was_released = frame_released.load(Ordering::SeqCst);
-        unsafe { av_buffer_unref(&mut observer) };
-
-        println!(
-            "RELEASE_OBSERVATION:fmt_handle={input_handle_released}:hwdev_refs={hwdev_ref_count}:packet_callback={packet_was_released}:frame_callback={frame_was_released}"
-        );
-        assert!(
-            input_handle_released
-                && hwdev_ref_count == 1
-                && packet_was_released
-                && frame_was_released,
-            "UNRELEASED_RESOURCE fmt_handle={input_handle_released} hwdev_refs={hwdev_ref_count} packet_callback={packet_was_released} frame_callback={frame_was_released}"
-        );
-
-        let unsupported_path = encode_color(
-            &["-c:v", "libaom-av1", "-cpu-used", "8"],
-            "decode-frame-n-unsupported.webm",
-        );
-        let unsupported_error = decode_frame_error(&unsupported_path, &gpu, 0);
-        let unsupported_message = format!("{unsupported_error:#}");
-        assert!(
-            unsupported_message
-                .contains(&format!("codec_id {}", AVCodecID::AV_CODEC_ID_AV1 as i32)),
-            "unsupported codec id was not preserved before format teardown: {unsupported_message}"
-        );
-        std::fs::remove_file(&unsupported_path).expect("unsupported input handle released");
-
-        for (fault, filename, expected) in [
-            (
-                DecodeFrameTestFault::PacketAllocNull,
-                "decode-frame-n-packet-null.mp4",
-                "av_packet_alloc",
-            ),
-            (
-                DecodeFrameTestFault::FrameAllocNull,
-                "decode-frame-n-frame-null.mp4",
-                "av_frame_alloc",
-            ),
-            (
-                DecodeFrameTestFault::CloneNull,
-                "decode-frame-n-clone-null.mp4",
-                "av_frame_clone",
-            ),
-            (
-                DecodeFrameTestFault::EofSendError,
-                "decode-frame-n-eof-send.mp4",
-                "send_eof",
-            ),
-        ] {
-            let path = encode_color(&["-c:v", "libopenh264", "-b:v", "200k"], filename);
-            let frame_number = if fault == DecodeFrameTestFault::EofSendError {
-                u32::MAX
-            } else {
-                0
-            };
-            let error = {
-                let _fault = install_simple_decode_frame_fault(fault);
-                decode_frame_error(&path, &gpu, frame_number)
-            };
-            let message = format!("{error:#}");
-            assert!(message.contains(expected), "{fault:?}: {message}");
-            std::fs::remove_file(&path)
-                .unwrap_or_else(|error| panic!("{fault:?}: input handle leaked: {error}"));
-        }
-
-        let attach_path = encode_color(
-            &["-c:v", "libopenh264", "-b:v", "200k"],
-            "decode-frame-n-attach-ref-null.mp4",
-        );
-        let attach_fault =
-            install_simple_decode_frame_fault(DecodeFrameTestFault::AttachBufferRefNull);
-        let attach_error = decode_frame_error(&attach_path, &gpu, 0);
-        assert!(
-            format!("{attach_error:#}").contains("av_buffer_ref(hw_device_ctx)"),
-            "unexpected attach error: {attach_error:#}"
-        );
-        let mut attach_observer =
-            DECODE_FRAME_TEST_HWDEV_OBSERVER.with(|slot| slot.replace(ptr::null_mut()));
-        assert!(
-            !attach_observer.is_null(),
-            "attach observer was not installed"
-        );
-        let attach_refs = unsafe { av_buffer_get_ref_count(attach_observer) };
-        unsafe { av_buffer_unref(&mut attach_observer) };
-        drop(attach_fault);
-        std::fs::remove_file(&attach_path).expect("attach-ref-null input handle released");
-        assert_eq!(
-            attach_refs, 1,
-            "UNRELEASED_RESOURCE attach_d3d11va local hwdev refs={attach_refs}"
-        );
-        println!("FAILURE_PATH_ASSERTIONS_COMPLETED");
-    }
-
-    #[test]
-    fn decode_frame_n_returned_frame_keeps_its_buffers() {
-        let Some(gpu) = strict_hardware_gpu("decode_frame_n_returned_frame_keeps_its_buffers")
-        else {
-            return;
-        };
-        let path = encode_color(
-            &["-c:v", "libopenh264", "-b:v", "200k"],
-            "decode-frame-n-returned-frame.mp4",
-        );
-        let frame = decode_frame_n(path.to_str().expect("utf8 path"), &gpu, 0)
-            .unwrap_or_else(|error| panic!("decode first H.264 frame: {error:#}"));
-        assert!(!frame.0.is_null(), "returned frame pointer");
-        let source_buffer = unsafe { (*frame.0).buf[0] };
-        assert!(!source_buffer.is_null(), "returned frame buffer reference");
-        let mut observer = unsafe { av_buffer_ref(source_buffer) };
-        assert!(
-            !observer.is_null(),
-            "observer reference for returned frame buffer"
-        );
-        let refs_with_frame = unsafe { av_buffer_get_ref_count(observer) };
-        drop(frame);
-        let refs_after_frame_drop = unsafe { av_buffer_get_ref_count(observer) };
-        println!(
-            "RETURNED_FRAME_REFS:with_frame={refs_with_frame}:after_frame_drop={refs_after_frame_drop}"
-        );
-        assert_eq!(
-            refs_after_frame_drop + 1,
-            refs_with_frame,
-            "FrameGuard must own one independent AVBuffer reference"
-        );
-        assert!(
-            refs_after_frame_drop >= 1,
-            "observer reference must remain valid"
-        );
-        unsafe { av_buffer_unref(&mut observer) };
-        std::fs::remove_file(path).expect("returned-frame input handle released");
     }
 
     #[test]
@@ -2874,12 +2392,15 @@ unsafe fn drain_encoder(
 /// si présent (le cas de la fixture MP4), sinon estimé par durée × cadence, sinon fallback.
 pub fn probe_frame_count(path: &str) -> Result<u64> {
     unsafe {
-        let mut fmt: *mut AVFormatContext = ptr::null_mut();
+        // RAII : `find_stream_info` en erreur laissait le contexte et son descripteur
+        // ouverts, et la barre de progression repartait sur `FIXTURE_FRAMES`.
+        let mut open = crate::ffi::InputGuard::empty();
         let cpath = CString::new(path)?;
         averr(
-            avformat_open_input(&mut fmt, cpath.as_ptr(), ptr::null_mut(), ptr::null_mut()),
+            avformat_open_input(&mut open.0, cpath.as_ptr(), ptr::null_mut(), ptr::null_mut()),
             "open_input",
         )?;
+        let fmt = open.0;
         averr(avformat_find_stream_info(fmt, ptr::null_mut()), "find_stream_info")?;
         let vidx = av_find_best_stream(fmt, AVMediaType::AVMEDIA_TYPE_VIDEO, -1, -1, ptr::null_mut(), 0);
         let mut n: u64 = 0;
@@ -2898,7 +2419,7 @@ pub fn probe_frame_count(path: &str) -> Result<u64> {
                 }
             }
         }
-        avformat_close_input(&mut fmt);
+        drop(open);
         if n == 0 {
             n = crate::compositor::FIXTURE_FRAMES as u64;
         }

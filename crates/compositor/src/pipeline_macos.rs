@@ -1,9 +1,9 @@
 //! Pipeline ffmpeg côté macOS — VideoToolbox (HW) + libopenh264 (software).
 //!
 //! Équivalent macOS de `pipeline_windows.rs` (D3D11VA + h264_amf zero-copy).
-//! Exporte la même surface publique : `Stats`, `FrameGuard`, `Decoder`, `VideoEncoder`,
-//! `ExportCodec`, `ExportParams`, `ClipSource`, et les points d'entrée `decode_frame_n`,
-//! `run_c0`, `run_preview_bench`, `run_composited`, `run_composited_multi`,
+//! Exporte la même surface publique : `Stats`, `Decoder`, `VideoEncoder`,
+//! `ExportCodec`, `ExportParams`, `ClipSource`, et les points d'entrée `run_c0`,
+//! `run_preview_bench`, `run_composited`, `run_composited_multi`,
 //! `probe_frame_count`.
 //!
 //! # Frame seam — adaptation macOS
@@ -48,16 +48,6 @@ pub struct Stats {
     pub wall_s: f64,
     pub fps: f64,
     pub video_duration_s: f64,
-}
-
-/// Garde RAII sur une AVFrame (la libère au Drop). Identique à
-/// `pipeline_windows::FrameGuard`.
-pub struct FrameGuard(pub *mut crate::ffi::AVFrame);
-
-impl Drop for FrameGuard {
-    fn drop(&mut self) {
-        unsafe { crate::ffi::av_frame_free(&mut self.0) };
-    }
 }
 
 /// Au-delà de cette distance vers l'avant, `Decoder::seek_to` repart d'une image clé
@@ -127,12 +117,17 @@ impl Decoder {
 
     pub fn open_with(path: &str, gpu: &Gpu, intent: DecodeIntent) -> Result<Decoder> {
         unsafe {
-            let mut fmt: *mut crate::ffi::AVFormatContext = ptr::null_mut();
+            // RAII : tout `?` entre l'ouverture et le `Ok(Decoder { .. })` final -- un
+            // fichier sans flux vidéo, un codec sans décodeur -- fuitait le contexte ET son
+            // descripteur de fichier. `release()` cède la propriété au `Decoder`, dont le
+            // `Drop` ferme comme avant.
+            let mut open = crate::ffi::InputGuard::empty();
             let cpath = CString::new(path)?;
             crate::ffi::averr(
-                crate::ffi::avformat_open_input(&mut fmt, cpath.as_ptr(), ptr::null_mut(), ptr::null_mut()),
+                crate::ffi::avformat_open_input(&mut open.0, cpath.as_ptr(), ptr::null_mut(), ptr::null_mut()),
                 "open_input",
             )?;
+            let fmt = open.0;
             crate::ffi::averr(
                 crate::ffi::avformat_find_stream_info(fmt, ptr::null_mut()),
                 "find_stream_info",
@@ -288,7 +283,7 @@ impl Decoder {
             )?;
 
             Ok(Decoder {
-                fmt,
+                fmt: open.release(),
                 dctx,
                 hwdev,
                 vidx,
@@ -1046,11 +1041,6 @@ unsafe fn nv12_to_yuv420p(_src: *mut crate::ffi::AVFrame, _dst: *mut crate::ffi:
     // pas exercé (libopenh264 prend NV12, h264_videotoolbox prend VT).
 }
 
-/// C0 (§9) — stub symétrique à `pipeline_windows::run_c0`.
-pub fn decode_frame_n(_path: &str, _gpu: &Gpu, _n: u32) -> Result<FrameGuard> {
-    Err(anyhow!("pipeline_macos::decode_frame_n: non implémenté"))
-}
-
 pub fn run_c0(_screen: &str, _out: &str, _gpu: &Gpu) -> Result<Stats> {
     Err(anyhow!("pipeline_macos::run_c0: non implémenté"))
 }
@@ -1144,6 +1134,12 @@ fn run_composited_multi_inner(
             "alloc_output_context2",
         )?;
     }
+    // RAII dès l'alloc : tout `?` d'ici à la fin -- la marche de timeline, `enc.send`,
+    // l'encodage audio, une annulation -- sautait le démontage plus bas et laissait `octx`,
+    // le paquet et SURTOUT le fichier ouvert par `avio_open`. C'est ce descripteur qui
+    // faisait échouer la suppression de `partial_output` (ffmpeg n'ouvre pas en
+    // `FILE_SHARE_DELETE`), donc survivre un MP4 tronqué et sans `moov`.
+    let mut mux = crate::ffi::OutputGuard::new(octx);
     let ostream = unsafe { crate::ffi::avformat_new_stream(octx, ptr::null()) };
     if ostream.is_null() {
         bail!("avformat_new_stream");
@@ -1180,7 +1176,11 @@ fn run_composited_multi_inner(
     let mut audio_jobs: ClipAudioJobs<Option<PlanarPcm>> = ClipAudioJobs::new(clips.len());
     let mut clip_frame_counts: Vec<u64> = vec![0; clips.len()];
 
-    let mut opkt = unsafe { crate::ffi::av_packet_alloc() };
+    mux.opkt = unsafe { crate::ffi::av_packet_alloc() };
+    if mux.opkt.is_null() {
+        bail!("av_packet_alloc");
+    }
+    let opkt = mux.opkt;
 
     // La marche de timeline est PARTAGÉE (`timeline_walk`) : c'est elle qui décide quelle
     // frame source appartient à quelle frame de sortie, en tenant compte des régions de
@@ -1281,10 +1281,9 @@ fn run_composited_multi_inner(
             crate::ffi::av_write_trailer(octx),
             "write_trailer",
         )?;
-        crate::ffi::avio_closep(&mut pb);
-        crate::ffi::avformat_free_context(octx);
-        crate::ffi::av_packet_free(&mut opkt);
     }
+    // Même ordre qu'avant : le guard ferme le fichier puis libère le contexte et le paquet.
+    drop(mux);
 
     let wall_s = t0.elapsed().as_secs_f64();
     drop(_finalize);

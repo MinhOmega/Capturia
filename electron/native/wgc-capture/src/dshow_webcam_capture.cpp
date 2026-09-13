@@ -12,6 +12,8 @@
 #include <iostream>
 #include <sstream>
 
+#include "hresult_log.h"
+
 namespace {
 
 const CLSID CLSID_SampleGrabberLocal = {0xC1F400A0, 0x3F08, 0x11D3, {0x9F, 0x0B, 0x00, 0x60, 0x08, 0x03, 0x9E, 0x37}};
@@ -28,16 +30,6 @@ public:
     virtual HRESULT STDMETHODCALLTYPE GetCurrentSample(IMediaSample** sample) = 0;
     virtual HRESULT STDMETHODCALLTYPE SetCallback(IUnknown* callback, long whichMethodToCallback) = 0;
 };
-
-bool succeeded(HRESULT hr, const char* label) {
-    if (SUCCEEDED(hr)) {
-        return true;
-    }
-
-    std::cerr << "ERROR: " << label << " failed (hr=0x" << std::hex << hr << std::dec << ")"
-              << std::endl;
-    return false;
-}
 
 std::string guidToString(const GUID& guid) {
     if (guid == MEDIASUBTYPE_RGB32) {

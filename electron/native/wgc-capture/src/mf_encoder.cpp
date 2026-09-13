@@ -1,6 +1,7 @@
 #include "mf_encoder.h"
 
 #include "audio_sample_utils.h"
+#include "hresult_log.h"
 
 #include <codecapi.h>
 #include <d3d10.h>
@@ -15,16 +16,6 @@
 #include <iostream>
 
 namespace {
-
-bool succeeded(HRESULT hr, const char* label) {
-    if (SUCCEEDED(hr)) {
-        return true;
-    }
-
-    std::cerr << "ERROR: " << label << " failed (hr=0x" << std::hex << hr << std::dec << ")"
-              << std::endl;
-    return false;
-}
 
 // Count how many Media Foundation Transforms are registered for a given
 // (category, output subtype) pair. Caller does not need the activations
