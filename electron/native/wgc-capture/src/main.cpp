@@ -414,18 +414,29 @@ bool hasVisibleBgraContent(const std::vector<BYTE>& frame) {
     return maxLuma > 24 || averageLuma > 4;
 }
 
-bool findBool(const std::string& json, const std::string& key, bool fallback) {
+// Offset of the first non-space character after `"key":`, or npos when the key
+// or its colon is missing. The four getters below differ only in what they do
+// from there.
+size_t valueStart(const std::string& json, const std::string& key) {
     auto pos = json.find("\"" + key + "\"");
     if (pos == std::string::npos) {
-        return fallback;
+        return std::string::npos;
     }
     pos = json.find(':', pos);
     if (pos == std::string::npos) {
-        return fallback;
+        return std::string::npos;
     }
     pos += 1;
     while (pos < json.size() && std::isspace(static_cast<unsigned char>(json[pos]))) {
         pos += 1;
+    }
+    return pos;
+}
+
+bool findBool(const std::string& json, const std::string& key, bool fallback) {
+    const auto pos = valueStart(json, key);
+    if (pos == std::string::npos) {
+        return fallback;
     }
     if (json.compare(pos, 4, "true") == 0) {
         return true;
@@ -437,17 +448,9 @@ bool findBool(const std::string& json, const std::string& key, bool fallback) {
 }
 
 int64_t findInt64(const std::string& json, const std::string& key, int64_t fallback) {
-    auto pos = json.find("\"" + key + "\"");
+    const auto pos = valueStart(json, key);
     if (pos == std::string::npos) {
         return fallback;
-    }
-    pos = json.find(':', pos);
-    if (pos == std::string::npos) {
-        return fallback;
-    }
-    pos += 1;
-    while (pos < json.size() && std::isspace(static_cast<unsigned char>(json[pos]))) {
-        pos += 1;
     }
     try {
         return std::stoll(json.substr(pos));
@@ -461,17 +464,9 @@ int findInt(const std::string& json, const std::string& key, int fallback) {
 }
 
 double findDouble(const std::string& json, const std::string& key, double fallback) {
-    auto pos = json.find("\"" + key + "\"");
+    const auto pos = valueStart(json, key);
     if (pos == std::string::npos) {
         return fallback;
-    }
-    pos = json.find(':', pos);
-    if (pos == std::string::npos) {
-        return fallback;
-    }
-    pos += 1;
-    while (pos < json.size() && std::isspace(static_cast<unsigned char>(json[pos]))) {
-        pos += 1;
     }
     try {
         return std::stod(json.substr(pos));
@@ -481,17 +476,9 @@ double findDouble(const std::string& json, const std::string& key, double fallba
 }
 
 std::string findString(const std::string& json, const std::string& key) {
-    auto pos = json.find("\"" + key + "\"");
+    auto pos = valueStart(json, key);
     if (pos == std::string::npos) {
         return {};
-    }
-    pos = json.find(':', pos);
-    if (pos == std::string::npos) {
-        return {};
-    }
-    pos += 1;
-    while (pos < json.size() && std::isspace(static_cast<unsigned char>(json[pos]))) {
-        pos += 1;
     }
     if (pos >= json.size() || json[pos] != '"') {
         return {};
@@ -721,7 +708,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         capturedMonitor = monitor;
-        if (!session.initialize(monitor, config.fps, config.captureCursor)) {
+        if (!session.initialize(monitor, config.captureCursor)) {
             std::cerr << "ERROR: Failed to initialize WGC display session" << std::endl;
             return 1;
         }
@@ -734,7 +721,7 @@ int main(int argc, char* argv[]) {
         // A window is captured by whichever display it currently sits on, which
         // is the adapter that matters for the same reason a monitor's does.
         capturedMonitor = MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST);
-        if (!session.initialize(window, config.fps, config.captureCursor)) {
+        if (!session.initialize(window, config.captureCursor)) {
             std::cerr << "ERROR: Failed to initialize WGC window session" << std::endl;
             return 1;
         }
