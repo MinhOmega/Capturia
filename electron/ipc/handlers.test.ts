@@ -81,3 +81,33 @@ describe("reveal-in-folder", () => {
 		expect(hoisted.showItemInFolder).toHaveBeenCalledWith(recording);
 	});
 });
+
+describe("get-sources", () => {
+	it("clamps a thumbnail size that would allocate the machine out of memory", async () => {
+		await invoke("get-sources", {
+			types: ["screen", "window", "audio"],
+			thumbnailSize: { width: 1e6, height: 1e6 },
+			fetchWindowIcons: "yes",
+		});
+
+		expect(hoisted.getSources).toHaveBeenCalledWith({
+			types: ["screen", "window"],
+			thumbnailSize: { width: 1024, height: 1024 },
+			fetchWindowIcons: false,
+		});
+	});
+
+	it("passes a picker's real request through untouched", async () => {
+		await invoke("get-sources", {
+			types: ["screen", "window"],
+			thumbnailSize: { width: 320, height: 180 },
+			fetchWindowIcons: true,
+		});
+
+		expect(hoisted.getSources).toHaveBeenCalledWith({
+			types: ["screen", "window"],
+			thumbnailSize: { width: 320, height: 180 },
+			fetchWindowIcons: true,
+		});
+	});
+});

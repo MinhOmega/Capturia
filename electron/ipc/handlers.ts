@@ -1923,6 +1923,41 @@ export async function exportDiagnosticFile(payload: {
 	}
 }
 
+/**
+ * Rebuild `desktopCapturer.getSources`'s options from what the renderer is allowed to ask
+ * for, rather than forwarding its object. Two reasons: a thumbnail is a bitmap this process
+ * allocates and then base64s into the reply, so an unclamped `thumbnailSize` is a
+ * main-process OOM the renderer can request (`{ width: 1e6, height: 1e6 }` is ~4 TB), and a
+ * `types` entry outside `screen`/`window` is not something any caller here needs.
+ *
+ * 1024 is comfortably above the largest thumbnail any picker asks for (320x180).
+ */
+const MAX_THUMBNAIL_PX = 1024;
+
+function clampThumbnailPx(value: unknown, fallback: number): number {
+	const size = Math.trunc(Number(value));
+	if (!Number.isFinite(size)) return fallback;
+	return Math.min(MAX_THUMBNAIL_PX, Math.max(0, size));
+}
+
+function sanitizeGetSourcesOptions(opts: unknown): Electron.SourcesOptions {
+	const raw = (opts ?? {}) as Partial<Electron.SourcesOptions>;
+	const types = (Array.isArray(raw.types) ? raw.types : []).filter(
+		(type): type is "screen" | "window" => type === "screen" || type === "window",
+	);
+	const thumbnailSize: Partial<Electron.Size> = raw.thumbnailSize ?? {};
+	return {
+		// Electron rejects an empty list, and every caller here wants both.
+		types: types.length > 0 ? types : ["screen", "window"],
+		// 150 is Electron's own default, kept for a caller that names no size.
+		thumbnailSize: {
+			width: clampThumbnailPx(thumbnailSize.width, 150),
+			height: clampThumbnailPx(thumbnailSize.height, 150),
+		},
+		fetchWindowIcons: raw.fetchWindowIcons === true,
+	};
+}
+
 export function registerIpcHandlers(
 	createEditorWindow: () => void,
 	createSourceSelectorWindow: () => BrowserWindow,
@@ -1982,7 +2017,8 @@ export function registerIpcHandlers(
 		}
 	}
 
-	ipcMain.handle("get-sources", async (_, opts) => {
+	ipcMain.handle("get-sources", async (_, rawOpts) => {
+		const opts = sanitizeGetSourcesOptions(rawOpts);
 		// desktopCapturer.getSources can never settle where the GL stack cannot be
 		// reached -- a container, a CI runner, a host whose ANGLE fails to
 		// initialise. Bounded here rather than per-caller because every caller has
@@ -2015,14 +2051,14 @@ export function registerIpcHandlers(
 				// The deadline error carries its own wording.
 				const reason = error instanceof Error ? error.message : String(error);
 				console.info(
-					`[get-sources] failed after ${Date.now() - startedAt}ms (types=${(opts?.types ?? []).join(",")}): ${reason}`,
+					`[get-sources] failed after ${Date.now() - startedAt}ms (types=${opts.types.join(",")}): ${reason}`,
 				);
 			}
 			throw error;
 		}
 		if (diagnostic) {
 			console.info(
-				`[get-sources] returned ${sources.length} source(s) in ${Date.now() - startedAt}ms (types=${(opts?.types ?? []).join(",")})`,
+				`[get-sources] returned ${sources.length} source(s) in ${Date.now() - startedAt}ms (types=${opts.types.join(",")})`,
 			);
 		}
 		lastEnumeratedSources = new Map(sources.map((source) => [source.id, source]));
