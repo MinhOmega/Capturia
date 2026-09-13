@@ -580,27 +580,28 @@ export function useTimeline() {
 	// is. Returns how many stretches landed, 0 if the save failed (it toasts itself).
 	const addSpeedRegionsBulk = useCallback(
 		async (regions: { startMs: number; endMs: number; speed: number }[]) => {
-			if (!document || regions.length === 0) return 0;
-			const legacy = (document.legacyEditor as Record<string, unknown>) ?? {};
-			const prev = (legacy.speedRegions as unknown[]) ?? [];
-			const next: AxcutDocument = {
-				...document,
-				legacyEditor: {
-					...legacy,
-					speedRegions: [
-						...prev,
-						...anchorRegionsWithDerivedMs(
-							regions.map((region) => ({ id: createId("speed"), ...region })),
-							document.timeline.clips,
-							() => createId("speed"),
-						),
-					],
-				},
-			};
-			if (!(await saveDocument(next, { history: true }))) return 0;
-			return regions.length;
+			if (regions.length === 0) return 0;
+			const saved = await commitDocument((document) => {
+				const legacy = (document.legacyEditor as Record<string, unknown>) ?? {};
+				const prev = (legacy.speedRegions as unknown[]) ?? [];
+				return {
+					...document,
+					legacyEditor: {
+						...legacy,
+						speedRegions: [
+							...prev,
+							...anchorRegionsWithDerivedMs(
+								regions.map((region) => ({ id: createId("speed"), ...region })),
+								document.timeline.clips,
+								() => createId("speed"),
+							),
+						],
+					},
+				};
+			});
+			return saved ? regions.length : 0;
 		},
-		[document, saveDocument],
+		[commitDocument],
 	);
 
 	// Full Camera: a plain time span (no value) during which the preview/export
@@ -1029,65 +1030,68 @@ export function useTimeline() {
 		async (kind: RegionKind, ids: string[], attrs: Record<string, unknown>) => {
 			// An empty patch is a no-op with an undo step attached — trim and
 			// cameraFullscreen carry nothing, and the menu hides on the same emptiness.
-			if (!document || ids.length === 0 || Object.keys(attrs).length === 0) return;
-			let next: AxcutDocument;
-			if (kind === "zoom") {
-				next = {
-					...document,
-					zoomRanges: ids.reduce(
-						(regions, id) =>
-							patchPillById(regions, id, attrs as Partial<AxcutDocument["zoomRanges"][number]>),
-						document.zoomRanges,
-					),
-				};
-			} else if (kind === "annotation") {
-				next = {
-					...document,
-					annotations: ids.reduce((regions, id) => {
-						const target = regions.find((r) => r.id === id);
-						if (!target) return regions;
-						// A type mismatch is a CONVERSION, not just a field write: the target's own
-						// text or image is parked in its typed slot before the copied payload lands
-						// on top, exactly as the inspector's type <select> does it. `attrs` never
-						// carries the parking slots, so the target's parked content survives.
-						const type = attrs.type as AnnotationType | undefined;
-						const patch = type ? { ...convertAnnotationKind(target, type), ...attrs } : attrs;
-						return patchPillById(
-							regions,
-							id,
-							patch as Partial<AxcutDocument["annotations"][number]>,
-						);
-					}, document.annotations),
-				};
-			} else if (kind === "speed") {
-				const legacy = (document.legacyEditor as Record<string, unknown>) ?? {};
-				const prev = ((legacy.speedRegions as unknown[]) ?? []) as Array<{
-					id: string;
-					startMs: number;
-					endMs: number;
-					speed: number;
-				}>;
-				next = {
-					...document,
-					legacyEditor: {
-						...legacy,
-						speedRegions: ids.reduce(
-							(regions, id) => patchPillById(regions, id, attrs as Partial<(typeof prev)[number]>),
-							prev,
+			if (ids.length === 0 || Object.keys(attrs).length === 0) return;
+			await commitDocument((document) => {
+				let next: AxcutDocument;
+				if (kind === "zoom") {
+					next = {
+						...document,
+						zoomRanges: ids.reduce(
+							(regions, id) =>
+								patchPillById(regions, id, attrs as Partial<AxcutDocument["zoomRanges"][number]>),
+							document.zoomRanges,
 						),
-					},
-				};
-			} else if (kind === "audio") {
-				next = ids.reduce(
-					(doc, id) => patchAudioTrack(doc, id, attrs as Parameters<typeof patchAudioTrack>[2]),
-					document,
-				);
-			} else {
-				return;
-			}
-			await saveDocument(next, { history: true });
+					};
+				} else if (kind === "annotation") {
+					next = {
+						...document,
+						annotations: ids.reduce((regions, id) => {
+							const target = regions.find((r) => r.id === id);
+							if (!target) return regions;
+							// A type mismatch is a CONVERSION, not just a field write: the target's own
+							// text or image is parked in its typed slot before the copied payload lands
+							// on top, exactly as the inspector's type <select> does it. `attrs` never
+							// carries the parking slots, so the target's parked content survives.
+							const type = attrs.type as AnnotationType | undefined;
+							const patch = type ? { ...convertAnnotationKind(target, type), ...attrs } : attrs;
+							return patchPillById(
+								regions,
+								id,
+								patch as Partial<AxcutDocument["annotations"][number]>,
+							);
+						}, document.annotations),
+					};
+				} else if (kind === "speed") {
+					const legacy = (document.legacyEditor as Record<string, unknown>) ?? {};
+					const prev = ((legacy.speedRegions as unknown[]) ?? []) as Array<{
+						id: string;
+						startMs: number;
+						endMs: number;
+						speed: number;
+					}>;
+					next = {
+						...document,
+						legacyEditor: {
+							...legacy,
+							speedRegions: ids.reduce(
+								(regions, id) =>
+									patchPillById(regions, id, attrs as Partial<(typeof prev)[number]>),
+								prev,
+							),
+						},
+					};
+				} else if (kind === "audio") {
+					next = ids.reduce(
+						(doc, id) => patchAudioTrack(doc, id, attrs as Parameters<typeof patchAudioTrack>[2]),
+						document,
+					);
+				} else {
+					return null;
+				}
+				return next;
+			});
 		},
-		[document, saveDocument],
+		[commitDocument],
 	);
 
 	const removeRegion = useCallback(
