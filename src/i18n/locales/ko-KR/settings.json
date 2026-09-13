@@ -308,6 +308,10 @@
 	},
 	"audio": {
 		"outputGain": "출력 레벨",
+		"autoLevel": "자동 레벨",
+		"autoLevelDone": "메인 클립을 기준으로 출력 레벨을 {{gain}} dB로 설정했습니다.",
+		"autoLevelClamped": "메인 클립에는 ±{{limit}} dB를 넘는 조정이 필요합니다. 출력 레벨을 {{gain}} dB로 설정했습니다.",
+		"autoLevelFailed": "메인 클립의 음량을 측정할 수 없습니다.",
 		"help": "오디오 출력 레벨을 조정합니다. 미리보기와 내보내기에 동일하게 적용됩니다.",
 		"reset": "오디오 재설정",
 		"title": "오디오"

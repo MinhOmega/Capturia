@@ -308,6 +308,10 @@
 	},
 	"audio": {
 		"outputGain": "輸出音量",
+		"autoLevel": "自動調整音量",
+		"autoLevelDone": "已依主片段將輸出音量設為 {{gain}} dB。",
+		"autoLevelClamped": "主片段需要超過 ±{{limit}} dB — 已將輸出音量設為 {{gain}} dB。",
+		"autoLevelFailed": "無法測量主片段的響度。",
 		"help": "調整音訊輸出電平。它在預覽與匯出中的效果完全一致。",
 		"reset": "重設音訊",
 		"title": "音訊"

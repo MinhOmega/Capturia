@@ -134,3 +134,60 @@ describe("user preferences", () => {
 		expect(loadUserPreferences().hideSoftwareEncoderFallbackNotice).toBe(false);
 	});
 });
+
+describe("remembered export settings", () => {
+	beforeEach(() => {
+		localStorage.clear();
+	});
+
+	it("round-trips frame rate, codec, ratios and GIF options", () => {
+		saveUserPreferences({
+			exportFps: 24,
+			exportCodec: "h265",
+			exportRatios: ["9:16", "1:1"],
+			exportGif: { frameRate: 30, size: "large", loop: false, dither: true },
+		});
+
+		const prefs = loadUserPreferences();
+		expect(prefs.exportFps).toBe(24);
+		expect(prefs.exportCodec).toBe("h265");
+		expect(prefs.exportRatios).toEqual(["9:16", "1:1"]);
+		expect(prefs.exportGif).toEqual({
+			frameRate: 30,
+			size: "large",
+			loop: false,
+			dither: true,
+		});
+	});
+
+	it("gives prefs written by an older build the new defaults", () => {
+		localStorage.setItem("openscreen_user_preferences", JSON.stringify({ exportFormat: "gif" }));
+
+		const prefs = loadUserPreferences();
+		expect(prefs.exportFormat).toBe("gif");
+		expect(prefs.exportFps).toBe(DEFAULT_PREFS.exportFps);
+		expect(prefs.exportCodec).toBe(DEFAULT_PREFS.exportCodec);
+		expect(prefs.exportRatios).toBe(DEFAULT_PREFS.exportRatios);
+		expect(prefs.exportGif).toEqual(DEFAULT_PREFS.exportGif);
+	});
+
+	it("rejects stored values the exporter would refuse", () => {
+		localStorage.setItem(
+			"openscreen_user_preferences",
+			JSON.stringify({
+				exportFps: 120,
+				// Valid in the `ExportVideoCodec` type, rejected by the native pipeline.
+				exportCodec: "vp9",
+				exportRatios: ["16:9", "not-a-ratio", 7],
+				exportGif: { frameRate: 7, size: "gigantic", loop: "yes", dither: true },
+			}),
+		);
+
+		const prefs = loadUserPreferences();
+		expect(prefs.exportFps).toBe(DEFAULT_PREFS.exportFps);
+		expect(prefs.exportCodec).toBe("h264");
+		expect(prefs.exportRatios).toEqual(["16:9"]);
+		// Only the bad fields fall back; `dither` survives.
+		expect(prefs.exportGif).toEqual({ ...DEFAULT_PREFS.exportGif, dither: true });
+	});
+});
