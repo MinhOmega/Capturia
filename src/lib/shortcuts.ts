@@ -272,8 +272,14 @@ export function formatBinding(binding: ShortcutBinding, isMac: boolean): string 
 export function mergeWithDefaults(partial: Partial<ShortcutsConfig>): ShortcutsConfig {
 	const merged = { ...DEFAULT_SHORTCUTS };
 	for (const action of SHORTCUT_ACTIONS) {
-		if (partial[action]) {
-			merged[action] = partial[action] as ShortcutBinding;
+		const binding = partial[action];
+		// `key` has to BE a key. This config comes off disk through a raw `JSON.parse` in
+		// main (handlers.ts), so a hand-edited `shortcuts.json` can hold anything — and
+		// `{ "addZoom": { "ctrl": true } }` made `matchesShortcut` throw on
+		// `binding.key.toLowerCase()` for EVERY keydown in the editor, i.e. no keyboard at
+		// all, from one missing field. An entry that could never match keeps the default.
+		if (binding && typeof binding.key === "string" && binding.key.length > 0) {
+			merged[action] = binding as ShortcutBinding;
 		}
 	}
 	return merged;
