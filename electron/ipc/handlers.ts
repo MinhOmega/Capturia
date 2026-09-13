@@ -149,6 +149,9 @@ const nativeMacCaptureEvents = new EventEmitter();
 // there still wins for `openscreen sources`; this is the backstop for everything
 // else that calls get-sources.
 const GET_SOURCES_TIMEOUT_MS = 30_000;
+// The overlay is a local page; if it has not loaded by now it is not going to, and the
+// take is waiting on this handler.
+const COUNTDOWN_OVERLAY_LOAD_TIMEOUT_MS = 3_000;
 
 /**
  * Reject if `work` has not settled within `ms`.
@@ -2396,10 +2399,20 @@ export function registerIpcHandlers(
 
 		// Wait for the first frame before showing, else Chromium flashes a black
 		// rectangle because it hasn't rendered any pixels yet.
+		//
+		// `did-finish-load`, not `ready-to-show`: that one fires once per load and
+		// `isLoading()` only flips on did-finish-load, so an overlay that had already
+		// emitted it left this awaiting an event that was never coming again — and the
+		// countdown never appeared. Bounded too, because a load that FAILS emits neither:
+		// a black flash is better than a recording that never starts.
 		if (overlayWindow.webContents.isLoading()) {
-			await new Promise<void>((resolve) => {
-				overlayWindow.once("ready-to-show", resolve);
-			});
+			await withDeadline(
+				new Promise<void>((resolve) => {
+					overlayWindow.webContents.once("did-finish-load", () => resolve());
+				}),
+				COUNTDOWN_OVERLAY_LOAD_TIMEOUT_MS,
+				"Countdown overlay did not finish loading",
+			).catch((error) => console.warn("[countdown-overlay]", error));
 		}
 
 		if (!overlayWindow.isVisible()) {
