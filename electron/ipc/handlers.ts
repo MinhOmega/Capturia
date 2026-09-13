@@ -423,7 +423,7 @@ function approveReadableAudioPath(
  * picked, and the assets a loaded project declares (`approveDocumentMedia`). Everything else
  * spends one.
  */
-function readableApprovedPath(filePath?: string | null): string | null {
+export function readableApprovedPath(filePath?: string | null): string | null {
 	const normalizedPath = normalizeVideoSourcePath(filePath);
 	if (!normalizedPath) return null;
 	if (!isPathAllowed(normalizedPath)) return null;

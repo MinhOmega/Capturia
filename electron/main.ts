@@ -62,6 +62,7 @@ import {
 import {
 	exportDiagnosticFile,
 	getSelectedDesktopSource,
+	readableApprovedPath,
 	registerIpcHandlers,
 } from "./ipc/handlers";
 import { installMainProcessErrorGuards } from "./main-process-errors";
@@ -1392,7 +1393,7 @@ appReady?.then(async () => {
 	);
 
 	// Native STT (whisper.cpp + forced alignment) — single instance per app.
-	registerSttIpc(ipcMain);
+	registerSttIpc(ipcMain, readableApprovedPath);
 
 	// Kept, not discarded: this is the only registration most users ever get, and
 	// throwing the result away here is what left a dead hotkey reported to nobody.

@@ -54,6 +54,8 @@ describe("extractMono16kPcm", () => {
 		expect(args.join(" ")).toContain("-ac 1");
 		expect(args.join(" ")).toContain("-ar 16000");
 		expect(args.join(" ")).toContain("-f f32le");
+		// Pinned to the file protocol, so a "path" that reads as a URL is never fetched.
+		expect(args[args.indexOf("-i") + 1]).toBe("file:/tmp/a.mp3");
 	});
 
 	it("decodes the samples ffmpeg writes", async () => {
