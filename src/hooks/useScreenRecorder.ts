@@ -1060,7 +1060,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		[cursorCaptureMode, getRecordingDurationMs, persistRecordingMarkers],
 	);
 
-	const stopRecording = useRef(() => {
+	const stopRecordingNow = () => {
 		if (nativeWindowsRecording.current) {
 			void finalizeNativeWindowsRecording(false);
 			return;
@@ -1112,6 +1112,25 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				}
 			}
 		}
+	};
+
+	/**
+	 * The stop, behind a ref so the tray and helper-exit subscriptions below can
+	 * stay registered for the window's whole life.
+	 *
+	 * KEPT IN SYNC, because `useRef` has no lazy initialiser: its argument is
+	 * evaluated on every render but only the FIRST result is stored. Without the
+	 * effect, every stop ran the first render's closure, whose `finalizeRecording`
+	 * / `finalizeNativeMac|LinuxRecording` still saw `cursorCaptureMode` as the
+	 * hardcoded `"editable-overlay"` the prefs effect had not yet overwritten — so
+	 * a take recorded with the system cursor was stored as if the cursor were
+	 * still to be composited, and the editor drew a second one on top of it.
+	 *
+	 * In an effect, not during render, for the same reason as `tRef`.
+	 */
+	const stopRecording = useRef(stopRecordingNow);
+	useEffect(() => {
+		stopRecording.current = stopRecordingNow;
 	});
 
 	const safeHideCountdownOverlay = useCallback(async (runId: number) => {
