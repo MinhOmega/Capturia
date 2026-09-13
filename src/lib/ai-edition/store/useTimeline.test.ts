@@ -269,6 +269,76 @@ describe("useTimeline.moveClip / duplicateClip (delegates to document/timeline.t
 	});
 });
 
+describe("useTimeline commits build on the store's document", () => {
+	const zoomDoc: AxcutDocument = {
+		...sampleDoc,
+		zoomRanges: [
+			{
+				id: "zoom_1",
+				startMs: 0,
+				endMs: 2000,
+				clipId: "clip_a",
+				sourceStartSec: 0,
+				sourceEndSec: 2,
+				depth: 3,
+				focus: { cx: 0.5, cy: 0.5 },
+				focusMode: "manual",
+			},
+		] as AxcutDocument["zoomRanges"],
+	};
+
+	beforeEach(() => {
+		useProjectStore.getState().clear();
+		for (const mock of Object.values(bridgeMocks)) mock.mockReset();
+		bridgeMocks.save.mockImplementation(async (doc: typeof sampleDoc) => ({
+			success: true,
+			document: doc,
+		}));
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document: zoomDoc,
+			revision: 1,
+			status: "ready",
+			error: null,
+		});
+	});
+
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
+	/**
+	 * A pill drag holds the callback it captured at pointerdown, and writes land
+	 * between then and pointerup all the time — a background transcript save, a
+	 * duration probe, the agent. Building the next document from that captured
+	 * render's `document` wrote the pre-transcript snapshot back to disk.
+	 */
+	it("keeps a transcript that landed after the callback was captured", async () => {
+		const view = renderTimeline();
+		// The drag's handler, as the pointerdown captured it.
+		const updateZoomSpan = view.result.current.updateZoomSpan;
+
+		// A concurrent write, from outside this hook.
+		act(() => {
+			useProjectStore.setState({
+				document: {
+					...zoomDoc,
+					transcripts: [{ assetId: "asset_1", language: "en", segments: [], words: [] }],
+				},
+				revision: 2,
+			});
+		});
+
+		await act(async () => {
+			await updateZoomSpan("zoom_1", 0, 5000);
+		});
+
+		expect(useProjectStore.getState().document?.transcripts).toHaveLength(1);
+		const zoom = useProjectStore.getState().document?.zoomRanges[0];
+		expect(zoom).toMatchObject({ startMs: 0, endMs: 5000 });
+	});
+});
+
 describe("useTimeline backfills missing source dimensions on load", () => {
 	beforeEach(() => {
 		useProjectStore.getState().clear();
