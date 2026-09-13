@@ -412,6 +412,9 @@ interface Window {
 			filePath: string,
 			durationSec: number,
 		) => Promise<import("./media/audioPeaks").AudioPeaksResult>;
+		measureAudioLoudness: (
+			filePath: string,
+		) => Promise<import("./media/audioLoudness").AudioLoudnessResult>;
 		getMediaPoster: (filePath: string, atSec: number) => Promise<string | null>;
 		getProjectPoster: (projectId: string) => Promise<string | null>;
 		readFileChunk: (

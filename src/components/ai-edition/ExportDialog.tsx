@@ -37,6 +37,12 @@ import {
 import { runBatchExport } from "@/lib/exporter/batchExport";
 import { calculateMp4ExportSettings, wouldUpscale } from "@/lib/exporter/mp4ExportSettings";
 import { outputFrameCount } from "@/lib/exporter/outputFrameCount";
+import {
+	getExportFolder,
+	loadUserPreferences,
+	parentDirectoryOf,
+	saveUserPreferences,
+} from "@/lib/userPreferences";
 import { exportGifNative, exportMultiNative, useIsCpuCompositor } from "@/native";
 import type { CompositorClipInput } from "@/native/contracts";
 import { buildSceneDescription, resolveVisibleClips } from "@/native/sceneDescription";
@@ -149,21 +155,28 @@ export function ExportDialog({ open, onClose, onReopen, document }: ExportDialog
 	// No usable GPU: the export still applies every effect (output is identical), it
 	// just runs on the software encoder and takes minutes instead of seconds.
 	const cpuCompositor = useIsCpuCompositor();
-	const [format, setFormat] = useState<ExportFormat>("mp4");
-	const [quality, setQuality] = useState<ExportQuality>("good");
-	const [fps, setFps] = useState<24 | 30 | 60>(60);
-	const [codec, setCodec] = useState<ExportVideoCodec>("h264");
-	const [gifFrameRate, setGifFrameRate] = useState<GifFrameRate>(15);
-	const [gifSize, setGifSize] = useState<GifSizePreset>("medium");
-	const [gifLoop, setGifLoop] = useState(true);
+	// Last export's settings, per machine. Read once (this dialog is mounted for the whole
+	// session by `NewEditorShell`, so a lazy initialiser is "on open" for every open that
+	// matters) and written back only after a run SUCCEEDS — remembering "GIF" from a run the
+	// user cancelled, or one that failed, is worse than defaulting to MP4.
+	const [prefs] = useState(loadUserPreferences);
+	const [format, setFormat] = useState<ExportFormat>(prefs.exportFormat);
+	const [quality, setQuality] = useState<ExportQuality>(prefs.exportQuality);
+	const [fps, setFps] = useState<24 | 30 | 60>(prefs.exportFps);
+	// `exportCodec` is already narrowed to what the native pipeline accepts by
+	// `loadUserPreferences`, so a stored "vp9" arrives here as "h264".
+	const [codec, setCodec] = useState<ExportVideoCodec>(prefs.exportCodec);
+	const [gifFrameRate, setGifFrameRate] = useState<GifFrameRate>(prefs.exportGif.frameRate);
+	const [gifSize, setGifSize] = useState<GifSizePreset>(prefs.exportGif.size);
+	const [gifLoop, setGifLoop] = useState(prefs.exportGif.loop);
 	// Off by default, matching `GifExportParams::default()` — Floyd-Steinberg roughly
 	// doubles the per-frame cost and screen content quantizes cleanly without it. It
 	// earns its keep on gradients and camera footage, which is why it is a choice.
-	const [gifDither, setGifDither] = useState(false);
+	const [gifDither, setGifDither] = useState(prefs.exportGif.dither);
 	// Null means "follow the document" — the ratio the timeline is set to, which is what
 	// a single-ratio export has always used. Only a tick in the ratio list makes this an
 	// explicit set, so opening the dialog and pressing Export is unchanged behaviour.
-	const [ratios, setRatios] = useState<AspectRatio[] | null>(null);
+	const [ratios, setRatios] = useState<AspectRatio[] | null>(prefs.exportRatios);
 	// Which file of how many is rendering. Null outside a run and for a single-file
 	// export, where "1 of 1" would be noise.
 	const [batch, setBatch] = useState<{ index: number; total: number; ratio: AspectRatio } | null>(
@@ -228,8 +241,6 @@ export function ExportDialog({ open, onClose, onReopen, document }: ExportDialog
 		() => getEditorSettings(document).aspectRatio,
 		[document],
 	);
-	const selectedRatios = ratios ?? [documentAspect];
-
 	// The presets, plus the document's own shape when it is not one of them (a native
 	// capture ratio, or legacy "native"). Order is the picker's, so the list reads the
 	// same here as in the ratio dropdown.
@@ -237,6 +248,17 @@ export function ExportDialog({ open, onClose, onReopen, document }: ExportDialog
 		const presets = [...ASPECT_RATIO_PRESETS] as AspectRatio[];
 		return presets.includes(documentAspect) ? presets : [documentAspect, ...presets];
 	}, [documentAspect]);
+
+	// A remembered ratio this document does not offer (a native token from another
+	// recording) is dropped silently; if that empties a remembered list the document's own
+	// ratio stands in, so a restored preference can never produce an empty batch. Unticking
+	// every box by hand still yields an empty list — that is a user action, and the export
+	// refuses it with "pick an aspect ratio".
+	const selectedRatios = useMemo<AspectRatio[]>(() => {
+		if (!ratios) return [documentAspect];
+		const offered = ratios.filter((r) => ratioOptions.includes(r));
+		return offered.length === 0 && ratios.length > 0 ? [documentAspect] : offered;
+	}, [ratios, ratioOptions, documentAspect]);
 
 	// Filenames are suffixed from a concrete `W:H` token — `batchExportPaths` in the main
 	// process names a file after two parsed integers and refuses anything else, so legacy
@@ -351,7 +373,9 @@ export function ExportDialog({ open, onClose, onReopen, document }: ExportDialog
 		try {
 			const picker = await window.electronAPI?.pickExportSavePath?.(
 				suggested,
-				undefined,
+				// Where the last successful export landed; the handler falls back to Downloads
+				// when the folder is gone.
+				getExportFolder(),
 				exportRatios.length > 1 ? exportRatios.map(concreteToken) : undefined,
 			);
 			if (!picker || picker.canceled) {
@@ -479,6 +503,21 @@ export function ExportDialog({ open, onClose, onReopen, document }: ExportDialog
 					const finished = result.completed[result.completed.length - 1];
 					setSavedPath(finished);
 					setPhase("done");
+					// Only here: a cancelled or failed run leaves the remembered settings alone.
+					saveUserPreferences({
+						exportFormat: format,
+						exportQuality: quality,
+						exportFps: fps,
+						exportCodec: codec === "vp9" ? "h264" : codec,
+						exportRatios: exportRatios,
+						exportGif: {
+							frameRate: gifFrameRate,
+							size: gifSize,
+							loop: gifLoop,
+							dither: gifDither,
+						},
+						exportFolder: parentDirectoryOf(finished),
+					});
 					const stats = lastStats.current;
 					toast.success(t("exportDialog.exportedVideo"), {
 						description:

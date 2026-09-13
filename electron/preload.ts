@@ -355,6 +355,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	getAudioPeaks: (filePath: string, durationSec: number) => {
 		return ipcRenderer.invoke("get-audio-peaks", filePath, durationSec);
 	},
+	/** Integrated loudness in LUFS for Auto-level. See electron/media/audioLoudness.ts. */
+	measureAudioLoudness: (filePath: string) => {
+		return ipcRenderer.invoke("measure-audio-loudness", filePath);
+	},
 	/** Poster frames as `data:` URLs, disk-cached. See electron/media/posterFrames.ts. */
 	getMediaPoster: (filePath: string, atSec: number): Promise<string | null> => {
 		return ipcRenderer.invoke("get-media-poster", filePath, atSec);
