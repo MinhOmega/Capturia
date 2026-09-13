@@ -239,12 +239,6 @@ export const nativeBridgeClient = {
 				action: "chat.run",
 				payload: { projectId, sessionId, message, document },
 			}),
-		chatUndoLastBatch: (projectId: string, sessionId: string) =>
-			requireNativeBridgeData<AiEditionChatResult>({
-				domain: "aiEdition",
-				action: "chat.undoLastBatch",
-				payload: { projectId, sessionId },
-			}),
 		chatListSessions: (projectId: string) =>
 			requireNativeBridgeData<AiEditionChatSessionSummary[]>({
 				domain: "aiEdition",

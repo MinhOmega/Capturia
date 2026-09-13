@@ -361,10 +361,6 @@ export function createHudOverlayWindow(): BrowserWindow {
 		if (!HEADLESS) win.show();
 	});
 
-	win.webContents.on("did-finish-load", () => {
-		win?.webContents.send("main-process-message", new Date().toLocaleString());
-	});
-
 	hudOverlayWindow = win;
 
 	win.on("closed", () => {
@@ -481,10 +477,6 @@ export function createEditorWindow(query: Record<string, string> = {}): BrowserW
 			.catch(() => {
 				// Best-effort cosmetic; ignore if the page is mid-teardown.
 			});
-	});
-
-	win.webContents.on("did-finish-load", () => {
-		win?.webContents.send("main-process-message", new Date().toLocaleString());
 	});
 
 	const routing = { windowType: "editor", ...query };

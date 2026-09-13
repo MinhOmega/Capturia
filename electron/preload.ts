@@ -30,35 +30,6 @@ const PLATFORM = process.platform;
 contextBridge.exposeInMainWorld("electronAPI", {
 	assetBaseUrl,
 
-	// --- Native export encoder -------------------------------------------------
-	// The renderer composites and extracts frames but cannot spawn ffmpeg (it is
-	// sandboxed, deliberately), so frames cross to main and it feeds ffmpeg's
-	// stdin. Frames go one-way via send(); flow control is the caller's credit
-	// window, acked on exportOnFrameAck.
-	exportCapabilities: () =>
-		ipcRenderer.invoke("export:capabilities") as Promise<{ encoder: string }>,
-	exportStart: (req: unknown) =>
-		ipcRenderer.invoke("export:start", req) as Promise<{
-			sessionId: string;
-			encoder: string;
-			outputPath: string;
-		}>,
-	exportWriteFrame: (sessionId: string, frame: ArrayBuffer) => {
-		// send() structured-clones, i.e. copies the frame. That is not an oversight
-		// and it is not fixable here: Electron's transfer list takes MessagePort[]
-		// only, and transferring an ArrayBuffer renderer->main silently drops the
-		// whole message (electron#34905 - it works renderer->renderer, not to main).
-		// The copy is what caps the crossing at ~390 MB/s, which is why the export
-		// ships NV12 (3.0 MB/frame) rather than BGRA (7.9 MB).
-		ipcRenderer.send("export:frame", sessionId, frame);
-	},
-	exportOnFrameAck: (cb: (sessionId: string, error: string | null) => void) => {
-		const handler = (_e: unknown, sessionId: string, error: string | null) => cb(sessionId, error);
-		ipcRenderer.on("export:frame-ack", handler);
-		return () => ipcRenderer.off("export:frame-ack", handler);
-	},
-	exportFinish: (sessionId: string) =>
-		ipcRenderer.invoke("export:finish", sessionId) as Promise<{ outputPath: string }>,
 	/** Ask the running native export to stop. Resolving here means main received the
 	 *  request, NOT that the export ended — the export's own promise rejects with
 	 *  `EXPORT_CANCELLED` a frame later, and that is the completion signal. */
@@ -66,8 +37,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	/** Export bench only (--bench=): tells main the run is over so it can quit. */
 	benchFinished: () => ipcRenderer.invoke("bench:finished") as Promise<void>,
 	/** Native (D3D) export progress — frames encoded so far, pushed at ~10 Hz max while
-	 *  `compositor.export`/`compositor.exportMulti` runs. Distinct from `exportOnFrameAck`
-	 *  above, which is the OLD web/CPU pipeline's per-frame ack, not a progress signal. */
+	 *  `compositor.export`/`compositor.exportMulti` runs. */
 	onNativeExportProgress: (cb: (frames: number) => void) => {
 		const handler = (_e: unknown, frames: number) => cb(frames);
 		ipcRenderer.on("export:native-progress", handler);
@@ -399,11 +369,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		ipcRenderer.on("menu-new-project", listener);
 		return () => ipcRenderer.removeListener("menu-new-project", listener);
 	},
-	onMenuImportVideo: (callback: () => void) => {
-		const listener = () => callback();
-		ipcRenderer.on("menu-import-video", listener);
-		return () => ipcRenderer.removeListener("menu-import-video", listener);
-	},
 	onMenuLoadProject: (callback: () => void) => {
 		const listener = () => callback();
 		ipcRenderer.on("menu-load-project", listener);
@@ -488,9 +453,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		logs: string[];
 	}) => {
 		return ipcRenderer.invoke("save-diagnostic", payload);
-	},
-	setMicrophoneExpanded: (expanded: boolean) => {
-		ipcRenderer.send("hud:setMicrophoneExpanded", expanded);
 	},
 	setHasUnsavedChanges: (hasChanges: boolean) => {
 		ipcRenderer.send("set-has-unsaved-changes", hasChanges);

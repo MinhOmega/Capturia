@@ -387,7 +387,6 @@ export function runCli(command: CliCommand): void {
 			ipcMain.handle("set-locale", () => {
 				// Locale only affects GUI menus/tray, which do not exist in CLI mode.
 			});
-			ipcMain.handle("update-global-shortcut", () => ({ success: false }));
 
 			const request: CliRequest = command;
 			if (request.kind === "export") {

@@ -70,7 +70,6 @@ export interface AiEditionServiceOptions {
 	) => { usedTokens: number; budgetTokens: number; ratio: number; fillPercent: number } | null;
 	// ponytail: legacy per-batch undo retired in favor of per-message rewind.
 	// Kept on the surface for IPC compatibility; always returns success=false.
-	undoLastToolBatch: (projectId: string, sessionId: string) => AiEditionChatResult;
 	listSessions: (projectId: string) => AiEditionChatSessionSummary[];
 	createSession: (projectId: string, title?: string) => AiEditionChatSessionSummary;
 	selectSession: (projectId: string, sessionId: string) => AiEditionChatSession | null;
@@ -279,10 +278,6 @@ export class AiEditionService {
 		sink?: ChatEventSink,
 	): Promise<AiEditionChatResult> {
 		return this.options.runChat(projectId, sessionId, message, document, sink);
-	}
-
-	chatUndoLastBatch(_projectId: string, _sessionId: string): AiEditionChatResult {
-		return { success: false, error: "Per-tool-batch undo retired in favor of per-message rewind." };
 	}
 
 	chatRewindToMessage(

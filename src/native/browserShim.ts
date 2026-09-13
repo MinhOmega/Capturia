@@ -509,11 +509,6 @@ function createShimBridgeClient() {
 				persistChat();
 				return Promise.resolve({ success: true, assistantMessage });
 			},
-			chatUndoLastBatch: () =>
-				Promise.resolve({
-					success: false,
-					error: "[browser-shim] No agent tool batches to undo in browser mode.",
-				}),
 			chatRunDefault: (projectId: string, message?: string) => {
 				// ponytail: legacy single-session consumers — pick the most
 				// recent session or auto-create one.

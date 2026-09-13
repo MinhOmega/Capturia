@@ -22,7 +22,6 @@ import { CompositorViewService } from "../native-bridge/services/compositorViewS
 import { CursorService } from "../native-bridge/services/cursorService";
 import { ProjectService } from "../native-bridge/services/projectService";
 import { SystemService } from "../native-bridge/services/systemService";
-import { createNativeBridgeState } from "../native-bridge/store";
 
 export interface NativeBridgeContext {
 	getPlatform: () => NodeJS.Platform;
@@ -66,10 +65,6 @@ export interface NativeBridgeContext {
 		document?: unknown,
 		sink?: ChatEventSink,
 	) => Promise<import("../../src/native/contracts").AiEditionChatResult>;
-	undoAiEditionToolBatch: (
-		projectId: string,
-		sessionId: string,
-	) => import("../../src/native/contracts").AiEditionChatResult;
 	rewindToMessage: (
 		projectId: string,
 		sessionId: string,
@@ -213,9 +208,7 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 	ipcMain.removeHandler(NATIVE_BRIDGE_CHANNEL);
 
 	const platform = normalizePlatform(context.getPlatform());
-	const store = createNativeBridgeState(platform);
 	const projectService = new ProjectService({
-		store,
 		getCurrentProjectPath: context.getCurrentProjectPath,
 		getCurrentVideoPath: context.getCurrentVideoPath,
 		saveProjectFile: context.saveProjectFile,
@@ -227,7 +220,6 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 		clearCurrentVideoPath: context.clearCurrentVideoPath,
 	});
 	const cursorService = new CursorService({
-		store,
 		adapter: new TelemetryCursorAdapter({
 			loadRecordingData: context.loadCursorRecordingData,
 			resolveVideoPath: context.resolveVideoPath,
@@ -235,7 +227,6 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 		}),
 	});
 	const systemService = new SystemService({
-		store,
 		getPlatform: () => platform,
 		getAssetBasePath: context.resolveAssetBasePath,
 		getCursorCapabilities: () => cursorService.getCapabilities(),
@@ -247,7 +238,6 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 		// hit the macOS Keychain) while wiring the bridge at startup.
 		llmConfig: context.getAiEditionLlmConfig,
 		runChat: context.runAiEditionChat,
-		undoLastToolBatch: context.undoAiEditionToolBatch,
 		rewindToMessage: context.rewindToMessage,
 		compactNow: context.compactNow,
 		getContextUsage: context.getContextUsage,
@@ -686,14 +676,6 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 								),
 							);
 						}
-						case "chat.undoLastBatch":
-							return createSuccessResponse(
-								requestId,
-								aiEditionService.chatUndoLastBatch(
-									request.payload.projectId,
-									request.payload.sessionId,
-								),
-							);
 						case "chat.listSessions":
 							return createSuccessResponse(
 								requestId,
