@@ -170,6 +170,7 @@ bool WasapiLoopbackCapture::initializeMicrophone(const std::wstring& deviceId, c
 }
 
 bool WasapiLoopbackCapture::initialize(WasapiCaptureEndpoint endpoint, const std::wstring& deviceId, const std::wstring& deviceName) {
+    endpoint_ = endpoint;
     HRESULT hr = CoCreateInstance(
         __uuidof(MMDeviceEnumerator),
         nullptr,
@@ -392,12 +393,36 @@ const std::wstring& WasapiLoopbackCapture::selectedDeviceName() const {
  * silence has to be the one holding the clock, and that is the mixer.
  */
 void WasapiLoopbackCapture::captureLoop() {
+    // A device that goes away mid-take — a USB microphone unplugged, the
+    // default endpoint switched, a driver restart — fails every call from here
+    // on with AUDCLNT_E_DEVICE_INVALIDATED. Breaking out of the loop is the
+    // right thing to do; what was missing is that nobody was told. The mixer
+    // keeps emitting wall-clock silence, so the recording runs to its normal
+    // length and finishes successfully, mute from that second onward, with
+    // nothing in the helper's output naming the cause.
+    //
+    // ponytail: reported, not recovered. Re-resolving the endpoint would need
+    // an IMMNotificationClient and a re-initialize() this class has no shape
+    // for; that is where to go if device-swap-mid-recording is ever asked for.
+    bool reportedDeviceLoss = false;
+    const auto reportDeviceLoss = [&](HRESULT hr) {
+        if (reportedDeviceLoss) {
+            return;
+        }
+        reportedDeviceLoss = true;
+        std::cout << R"({"event":"warning","code":"audio-device-lost","endpoint":")"
+                  << (endpoint_ == WasapiCaptureEndpoint::Microphone ? "microphone" : "system")
+                  << R"(","hr":"0x)" << std::hex << hr << std::dec
+                  << R"(","message":"The audio capture device stopped delivering; the rest of )"
+                     R"(this recording has no audio from it"})"
+                  << std::endl;
+    };
+
     while (!stopRequested_) {
         UINT32 packetFrames = 0;
         HRESULT hr = captureClient_->GetNextPacketSize(&packetFrames);
-        if (FAILED(hr)) {
-            std::cerr << "ERROR: IAudioCaptureClient::GetNextPacketSize failed (hr=0x" << std::hex
-                      << hr << std::dec << ")" << std::endl;
+        if (!succeeded(hr, "IAudioCaptureClient::GetNextPacketSize")) {
+            reportDeviceLoss(hr);
             break;
         }
 
@@ -409,9 +434,8 @@ void WasapiLoopbackCapture::captureLoop() {
             UINT64 qpcPosition = 0;
 
             hr = captureClient_->GetBuffer(&data, &framesAvailable, &flags, &devicePosition, &qpcPosition);
-            if (FAILED(hr)) {
-                std::cerr << "ERROR: IAudioCaptureClient::GetBuffer failed (hr=0x" << std::hex
-                          << hr << std::dec << ")" << std::endl;
+            if (!succeeded(hr, "IAudioCaptureClient::GetBuffer")) {
+                reportDeviceLoss(hr);
                 break;
             }
 
@@ -437,9 +461,8 @@ void WasapiLoopbackCapture::captureLoop() {
             captureClient_->ReleaseBuffer(framesAvailable);
 
             hr = captureClient_->GetNextPacketSize(&packetFrames);
-            if (FAILED(hr)) {
-                std::cerr << "ERROR: IAudioCaptureClient::GetNextPacketSize failed (hr=0x"
-                          << std::hex << hr << std::dec << ")" << std::endl;
+            if (!succeeded(hr, "IAudioCaptureClient::GetNextPacketSize")) {
+                reportDeviceLoss(hr);
                 packetFrames = 0;
                 break;
             }

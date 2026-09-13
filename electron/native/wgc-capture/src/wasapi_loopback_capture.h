@@ -48,6 +48,7 @@ private:
     Microsoft::WRL::ComPtr<IAudioClient> audioClient_;
     Microsoft::WRL::ComPtr<IAudioCaptureClient> captureClient_;
     WAVEFORMATEX* mixFormat_ = nullptr;
+    WasapiCaptureEndpoint endpoint_ = WasapiCaptureEndpoint::SystemLoopback;
     AudioInputFormat inputFormat_{};
     std::wstring selectedDeviceName_;
     AudioCallback callback_;
