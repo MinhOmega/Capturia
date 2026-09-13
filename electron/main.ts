@@ -1004,11 +1004,27 @@ ipcMain.on("set-has-unsaved-changes", (_, hasChanges: boolean) => {
 	editorHasUnsavedChanges = hasChanges;
 });
 
+/**
+ * Quit, unless a take is running.
+ *
+ * The two renderer-driven quits are the editor's in-app File menu and the HUD's close
+ * button, and both used to call `app.quit()` on whatever the renderer sent. A quit mid-take
+ * tears down the capture helpers while they are still writing, which leaves the user with a
+ * truncated recording and nothing to recover it from. Same veto the updater already applies
+ * (`blockedFromInstalling({ recording })` in auto-updater.ts) — an interrupted take is worth
+ * more than either convenience.
+ */
+function quitUnlessRecording(): void {
+	if (isRecording) {
+		console.warn("[quit] refused while a recording is in progress");
+		return;
+	}
+	app.quit();
+}
+
 // Quit requested from the editor's in-app File menu. Mirrors the native
 // menu's role:"quit" so the unsaved-changes close flow still runs.
-ipcMain.on("app-quit", () => {
-	app.quit();
-});
+ipcMain.on("app-quit", quitUnlessRecording);
 
 function forceCloseEditorWindow(windowToClose: BrowserWindow | null) {
 	if (!windowToClose || windowToClose.isDestroyed()) return;
@@ -1241,9 +1257,7 @@ appReady?.then(async () => {
 		}
 	}
 
-	ipcMain.on("hud-overlay-close", () => {
-		app.quit();
-	});
+	ipcMain.on("hud-overlay-close", quitUnlessRecording);
 	ipcMain.handle("set-locale", (_, locale: string) => {
 		setMainLocale(locale);
 		setupApplicationMenu();
