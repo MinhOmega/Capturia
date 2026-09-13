@@ -534,6 +534,37 @@ export function useTimeline() {
 		[document, saveDocument],
 	);
 
+	// Many speed regions, one undo step — the speed counterpart of `addTrimsBulk`,
+	// and what the idle-speedup pass writes through. The spans arrive in RAW
+	// TIMELINE ms (the axis `addSpeed` above writes and `findActiveSpeedRegion`
+	// reads) and are anchored to their clips here, exactly as a hand-placed region
+	// is — the suggester knows where on the ruler, the store knows which clip that
+	// is. Returns how many stretches landed, 0 if the save failed (it toasts itself).
+	const addSpeedRegionsBulk = useCallback(
+		async (regions: { startMs: number; endMs: number; speed: number }[]) => {
+			if (!document || regions.length === 0) return 0;
+			const legacy = (document.legacyEditor as Record<string, unknown>) ?? {};
+			const prev = (legacy.speedRegions as unknown[]) ?? [];
+			const next: AxcutDocument = {
+				...document,
+				legacyEditor: {
+					...legacy,
+					speedRegions: [
+						...prev,
+						...anchorRegionsWithDerivedMs(
+							regions.map((region) => ({ id: createId("speed"), ...region })),
+							document.timeline.clips,
+							() => createId("speed"),
+						),
+					],
+				},
+			};
+			if (!(await saveDocument(next, { history: true }))) return 0;
+			return regions.length;
+		},
+		[document, saveDocument],
+	);
+
 	// Full Camera: a plain time span (no value) during which the preview/export
 	// grows the webcam overlay to (almost) fill the canvas and eases it back.
 	//
@@ -1548,6 +1579,7 @@ export function useTimeline() {
 		addTrimsBulk,
 		addAnnotation,
 		addSpeed,
+		addSpeedRegionsBulk,
 		addCameraFullscreen,
 		removeRegion,
 		removeRegions,

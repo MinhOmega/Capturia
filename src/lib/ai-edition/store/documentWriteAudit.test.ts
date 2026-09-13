@@ -259,6 +259,9 @@ const DECLARED: WritePath[] = [
 	w("src/lib/ai-edition/store/useTimeline.ts", "addAnnotation", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "addCameraFullscreen", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "addSpeed", "save", "gesture"),
+	// The idle-speedup pass, chosen from the same auto-enhance menu as the dead-air
+	// one below. Never runs on import — only when the user picks it.
+	w("src/lib/ai-edition/store/useTimeline.ts", "addSpeedRegionsBulk", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "addTrim", "save", "gesture"),
 	// The offline dead-air pass, chosen from the auto-enhance menu. A suggester
 	// writes it, but the user asked for it by clicking — one undo step takes every

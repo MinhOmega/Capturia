@@ -3,6 +3,7 @@ import {
 	Clock,
 	Crosshair,
 	EyeOff,
+	FastForward,
 	Flag,
 	Loader2,
 	Maximize2,
@@ -61,6 +62,7 @@ import {
 	type AutoZoomTelemetryReader,
 	collectAutoZoomSuggestionsForLatestDocument,
 	collectFlagZoomSuggestionsForLatestDocument,
+	collectIdleSpeedupsForLatestDocument,
 } from "@/lib/ai-edition/timeline/apply-auto-zooms";
 import { hasAnyClipWithCamera } from "@/lib/ai-edition/timeline/camera";
 import { formatSec } from "@/lib/ai-edition/timeline/format";
@@ -1858,6 +1860,36 @@ export function V4Timeline({
 		}
 	}, [clips, tl, t]);
 
+	// Auto-enhance option 4 — the same "nothing is happening here" question as the
+	// dead-air pass above, asked of the CURSOR instead of the transcript and
+	// answered by compressing rather than cutting. Waiting for a build IS content:
+	// it just does not need ten seconds of ruler. No transcript gate — a recording
+	// with no speech at all is the case this exists for, and where a transcript
+	// does exist it only ever takes stretches away (see `buildIdleSpeedups`).
+	const runSpeedUpIdle = useCallback(async () => {
+		setAutoEnhanceOpen(false);
+		setAutoBusy(true);
+		try {
+			const regions = await collectIdleSpeedupsForLatestDocument(
+				() => useProjectStore.getState().document,
+				readRecordingTelemetry,
+			);
+			if (!regions || regions.length === 0) {
+				toast.info(t("toolbar.noIdle"), { description: t("toolbar.noIdleDescription") });
+				return;
+			}
+			// One save, so the whole pass is one undo step.
+			const added = await tl.addSpeedRegionsBulk(regions);
+			// A failed write returns 0 and has already said why.
+			if (added === 0) return;
+			toast.success(
+				t(added === 1 ? "toolbar.addedSpeedUp" : "toolbar.addedSpeedUpPlural", { count: added }),
+			);
+		} finally {
+			setAutoBusy(false);
+		}
+	}, [tl, t]);
+
 	const isPillSelected = (id: string) =>
 		tl.selection?.id === id || tl.multiSelection.some((m) => m.id === id);
 
@@ -2163,6 +2195,19 @@ export function V4Timeline({
 											<span style={{ display: "flex", flexDirection: "column", gap: 1 }}>
 												<span style={{ fontWeight: 600 }}>{t("toolbar.roughCut")}</span>
 												<span style={{ fontSize: 11, color: "var(--muted)" }}>{roughCutHint}</span>
+											</span>
+										</button>
+										<button
+											type="button"
+											className={styles.recMenuRow}
+											onClick={() => void runSpeedUpIdle()}
+										>
+											<FastForward size={15} style={{ flexShrink: 0 }} />
+											<span style={{ display: "flex", flexDirection: "column", gap: 1 }}>
+												<span style={{ fontWeight: 600 }}>{t("toolbar.speedUpIdle")}</span>
+												<span style={{ fontSize: 11, color: "var(--muted)" }}>
+													{t("toolbar.speedUpIdleHint")}
+												</span>
 											</span>
 										</button>
 										<button

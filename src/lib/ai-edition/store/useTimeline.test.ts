@@ -665,6 +665,61 @@ describe("useTimeline.addTrimsBulk", () => {
 	});
 });
 
+describe("useTimeline.addSpeedRegionsBulk", () => {
+	beforeEach(() => {
+		useProjectStore.getState().clear();
+		clearHistory();
+		for (const mock of Object.values(bridgeMocks)) mock.mockReset();
+		bridgeMocks.save.mockImplementation(async (doc: typeof sampleDoc) => ({
+			success: true,
+			document: doc,
+		}));
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document: sampleDoc,
+			revision: 1,
+			status: "ready",
+			error: null,
+		});
+	});
+
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
+	// The idle-speedup pass writes a whole recording's worth of 3x regions. One
+	// save, so one Ctrl+Z takes all of them back out — the same contract as
+	// `addTrimsBulk` above.
+	it("appends every region in a single write and one history entry", async () => {
+		const { result } = renderTimeline();
+		let added: number | undefined;
+		await act(async () => {
+			added = await result.current.addSpeedRegionsBulk([
+				{ startMs: 1000, endMs: 4000, speed: 3 },
+				{ startMs: 6000, endMs: 9000, speed: 3 },
+			]);
+		});
+		expect(added).toBe(2);
+		expect(bridgeMocks.save).toHaveBeenCalledTimes(1);
+		expect(past).toHaveLength(1);
+		const speedRegions = (
+			useProjectStore.getState().document?.legacyEditor as Record<string, unknown>
+		).speedRegions as Array<{ startMs: number; endMs: number; speed: number }>;
+		expect(speedRegions).toHaveLength(2);
+		expect(speedRegions.map((region) => region.speed)).toEqual([3, 3]);
+	});
+
+	it("writes nothing when the pass found nothing", async () => {
+		const { result } = renderTimeline();
+		let added: number | undefined;
+		await act(async () => {
+			added = await result.current.addSpeedRegionsBulk([]);
+		});
+		expect(added).toBe(0);
+		expect(bridgeMocks.save).not.toHaveBeenCalled();
+	});
+});
+
 describe("useTimeline zoom modifiers (rotation + focus mode)", () => {
 	const docWithZoom: AxcutDocument = {
 		...sampleDoc,

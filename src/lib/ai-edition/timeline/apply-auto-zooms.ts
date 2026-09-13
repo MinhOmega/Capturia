@@ -1,9 +1,12 @@
-// Shared auto-zoom apply path: the HUD toggle / fresh-recording import and the
-// timeline wand both end here. Suggestion math stays in zoom-suggestions.ts;
-// this file only collects per-asset telemetry and appends the resulting regions.
+// Shared apply path for everything the recorded cursor suggests: the HUD toggle /
+// fresh-recording import and the timeline wand's zooms, plus the idle-speedup
+// pass. The suggestion math stays in zoom-suggestions.ts / idle-speedups.ts; this
+// file only collects per-asset telemetry — with its one stale-clips retry, which
+// every one of them needs and none of them should own — and appends the regions.
 
 import { createId } from "../document/ids";
 import type { AxcutAsset, AxcutDocument } from "../schema";
+import { buildIdleSpeedups, type IdleSpeedup } from "./idle-speedups";
 import { primaryVideoAsset, resolveRecordingMarkers } from "./recordingMarkers";
 import { anchorRegionsWithDerivedMs } from "./timelineMap";
 import {
@@ -116,6 +119,48 @@ export async function collectFlagZoomSuggestionsForLatestDocument(
 		});
 	});
 	return collected && { document: collected.document, ...collected.result };
+}
+
+/**
+ * The idle-speedup pass's collect: every stretch of every recording on the timeline
+ * where the pointer was parked and nobody was speaking.
+ *
+ * Same reader, same asset loop and same stale-clips retry as the wand above. What
+ * differs is the axis of the refusals — the detector is handed the document's cuts
+ * and its existing speed regions, so running the pass twice adds nothing the second
+ * time, exactly as `existingRegions` does for zooms.
+ */
+export async function collectIdleSpeedupsForLatestDocument(
+	readDocument: () => AxcutDocument | null,
+	getTelemetry: AutoZoomTelemetryReader,
+): Promise<IdleSpeedup[] | null> {
+	const collected = await collectForLatestDocument(readDocument, async (document) => {
+		const existingSpeedRegions =
+			((document.legacyEditor as Record<string, unknown> | null)?.speedRegions as
+				| { startMs: number; endMs: number }[]
+				| undefined) ?? [];
+		const perAsset = await Promise.all(
+			document.assets
+				.filter(
+					(asset) =>
+						asset.kind === "video" &&
+						asset.originalPath &&
+						document.timeline.clips.some((clip) => clip.assetId === asset.id),
+				)
+				.map(async (asset) =>
+					buildIdleSpeedups({
+						cursorTelemetry: (await getTelemetry(asset.originalPath)) ?? [],
+						assetId: asset.id,
+						clips: document.timeline.clips,
+						words: document.transcripts.find((t) => t.assetId === asset.id)?.words ?? [],
+						trimRanges: document.timeline.trimRanges,
+						existingSpeedRegions,
+					}),
+				),
+		);
+		return perAsset.flat();
+	});
+	return collected && collected.result;
 }
 
 /**
