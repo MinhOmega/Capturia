@@ -3982,11 +3982,6 @@ export function registerIpcHandlers(
 		}
 	});
 
-	// Return base path for assets so renderer can resolve file:// paths in production
-	ipcMain.handle("get-asset-base-path", () => {
-		return resolveAssetBasePath();
-	});
-
 	ipcMain.handle(
 		"pick-export-save-path",
 		async (_, fileName: string, exportFolder?: string, aspectTokens?: unknown) => {

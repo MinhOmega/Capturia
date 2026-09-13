@@ -365,11 +365,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		ipcRenderer.on("menu-new-project", listener);
 		return () => ipcRenderer.removeListener("menu-new-project", listener);
 	},
-	onMenuImportVideo: (callback: () => void) => {
-		const listener = () => callback();
-		ipcRenderer.on("menu-import-video", listener);
-		return () => ipcRenderer.removeListener("menu-import-video", listener);
-	},
 	onMenuLoadProject: (callback: () => void) => {
 		const listener = () => callback();
 		ipcRenderer.on("menu-load-project", listener);
@@ -454,9 +449,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		logs: string[];
 	}) => {
 		return ipcRenderer.invoke("save-diagnostic", payload);
-	},
-	setMicrophoneExpanded: (expanded: boolean) => {
-		ipcRenderer.send("hud:setMicrophoneExpanded", expanded);
 	},
 	setHasUnsavedChanges: (hasChanges: boolean) => {
 		ipcRenderer.send("set-has-unsaved-changes", hasChanges);

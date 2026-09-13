@@ -468,7 +468,6 @@ interface Window {
 			error?: string;
 		}>;
 		onMenuNewProject: (callback: () => void) => () => void;
-		onMenuImportVideo: (callback: () => void) => () => void;
 		onMenuLoadProject: (callback: () => void) => () => void;
 		onMenuSaveProject: (callback: () => void) => () => void;
 		onMenuSaveProjectAs: (callback: () => void) => () => void;
@@ -521,7 +520,6 @@ interface Window {
 		setCountdownOverlayValue: (value: number, runId: number) => Promise<void>;
 		hideCountdownOverlay: (runId: number) => Promise<void>;
 		onCountdownOverlayValue: (callback: (value: number | null) => void) => () => void;
-		setMicrophoneExpanded: (expanded: boolean) => void;
 		setHasUnsavedChanges: (hasChanges: boolean) => void;
 		onRequestSaveBeforeClose: (callback: () => Promise<boolean> | boolean) => () => void;
 		onRequestCloseConfirm: (callback: () => void) => () => void;
