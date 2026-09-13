@@ -105,14 +105,17 @@ inline bool read_wav_pcm16(const std::string& path, std::vector<float>& pcm,
 			if (fmt_channels == 1) {
 				for (size_t i = 0; i < frames; ++i) pcm[i] = static_cast<float>(read_i16()) / 32768.0f;
 			} else {
-				std::vector<int> count(frames, 0);
-				for (size_t ch = 0; ch < fmt_channels; ++ch) {
-					for (size_t i = 0; i < frames; ++i) {
+				// PCM is interleaved: every channel of frame 0, then every
+				// channel of frame 1. Reading channel-major instead walked the
+				// file once per channel from where the last pass stopped, so a
+				// stereo file summed its first half onto its second — the frame
+				// loop has to be the outer one.
+				for (size_t i = 0; i < frames; ++i) {
+					for (size_t ch = 0; ch < fmt_channels; ++ch) {
 						pcm[i] += static_cast<float>(read_i16()) / 32768.0f;
-						++count[i];
 					}
+					pcm[i] /= static_cast<float>(fmt_channels);
 				}
-				for (size_t i = 0; i < frames; ++i) pcm[i] /= count[i];
 			}
 			return true;
 		} else {

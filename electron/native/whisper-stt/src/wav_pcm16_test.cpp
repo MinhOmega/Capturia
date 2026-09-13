@@ -10,6 +10,7 @@
 
 #include "wav_pcm16.h"
 
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include <vector>
@@ -146,6 +147,22 @@ int main() {
 			"mono-16k-still-reads", ok && rate == 16000 && channels == 1 && values,
 			"ok=" + std::to_string(ok) + " rate=" + std::to_string(rate) + " frames=" +
 				std::to_string(pcm.size()));
+	}
+
+	// Interleaved L/R, four frames: the left channel counts up, the right holds
+	// its negative, so a correct downmix is silence and any other read order is
+	// loud. (L0 R0 L1 R1 ... — a channel-major read sums the first half of the
+	// file onto its second and reads 0.5, -0.5, 0.75, -0.75 here.)
+	{
+		const bool ok = read(
+			wav(2, 16000, 16, 16, {8192, -8192, 16384, -16384, 24576, -24576, 32767, -32767}),
+			"wav-pcm16-stereo.wav", pcm, rate, channels);
+		bool silent = pcm.size() == 4;
+		for (const float v : pcm) silent = silent && std::abs(v) < 0.0001f;
+		expect(
+			"stereo-is-downmixed-frame-by-frame", ok && channels == 2 && silent,
+			"ok=" + std::to_string(ok) + " frames=" + std::to_string(pcm.size()) + " first=" +
+				(pcm.empty() ? "-" : std::to_string(pcm[0])));
 	}
 
 	std::cout << (g_failed == 0 ? "OK " : "FAILED ") << (g_ran - g_failed) << "/" << g_ran
