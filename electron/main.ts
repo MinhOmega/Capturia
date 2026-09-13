@@ -1029,13 +1029,16 @@ function forceCloseEditorWindow(windowToClose: BrowserWindow | null) {
 }
 
 function createEditorWindowWrapper() {
-	if (mainWindow) {
-		isForceClosing = true;
-		mainWindow.close();
-		isForceClosing = false;
-		mainWindow = null;
-	}
+	// The editor opens BEFORE the HUD closes. The other order empties the window list,
+	// and `window-all-closed` below quits the app — while the take that asked for the
+	// editor may still be writing its manifest and sidecar.
+	const hudWindow = mainWindow;
 	mainWindow = createEditorWindow();
+	if (hudWindow) {
+		isForceClosing = true;
+		hudWindow.close();
+		isForceClosing = false;
+	}
 	editorHasUnsavedChanges = false;
 
 	mainWindow.on("close", (event) => {

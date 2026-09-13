@@ -19,9 +19,11 @@ class FakeWebContents extends EventEmitter {
 }
 
 class FakeWindow extends EventEmitter {
+	kind = "window";
 	webContents = new FakeWebContents();
 	destroyed = false;
 	close = vi.fn(() => {
+		windowsMock.order.push(`close:${this.kind}`);
 		this.destroyed = true;
 	});
 	isDestroyed = () => this.destroyed;
@@ -123,6 +125,7 @@ vi.mock("./windows", async () => {
 		vi.fn(() => {
 			windowsMock.order.push(`create:${kind}`);
 			const win = new FakeWindow();
+			win.kind = kind;
 			windowsMock.created.push(win);
 			return win;
 		});
@@ -161,8 +164,8 @@ async function bootMain() {
 	windowsMock.order = [];
 	await import("./main");
 	const electron = await import("electron");
-	// Let the appReady chain run to registerIpcHandlers.
-	await vi.waitFor(() => expect(handlersMock.registerArgs.length).toBeGreaterThan(0));
+	// Let the appReady chain run all the way to its createWindow() HUD.
+	await vi.waitFor(() => expect(windowsMock.created.length).toBeGreaterThan(0));
 	return {
 		app: electron.app as unknown as { quit: ReturnType<typeof vi.fn> } & NodeJS.EventEmitter,
 		ipcMain: electron.ipcMain as unknown as NodeJS.EventEmitter,
@@ -251,5 +254,16 @@ describe("editor close confirmation", () => {
 		const secondClose = { preventDefault: vi.fn() };
 		editor.emit("close", secondClose);
 		expect(secondClose.preventDefault).toHaveBeenCalled();
+	});
+});
+
+describe("switching the HUD for the editor", () => {
+	it("opens the editor before closing the HUD, so no window-all-closed quit slips in", async () => {
+		const { createEditorWindowWrapper } = await bootMain();
+
+		createEditorWindowWrapper();
+
+		// Closing the HUD first empties the window list, and `window-all-closed` quits.
+		expect(windowsMock.order).toEqual(["create:hud", "create:editor", "close:hud"]);
 	});
 });
