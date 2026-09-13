@@ -43,12 +43,12 @@ If something fails during render or write, the dialog shows the error so you can
 
 ## How MP4 is rendered
 
-MP4 export runs through the same native Rust compositor that draws the live preview — Direct3D 11 on Windows, Metal on macOS, wgpu/WGSL on Linux — one clip at a time, on a single GPU device: demux → decode → composite → encode → mux. On Windows and macOS the encoder takes the composed frame straight off the GPU, with no CPU readback in between; on Linux the frame is read back and encoded in software. The preview pauses itself for the duration so the two aren't fighting over the GPU.
+MP4 export runs through the same native Rust compositor that draws the live preview — Direct3D 11 on Windows, Metal on macOS, wgpu/WGSL on Linux — one clip at a time, on a single GPU device: demux → decode → composite → encode → mux. The encoder takes the composed frame straight off the GPU, with no CPU readback in between — on Linux through `h264_vaapi` from the compositor's own dmabuf, with a one-frame probe that falls back to software encoding when the driver refuses the imported frame. HEVC and non-VAAPI stacks on Linux are software-encoded. The preview pauses itself for the duration so the two aren't fighting over the GPU.
 
 Because preview and export consume the same scene description, the frame you're looking at is the frame you get — there is no separate export renderer that could drift.
 
 :::note Platform support
-MP4 and GIF export both work on Windows, macOS, and Linux. The one difference left is speed: the Linux encode is software rather than hardware today, so the same export takes longer there. See the [roadmap](https://github.com/MinhOmega/Capturia/blob/main/ROADMAP.md) for status.
+MP4 and GIF export both work on Windows, macOS, and Linux. Where no GPU encoder is available — or the VAAPI driver refuses the frame — the export falls back to software and takes longer rather than failing. See the [roadmap](https://github.com/MinhOmega/Capturia/blob/main/ROADMAP.md) for status.
 :::
 
 ## Exported file vs. project file
