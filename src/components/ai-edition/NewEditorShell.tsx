@@ -356,20 +356,10 @@ export function NewEditorShell() {
 		[dirty],
 	);
 
-	const primaryAssetPath =
-		document?.assets.find((a) => a.id === document.project.primaryAssetId)?.originalPath ?? null;
-	void primaryAssetPath;
 	const clips: AxcutClip[] = document?.timeline.clips ?? [];
 	const visibleClips = useMemo(() => (document ? resolveVisibleClips(document) : []), [document]);
 	const hasProject = Boolean(document);
 	const hasAsset = projectId !== null && (document?.assets.length ?? 0) > 0;
-	const project = document?.project
-		? {
-				id: document.project.id,
-				title: document.project.title,
-				updatedAt: new Date().toISOString(),
-			}
-		: null;
 
 	// refresh project list when the Open Project modal is open
 	useEffect(() => {
@@ -417,19 +407,8 @@ export function NewEditorShell() {
 			// all, instead of a second project on the same file.
 			try {
 				const projects = await nativeBridgeClient.aiEdition.listProjects();
-				console.info("[editor] listProjects returned", projects);
 				if (projects.length > 0) {
-					console.info("[editor] auto-loading project", projects[0].id);
 					await loadProject(projects[0].id);
-					const state = useProjectStore.getState();
-					console.info(
-						"[editor] post-loadProject status=",
-						state.status,
-						"error=",
-						JSON.stringify(state.error),
-						"doc=",
-						state.document ? "loaded" : "null",
-					);
 				}
 			} catch (e) {
 				console.warn("[editor] auto-load failed", e);
@@ -1589,7 +1568,7 @@ export function NewEditorShell() {
 			<EditorTopBar
 				mode={mode}
 				onModeChange={setMode}
-				projectTitle={project?.title ?? null}
+				projectTitle={document?.project.title ?? null}
 				dirty={dirty}
 				canExport={hasAsset}
 				chatOpen={chatOpen}
