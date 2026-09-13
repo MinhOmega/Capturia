@@ -118,12 +118,6 @@ export const nativeBridgeClient = {
 				action: "document.addAsset",
 				payload: { projectId, path, label, kind },
 			}),
-		removeAsset: (projectId: string, assetId: string) =>
-			requireNativeBridgeData<AiEditionAssetResult>({
-				domain: "aiEdition",
-				action: "document.removeAsset",
-				payload: { projectId, assetId },
-			}),
 		llmGetSnapshot: () =>
 			requireNativeBridgeData<AiEditionLlmSnapshot>({
 				domain: "aiEdition",

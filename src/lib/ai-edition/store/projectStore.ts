@@ -194,7 +194,6 @@ export interface ProjectState {
 		},
 	) => Promise<string | null>;
 	setSelectedAudioTrackId: (id: string | null) => void;
-	removeAsset: (assetId: string) => Promise<void>;
 	/**
 	 * Write the document to disk. Resolves `true` when it took effect, `false` when it
 	 * did not.
@@ -550,19 +549,6 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 		const trackId = await get().addAudioTrack(asset.id);
 		if (!trackId) return null;
 		return asset;
-	},
-
-	async removeAsset(assetId) {
-		const { projectId } = get();
-		if (!projectId) throw new Error("No project loaded");
-		const result = await nativeBridgeClient.aiEdition.removeAsset(projectId, assetId);
-		const document = parseDocument(result.document);
-		set({
-			document,
-			revision: get().revision + 1,
-			dirty: false,
-			lastSavedAt: new Date(),
-		});
 	},
 
 	async saveDocument(document, opts) {

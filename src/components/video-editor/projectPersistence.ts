@@ -163,40 +163,6 @@ export function toFileUrl(filePath: string): string {
 	return `file://${encodePathSegments(absolutePath)}`;
 }
 
-export function fromFileUrl(fileUrl: string): string {
-	if (!fileUrl.startsWith("file://")) {
-		return fileUrl;
-	}
-
-	try {
-		const url = new URL(fileUrl);
-		const pathname = decodeURIComponent(url.pathname);
-
-		if (url.host && url.host !== "localhost") {
-			return `//${url.host}${pathname}`;
-		}
-
-		if (/^\/[a-zA-Z]:/.test(pathname)) {
-			return pathname.slice(1);
-		}
-
-		return pathname;
-	} catch {
-		const fallbackPath = decodeURIComponent(fileUrl.replace(/^file:\/\//, ""));
-		return fallbackPath.replace(/^\/([a-zA-Z]:)/, "$1");
-	}
-}
-
-export function deriveNextId(prefix: string, ids: string[]): number {
-	const max = ids.reduce((acc, id) => {
-		const match = id.match(new RegExp(`^${prefix}-(\\d+)$`));
-		if (!match) return acc;
-		const value = Number(match[1]);
-		return Number.isFinite(value) ? Math.max(acc, value) : acc;
-	}, 0);
-	return max + 1;
-}
-
 export function validateProjectData(candidate: unknown): candidate is EditorProjectData {
 	if (!candidate || typeof candidate !== "object") return false;
 	const project = candidate as Partial<EditorProjectData>;
@@ -552,31 +518,4 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 				? editor.gifSizePreset
 				: DEFAULT_GIF_SETTINGS.sizePreset,
 	};
-}
-
-export function createProjectData(
-	media: ProjectMedia,
-	editor: ProjectEditorState,
-): EditorProjectData {
-	return {
-		version: PROJECT_VERSION,
-		media,
-		editor,
-	};
-}
-
-export function createProjectSnapshot(
-	media: ProjectMedia,
-	editor: Partial<ProjectEditorState>,
-): string {
-	return JSON.stringify(createProjectData(media, normalizeProjectEditor(editor)));
-}
-
-export function hasProjectUnsavedChanges(
-	currentSnapshot: string | null,
-	baselineSnapshot: string | null,
-): boolean {
-	return Boolean(
-		currentSnapshot !== null && baselineSnapshot !== null && currentSnapshot !== baselineSnapshot,
-	);
 }
