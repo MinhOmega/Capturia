@@ -625,6 +625,8 @@ struct InspectorParams {
     cursor_show: bool,
     cursor_size_scale: f32,
     cursor_bounce_scale: f32,
+    /// 0..1 : opacité de l'anneau de clic (0 = éteint).
+    cursor_ring_scale: f32,
     /// 0..1 : force du lissage ressort-amortisseur de la position (0 = brut). Reconstruit la
     /// piste (voir `raw_cursor.smoothed()` dans `render_thread`) plutôt qu'un simple scalaire de
     /// dessin — d'où le suivi séparé de sa dernière valeur appliquée.
@@ -648,6 +650,7 @@ impl Default for InspectorParams {
             cursor_show: true,
             cursor_size_scale: 1.0,
             cursor_bounce_scale: 1.0,
+            cursor_ring_scale: 0.0,
             cursor_smoothing: 0.0,
             cursor_motion_blur: 0.0,
         }
@@ -924,6 +927,7 @@ impl LiveView {
                 "webcamSize" => p.webcam_size_scale = v.max(0.05),
                 "cursorSize" => p.cursor_size_scale = v.max(0.0),
                 "cursorClickBounce" => p.cursor_bounce_scale = v.max(0.0),
+                "cursorClickRing" => p.cursor_ring_scale = v.clamp(0.0, 1.0),
                 "cursorSmoothing" => p.cursor_smoothing = v.clamp(0.0, 1.0),
                 "cursorMotionBlur" => p.cursor_motion_blur = v.clamp(0.0, 1.0),
                 _ => {}
@@ -1521,6 +1525,7 @@ unsafe fn render_thread(
             webcam_shape: ip.webcam_shape,
             cursor_size_scale: ip.cursor_size_scale,
             cursor_bounce_scale: ip.cursor_bounce_scale,
+            cursor_ring_scale: ip.cursor_ring_scale,
             cursor_motion_blur: ip.cursor_motion_blur,
             has_webcam: has_real_webcam,
         });
