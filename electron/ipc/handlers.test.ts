@@ -41,7 +41,7 @@ vi.mock("electron", () => ({
 
 vi.mock("../main", () => ({ RECORDINGS_DIR }));
 
-const { registerIpcHandlers } = await import("./handlers");
+const { REG_EXE_PATH, registerIpcHandlers } = await import("./handlers");
 
 function invoke(channel: string, ...args: unknown[]) {
 	const handler = hoisted.handlers.get(channel);
@@ -109,5 +109,12 @@ describe("get-sources", () => {
 			thumbnailSize: { width: 320, height: 180 },
 			fetchWindowIcons: true,
 		});
+	});
+});
+
+describe("the DirectShow registry probe", () => {
+	it("names reg.exe absolutely, so PATH and the CWD cannot decide which one runs", () => {
+		expect(REG_EXE_PATH).not.toBe("reg.exe");
+		expect(REG_EXE_PATH).toMatch(/^[A-Za-z]:[\\/].*[\\/]System32[\\/]reg\.exe$/i);
 	});
 });

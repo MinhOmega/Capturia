@@ -1163,10 +1163,23 @@ function isWindowsGraphicsCaptureOsSupported() {
 	return Number.isFinite(build) && build >= 19041;
 }
 
+/**
+ * The real `reg.exe`, named absolutely.
+ *
+ * A bare `"reg.exe"` is resolved against `PATH` — and on Windows, `CreateProcess` searches
+ * the current directory first. Anything that can drop a `reg.exe` where Capturia happens to
+ * be running gets to run it with Capturia's privileges instead of the system tool.
+ */
+export const REG_EXE_PATH = path.join(
+	process.env.SystemRoot ?? "C:\\Windows",
+	"System32",
+	"reg.exe",
+);
+
 function queryDirectShowVideoInputRegistry() {
 	return new Promise<string>((resolve) => {
 		const proc = spawn(
-			"reg.exe",
+			REG_EXE_PATH,
 			["query", "HKCR\\CLSID\\{860BB310-5D01-11D0-BD3B-00A0C911CE86}\\Instance", "/s"],
 			{ windowsHide: true },
 		);
