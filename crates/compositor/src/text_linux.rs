@@ -20,62 +20,7 @@ use cosmic_text::{Attrs, Buffer, FontSystem, Metrics, Shaping, SwashCache};
 
 use crate::d3d::Gpu;
 
-/// Tout ce dont le rendu d'un texte depend. Meme structure et meme `cache_key`
-/// que `text_windows::TextSpec` / `text_macos::TextSpec` : la cle est partagee
-/// entre plateformes, donc deux specs identiques produisent la meme texture.
-#[derive(Clone, PartialEq)]
-pub struct TextSpec {
-    pub content: String,
-    /// RGBA 0..1 (deja parse depuis la chaine CSS cote appelant).
-    pub color: [f32; 4],
-    /// RGBA 0..1 ; alpha 0 = pas de fond (le CSS `transparent`).
-    pub background: [f32; 4],
-    pub font_size_px: f32,
-    pub font_family: String,
-    pub bold: bool,
-    pub italic: bool,
-    pub underline: bool,
-    /// "left" | "center" | "right".
-    pub align: String,
-    /// "top" | "center" | "bottom" -- quelle arete du bloc de texte est epinglee
-    /// a la boite. "center" est le comportement historique (et celui des
-    /// annotations, qui reproduisent `alignItems: center` de l'overlay web) ; les
-    /// sous-titres passent "bottom" ou "top" pour que l'arete ancree ne bouge pas
-    /// quand le texte gagne une ligne.
-    pub valign: String,
-    /// Taille de la boite en px de sortie.
-    pub box_px: [u32; 2],
-}
-
-impl TextSpec {
-    /// FNV-1a sur les memes octets, dans le meme ordre, que
-    /// `text_macos::TextSpec::cache_key` / `text_windows` -- la policy est
-    /// partagee (cache cross-plateforme coherent).
-    pub fn cache_key(&self) -> u64 {
-        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-        let mut mix = |bytes: &[u8]| {
-            for b in bytes {
-                h ^= *b as u64;
-                h = h.wrapping_mul(0x100_0000_01b3);
-            }
-        };
-        mix(self.content.as_bytes());
-        mix(self.font_family.as_bytes());
-        mix(&self.font_size_px.to_bits().to_le_bytes());
-        for c in self.color.iter().chain(self.background.iter()) {
-            mix(&c.to_bits().to_le_bytes());
-        }
-        mix(&[self.bold as u8, self.italic as u8, self.underline as u8]);
-        mix(self.align.as_bytes());
-        // Juste apres `align`, memes octets et meme position que sur les deux
-        // autres backends : deux specs ne differant que par l'alignement vertical
-        // rendraient sinon les pixels l'une de l'autre depuis le cache.
-        mix(self.valign.as_bytes());
-        mix(&self.box_px[0].to_le_bytes());
-        mix(&self.box_px[1].to_le_bytes());
-        h
-    }
-}
+pub use crate::text_plate::TextSpec;
 
 /// Le resultat d'une rasterisation : la texture R8 de couverture + ses dims,
 /// plus la plaque de fond que le compositeur doit poser dessous.

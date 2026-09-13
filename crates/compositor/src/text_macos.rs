@@ -35,64 +35,7 @@ use crate::d3d::Gpu;
 use anyhow::{anyhow, bail, Result};
 use std::ffi::c_void;
 
-/// Spécification d'un texte à rastériser. Mêmes champs que `text_windows::TextSpec`
-/// — le moteur macOS les consomme via `cache_key` pour déterminer si une re-rastérisation
-/// est nécessaire.
-#[derive(Clone, PartialEq)]
-pub struct TextSpec {
-    pub content: String,
-    /// RGBA 0..1 (déjà parsé depuis la chaîne CSS côté appelant).
-    pub color: [f32; 4],
-    /// RGBA 0..1 ; alpha 0 = pas de fond (le CSS `transparent`).
-    pub background: [f32; 4],
-    pub font_size_px: f32,
-    pub font_family: String,
-    pub bold: bool,
-    pub italic: bool,
-    pub underline: bool,
-    /// "left" | "center" | "right".
-    pub align: String,
-    /// "top" | "center" | "bottom" — quelle arête du bloc est épinglée à la boîte.
-    /// "center" est le comportement historique (et celui des annotations) ; les
-    /// sous-titres passent "bottom" ou "top" pour que l'arête ancrée ne bouge pas
-    /// quand le texte gagne une ligne.
-    pub valign: String,
-    /// Taille de la boîte en px de sortie — la mise en page en dépend (retours à la ligne).
-    pub box_px: [u32; 2],
-}
-
-impl TextSpec {
-    /// Clé de cache : couvre exactement les champs dont la variation provoque un
-    /// changement de pixels. Identique côté Windows/macOS (la policy est partagée).
-    pub fn cache_key(&self) -> u64 {
-        // FNV-1a sur les mêmes octets, dans le même ordre, que
-        // `text_windows::TextSpec::cache_key`. La version précédente appelait
-        // `Hash::hash(&mut h)` avec un `u64` en guise de `Hasher` — ça ne compile pas,
-        // et même corrigé, `DefaultHasher` ne donne pas la même clé que Windows.
-        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-        let mut mix = |bytes: &[u8]| {
-            for b in bytes {
-                h ^= *b as u64;
-                h = h.wrapping_mul(0x100_0000_01b3);
-            }
-        };
-        mix(self.content.as_bytes());
-        mix(self.font_family.as_bytes());
-        mix(&self.font_size_px.to_bits().to_le_bytes());
-        for c in self.color.iter().chain(self.background.iter()) {
-            mix(&c.to_bits().to_le_bytes());
-        }
-        mix(&[self.bold as u8, self.italic as u8, self.underline as u8]);
-        mix(self.align.as_bytes());
-        // Juste après `align`, mêmes octets et même position que sur les deux
-        // autres backends : deux specs ne différant que par l'alignement vertical
-        // rendraient sinon les pixels l'une de l'autre depuis le cache.
-        mix(self.valign.as_bytes());
-        mix(&self.box_px[0].to_le_bytes());
-        mix(&self.box_px[1].to_le_bytes());
-        h
-    }
-}
+pub use crate::text_plate::TextSpec;
 
 // ---------------------------------------------------------------------------
 // FFI CoreFoundation / CoreGraphics / CoreText
