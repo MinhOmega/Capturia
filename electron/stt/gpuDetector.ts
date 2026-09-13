@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import path from "node:path";
 
 import type { SttBackend } from "./transcriptionContract";
@@ -120,7 +121,6 @@ function readResourcesPath(): string | null {
 
 /** Probe → first existing candidate → null if none. */
 export async function resolveBinaryPath(here: string = process.cwd()): Promise<ResolvedBinary> {
-	const { existsSync } = await import("node:fs");
 	const probe = await detectGpuBackend();
 	for (const candidate of candidateBinaryPaths(here)) {
 		if (candidate && existsSync(candidate)) {

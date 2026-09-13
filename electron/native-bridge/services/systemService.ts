@@ -4,10 +4,8 @@ import type {
 	SystemCapabilities,
 } from "../../../src/native/contracts";
 import { NATIVE_BRIDGE_VERSION } from "../../../src/native/contracts";
-import type { NativeBridgeState } from "../store";
 
 interface SystemServiceOptions {
-	store: NativeBridgeState;
 	getPlatform: () => NativePlatform;
 	getAssetBasePath: () => string | null;
 	getCursorCapabilities: () => Promise<CursorCapabilities>;
@@ -28,7 +26,7 @@ export class SystemService {
 		const platform = this.getPlatform();
 		const cursorCapabilities = await this.options.getCursorCapabilities();
 
-		const capabilities: SystemCapabilities = {
+		return {
 			bridgeVersion: NATIVE_BRIDGE_VERSION,
 			platform,
 			cursor: cursorCapabilities,
@@ -36,8 +34,5 @@ export class SystemService {
 				currentContext: true,
 			},
 		};
-
-		this.options.store.setSystemCapabilities(capabilities);
-		return capabilities;
 	}
 }

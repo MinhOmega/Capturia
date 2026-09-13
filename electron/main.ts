@@ -793,21 +793,16 @@ function startBackgroundUpdateTimer() {
  *  `finally` unreachable and `updateCheckInFlight` latched true for the rest of the session,
  *  silently turning every later check — menu, tray and HUD — into a no-op. */
 async function probeSelfUpdate(): Promise<UpdateOutcome> {
-	let timer: NodeJS.Timeout | undefined;
-	const timeout = new Promise<UpdateOutcome>((resolve) => {
-		timer = setTimeout(
-			() => resolve({ kind: "failed", error: new Error("self-update probe timed out") }),
-			30_000,
-		);
-		timer.unref?.();
-	});
 	try {
-		return await Promise.race([
+		// `checkForSelfUpdate` resolves on every error of its own, so the deadline is
+		// the only thing that can reject here.
+		return await withDeadline(
 			checkForSelfUpdate(getInstallChannel(), includePrereleases),
-			timeout,
-		]);
-	} finally {
-		if (timer) clearTimeout(timer);
+			30_000,
+			"self-update probe timed out",
+		);
+	} catch (error) {
+		return { kind: "failed", error: error instanceof Error ? error : new Error(String(error)) };
 	}
 }
 
@@ -1125,16 +1120,14 @@ function createSourceSelectorWindowWrapper() {
 }
 
 function createNotesWindowWrapper() {
-	{
-		notesWindow = createNotesWindow();
-		notesWindow.on("closed", () => {
-			notesWindow = null;
-			if (mainWindow && !mainWindow.isDestroyed()) {
-				mainWindow.webContents.send("notes-window-closed");
-			}
-		});
-		return notesWindow;
-	}
+	notesWindow = createNotesWindow();
+	notesWindow.on("closed", () => {
+		notesWindow = null;
+		if (mainWindow && !mainWindow.isDestroyed()) {
+			mainWindow.webContents.send("notes-window-closed");
+		}
+	});
+	return notesWindow;
 }
 
 function createCountdownOverlayWindowWrapper() {

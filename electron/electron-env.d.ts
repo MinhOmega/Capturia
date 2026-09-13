@@ -30,8 +30,7 @@ interface Window {
 		/** Export bench only (--bench=): tells main the run is over so it can quit. */
 		benchFinished?: () => Promise<void>;
 		/** Native (D3D) export progress — frames encoded so far, pushed at ~10 Hz max while
-		 *  `compositor.export`/`compositor.exportMulti` runs. Distinct from `exportOnFrameAck`,
-		 *  the OLD web/CPU pipeline's per-frame ack, not a progress signal. */
+		 *  `compositor.export`/`compositor.exportMulti` runs. */
 		onNativeExportProgress?: (callback: (frames: number) => void) => () => void;
 		/** Ask the running native export to stop. Resolving means main took the request,
 		 *  NOT that the export ended — the export's own promise rejects with
@@ -472,7 +471,6 @@ interface Window {
 			error?: string;
 		}>;
 		onMenuNewProject: (callback: () => void) => () => void;
-		onMenuImportVideo: (callback: () => void) => () => void;
 		onMenuLoadProject: (callback: () => void) => () => void;
 		onMenuSaveProject: (callback: () => void) => () => void;
 		onMenuSaveProjectAs: (callback: () => void) => () => void;
@@ -525,7 +523,6 @@ interface Window {
 		setCountdownOverlayValue: (value: number, runId: number) => Promise<void>;
 		hideCountdownOverlay: (runId: number) => Promise<void>;
 		onCountdownOverlayValue: (callback: (value: number | null) => void) => () => void;
-		setMicrophoneExpanded: (expanded: boolean) => void;
 		setHasUnsavedChanges: (hasChanges: boolean) => void;
 		onRequestSaveBeforeClose: (callback: () => Promise<boolean> | boolean) => () => void;
 		onRequestCloseConfirm: (callback: () => void) => () => void;

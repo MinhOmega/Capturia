@@ -596,12 +596,6 @@ export type NativeBridgeRequest =
 	  }
 	| {
 			domain: "aiEdition";
-			action: "chat.undoLastBatch";
-			payload: { projectId: string; sessionId: string };
-			requestId?: string;
-	  }
-	| {
-			domain: "aiEdition";
 			action: "chat.listSessions";
 			payload: { projectId: string };
 			requestId?: string;
