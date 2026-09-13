@@ -364,7 +364,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 			{/* Where the next take is written — the same kind of choice as the rows above. Main
 			    owns the path: Change opens the OS picker there, and nothing here types one in. */}
 			{recordingsFolder ? (
-				<>
+				<div data-testid="hud-recordings-folder">
 					<div className={styles.hudMenuSectionLabel}>{labels.saveTo}</div>
 					<div className={styles.hudModalAboutRow}>
 						<span
@@ -397,7 +397,7 @@ export const HudDeviceSettings = memo(function HudDeviceSettings({
 					<div className={styles.hudModalHint}>
 						{recordingsFolder.available ? labels.folderHint : labels.folderUnavailable}
 					</div>
-				</>
+				</div>
 			) : null}
 
 			{/* This panel is the app's only settings surface, so the permission list
