@@ -371,11 +371,27 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 						case "getCapabilities":
 							return createSuccessResponse(requestId, await cursorService.getCapabilities());
 						case "getTelemetry":
+							// Same gate the compositor paths spend. An absent path is not a renderer
+							// claim at all — the service then reads main's own `currentVideoPath`.
+							if (unapprovedMedia(request.payload?.videoPath)) {
+								return createErrorResponse(
+									requestId,
+									"INVALID_REQUEST",
+									"Media source was not approved.",
+								);
+							}
 							return createSuccessResponse(
 								requestId,
 								await cursorService.getTelemetry(request.payload?.videoPath),
 							);
 						case "getRecordingData":
+							if (unapprovedMedia(request.payload?.videoPath)) {
+								return createErrorResponse(
+									requestId,
+									"INVALID_REQUEST",
+									"Media source was not approved.",
+								);
+							}
 							return createSuccessResponse(
 								requestId,
 								await cursorService.getRecordingData(request.payload?.videoPath),

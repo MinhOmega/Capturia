@@ -7,6 +7,12 @@ const hoisted = vi.hoisted(() => ({
 	setActiveClip: vi.fn(),
 	createView: vi.fn(() => 1),
 	addAsset: vi.fn(async () => ({ assets: [{ id: "asset-1" }], project: {} })),
+	loadCursorRecordingData: vi.fn(async () => ({
+		version: 2,
+		provider: "none",
+		samples: [],
+		assets: [],
+	})),
 }));
 
 vi.mock("electron", () => ({
@@ -37,6 +43,8 @@ function buildContext(): NativeBridgeContext {
 		getAiEditionDocuments: () => ({ addAsset: hoisted.addAsset }),
 		getAiEditionLlmConfig: () => ({}),
 		resolveVideoPath: (filePath?: string | null) => filePath ?? null,
+		loadCursorRecordingData: hoisted.loadCursorRecordingData,
+		loadCursorTelemetry: vi.fn(),
 	} as unknown as NativeBridgeContext;
 }
 
@@ -53,6 +61,7 @@ describe("native bridge media path gate", () => {
 		hoisted.setActiveClip.mockClear();
 		hoisted.createView.mockClear();
 		hoisted.addAsset.mockClear();
+		hoisted.loadCursorRecordingData.mockClear();
 		registerNativeBridgeHandlers(buildContext());
 		vi.spyOn(console, "warn").mockImplementation(() => undefined);
 	});
@@ -102,6 +111,28 @@ describe("native bridge media path gate", () => {
 
 		expect(response).toMatchObject({ ok: true });
 		expect(hoisted.createView).toHaveBeenCalledOnce();
+	});
+
+	it("refuses cursor.getRecordingData on a path the renderer was never granted", async () => {
+		const response = await invoke({
+			domain: "cursor",
+			action: "getRecordingData",
+			payload: { videoPath: "/etc/passwd" },
+		});
+
+		expect(response).toMatchObject({ ok: false, error: { code: "INVALID_REQUEST" } });
+		expect(hoisted.loadCursorRecordingData).not.toHaveBeenCalled();
+	});
+
+	it("still reads the sidecar of an approved recording", async () => {
+		const response = await invoke({
+			domain: "cursor",
+			action: "getRecordingData",
+			payload: { videoPath: APPROVED },
+		});
+
+		expect(response).toMatchObject({ ok: true });
+		expect(hoisted.loadCursorRecordingData).toHaveBeenCalledWith(APPROVED);
 	});
 
 	it("refuses document.addAsset before the path can reach the document", async () => {
