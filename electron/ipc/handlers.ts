@@ -4875,10 +4875,6 @@ export function registerIpcHandlers(
 			runChat(projectId, sessionId, message, getAiEditionLlmConfig(), document, sink, {
 				cursor: agentCursorTelemetryReader,
 			}),
-		undoAiEditionToolBatch: (_projectId, _sessionId) => ({
-			success: false,
-			error: "Per-tool-batch undo retired in favor of per-message rewind.",
-		}),
 		rewindToMessage: (projectId, sessionId, messageId) =>
 			rewindToMessage(projectId, sessionId, messageId),
 		compactNow: (projectId, sessionId) =>
