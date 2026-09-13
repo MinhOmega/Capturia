@@ -72,10 +72,15 @@ function clip(startSec: number, endSec: number) {
  *  which is what the Full Camera button is gated on. */
 const NO_CAMERA_ASSET = { id: "a1", label: "rec", durationSec: TOTAL_SEC };
 
-/** By default one 30-minute clip carrying a single one-second annotation. */
+/** By default one 30-minute clip carrying a single one-second annotation. Pass an
+ *  array for a timeline with several pills. */
 function renderTimeline(
 	clips = [clip(0, TOTAL_SEC)],
-	annotation = { id: "ann1", startMs: 10_000, endMs: 11_000 },
+	annotation: Record<string, unknown> | Array<Record<string, unknown>> = {
+		id: "ann1",
+		startMs: 10_000,
+		endMs: 11_000,
+	},
 	assets: Array<Record<string, unknown>> = [NO_CAMERA_ASSET],
 	onRender: ProfilerOnRenderCallback = () => {
 		/* only the scrub test counts commits */
@@ -88,7 +93,7 @@ function renderTimeline(
 		// amber words) — no project here has any.
 		transcripts: [],
 		assets,
-		annotationRegions: [annotation],
+		annotationRegions: Array.isArray(annotation) ? annotation : [annotation],
 		speedRegions: [],
 		cameraFullscreenRegions: [],
 		zoomRegions: [],
@@ -128,7 +133,8 @@ function renderTimeline(
 		</ShortcutsProvider>,
 	);
 	return {
-		pill: screen.getByTitle("toolbar.newAnnotation"),
+		pill: screen.getAllByTitle("toolbar.newAnnotation")[0],
+		pills: screen.getAllByTitle("toolbar.newAnnotation"),
 		clipEls: Array.from(document.querySelectorAll<HTMLElement>("[data-clip-id]")),
 		tl,
 		setCurrentTime,
@@ -264,6 +270,33 @@ describe("V4Timeline lane pills", () => {
 		// was nowhere near, the more so the longer the recording.
 		dragHandle(right, 885.5);
 		expect(tl.updateAnnotationSpan).toHaveBeenLastCalledWith("ann1", 10_000, 1_782_000);
+	});
+
+	/**
+	 * The drag ref outlives the gesture: it is cleared when the commit RESOLVES, not
+	 * on release. A plain select-click on another pill, with no movement at all, then
+	 * found the previous pill's span still in it and applied those coordinates
+	 * through the clicked pill's closure — pill B's span overwritten with pill A's,
+	 * from a click that moved nothing.
+	 */
+	it("does not commit the previous pill's span onto the next one clicked", () => {
+		const { pills, tl } = renderTimeline(undefined, [
+			{ id: "ann1", startMs: 10_000, endMs: 11_000 },
+			{ id: "ann2", startMs: 100_000, endMs: 101_000 },
+		]);
+		const [, right] = Array.from(pills[0].querySelectorAll("span"));
+
+		// Drag A and release. Its commit is a promise nothing has awaited yet, so the
+		// ref still holds A's span.
+		dragHandle(right, 90);
+		expect(tl.updateAnnotationSpan).toHaveBeenCalledWith("ann1", 10_000, 191_000);
+		tl.updateAnnotationSpan.mockClear();
+
+		// A click on B: down, up, no movement in between.
+		fireEvent.pointerDown(pills[1], { clientX: 0 });
+		window.dispatchEvent(new MouseEvent("pointerup", { clientX: 0 }));
+
+		expect(tl.updateAnnotationSpan).not.toHaveBeenCalled();
 	});
 });
 

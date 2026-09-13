@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	DEFAULT_SHORTCUTS,
 	findConflict,
+	matchesShortcut,
 	mergeWithDefaults,
 	SHORTCUT_ACTIONS,
 	SHORTCUT_LABELS,
@@ -43,5 +44,25 @@ describe("shortcut registry", () => {
 		const merged = mergeWithDefaults(stored as Partial<ShortcutsConfig>);
 		expect(merged.addZoom).toEqual({ key: "q" });
 		expect(merged).not.toHaveProperty("addBlur");
+	});
+
+	/**
+	 * The file is `JSON.parse`d raw in main, so it can hold anything a hand edit puts
+	 * there. A binding with no `key` made `matchesShortcut` throw on
+	 * `binding.key.toLowerCase()` for every keydown in the editor — the whole keyboard
+	 * dead, from one missing field.
+	 */
+	it("keeps the default for a stored binding with no key", () => {
+		const merged = mergeWithDefaults({ addZoom: { ctrl: true } } as Partial<ShortcutsConfig>);
+		expect(merged.addZoom).toEqual(DEFAULT_SHORTCUTS.addZoom);
+		// A node-env file: the four fields `matchesShortcut` reads, not a real event.
+		const keydown = {
+			key: "z",
+			ctrlKey: false,
+			shiftKey: false,
+			altKey: false,
+			metaKey: false,
+		} as KeyboardEvent;
+		expect(() => matchesShortcut(keydown, merged.addZoom, /* isMacPlatform */ false)).not.toThrow();
 	});
 });

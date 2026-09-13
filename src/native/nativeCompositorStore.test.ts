@@ -9,12 +9,13 @@ import type { CompositorParamValue } from "./contracts";
 const setCompositorParam = vi.fn((_id: number, _key: string, _value: CompositorParamValue) =>
 	Promise.resolve(),
 );
+const setCompositorScene = vi.fn((_id: number, _sceneJson: string) => Promise.resolve());
 
 vi.mock("./compositorViewClient", () => ({
 	setCompositorParam: (id: number, key: string, value: CompositorParamValue) =>
 		setCompositorParam(id, key, value),
 	setCompositorPlaying: vi.fn(() => Promise.resolve()),
-	setCompositorScene: vi.fn(() => Promise.resolve()),
+	setCompositorScene: (id: number, sceneJson: string) => setCompositorScene(id, sceneJson),
 	setCompositorTime: vi.fn(() => Promise.resolve()),
 }));
 
@@ -120,5 +121,54 @@ describe("pushAllNativeParams", () => {
 		const replayed = new Set(setCompositorParam.mock.calls.map((c) => c[1] as string));
 		const missing = ADDON_KEYS.filter((k) => !replayed.has(k));
 		expect(missing, `not replayed on activation: ${missing.join(", ")}`).toEqual([]);
+	});
+});
+
+describe("setNativeScene", () => {
+	beforeEach(() => {
+		vi.resetModules();
+		setCompositorScene.mockClear();
+	});
+
+	/**
+	 * The overlay rebuilds and ships the WHOLE scene on every document write, and a
+	 * slider drag or a transcript keystroke is one write per frame — while the slider's
+	 * own value already goes out live through `setNativeParam`. Sending bytes the native
+	 * side already has costs a caption derivation over the whole transcript, a projection
+	 * per region kind and a layout per clip, then hundreds of KB across the bridge, per
+	 * frame.
+	 */
+	it("does not re-send a scene the active view already has", async () => {
+		const store = await import("./nativeCompositorStore");
+		store.setCurrentNativeViewId(1);
+
+		store.setNativeScene('{"clips":[]}');
+		store.setNativeScene('{"clips":[]}');
+		store.setNativeScene('{"clips":[]}');
+
+		expect(setCompositorScene).toHaveBeenCalledTimes(1);
+	});
+
+	it("sends it again when it actually changes", async () => {
+		const store = await import("./nativeCompositorStore");
+		store.setCurrentNativeViewId(1);
+
+		store.setNativeScene('{"clips":[]}');
+		store.setNativeScene('{"clips":[1]}');
+
+		expect(setCompositorScene).toHaveBeenCalledTimes(2);
+	});
+
+	/** A freshly created view holds nothing, so an identical scene must still reach it. */
+	it("sends it again to a new view", async () => {
+		const store = await import("./nativeCompositorStore");
+		store.setCurrentNativeViewId(1);
+		store.setNativeScene('{"clips":[]}');
+
+		store.setCurrentNativeViewId(2);
+		store.setNativeScene('{"clips":[]}');
+
+		expect(setCompositorScene).toHaveBeenCalledTimes(2);
+		expect(setCompositorScene.mock.calls[1][0]).toBe(2);
 	});
 });

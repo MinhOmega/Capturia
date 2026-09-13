@@ -1100,6 +1100,12 @@ export function V4Timeline({
 			e.preventDefault();
 			e.stopPropagation();
 			selectPill(pill, e.shiftKey);
+			// Start clean, exactly as `startAudioDrag` does: the previous pill's commit
+			// may still be in flight (the ref is cleared only when its save resolves).
+			// Without this, clicking a second pill without moving let `up` read the FIRST
+			// pill's span and apply it through this pill's closure — pill B's span
+			// silently overwritten with pill A's coordinates.
+			activePillDragRef.current = null;
 			// Scale drag deltas against the canvas (full zoomed timeline) width, so a
 			// drag tracks the cursor exactly regardless of padding, scrollbar or zoom.
 			const el = canvasRef.current;

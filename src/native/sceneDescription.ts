@@ -29,7 +29,6 @@ import {
 	getCaptionTranslations,
 } from "@/lib/ai-edition/captions";
 import { collapseTracksToPills, trackGroupId } from "@/lib/ai-edition/document/audioTracks";
-import { createId } from "@/lib/ai-edition/document/ids";
 import { pickOutputDims } from "@/lib/ai-edition/document/outputFormat";
 import {
 	type PlaybackSegment,
@@ -530,6 +529,21 @@ export function resolveVisibleClips(document: AxcutDocument): PlaybackSegment[] 
 		.filter((clip) => clipAssetIsResolvable(clip, assetById));
 }
 
+/**
+ * Ids for the extra fragments a region splits into when a trim cuts it across two kept
+ * segments (the first fragment keeps the region's own id — see `projectRegionsToSource`).
+ *
+ * Derived from a counter, not `createId()`. This scene is rebuilt and shipped as JSON on
+ * every document write, so a fresh random id per build made two builds of the SAME
+ * document differ in bytes: nothing downstream could tell "unchanged" from "changed", and
+ * `SceneZoomRegion.id` is documented as stable precisely because native pairs adjacent
+ * regions by it — an id that changes on every push cannot pair with anything.
+ */
+function splitIdMinter(prefix: string): () => string {
+	let n = 0;
+	return () => `${prefix}#split${++n}`;
+}
+
 /** Serialize a document into a {@link SceneDescription}. Pure — no per-frame math. */
 export function buildSceneDescription(
 	document: AxcutDocument,
@@ -763,7 +777,7 @@ export function buildSceneDescription(
 		document.zoomRanges ?? [],
 		visibleClips,
 		document.timeline.clips,
-		() => createId("zoom"),
+		splitIdMinter("zoom"),
 	);
 	// Same raw→source projection as the zoom regions above, for the same reason: annotations are
 	// authored in RAW document time and the compositor matches each frame's SOURCE time.
@@ -799,7 +813,7 @@ export function buildSceneDescription(
 		],
 		visibleClips,
 		document.timeline.clips,
-		() => createId("ann"),
+		splitIdMinter("ann"),
 	);
 	const projectedCameraFullscreenRegions = projectRegionsToSource(
 		((document.legacyEditor as Record<string, unknown> | null)?.cameraFullscreenRegions as
@@ -807,7 +821,7 @@ export function buildSceneDescription(
 			| undefined) ?? [],
 		visibleClips,
 		document.timeline.clips,
-		() => createId("camfull"),
+		splitIdMinter("camfull"),
 	);
 	// Speed regions carry an extra `speed` field the standard `rangeSchema` does not, so we
 	// can't read from `document.timeline.speedRanges` today (see SceneDescription.speedRegions
@@ -821,7 +835,7 @@ export function buildSceneDescription(
 			| undefined) ?? [],
 		visibleClips,
 		document.timeline.clips,
-		() => createId("speed"),
+		splitIdMinter("speed"),
 	);
 
 	// Webcam rect, single source of truth between preview & native :
