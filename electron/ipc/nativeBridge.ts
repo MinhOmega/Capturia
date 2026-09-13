@@ -22,7 +22,6 @@ import { CompositorViewService } from "../native-bridge/services/compositorViewS
 import { CursorService } from "../native-bridge/services/cursorService";
 import { ProjectService } from "../native-bridge/services/projectService";
 import { SystemService } from "../native-bridge/services/systemService";
-import { createNativeBridgeState } from "../native-bridge/store";
 
 export interface NativeBridgeContext {
 	getPlatform: () => NodeJS.Platform;
@@ -202,9 +201,7 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 	ipcMain.removeHandler(NATIVE_BRIDGE_CHANNEL);
 
 	const platform = normalizePlatform(context.getPlatform());
-	const store = createNativeBridgeState(platform);
 	const projectService = new ProjectService({
-		store,
 		getCurrentProjectPath: context.getCurrentProjectPath,
 		getCurrentVideoPath: context.getCurrentVideoPath,
 		saveProjectFile: context.saveProjectFile,
@@ -216,7 +213,6 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 		clearCurrentVideoPath: context.clearCurrentVideoPath,
 	});
 	const cursorService = new CursorService({
-		store,
 		adapter: new TelemetryCursorAdapter({
 			loadRecordingData: context.loadCursorRecordingData,
 			resolveVideoPath: context.resolveVideoPath,
@@ -224,7 +220,6 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 		}),
 	});
 	const systemService = new SystemService({
-		store,
 		getPlatform: () => platform,
 		getAssetBasePath: context.resolveAssetBasePath,
 		getCursorCapabilities: () => cursorService.getCapabilities(),
