@@ -3103,7 +3103,7 @@ export function AudioPane() {
 					onCommit={() => void commit()}
 				/>
 			</div>
-			{measurable && window.electronAPI?.measureAudioLoudness ? (
+			{measurable && typeof window.electronAPI?.measureAudioLoudness === "function" ? (
 				<button
 					type="button"
 					className={styles.secondaryBtn}
