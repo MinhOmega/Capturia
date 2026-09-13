@@ -208,8 +208,8 @@ export const clipSchema = z
 		assetId: z.string().min(1),
 		sourceStartSec: z.number().nonnegative(),
 		// ponytail: optional because v2 migrations have unknown asset duration at
-		// migration time. The renderer fills this in once StreamingVideoDecoder probes
-		// the file (Phase 1+).
+		// migration time. The renderer fills this in once it probes the file
+		// (Phase 1+).
 		sourceEndSec: z.number().nonnegative().optional(),
 		timelineStartSec: z.number().nonnegative(),
 		timelineEndSec: z.number().nonnegative(),
@@ -307,88 +307,6 @@ export const timelineSchema = z.preprocess(
 		captionRanges: z.array(rangeSchema).default([]),
 	}),
 );
-
-export const timelineOperationSchema = z.discriminatedUnion("type", [
-	z.object({
-		type: z.literal("replace_timeline"),
-		reason: z.string().default(""),
-		intervals: z
-			.array(z.object({ startSec: z.number().nonnegative(), endSec: z.number().nonnegative() }))
-			.default([]),
-	}),
-	z.object({
-		type: z.literal("drop_range"),
-		reason: z.string().default(""),
-		startSec: z.number().nonnegative(),
-		endSec: z.number().nonnegative(),
-	}),
-	z.object({
-		type: z.literal("drop_word_range"),
-		reason: z.string().default(""),
-		startWordId: z.string().min(1),
-		endWordId: z.string().min(1),
-	}),
-	z.object({
-		type: z.literal("add_trim_range"),
-		reason: z.string().default(""),
-		assetId: z.string().min(1),
-		// Which clip the cut was authored on. Optional so callers that genuinely have no
-		// clip context still work, but every UI path knows it — without it a trim on the
-		// second clip of a duplicated asset is indistinguishable from one on the first.
-		clipId: z.string().min(1).optional(),
-		startSec: z.number().nonnegative(),
-		endSec: z.number().nonnegative(),
-	}),
-	z.object({
-		type: z.literal("update_trim_range"),
-		reason: z.string().default(""),
-		trimRangeId: z.string().min(1),
-		startSec: z.number().nonnegative(),
-		endSec: z.number().nonnegative(),
-	}),
-	z.object({
-		type: z.literal("remove_trim_range"),
-		reason: z.string().default(""),
-		trimRangeId: z.string().min(1),
-	}),
-	z.object({
-		type: z.literal("update_clip_range"),
-		reason: z.string().default(""),
-		clipId: z.string().min(1),
-		sourceStartSec: z.number().nonnegative(),
-		sourceEndSec: z.number().nonnegative().optional(),
-	}),
-	z.object({
-		type: z.literal("duplicate_clip"),
-		reason: z.string().default(""),
-		clipId: z.string().min(1),
-	}),
-	z.object({
-		type: z.literal("move_clip"),
-		reason: z.string().default(""),
-		clipId: z.string().min(1),
-		// ponytail: `insertIndex`, matching the ONE implementation
-		// (`AxcutTimelineOperation` in document/operations.ts, applied by
-		// `applyTimelineOperation`). This schema declared `timelineStartSec`
-		// instead — a second, incompatible contract for the same op name, with no
-		// importer anywhere to notice. Whoever wired the two together next would
-		// have had a parse that accepted what the dispatcher could not run.
-		insertIndex: z.number().int().nonnegative(),
-	}),
-	z.object({
-		type: z.literal("insert_asset_clip"),
-		reason: z.string().default(""),
-		assetId: z.string().min(1),
-		beforeClipId: z.string().min(1).nullable(),
-		afterClipId: z.string().min(1).nullable(),
-		sourceStartSec: z.number().nonnegative(),
-		sourceEndSec: z.number().nonnegative().optional(),
-	}),
-	z.object({
-		type: z.literal("restore_full_timeline"),
-		reason: z.string().default(""),
-	}),
-]);
 
 // OpenScreen additions to the axcut document. Mirrors src/components/video-editor/types.ts
 // (AnnotationRegion / ZoomRegion) — duplicated here so the schema package has no
@@ -1074,20 +992,15 @@ export type AxcutWord = z.infer<typeof wordSchema>;
 export type AxcutTranscriptSegment = z.infer<typeof transcriptSegmentSchema>;
 export type AxcutTranscript = z.infer<typeof transcriptSchema>;
 export type AxcutAsset = z.infer<typeof assetSchema>;
-export type AxcutAssetTranscriptionFailure = z.infer<typeof assetTranscriptionFailureSchema>;
 export type AxcutClip = z.infer<typeof clipSchema>;
 export type AxcutClipCropRegion = z.infer<typeof clipCropRegionSchema>;
-export type AxcutGap = z.infer<typeof gapSchema>;
 export type AxcutTrimRange = z.infer<typeof trimRangeSchema>;
-export type AxcutTimeline = z.infer<typeof timelineSchema>;
-export type AxcutTimelineOperation = z.infer<typeof timelineOperationSchema>;
 export type AxcutAnnotationRegion = z.infer<typeof annotationRegionSchema>;
 export type AxcutZoomRegion = z.infer<typeof zoomRegionSchema>;
 export type AxcutCameraTrack = z.infer<typeof cameraTrackSchema>;
 export type AxcutAudioTrack = z.infer<typeof audioTrackSchema>;
 export type AxcutLegacyEditor = z.infer<typeof legacyEditorSchema>;
 export type AxcutDocument = z.infer<typeof documentSchema>;
-export type AxcutDocumentInput = z.input<typeof documentSchema>;
 export type CreateProjectInput = z.infer<typeof createProjectInputSchema>;
 export type TranscriptLanguageCode = z.infer<typeof transcriptLanguageSchema>;
 /** A real whisper.cpp language code — `TranscriptLanguageCode` minus the "auto" detection sentinel. */

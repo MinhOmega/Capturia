@@ -82,7 +82,8 @@
 		"kinds": {
 			"zoom": "Yakınlaştırma",
 			"speed": "Hız",
-			"annotation": "Açıklama"
+			"annotation": "Açıklama",
+			"audio": "Ses"
 		}
 	},
 	"topbar": {

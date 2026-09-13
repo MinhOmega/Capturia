@@ -308,6 +308,10 @@
 	},
 	"audio": {
 		"outputGain": "Livello di uscita",
+		"autoLevel": "Livello automatico",
+		"autoLevelDone": "Livello di uscita impostato a {{gain}} dB in base alla clip principale.",
+		"autoLevelClamped": "La clip principale richiede più di ±{{limit}} dB: livello di uscita impostato a {{gain}} dB.",
+		"autoLevelFailed": "Impossibile misurare il volume della clip principale.",
 		"help": "Regola il livello di uscita audio. Si applica allo stesso modo nell’anteprima e nell’esportazione.",
 		"reset": "Reimposta audio",
 		"title": "Audio"
@@ -328,6 +332,7 @@
 	"cursor": {
 		"smoothing": "Smussatura",
 		"clickBounce": "Rimbalzo clic",
+		"clickRing": "Evidenziazione clic",
 		"help": "Resa del cursore dalla telemetria registrata: tema, dimensione, smussatura, sfocatura di movimento e rimbalzo al clic.",
 		"clipToBoundsDescription": "Mantiene il cursore all'interno del fotogramma video. Disattiva per lasciare che il cursore superi i bordi — utile quando si esegue zoom o panoramica.",
 		"size": "Dimensione",

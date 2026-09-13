@@ -11,7 +11,8 @@
 		"addSpeed": "添加速度 (S)",
 		"addCameraFullscreen": "添加全屏摄像头 (C)",
 		"splitAtPlayhead": "在播放头处分割片段",
-		"pasteAtPlayhead": "粘贴到播放头处"
+		"pasteAtPlayhead": "粘贴到播放头处",
+		"pasteAttributes": "粘贴属性"
 	},
 	"hints": {
 		"pressZoom": "按 Z 添加缩放",
@@ -96,6 +97,12 @@
 		"addedRoughCutPlural": "已剪掉 {{count}} 段冷场",
 		"noRoughCuts": "未找到冷场",
 		"noRoughCutsDescription": "转录中没有长停顿或语气词，或现有剪切已覆盖这些片段。",
+		"speedUpIdle": "加速空闲片段",
+		"speedUpIdleHint": "在毫无动静的片段上以 3 倍速播放",
+		"addedSpeedUp": "已加速 {{count}} 段空闲",
+		"addedSpeedUpPlural": "已加速 {{count}} 段空闲",
+		"noIdle": "没有可加速的片段",
+		"noIdleDescription": "这段录制中没有光标静止且无人说话的长片段。",
 		"aiEnhanceRequested": "已请求 AI 代理剪除空白片段",
 		"smartCutsWaiting": "正在转录…稍后可用",
 		"smartCutsNeedsTranscript": "需要转录文本",

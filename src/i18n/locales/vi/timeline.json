@@ -11,7 +11,8 @@
 		"addSpeed": "Thêm Tốc độ (S)",
 		"addCameraFullscreen": "Thêm Camera Toàn màn hình (C)",
 		"splitAtPlayhead": "Cắt clip tại đầu phát",
-		"pasteAtPlayhead": "Dán tại đầu phát"
+		"pasteAtPlayhead": "Dán tại đầu phát",
+		"pasteAttributes": "Dán thuộc tính"
 	},
 	"hints": {
 		"pressZoom": "Nhấn Z để thêm thu phóng",
@@ -96,6 +97,12 @@
 		"addedRoughCutPlural": "Đã cắt {{count}} khoảng lặng",
 		"noRoughCuts": "Không tìm thấy khoảng lặng",
 		"noRoughCutsDescription": "Bản chép lời không có khoảng dừng dài hay từ đệm nào, hoặc các đoạn cắt hiện có đã bao phủ chúng.",
+		"speedUpIdle": "Tua nhanh đoạn chờ",
+		"speedUpIdleHint": "Nhân 3× ở những đoạn không có gì xảy ra",
+		"addedSpeedUp": "Đã tua nhanh {{count}} đoạn chờ",
+		"addedSpeedUpPlural": "Đã tua nhanh {{count}} đoạn chờ",
+		"noIdle": "Không có gì để tua nhanh",
+		"noIdleDescription": "Bản ghi này không có đoạn dài nào mà con trỏ đứng yên và không ai nói.",
 		"aiEnhanceRequested": "Đã yêu cầu tác nhân AI cắt thời gian chết",
 		"smartCutsWaiting": "Đang phiên âm… sẵn sàng trong giây lát",
 		"smartCutsNeedsTranscript": "Cần có bản phiên âm",

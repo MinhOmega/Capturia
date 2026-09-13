@@ -11,7 +11,8 @@
 		"addSpeed": "Add Speed (S)",
 		"addCameraFullscreen": "Add Full Camera (C)",
 		"splitAtPlayhead": "Split Clip at Playhead",
-		"pasteAtPlayhead": "Paste at Playhead"
+		"pasteAtPlayhead": "Paste at Playhead",
+		"pasteAttributes": "Paste Attributes"
 	},
 	"hints": {
 		"pressZoom": "Press Z to add zoom",
@@ -96,6 +97,12 @@
 		"addedRoughCutPlural": "Cut {{count}} dead-air stretches",
 		"noRoughCuts": "No dead air found",
 		"noRoughCutsDescription": "No long pause or filler word in the transcript, or existing cuts already cover them.",
+		"speedUpIdle": "Speed up idle time",
+		"speedUpIdleHint": "3× over stretches where nothing happens",
+		"addedSpeedUp": "Sped up {{count}} idle stretch",
+		"addedSpeedUpPlural": "Sped up {{count}} idle stretches",
+		"noIdle": "Nothing to speed up",
+		"noIdleDescription": "This recording has no long stretch where the cursor sits still and nobody is speaking.",
 		"aiEnhanceRequested": "Asked the AI agent to cut the dead time",
 		"smartCutsWaiting": "Transcribing… ready in a moment",
 		"smartCutsNeedsTranscript": "Needs a transcript",

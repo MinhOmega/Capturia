@@ -24,8 +24,8 @@ const READ_END_PADDING_SEC = 0.5;
 const MAX_PEAK_BLOCKS = 24_000;
 const PEAK_BLOCKS_PER_SEC = 200;
 // Upper bound for the duration fallback scan when container metadata is
-// unreliable (MediaRecorder WebM often reports 0/Infinity — see
-// streamingDecoder's validateDuration). Same ceiling as the export scan.
+// unreliable (MediaRecorder WebM often reports 0/Infinity).
+// Same ceiling as the export scan.
 const SCAN_UNBOUNDED_FALLBACK_SEC = 24 * 60 * 60;
 
 /**
@@ -106,9 +106,9 @@ export async function computePeaksFromFileStreaming(
 		}
 		const sampleRate = audioConfig.sampleRate || 48_000;
 
-		// MediaRecorder WebM often reports a missing/bogus container duration
-		// (see streamingDecoder's validateDuration); fall back to a demux-only
-		// packet-timestamp scan so those recordings still get a waveform.
+		// MediaRecorder WebM often reports a missing/bogus container duration;
+		// fall back to a demux-only packet-timestamp scan so those recordings
+		// still get a waveform.
 		let durationSec =
 			Number.isFinite(mediaInfo.duration) && mediaInfo.duration > 0 ? mediaInfo.duration : 0;
 		if (durationSec <= 0) {

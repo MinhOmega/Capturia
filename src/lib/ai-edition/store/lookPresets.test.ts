@@ -40,7 +40,18 @@ const target: AxcutDocument = {
 
 afterEach(() => localStorage.clear());
 
+/** Round-trips a document's look onto a fresh project and reads the ring back. */
+const applyLookRing = (source: AxcutDocument) =>
+	getEditorSettings(applyLook(target, lookFromDocument(source, false))).cursor.clickRing;
+
 describe("applyLook", () => {
+	it("carries the click ring through a look, clamped to 0..1", () => {
+		const source = patchEditorSettings(empty, { cursor: { clickRing: 0.6 } });
+		expect(applyLookRing(source)).toBe(0.6);
+		const wild = patchEditorSettings(empty, { cursor: { clickRing: 9 } });
+		expect(applyLookRing(wild)).toBe(1);
+	});
+
 	it("changes appearance and leaves regions, trims, zooms and crop untouched", () => {
 		const source = patchEditorSettings(empty, {
 			padding: 80,

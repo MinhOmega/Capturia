@@ -256,15 +256,19 @@ const DECLARED: WritePath[] = [
 	// The Edit Clip dialog's Apply: source range and crop composed into ONE save (#355),
 	// where they used to be two writes that overwrote each other.
 	w("src/lib/ai-edition/store/useTimeline.ts", "applyClipEdit", "save", "gesture"),
-	w("src/lib/ai-edition/store/useTimeline.ts", "addAnnotation", "save", "gesture"),
-	w("src/lib/ai-edition/store/useTimeline.ts", "addCameraFullscreen", "save", "gesture"),
-	w("src/lib/ai-edition/store/useTimeline.ts", "addSpeed", "save", "gesture"),
-	w("src/lib/ai-edition/store/useTimeline.ts", "addTrim", "save", "gesture"),
-	// The offline dead-air pass, chosen from the auto-enhance menu. A suggester
-	// writes it, but the user asked for it by clicking — one undo step takes every
-	// cut back out, exactly like the auto-zoom bulk write above.
-	w("src/lib/ai-edition/store/useTimeline.ts", "addTrimsBulk", "save", "gesture"),
-	w("src/lib/ai-edition/store/useTimeline.ts", "addZoom", "save", "gesture"),
+	// The one door every hand edit in that hook now goes through — add/update/remove
+	// for zooms, trims, annotations, speed, camera-fullscreen, clips and audio tracks,
+	// including the offline dead-air pass chosen from the auto-enhance menu (a
+	// suggester writes it, but the user asked by clicking, and one undo step takes
+	// every cut back out). They used to be twenty rows here, each spreading the
+	// document captured in its render closure; they now hand a builder to
+	// `commitDocument`, which reads the store at call time so a concurrent transcript
+	// or probe write is not overwritten. Fewer rows, and a stronger guarantee than
+	// the rows gave: a new action routed through this door is a gesture-triggered
+	// `{ history: true }` save by construction, with nowhere to put a different
+	// answer. An action that needs another trigger cannot use the door — it writes
+	// `saveDocument` itself and lands here as its own row.
+	w("src/lib/ai-edition/store/useTimeline.ts", "commitDocument", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "addZoomsBulk", "save", "gesture"),
 	// The two drag commits. One undo step per gesture, recorded on release and only
 	// if the write lands — `historyBase` carries the pre-drag document.
@@ -275,14 +279,12 @@ const DECLARED: WritePath[] = [
 	w("src/lib/ai-edition/store/useTimeline.ts", "commitAnnotationChange", "state", "unrecorded"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "commitZoomFocus", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "commitZoomFocus", "state", "unrecorded"),
-	w("src/lib/ai-edition/store/useTimeline.ts", "duplicateClip", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "insertClipAt", "save", "gesture"),
-	w("src/lib/ai-edition/store/useTimeline.ts", "moveClip", "save", "gesture"),
 	// Timeline audio tracks (issue #350). Each is a direct user edit — drag or resize
 	// the track (placeAudioTrack), change its payload (updateAudioTrack, which
-	// setAudioTrackGain routes through), or delete it — one undo step apiece.
+	// setAudioTrackGain routes through), or delete it (through the door above) — one
+	// undo step apiece.
 	w("src/lib/ai-edition/store/useTimeline.ts", "placeAudioTrack", "save", "gesture"),
-	w("src/lib/ai-edition/store/useTimeline.ts", "removeAudioTrack", "save", "gesture"),
 	// Three exits, one gesture: the toggle writes the flag alone when there is
 	// nothing to fill, and the flag plus the filled span when there is. Either
 	// way it is one undo step (see setAudioTrackLoop).
@@ -294,25 +296,13 @@ const DECLARED: WritePath[] = [
 	// The round-2 defect: a background duration probe every freshly imported asset
 	// fires, because `addAsset` never populates `durationSec`.
 	w("src/lib/ai-edition/store/useTimeline.ts", "probeAndCorrectClip", "save", "automatic"),
-	w("src/lib/ai-edition/store/useTimeline.ts", "removeClip", "save", "gesture"),
-	w("src/lib/ai-edition/store/useTimeline.ts", "removeRegion", "save", "gesture"),
-	w("src/lib/ai-edition/store/useTimeline.ts", "removeRegions", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "setTrimEntries", "save", "gesture"),
 	// One save, one undo step: cutting a clip in two is one thing the user asked for,
 	// however many rows fan out across the seam.
 	w("src/lib/ai-edition/store/useTimeline.ts", "splitAtPlayhead", "save", "gesture"),
 	// The live halves of the two drags.
 	w("src/lib/ai-edition/store/useTimeline.ts", "updateAnnotationLive", "set", "automatic"),
-	w("src/lib/ai-edition/store/useTimeline.ts", "updateAnnotationSpan", "save", "gesture"),
-	w("src/lib/ai-edition/store/useTimeline.ts", "updateCameraFullscreenSpan", "save", "gesture"),
-	w("src/lib/ai-edition/store/useTimeline.ts", "updateSpeedSpan", "save", "gesture"),
-	w("src/lib/ai-edition/store/useTimeline.ts", "updateSpeedValue", "save", "gesture"),
-	w("src/lib/ai-edition/store/useTimeline.ts", "updateTrim", "save", "gesture"),
-	w("src/lib/ai-edition/store/useTimeline.ts", "updateZoomDepth", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "updateZoomFocusLive", "set", "automatic"),
-	w("src/lib/ai-edition/store/useTimeline.ts", "updateZoomFocusMode", "save", "gesture"),
-	w("src/lib/ai-edition/store/useTimeline.ts", "updateZoomRotation", "save", "gesture"),
-	w("src/lib/ai-edition/store/useTimeline.ts", "updateZoomSpan", "save", "gesture"),
 	// Source-dimension backfill for assets a migration left unprobed. On load, for
 	// every project, whether or not the user touches anything.
 	w("src/lib/ai-edition/store/useTimeline.ts", "useTimeline", "save", "automatic"),

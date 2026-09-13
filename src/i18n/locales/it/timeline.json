@@ -11,7 +11,8 @@
 		"addSpeed": "Aggiungi velocità (S)",
 		"addCameraFullscreen": "Aggiungi Camera a schermo intero (C)",
 		"splitAtPlayhead": "Dividi la clip alla testina",
-		"pasteAtPlayhead": "Incolla alla testina"
+		"pasteAtPlayhead": "Incolla alla testina",
+		"pasteAttributes": "Incolla attributi"
 	},
 	"hints": {
 		"pressZoom": "Premi Z per aggiungere zoom",
@@ -96,6 +97,12 @@
 		"addedRoughCutPlural": "Tagliati {{count}} tempi morti",
 		"noRoughCuts": "Nessun tempo morto trovato",
 		"noRoughCutsDescription": "Nessuna pausa lunga né intercalare nella trascrizione, oppure i tagli esistenti li coprono già.",
+		"speedUpIdle": "Accelera i tempi inattivi",
+		"speedUpIdleHint": "3× sui tratti in cui non succede nulla",
+		"addedSpeedUp": "Accelerato {{count}} tratto inattivo",
+		"addedSpeedUpPlural": "Accelerati {{count}} tratti inattivi",
+		"noIdle": "Niente da accelerare",
+		"noIdleDescription": "Questa registrazione non ha tratti lunghi con il cursore fermo e nessuno che parla.",
 		"aiEnhanceRequested": "Chiesto all'agente IA di tagliare i tempi morti",
 		"smartCutsWaiting": "Trascrizione in corso… disponibile a breve",
 		"smartCutsNeedsTranscript": "Richiede una trascrizione",

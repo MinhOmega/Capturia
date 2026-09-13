@@ -79,10 +79,6 @@ export class LlmConfigStore {
 		}
 	}
 
-	async load(): Promise<void> {
-		this.loadSync();
-	}
-
 	getConfig(): LlmConfig | null {
 		return this.config;
 	}

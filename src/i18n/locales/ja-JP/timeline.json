@@ -11,7 +11,8 @@
 		"addSpeed": "再生速度を追加 (S)",
 		"addCameraFullscreen": "フルスクリーンカメラを追加 (C)",
 		"splitAtPlayhead": "再生ヘッドでクリップを分割",
-		"pasteAtPlayhead": "再生ヘッド位置に貼り付け"
+		"pasteAtPlayhead": "再生ヘッド位置に貼り付け",
+		"pasteAttributes": "属性をペースト"
 	},
 	"hints": {
 		"pressZoom": "Zキーを押してズームを追加",
@@ -96,6 +97,12 @@
 		"addedRoughCutPlural": "無音部分を {{count}} 件カットしました",
 		"noRoughCuts": "無音部分が見つかりません",
 		"noRoughCutsDescription": "文字起こしに長い間やつなぎ言葉がないか、既存のカットがすでにその部分をカバーしています。",
+		"speedUpIdle": "待ち時間を早送り",
+		"speedUpIdleHint": "何も起きない区間を 3 倍速に",
+		"addedSpeedUp": "待ち時間を {{count}} 件早送りしました",
+		"addedSpeedUpPlural": "待ち時間を {{count}} 件早送りしました",
+		"noIdle": "早送りする区間がありません",
+		"noIdleDescription": "この録画には、カーソルが止まったまま誰も話していない長い区間がありません。",
 		"aiEnhanceRequested": "AIエージェントに無音部分のカットを依頼しました",
 		"smartCutsWaiting": "文字起こし中… まもなく使えます",
 		"smartCutsNeedsTranscript": "文字起こしが必要です",

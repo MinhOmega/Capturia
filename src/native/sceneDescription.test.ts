@@ -686,6 +686,51 @@ describe("buildSceneDescription.zoomRegions with an earlier trim", () => {
 	});
 });
 
+// --- determinism --------------------------------------------------------------
+
+describe("buildSceneDescription is deterministic", () => {
+	/**
+	 * The overlay rebuilds this scene and ships it as JSON on every document write —
+	 * a slider frame, a transcript keystroke. Minting a fresh `createId()` for each
+	 * split fragment made two builds of the SAME document differ in bytes, so nothing
+	 * could tell an unchanged scene from a changed one and every write paid for a
+	 * full rebuild plus the IPC. `SceneZoomRegion.id` is documented as stable for the
+	 * same reason: native pairs adjacent regions by it.
+	 */
+	it("gives a region split by a trim the same fragment ids on every build", () => {
+		const doc = makeDoc({
+			assets: [makeAsset({ id: "a", originalPath: "/a.mp4" })],
+			clips: [
+				makeClip({
+					id: "c1",
+					assetId: "a",
+					sourceStartSec: 0,
+					sourceEndSec: 10,
+					timelineStartSec: 0,
+					timelineEndSec: 10,
+				}),
+			],
+			// Kept segments: source [0,2] and [4,10]. The zoom below covers both.
+			timeline: {
+				trimRanges: [
+					{ id: "t1", assetId: "a", startSec: 2, endSec: 4, reason: "", origin: "user" },
+				],
+			},
+			zoomRanges: [
+				makeZoom({ id: "z", startMs: 1000, endMs: 6000, depth: 3, focus: { cx: 0.5, cy: 0.5 } }),
+			],
+		});
+
+		const first = buildSceneDescription(doc);
+		const second = buildSceneDescription(doc);
+
+		// Two fragments: the split is what mints an id at all.
+		expect(first.zoomRegions.length).toBeGreaterThan(1);
+		expect(second.zoomRegions).toEqual(first.zoomRegions);
+		expect(JSON.stringify(second)).toBe(JSON.stringify(first));
+	});
+});
+
 // --- cameraFullscreenRegions -------------------------------------------------
 
 describe("buildSceneDescription.cameraFullscreenRegions", () => {
@@ -997,6 +1042,7 @@ describe("buildSceneDescription.settings mapping", () => {
 				cursorSmoothing: 0.9,
 				cursorMotionBlur: 0.5,
 				cursorClickBounce: 1.5,
+				cursorClickRing: 0.7,
 				cursorClipToBounds: true,
 			},
 		});
@@ -1005,7 +1051,12 @@ describe("buildSceneDescription.settings mapping", () => {
 		expect(cursor.smoothing).toBe(0.9);
 		expect(cursor.motionBlur).toBe(0.5);
 		expect(cursor.clickBounce).toBe(1.5);
+		expect(cursor.clickRing).toBe(0.7);
 		expect(cursor.clipToBounds).toBe(true);
+	});
+
+	it("emits clickRing off for a document that never set it", () => {
+		expect(buildSceneDescription(makeDoc({ legacyEditor: {} })).cursor.clickRing).toBe(0);
 	});
 
 	it("maps show / theme / shape / mirror through to layout+cursor", () => {

@@ -1,10 +1,11 @@
-import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
+import { type ChildProcessWithoutNullStreams, execFile, spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { constants as fsConstants } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { promisify } from "node:util";
 import type { DesktopCapturerSource, Rectangle } from "electron";
 import {
 	app,
@@ -67,6 +68,7 @@ import { approvedExportPaths, batchExportPaths, hasAllowedExportExtension } from
 import { mainT } from "../i18n";
 import { getInstallChannel } from "../install-channel";
 import { RECORDINGS_DIR } from "../main";
+import { type AudioLoudnessResult, measureAudioLoudness } from "../media/audioLoudness";
 import { type AudioPeaksResult, getAudioPeaks } from "../media/audioPeaks";
 import {
 	readCursorRecordingFile as readCursorRecordingFileFrom,
@@ -149,6 +151,9 @@ const nativeMacCaptureEvents = new EventEmitter();
 // there still wins for `openscreen sources`; this is the backstop for everything
 // else that calls get-sources.
 const GET_SOURCES_TIMEOUT_MS = 30_000;
+// The overlay is a local page; if it has not loaded by now it is not going to, and the
+// take is waiting on this handler.
+const COUNTDOWN_OVERLAY_LOAD_TIMEOUT_MS = 3_000;
 
 /**
  * Reject if `work` has not settled within `ms`.
@@ -158,7 +163,7 @@ const GET_SOURCES_TIMEOUT_MS = 30_000;
  * whole available remedy: an unbounded await leaves a caller with no error and no
  * way out, which is strictly worse than a late failure it can report.
  */
-function withDeadline<T>(work: Promise<T>, ms: number, message: string): Promise<T> {
+export function withDeadline<T>(work: Promise<T>, ms: number, message: string): Promise<T> {
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	return Promise.race([
 		work,
@@ -167,6 +172,32 @@ function withDeadline<T>(work: Promise<T>, ms: number, message: string): Promise
 		}),
 	]).finally(() => clearTimeout(timer)) as Promise<T>;
 }
+
+// Recording finalisations (sidecar, remux, manifest, media links) still running. A quit
+// that does not wait for these cuts the write off mid-file, which is how a stopped take
+// ends up with a manifest that names a video the editor cannot open.
+const pendingWrites = new Set<Promise<unknown>>();
+
+/** In-flight recording finalisations, for the quit path to wait on. */
+export function pendingRecordingWrites(): Promise<unknown>[] {
+	return [...pendingWrites];
+}
+
+/** Run a finalisation step so `before-quit` can wait for it. */
+async function trackRecordingWrite<T>(work: () => Promise<T>): Promise<T> {
+	const promise = work();
+	pendingWrites.add(promise);
+	try {
+		return await promise;
+	} finally {
+		pendingWrites.delete(promise);
+	}
+}
+
+// On-disk write streams for in-progress recordings, keyed by output file name. Chunks
+// append as they arrive so the renderer never buffers the full video (#616). Module scope
+// so the quit path can flush what is still open (see `endAll`).
+export const recordingStreams = new RecordingStreamRegistry();
 
 // Paths the user approved via file picker or project load (i.e. outside the default dirs).
 const approvedPaths = new Set<string>();
@@ -256,23 +287,28 @@ function hasAllowedImportMediaExtension(filePath: string): boolean {
 	return hasAllowedImportVideoExtension(filePath) || hasAllowedImportAudioExtension(filePath);
 }
 
-function runProcess(
+const execFileAsync = promisify(execFile);
+
+/** afinfo/afconvert report "no" with a non-zero exit, so execFile's rejection for
+ *  that is folded back into the resolved shape both callers read. A spawn failure
+ *  (string `code`, e.g. ENOENT) still rejects, as it did before. `maxBuffer:
+ *  Infinity` keeps the unbounded output accumulation this used to do by hand. */
+async function runProcess(
 	command: string,
 	args: string[],
 ): Promise<{ code: number | null; stdout: string; stderr: string }> {
-	return new Promise((resolve, reject) => {
-		const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
-		let stdout = "";
-		let stderr = "";
-		child.stdout.on("data", (chunk) => {
-			stdout += chunk.toString();
-		});
-		child.stderr.on("data", (chunk) => {
-			stderr += chunk.toString();
-		});
-		child.on("error", reject);
-		child.on("close", (code) => resolve({ code, stdout, stderr }));
-	});
+	try {
+		const { stdout, stderr } = await execFileAsync(command, args, { maxBuffer: Infinity });
+		return { code: 0, stdout, stderr };
+	} catch (error) {
+		const failure = error as Error & { code?: number | string; stdout?: string; stderr?: string };
+		if (typeof failure.code === "string") throw error;
+		return {
+			code: failure.code ?? null,
+			stdout: failure.stdout ?? "",
+			stderr: failure.stderr ?? "",
+		};
+	}
 }
 
 function parseAfinfoAudioTrackBitrates(output: string): number[] {
@@ -423,7 +459,7 @@ function approveReadableAudioPath(
  * picked, and the assets a loaded project declares (`approveDocumentMedia`). Everything else
  * spends one.
  */
-function readableApprovedPath(filePath?: string | null): string | null {
+export function readableApprovedPath(filePath?: string | null): string | null {
 	const normalizedPath = normalizeVideoSourcePath(filePath);
 	if (!normalizedPath) return null;
 	if (!isPathAllowed(normalizedPath)) return null;
@@ -1163,10 +1199,23 @@ function isWindowsGraphicsCaptureOsSupported() {
 	return Number.isFinite(build) && build >= 19041;
 }
 
+/**
+ * The real `reg.exe`, named absolutely.
+ *
+ * A bare `"reg.exe"` is resolved against `PATH` — and on Windows, `CreateProcess` searches
+ * the current directory first. Anything that can drop a `reg.exe` where Capturia happens to
+ * be running gets to run it with Capturia's privileges instead of the system tool.
+ */
+export const REG_EXE_PATH = path.join(
+	process.env.SystemRoot ?? "C:\\Windows",
+	"System32",
+	"reg.exe",
+);
+
 function queryDirectShowVideoInputRegistry() {
 	return new Promise<string>((resolve) => {
 		const proc = spawn(
-			"reg.exe",
+			REG_EXE_PATH,
 			["query", "HKCR\\CLSID\\{860BB310-5D01-11D0-BD3B-00A0C911CE86}\\Instance", "/s"],
 			{ windowsHide: true },
 		);
@@ -1923,6 +1972,41 @@ export async function exportDiagnosticFile(payload: {
 	}
 }
 
+/**
+ * Rebuild `desktopCapturer.getSources`'s options from what the renderer is allowed to ask
+ * for, rather than forwarding its object. Two reasons: a thumbnail is a bitmap this process
+ * allocates and then base64s into the reply, so an unclamped `thumbnailSize` is a
+ * main-process OOM the renderer can request (`{ width: 1e6, height: 1e6 }` is ~4 TB), and a
+ * `types` entry outside `screen`/`window` is not something any caller here needs.
+ *
+ * 1024 is comfortably above the largest thumbnail any picker asks for (320x180).
+ */
+const MAX_THUMBNAIL_PX = 1024;
+
+function clampThumbnailPx(value: unknown, fallback: number): number {
+	const size = Math.trunc(Number(value));
+	if (!Number.isFinite(size)) return fallback;
+	return Math.min(MAX_THUMBNAIL_PX, Math.max(0, size));
+}
+
+function sanitizeGetSourcesOptions(opts: unknown): Electron.SourcesOptions {
+	const raw = (opts ?? {}) as Partial<Electron.SourcesOptions>;
+	const types = (Array.isArray(raw.types) ? raw.types : []).filter(
+		(type): type is "screen" | "window" => type === "screen" || type === "window",
+	);
+	const thumbnailSize: Partial<Electron.Size> = raw.thumbnailSize ?? {};
+	return {
+		// Electron rejects an empty list, and every caller here wants both.
+		types: types.length > 0 ? types : ["screen", "window"],
+		// 150 is Electron's own default, kept for a caller that names no size.
+		thumbnailSize: {
+			width: clampThumbnailPx(thumbnailSize.width, 150),
+			height: clampThumbnailPx(thumbnailSize.height, 150),
+		},
+		fetchWindowIcons: raw.fetchWindowIcons === true,
+	};
+}
+
 export function registerIpcHandlers(
 	createEditorWindow: () => void,
 	createSourceSelectorWindow: () => BrowserWindow,
@@ -1982,7 +2066,8 @@ export function registerIpcHandlers(
 		}
 	}
 
-	ipcMain.handle("get-sources", async (_, opts) => {
+	ipcMain.handle("get-sources", async (_, rawOpts) => {
+		const opts = sanitizeGetSourcesOptions(rawOpts);
 		// desktopCapturer.getSources can never settle where the GL stack cannot be
 		// reached -- a container, a CI runner, a host whose ANGLE fails to
 		// initialise. Bounded here rather than per-caller because every caller has
@@ -2015,14 +2100,14 @@ export function registerIpcHandlers(
 				// The deadline error carries its own wording.
 				const reason = error instanceof Error ? error.message : String(error);
 				console.info(
-					`[get-sources] failed after ${Date.now() - startedAt}ms (types=${(opts?.types ?? []).join(",")}): ${reason}`,
+					`[get-sources] failed after ${Date.now() - startedAt}ms (types=${opts.types.join(",")}): ${reason}`,
 				);
 			}
 			throw error;
 		}
 		if (diagnostic) {
 			console.info(
-				`[get-sources] returned ${sources.length} source(s) in ${Date.now() - startedAt}ms (types=${(opts?.types ?? []).join(",")})`,
+				`[get-sources] returned ${sources.length} source(s) in ${Date.now() - startedAt}ms (types=${opts.types.join(",")})`,
 			);
 		}
 		lastEnumeratedSources = new Map(sources.map((source) => [source.id, source]));
@@ -2370,10 +2455,20 @@ export function registerIpcHandlers(
 
 		// Wait for the first frame before showing, else Chromium flashes a black
 		// rectangle because it hasn't rendered any pixels yet.
+		//
+		// `did-finish-load`, not `ready-to-show`: that one fires once per load and
+		// `isLoading()` only flips on did-finish-load, so an overlay that had already
+		// emitted it left this awaiting an event that was never coming again — and the
+		// countdown never appeared. Bounded too, because a load that FAILS emits neither:
+		// a black flash is better than a recording that never starts.
 		if (overlayWindow.webContents.isLoading()) {
-			await new Promise<void>((resolve) => {
-				overlayWindow.once("ready-to-show", resolve);
-			});
+			await withDeadline(
+				new Promise<void>((resolve) => {
+					overlayWindow.webContents.once("did-finish-load", () => resolve());
+				}),
+				COUNTDOWN_OVERLAY_LOAD_TIMEOUT_MS,
+				"Countdown overlay did not finish loading",
+			).catch((error) => console.warn("[countdown-overlay]", error));
 		}
 
 		if (!overlayWindow.isVisible()) {
@@ -2660,10 +2755,12 @@ export function registerIpcHandlers(
 			// session that produced the pixels, so there is no separate sampler
 			// to stop and no clock offset to correct — the two are one recording.
 			if (cursorCaptureMode === "editable-overlay" && result.cursor.samples.length > 0) {
-				await fs.writeFile(
-					`${result.path}.cursor.json`,
-					JSON.stringify(result.cursor, null, 2),
-					"utf-8",
+				await trackRecordingWrite(() =>
+					fs.writeFile(
+						`${result.path}.cursor.json`,
+						JSON.stringify(result.cursor, null, 2),
+						"utf-8",
+					),
 				);
 			}
 
@@ -2679,8 +2776,10 @@ export function registerIpcHandlers(
 				path.dirname(result.path),
 				`${path.parse(result.path).name}${RECORDING_SESSION_SUFFIX}`,
 			);
-			await fs.writeFile(sessionManifestPath, JSON.stringify(session_, null, 2), "utf-8");
-			await registerRecordingMediaLinks(result.path, { cursorCaptureMode });
+			await trackRecordingWrite(async () => {
+				await fs.writeFile(sessionManifestPath, JSON.stringify(session_, null, 2), "utf-8");
+				await registerRecordingMediaLinks(result.path, { cursorCaptureMode });
+			});
 
 			console.info("[native-linux] capture stored", {
 				path: result.path,
@@ -3332,7 +3431,7 @@ export function registerIpcHandlers(
 			if (cursorCaptureMode === "editable-overlay") {
 				compactPendingCursorTelemetryPauseRanges(nativeWindowsPauseRanges);
 				shiftPendingCursorTelemetry(nativeWindowsCursorOffsetMs);
-				await writePendingCursorTelemetry(screenVideoPath);
+				await trackRecordingWrite(() => writePendingCursorTelemetry(screenVideoPath));
 			}
 			let webcamVideoPath: string | undefined;
 			if (preferredWebcamPath) {
@@ -3366,8 +3465,10 @@ export function registerIpcHandlers(
 				path.dirname(screenVideoPath),
 				`${path.parse(screenVideoPath).name}${RECORDING_SESSION_SUFFIX}`,
 			);
-			await fs.writeFile(sessionManifestPath, JSON.stringify(session, null, 2), "utf-8");
-			await registerRecordingMediaLinks(screenVideoPath, { webcamVideoPath, cursorCaptureMode });
+			await trackRecordingWrite(async () => {
+				await fs.writeFile(sessionManifestPath, JSON.stringify(session, null, 2), "utf-8");
+				await registerRecordingMediaLinks(screenVideoPath, { webcamVideoPath, cursorCaptureMode });
+			});
 
 			return {
 				success: true,
@@ -3438,7 +3539,7 @@ export function registerIpcHandlers(
 			if (cursorCaptureMode === "editable-overlay") {
 				compactPendingCursorTelemetryPauseRanges(nativeMacPauseRanges);
 				shiftPendingCursorTelemetry(nativeMacCursorOffsetMs);
-				await writePendingCursorTelemetry(screenVideoPath);
+				await trackRecordingWrite(() => writePendingCursorTelemetry(screenVideoPath));
 			}
 
 			const session: RecordingSession = {
@@ -3453,8 +3554,10 @@ export function registerIpcHandlers(
 				path.dirname(screenVideoPath),
 				`${path.parse(screenVideoPath).name}${RECORDING_SESSION_SUFFIX}`,
 			);
-			await fs.writeFile(sessionManifestPath, JSON.stringify(session, null, 2), "utf-8");
-			await registerRecordingMediaLinks(screenVideoPath, { cursorCaptureMode });
+			await trackRecordingWrite(async () => {
+				await fs.writeFile(sessionManifestPath, JSON.stringify(session, null, 2), "utf-8");
+				await registerRecordingMediaLinks(screenVideoPath, { cursorCaptureMode });
+			});
 
 			return {
 				success: true,
@@ -3482,11 +3585,6 @@ export function registerIpcHandlers(
 		}
 	});
 
-	// On-disk write streams for in-progress recordings, keyed by output file name.
-	// Chunks append as they arrive so the renderer never buffers the full video (#616).
-	// Declared here because both the webcam attach below and store-recorded-session
-	// finalize through the same registry.
-	const recordingStreams = new RecordingStreamRegistry();
 	registerRecordingStreamHandlers(ipcMain, recordingStreams, resolveRecordingOutputPath);
 
 	/** A take file's path at stop: where its stream was opened, if it streamed — never
@@ -3513,90 +3611,85 @@ export function registerIpcHandlers(
 		payload: AttachNativeMacWebcamRecordingInput,
 	) => {
 		try {
-			{
-				const screenVideoPath = normalizeVideoSourcePath(payload.screenVideoPath);
-				if (!screenVideoPath || !isWithinRecordingRoots(screenVideoPath)) {
-					return {
-						success: false,
-						error: `Native ${platformLabel} webcam attachment requires a recording output path.`,
-					};
-				}
-
-				await fs.access(screenVideoPath, fsConstants.R_OK);
-
-				if (!payload.webcam?.fileName) {
-					return {
-						success: false,
-						error: `Native ${platformLabel} webcam attachment is missing video data.`,
-					};
-				}
-
-				const webcamVideoPath = takeFilePath(
-					payload.webcam.fileName,
-					path.dirname(screenVideoPath),
-				);
-				// A streamed webcam arrives with an empty buffer: its bytes are already on
-				// disk, so close the stream and keep the file rather than writing it here.
-				// Nothing multi-gigabyte crosses IPC or gets flattened into one Buffer (#253).
-				const webcamStreamed = await finalizeRecordingFile(
-					recordingStreams,
-					payload.webcam.fileName,
-					webcamVideoPath,
-					payload.webcam.videoData,
-				);
-				// Mirrors finalizeRecordingFile's own condition, so this fires exactly when
-				// it wrote nothing and the session would point at a file that isn't there.
-				if (
-					!webcamStreamed &&
-					!(payload.webcam.videoData && payload.webcam.videoData.byteLength > 0)
-				) {
-					return {
-						success: false,
-						error: `Native ${platformLabel} webcam attachment is missing video data.`,
-					};
-				}
-				// Streamed files lack the WebM Duration header, which the editor needs to
-				// scale its timeline. Best-effort: a failed repair leaves the clip intact.
-				if (webcamStreamed && isValidDurationMs(payload.durationMs)) {
-					await repairRecordingContainer(webcamVideoPath, payload.durationMs);
-				}
-
-				const createdAt =
-					typeof payload.recordingId === "number" && Number.isFinite(payload.recordingId)
-						? payload.recordingId
-						: Date.now();
-				const cursorCaptureMode = normalizeCursorCaptureMode(payload.cursorCaptureMode);
-				const webcamOffsetMs = Number.isFinite(payload.webcamOffsetMs)
-					? payload.webcamOffsetMs
-					: undefined;
-				const session: RecordingSession = {
-					screenVideoPath,
-					webcamVideoPath,
-					createdAt,
-					...(webcamOffsetMs !== undefined ? { webcamOffsetMs } : {}),
-					...(cursorCaptureMode ? { cursorCaptureMode } : {}),
-				};
-				setCurrentRecordingSessionState(session);
-				currentProjectPath = null;
-
-				const sessionManifestPath = path.join(
-					path.dirname(screenVideoPath),
-					`${path.parse(screenVideoPath).name}${RECORDING_SESSION_SUFFIX}`,
-				);
-				await fs.writeFile(sessionManifestPath, JSON.stringify(session, null, 2), "utf-8");
-				await registerRecordingMediaLinks(screenVideoPath, {
-					webcamVideoPath,
-					webcamOffsetMs,
-					cursorCaptureMode,
-				});
-
+			const screenVideoPath = normalizeVideoSourcePath(payload.screenVideoPath);
+			if (!screenVideoPath || !isWithinRecordingRoots(screenVideoPath)) {
 				return {
-					success: true,
-					path: screenVideoPath,
-					session,
-					message: `Native ${platformLabel} webcam recording attached successfully`,
+					success: false,
+					error: `Native ${platformLabel} webcam attachment requires a recording output path.`,
 				};
 			}
+
+			await fs.access(screenVideoPath, fsConstants.R_OK);
+
+			if (!payload.webcam?.fileName) {
+				return {
+					success: false,
+					error: `Native ${platformLabel} webcam attachment is missing video data.`,
+				};
+			}
+
+			const webcamVideoPath = takeFilePath(payload.webcam.fileName, path.dirname(screenVideoPath));
+			// A streamed webcam arrives with an empty buffer: its bytes are already on
+			// disk, so close the stream and keep the file rather than writing it here.
+			// Nothing multi-gigabyte crosses IPC or gets flattened into one Buffer (#253).
+			const webcamStreamed = await finalizeRecordingFile(
+				recordingStreams,
+				payload.webcam.fileName,
+				webcamVideoPath,
+				payload.webcam.videoData,
+			);
+			// Mirrors finalizeRecordingFile's own condition, so this fires exactly when
+			// it wrote nothing and the session would point at a file that isn't there.
+			if (
+				!webcamStreamed &&
+				!(payload.webcam.videoData && payload.webcam.videoData.byteLength > 0)
+			) {
+				return {
+					success: false,
+					error: `Native ${platformLabel} webcam attachment is missing video data.`,
+				};
+			}
+			// Streamed files lack the WebM Duration header, which the editor needs to
+			// scale its timeline. Best-effort: a failed repair leaves the clip intact.
+			if (webcamStreamed && isValidDurationMs(payload.durationMs)) {
+				await repairRecordingContainer(webcamVideoPath, payload.durationMs);
+			}
+
+			const createdAt =
+				typeof payload.recordingId === "number" && Number.isFinite(payload.recordingId)
+					? payload.recordingId
+					: Date.now();
+			const cursorCaptureMode = normalizeCursorCaptureMode(payload.cursorCaptureMode);
+			const webcamOffsetMs = Number.isFinite(payload.webcamOffsetMs)
+				? payload.webcamOffsetMs
+				: undefined;
+			const session: RecordingSession = {
+				screenVideoPath,
+				webcamVideoPath,
+				createdAt,
+				...(webcamOffsetMs !== undefined ? { webcamOffsetMs } : {}),
+				...(cursorCaptureMode ? { cursorCaptureMode } : {}),
+			};
+			setCurrentRecordingSessionState(session);
+			currentProjectPath = null;
+
+			const sessionManifestPath = path.join(
+				path.dirname(screenVideoPath),
+				`${path.parse(screenVideoPath).name}${RECORDING_SESSION_SUFFIX}`,
+			);
+			await fs.writeFile(sessionManifestPath, JSON.stringify(session, null, 2), "utf-8");
+			await registerRecordingMediaLinks(screenVideoPath, {
+				webcamVideoPath,
+				webcamOffsetMs,
+				cursorCaptureMode,
+			});
+
+			return {
+				success: true,
+				path: screenVideoPath,
+				session,
+				message: `Native ${platformLabel} webcam recording attached successfully`,
+			};
 		} catch (error) {
 			console.error(`Failed to attach native ${platformLabel} webcam recording:`, error);
 			return {
@@ -3706,7 +3799,7 @@ export function registerIpcHandlers(
 			if (webcamStreamed && webcamVideoPath) {
 				patches.push(repairRecordingContainer(webcamVideoPath, payload.durationMs));
 			}
-			await Promise.all(patches);
+			await trackRecordingWrite(() => Promise.all(patches));
 		}
 
 		const webcamOffsetMs =
@@ -3728,19 +3821,20 @@ export function registerIpcHandlers(
 		// fresh-take auto-zoom reads that file the moment it imports -- an empty read there
 		// is indistinguishable from a take with no dwell, so the zooms are silently
 		// skipped.
-		await writePendingCursorTelemetry(screenVideoPath);
-		setCurrentRecordingSessionState(session);
-		currentProjectPath = null;
-
-		const sessionManifestPath = path.join(
-			path.dirname(screenVideoPath),
-			`${path.parse(payload.screen.fileName).name}${RECORDING_SESSION_SUFFIX}`,
-		);
-		await fs.writeFile(sessionManifestPath, JSON.stringify(session, null, 2), "utf-8");
-		await registerRecordingMediaLinks(screenVideoPath, {
-			webcamVideoPath,
-			webcamOffsetMs,
-			cursorCaptureMode,
+		await trackRecordingWrite(async () => {
+			await writePendingCursorTelemetry(screenVideoPath);
+			setCurrentRecordingSessionState(session);
+			currentProjectPath = null;
+			const sessionManifestPath = path.join(
+				path.dirname(screenVideoPath),
+				`${path.parse(payload.screen.fileName).name}${RECORDING_SESSION_SUFFIX}`,
+			);
+			await fs.writeFile(sessionManifestPath, JSON.stringify(session, null, 2), "utf-8");
+			await registerRecordingMediaLinks(screenVideoPath, {
+				webcamVideoPath,
+				webcamOffsetMs,
+				cursorCaptureMode,
+			});
 		});
 
 		return {
@@ -3976,11 +4070,6 @@ export function registerIpcHandlers(
 		}
 	});
 
-	// Return base path for assets so renderer can resolve file:// paths in production
-	ipcMain.handle("get-asset-base-path", () => {
-		return resolveAssetBasePath();
-	});
-
 	ipcMain.handle(
 		"pick-export-save-path",
 		async (_, fileName: string, exportFolder?: string, aspectTokens?: unknown) => {
@@ -4109,7 +4198,8 @@ export function registerIpcHandlers(
 					filters: [
 						{
 							name: mainT("dialogs", "fileDialogs.videoFiles"),
-							extensions: ["webm", "mp4", "mov", "avi", "mkv", "m4v", "wmv", "flv", "ts"],
+							// Derived from the gate that validates the pick, so the two cannot drift.
+							extensions: [...ALLOWED_IMPORT_VIDEO_EXTENSIONS].map((e) => e.slice(1)),
 						},
 						{ name: mainT("dialogs", "fileDialogs.allFiles"), extensions: ["*"] },
 					],
@@ -4159,7 +4249,7 @@ export function registerIpcHandlers(
 					filters: [
 						{
 							name: mainT("dialogs", "fileDialogs.audioFiles"),
-							extensions: ["mp3", "wav", "m4a", "aac", "flac", "ogg", "opus"],
+							extensions: [...ALLOWED_IMPORT_AUDIO_EXTENSIONS].map((e) => e.slice(1)),
 						},
 						{ name: mainT("dialogs", "fileDialogs.allFiles"), extensions: ["*"] },
 					],
@@ -4225,6 +4315,14 @@ export function registerIpcHandlers(
 	});
 
 	ipcMain.handle("reveal-in-folder", async (_, filePath: string) => {
+		// Reveal opens a file manager on whatever it is handed, so the renderer must not
+		// name it freely. The only two things it ever reveals are an export whose
+		// destination the user chose and a recording — which is exactly the union of the
+		// two approval sets, and nothing else on the machine.
+		if (!readableApprovedPath(filePath) && !approvedExportPaths.isApproved(filePath)) {
+			console.warn("Refused to reveal an unapproved path:", filePath);
+			return { success: false, error: "Path is not approved" };
+		}
 		try {
 			// showItemInFolder returns nothing, it throws on error
 			shell.showItemInFolder(filePath);
@@ -4324,6 +4422,25 @@ export function registerIpcHandlers(
 			} catch (error) {
 				// A clip with no audio track lands here. Degrade quietly: the renderer
 				// draws no waveform, which is correct, and logs its own warning.
+				return { success: false, message: String(error) };
+			}
+		},
+	);
+
+	// Integrated loudness of a clip (see media/audioLoudness), for the Audio pane's
+	// Auto-level button. `lufs: null` means "no native ffmpeg here" — the pane hides
+	// the button; `success: false` means ffmpeg ran and found nothing to measure.
+	ipcMain.handle(
+		"measure-audio-loudness",
+		async (_, filePath: string): Promise<AudioLoudnessResult> => {
+			// Same approval gate as every other read of a renderer-supplied path.
+			const normalizedPath = readableApprovedPath(filePath);
+			if (!normalizedPath) {
+				return { success: false, message: "File path is not approved" };
+			}
+			try {
+				return { success: true, lufs: await measureAudioLoudness(normalizedPath) };
+			} catch (error) {
 				return { success: false, message: String(error) };
 			}
 		},
@@ -4850,6 +4967,7 @@ export function registerIpcHandlers(
 		resolveAssetBasePath,
 		resolveVideoPath: (videoPath?: string | null) =>
 			normalizeVideoSourcePath(videoPath ?? currentVideoPath),
+		readableApprovedPath,
 		loadCursorRecordingData: readCursorRecordingFile,
 		loadCursorTelemetry: readCursorTelemetryFile,
 		// compositor view's createView needs the renderer-owning
@@ -4875,10 +4993,6 @@ export function registerIpcHandlers(
 			runChat(projectId, sessionId, message, getAiEditionLlmConfig(), document, sink, {
 				cursor: agentCursorTelemetryReader,
 			}),
-		undoAiEditionToolBatch: (_projectId, _sessionId) => ({
-			success: false,
-			error: "Per-tool-batch undo retired in favor of per-message rewind.",
-		}),
 		rewindToMessage: (projectId, sessionId, messageId) =>
 			rewindToMessage(projectId, sessionId, messageId),
 		compactNow: (projectId, sessionId) =>

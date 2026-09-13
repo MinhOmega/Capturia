@@ -308,6 +308,10 @@
 	},
 	"audio": {
 		"outputGain": "Output level",
+		"autoLevel": "Auto-level",
+		"autoLevelDone": "Output level set to {{gain}} dB from the main clip.",
+		"autoLevelClamped": "The main clip needs more than ±{{limit}} dB — output level set to {{gain}} dB.",
+		"autoLevelFailed": "Could not measure the main clip's loudness.",
 		"help": "Adjust the audio output level. It applies identically in the preview and the export.",
 		"reset": "Reset audio",
 		"title": "Audio"
@@ -328,6 +332,7 @@
 	"cursor": {
 		"smoothing": "Smoothing",
 		"clickBounce": "Click Bounce",
+		"clickRing": "Click Highlight",
 		"help": "Cursor rendering from the recorded telemetry: theme, size, smoothing, motion blur, and click-bounce emphasis.",
 		"clipToBoundsDescription": "Keeps the cursor inside the video frame. Turn off to let the cursor extend past the edges - useful when zoomed in or panned.",
 		"size": "Size",

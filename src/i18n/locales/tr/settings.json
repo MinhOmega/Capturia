@@ -308,6 +308,10 @@
 	},
 	"audio": {
 		"outputGain": "Çıkış seviyesi",
+		"autoLevel": "Otomatik seviye",
+		"autoLevelDone": "Çıkış seviyesi ana klibe göre {{gain}} dB olarak ayarlandı.",
+		"autoLevelClamped": "Ana klip ±{{limit}} dB'den fazlasını gerektiriyor — çıkış seviyesi {{gain}} dB olarak ayarlandı.",
+		"autoLevelFailed": "Ana klibin ses yüksekliği ölçülemedi.",
 		"help": "Ses çıkış seviyesini ayarlayın. Önizlemede ve dışa aktarmada aynı şekilde uygulanır.",
 		"reset": "Sesi sıfırla",
 		"title": "Ses"
@@ -328,6 +332,7 @@
 	"cursor": {
 		"smoothing": "Yumuşatma",
 		"clickBounce": "Tıklama Sıçraması",
+		"clickRing": "Tıklama Vurgusu",
 		"help": "Kaydedilen telemetriden imleç çizimi: tema, boyut, yumuşatma, hareket bulanıklığı ve tıklama sıçraması.",
 		"clipToBoundsDescription": "İmleci video kare içinde tutar. İmlecin kenarları aşmasına izin vermek için kapatın — yakınlaştırma veya kaydırma yapılırken kullanışlıdır.",
 		"size": "Boyut",

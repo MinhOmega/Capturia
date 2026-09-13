@@ -96,7 +96,6 @@ export async function transcribeAsset(
 	// has no audio" is a verdict, and re-deriving it in the renderer would buy the same
 	// answer for the price of the decode this exists to avoid.
 	const result = await transcribeSourceFileToSegments(asset.originalPath, {
-		trimRegions: [],
 		signal: options.signal,
 		language: forcedLanguage,
 		onStatus: forwardStatus,
@@ -108,7 +107,6 @@ export async function transcribeAsset(
 		});
 		options.onStatus?.({ phase: "transcribing" });
 		return transcribeMono16kToSegments(audioResult.samples, {
-			trimRegions: [],
 			signal: options.signal,
 			language: forcedLanguage,
 			onStatus: forwardStatus,

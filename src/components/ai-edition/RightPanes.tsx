@@ -3031,9 +3031,62 @@ export function LayoutPane() {
 
 // ─── Audio ────────────────────────────────────────────────────────
 
+/** Where speech is expected to sit. The same target the streaming platforms
+ *  normalise to, and what "sounds like every other screen recording" means. */
+const AUTO_LEVEL_TARGET_LUFS = -16;
+
 export function AudioPane() {
 	const ts = useScopedT("settings");
 	const { settings, set, setLive, commit, hasDocument } = useEditorSettings();
+	const document = useProjectStore((s) => s.document);
+	// v1 measures the PRIMARY asset only — a timeline mixing takes at different levels
+	// gets one gain, from the take the project is about, and the toast says so.
+	const primaryAsset = document
+		? (document.assets.find((a) => a.id === document.project.primaryAssetId) ?? document.assets[0])
+		: null;
+	// Hidden, not disabled, when the host cannot measure at all: no preload bridge (the
+	// browser shim) or no ffmpeg in main, which the first call reports as `lufs: null`.
+	const [measurable, setMeasurable] = useState(true);
+	const [measuring, setMeasuring] = useState(false);
+	// A container with no audio track is a permanent verdict on this file
+	// (`assetTranscriptionFailureSchema`), so there is nothing to level.
+	const noAudio =
+		primaryAsset?.transcriptionFailure?.kind === "no-audio" || !primaryAsset?.originalPath;
+
+	const autoLevel = async () => {
+		const filePath = primaryAsset?.originalPath;
+		if (!filePath) return;
+		setMeasuring(true);
+		try {
+			const result = await window.electronAPI?.measureAudioLoudness?.(filePath);
+			if (!result?.success) {
+				// Never the raw ffmpeg stderr: issue #628 is what that reads like.
+				toast.error(ts("audio.autoLevelFailed"));
+				return;
+			}
+			if (result.lufs == null) {
+				setMeasurable(false);
+				return;
+			}
+			const wanted = AUTO_LEVEL_TARGET_LUFS - result.lufs;
+			// Rounded to the slider's own 0.5 dB step so the number in the toast is the
+			// number the slider shows.
+			const gainDb =
+				Math.round(Math.min(AUDIO_GAIN_DB_LIMIT, Math.max(-AUDIO_GAIN_DB_LIMIT, wanted)) * 2) / 2;
+			// One write, one undo step — `set` is the same writer the Reset button uses, so
+			// no new row in `documentWriteAudit`.
+			await set({ audioGainDb: gainDb });
+			const gain = gainDb.toFixed(1);
+			toast.success(
+				Math.abs(wanted) > AUDIO_GAIN_DB_LIMIT
+					? ts("audio.autoLevelClamped", { gain, limit: AUDIO_GAIN_DB_LIMIT })
+					: ts("audio.autoLevelDone", { gain }),
+			);
+		} finally {
+			setMeasuring(false);
+		}
+	};
+
 	return (
 		<Pane title={ts("audio.title")} icon={<AudioLines size={14} />} helpText={ts("audio.help")}>
 			<div className={styles.sliderGrid}>
@@ -3050,6 +3103,16 @@ export function AudioPane() {
 					onCommit={() => void commit()}
 				/>
 			</div>
+			{measurable && typeof window.electronAPI?.measureAudioLoudness === "function" ? (
+				<button
+					type="button"
+					className={styles.secondaryBtn}
+					disabled={!hasDocument || noAudio || measuring}
+					onClick={() => void autoLevel()}
+				>
+					{ts("audio.autoLevel")}
+				</button>
+			) : null}
 			<button
 				type="button"
 				className={styles.secondaryBtn}
@@ -3423,6 +3486,23 @@ export function CursorPane() {
 							setLive({ cursor: { clickBounce: v / 10 } });
 							if (isNativeCompositorActive()) {
 								setNativeParam("cursorClickBounce", v / 10);
+							}
+						}}
+						onCommit={() => void commit()}
+					/>
+				) : null}
+				{supportsCursorClickEffects() ? (
+					<SliderCell
+						label={ts("cursor.clickRing")}
+						value={settings.cursor.clickRing * 100}
+						min={0}
+						max={100}
+						suffix="%"
+						disabled={!hasDocument}
+						onChange={(v) => {
+							setLive({ cursor: { clickRing: v / 100 } });
+							if (isNativeCompositorActive()) {
+								setNativeParam("cursorClickRing", v / 100);
 							}
 						}}
 						onCommit={() => void commit()}

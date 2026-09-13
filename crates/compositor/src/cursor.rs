@@ -193,6 +193,24 @@ impl CursorTrack {
         }
     }
 
+    /// Progression 0..1 de l'anneau de clic au temps `t`, ou None hors fenêtre.
+    ///
+    /// Même règle que `bounce` : seul le clic le plus récent précédant `t` compte, un
+    /// double-clic relance donc l'anneau au lieu d'en superposer deux.
+    pub fn ring(&self, t: f32) -> Option<f32> {
+        const ANIM_S: f32 = 0.35;
+        let mut last_tc: Option<f32> = None;
+        for &tc in &self.clicks {
+            if tc <= t {
+                last_tc = Some(tc);
+            } else {
+                break;
+            }
+        }
+        let elapsed = (t - last_tc?) / ANIM_S;
+        (elapsed < 1.0).then_some(elapsed)
+    }
+
     /// Piste repositionnée par un ressort-amortisseur (parité `cursorPathSmoothing.ts` :
     /// resample à 240 Hz + intégration semi-implicite d'Euler). `factor` 0..1 = valeur brute
     /// du slider (0 = passthrough, retourne un clone). Les clics restent sur leurs instants
@@ -280,6 +298,26 @@ mod tests {
         assert_eq!(track.type_at(0.9), Some("arrow"), "tient jusqu'à la suivante");
         assert_eq!(track.type_at(1.2), Some("text"));
         assert_eq!(track.type_at(99.0), Some("pointer"), "la dernière tient jusqu'à la fin");
+    }
+
+    /// L'anneau de clic vit 350 ms et suit la même règle que le bounce : seul le clic le
+    /// plus récent compte, un clic plus ancien n'a plus aucun effet.
+    #[test]
+    fn ring_window_and_latest_click_only() {
+        let track = CursorTrack::new(
+            vec![(0.0, 0.0, 0.0), (2.0, 1.0, 1.0)],
+            vec![0.5, 1.0],
+            vec![],
+        );
+
+        assert_eq!(track.ring(0.4), None, "avant le premier clic");
+        assert_eq!(track.ring(0.5), Some(0.0), "à l'instant du clic");
+        let mid = track.ring(0.675).expect("dans la fenêtre");
+        assert!((mid - 0.5).abs() < 1e-5, "mi-fenêtre = 0.5, got {mid}");
+        assert_eq!(track.ring(0.86), None, "au-delà de 350 ms");
+        // Le second clic relance : à 1.0 il repart de 0, pas la queue du premier.
+        assert_eq!(track.ring(1.0), Some(0.0), "le clic le plus récent relance l'anneau");
+        assert_eq!(track.ring(99.0), None, "un vieux clic n'a plus d'effet");
     }
 
     /// Le lissage déplace la trajectoire, pas la chronologie : les états doivent survivre

@@ -11,7 +11,8 @@
 		"addSpeed": "Изменить скорость (S)",
 		"addCameraFullscreen": "Добавить камеру на весь экран (C)",
 		"splitAtPlayhead": "Разрезать клип по позиции воспроизведения",
-		"pasteAtPlayhead": "Вставить в позицию воспроизведения"
+		"pasteAtPlayhead": "Вставить в позицию воспроизведения",
+		"pasteAttributes": "Вставить свойства"
 	},
 	"hints": {
 		"pressZoom": "Нажмите Z для добавления масштабирования",
@@ -96,6 +97,12 @@
 		"addedRoughCutPlural": "Вырезано {{count}} пустот",
 		"noRoughCuts": "Пустоты не найдены",
 		"noRoughCutsDescription": "В расшифровке нет длинных пауз и слов-паразитов, либо существующие вырезки уже их покрывают.",
+		"speedUpIdle": "Ускорить простои",
+		"speedUpIdleHint": "3× на участках, где ничего не происходит",
+		"addedSpeedUp": "Ускорен {{count}} простой",
+		"addedSpeedUpPlural": "Ускорено {{count}} простоев",
+		"noIdle": "Ускорять нечего",
+		"noIdleDescription": "В этой записи нет длинных участков, где курсор стоит на месте и никто не говорит.",
 		"aiEnhanceRequested": "Агенту ИИ поручено вырезать паузы",
 		"smartCutsWaiting": "Идёт расшифровка… скоро будет готово",
 		"smartCutsNeedsTranscript": "Нужна расшифровка",

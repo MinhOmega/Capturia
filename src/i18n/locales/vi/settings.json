@@ -308,6 +308,10 @@
 	},
 	"audio": {
 		"outputGain": "Mức đầu ra",
+		"autoLevel": "Tự động cân mức",
+		"autoLevelDone": "Đã đặt mức đầu ra thành {{gain}} dB theo clip chính.",
+		"autoLevelClamped": "Clip chính cần hơn ±{{limit}} dB — đã đặt mức đầu ra thành {{gain}} dB.",
+		"autoLevelFailed": "Không thể đo độ lớn của clip chính.",
 		"help": "Điều chỉnh mức đầu ra của âm thanh. Nó được áp dụng giống hệt nhau trong bản xem trước và khi xuất.",
 		"reset": "Đặt lại âm thanh",
 		"title": "Âm thanh"
@@ -328,6 +332,7 @@
 	"cursor": {
 		"smoothing": "Làm mượt",
 		"clickBounce": "Nảy khi nhấp",
+		"clickRing": "Vòng sáng khi nhấp",
 		"help": "Cách vẽ con trỏ từ dữ liệu đã ghi: chủ đề, kích thước, làm mượt, mờ chuyển động và hiệu ứng nảy khi nhấp.",
 		"clipToBoundsDescription": "Giữ con trỏ bên trong khung hình video. Tắt để cho phép con trỏ vượt ra ngoài mép — hữu ích khi phóng to hoặc lia máy.",
 		"size": "Kích thước",

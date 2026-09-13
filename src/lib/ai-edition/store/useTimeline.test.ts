@@ -40,7 +40,6 @@ const bridgeMocks = vi.hoisted(() => ({
 	create: vi.fn(),
 	save: vi.fn(),
 	addAsset: vi.fn(),
-	removeAsset: vi.fn(),
 	listProjects: vi.fn(),
 }));
 
@@ -51,7 +50,6 @@ vi.mock("@/native/client", () => ({
 			create: bridgeMocks.create,
 			save: bridgeMocks.save,
 			addAsset: bridgeMocks.addAsset,
-			removeAsset: bridgeMocks.removeAsset,
 			listProjects: bridgeMocks.listProjects,
 		},
 	},
@@ -269,6 +267,76 @@ describe("useTimeline.moveClip / duplicateClip (delegates to document/timeline.t
 	});
 });
 
+describe("useTimeline commits build on the store's document", () => {
+	const zoomDoc: AxcutDocument = {
+		...sampleDoc,
+		zoomRanges: [
+			{
+				id: "zoom_1",
+				startMs: 0,
+				endMs: 2000,
+				clipId: "clip_a",
+				sourceStartSec: 0,
+				sourceEndSec: 2,
+				depth: 3,
+				focus: { cx: 0.5, cy: 0.5 },
+				focusMode: "manual",
+			},
+		] as AxcutDocument["zoomRanges"],
+	};
+
+	beforeEach(() => {
+		useProjectStore.getState().clear();
+		for (const mock of Object.values(bridgeMocks)) mock.mockReset();
+		bridgeMocks.save.mockImplementation(async (doc: typeof sampleDoc) => ({
+			success: true,
+			document: doc,
+		}));
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document: zoomDoc,
+			revision: 1,
+			status: "ready",
+			error: null,
+		});
+	});
+
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
+	/**
+	 * A pill drag holds the callback it captured at pointerdown, and writes land
+	 * between then and pointerup all the time — a background transcript save, a
+	 * duration probe, the agent. Building the next document from that captured
+	 * render's `document` wrote the pre-transcript snapshot back to disk.
+	 */
+	it("keeps a transcript that landed after the callback was captured", async () => {
+		const view = renderTimeline();
+		// The drag's handler, as the pointerdown captured it.
+		const updateZoomSpan = view.result.current.updateZoomSpan;
+
+		// A concurrent write, from outside this hook.
+		act(() => {
+			useProjectStore.setState({
+				document: {
+					...zoomDoc,
+					transcripts: [{ assetId: "asset_1", language: "en", segments: [], words: [] }],
+				},
+				revision: 2,
+			});
+		});
+
+		await act(async () => {
+			await updateZoomSpan("zoom_1", 0, 5000);
+		});
+
+		expect(useProjectStore.getState().document?.transcripts).toHaveLength(1);
+		const zoom = useProjectStore.getState().document?.zoomRanges[0];
+		expect(zoom).toMatchObject({ startMs: 0, endMs: 5000 });
+	});
+});
+
 describe("useTimeline backfills missing source dimensions on load", () => {
 	beforeEach(() => {
 		useProjectStore.getState().clear();
@@ -321,6 +389,96 @@ describe("useTimeline backfills missing source dimensions on load", () => {
 		});
 		expect(probeVideoDimensionsMock).not.toHaveBeenCalled();
 		expect(bridgeMocks.save).not.toHaveBeenCalled();
+	});
+
+	/**
+	 * The pass marks every asset it is about to probe, so results it drops are results
+	 * lost for the whole session — the clip stays out of the ratio picker, the output
+	 * resolution and the export badges until the app restarts. It used to drop them on
+	 * any document change: a slider write or a transcript landing re-entered the effect,
+	 * the cleanup set `cancelled`, and the next pass skipped the already-marked assets.
+	 */
+	it("keeps the results of a pass a concurrent document change interrupted", async () => {
+		const twoUnprobed: AxcutDocument = {
+			...sampleDoc,
+			assets: [
+				{ ...sampleDoc.assets[0], video: undefined },
+				{
+					id: "asset_2",
+					kind: "video",
+					label: "second.webm",
+					originalPath: "/tmp/second.webm",
+					durationSec: 12,
+					video: undefined,
+					cameraTrack: null,
+				},
+			],
+			timeline: {
+				...sampleDoc.timeline,
+				clips: [
+					sampleDoc.timeline.clips[0],
+					{
+						...sampleDoc.timeline.clips[0],
+						id: "clip_b",
+						assetId: "asset_2",
+						timelineStartSec: 10,
+						timelineEndSec: 20,
+					},
+				],
+			},
+		};
+		type Dims = { width: number; height: number };
+		const pending: Array<{ path: string; resolve: (dims: Dims | null) => void }> = [];
+		probeVideoDimensionsMock.mockImplementation(
+			(path: string) => new Promise((resolve) => pending.push({ path, resolve })),
+		);
+		// Whoever asks, however many times: each file always probes to its own size.
+		const flushProbes = async () => {
+			await act(async () => {
+				for (const probe of pending.splice(0)) {
+					probe.resolve(
+						probe.path.includes("second")
+							? { width: 1280, height: 720 }
+							: { width: 1920, height: 1080 },
+					);
+				}
+			});
+		};
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document: twoUnprobed,
+			revision: 1,
+			status: "ready",
+			error: null,
+		});
+
+		renderTimeline();
+		await waitFor(() => expect(pending).toHaveLength(1));
+
+		// The interruption: a write from outside the hook while probe #1 is in flight.
+		act(() => {
+			useProjectStore.setState({
+				document: { ...twoUnprobed, project: { ...twoUnprobed.project, title: "Renamed" } },
+				revision: 2,
+			});
+		});
+
+		// Let every probe any pass started settle — the pass is sequential, so a few
+		// rounds cover the second asset (and, before the fix, the duplicate pass).
+		for (let round = 0; round < 4; round++) await flushProbes();
+
+		await waitFor(() => expect(bridgeMocks.save).toHaveBeenCalled());
+		const assets = useProjectStore.getState().document?.assets ?? [];
+		expect(assets.find((a) => a.id === "asset_1")?.video).toMatchObject({
+			width: 1920,
+			height: 1080,
+		});
+		expect(assets.find((a) => a.id === "asset_2")?.video).toMatchObject({
+			width: 1280,
+			height: 720,
+		});
+		// And the write it was interrupted by is still there.
+		expect(useProjectStore.getState().document?.project.title).toBe("Renamed");
 	});
 
 	it("does not re-probe a used asset with no reachable file more than once", async () => {
@@ -662,6 +820,61 @@ describe("useTimeline.addTrimsBulk", () => {
 		expect(added).toBe(2);
 		expect(bridgeMocks.save).toHaveBeenCalledTimes(1);
 		expect(useProjectStore.getState().document?.timeline.trimRanges).toHaveLength(2);
+	});
+});
+
+describe("useTimeline.addSpeedRegionsBulk", () => {
+	beforeEach(() => {
+		useProjectStore.getState().clear();
+		clearHistory();
+		for (const mock of Object.values(bridgeMocks)) mock.mockReset();
+		bridgeMocks.save.mockImplementation(async (doc: typeof sampleDoc) => ({
+			success: true,
+			document: doc,
+		}));
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document: sampleDoc,
+			revision: 1,
+			status: "ready",
+			error: null,
+		});
+	});
+
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
+	// The idle-speedup pass writes a whole recording's worth of 3x regions. One
+	// save, so one Ctrl+Z takes all of them back out — the same contract as
+	// `addTrimsBulk` above.
+	it("appends every region in a single write and one history entry", async () => {
+		const { result } = renderTimeline();
+		let added: number | undefined;
+		await act(async () => {
+			added = await result.current.addSpeedRegionsBulk([
+				{ startMs: 1000, endMs: 4000, speed: 3 },
+				{ startMs: 6000, endMs: 9000, speed: 3 },
+			]);
+		});
+		expect(added).toBe(2);
+		expect(bridgeMocks.save).toHaveBeenCalledTimes(1);
+		expect(past).toHaveLength(1);
+		const speedRegions = (
+			useProjectStore.getState().document?.legacyEditor as Record<string, unknown>
+		).speedRegions as Array<{ startMs: number; endMs: number; speed: number }>;
+		expect(speedRegions).toHaveLength(2);
+		expect(speedRegions.map((region) => region.speed)).toEqual([3, 3]);
+	});
+
+	it("writes nothing when the pass found nothing", async () => {
+		const { result } = renderTimeline();
+		let added: number | undefined;
+		await act(async () => {
+			added = await result.current.addSpeedRegionsBulk([]);
+		});
+		expect(added).toBe(0);
+		expect(bridgeMocks.save).not.toHaveBeenCalled();
 	});
 });
 
@@ -1775,5 +1988,189 @@ describe("useTimeline.selectRegion (shift-click toggle)", () => {
 		act(() => result.current.selectRegion("zoom", "a", { additive: true }));
 		expect(result.current.multiSelection).toEqual([]);
 		expect(result.current.selection).toBeNull();
+	});
+});
+
+// "Paste attributes" (C3): a copied region's payload written onto pills that already
+// exist. The thing under test is what does NOT move — id, span and clip anchor belong to
+// the target, and the whole paste has to be one undo step however many pills it touches.
+describe("useTimeline.applyRegionAttributes", () => {
+	const docWithRegions: AxcutDocument = {
+		...sampleDoc,
+		zoomRanges: [
+			{
+				id: "zoom_a",
+				startMs: 1000,
+				endMs: 3000,
+				depth: 3,
+				focus: { cx: 0.5, cy: 0.5 },
+				focusMode: "manual",
+				clipId: "clip_a",
+				sourceStartSec: 1,
+				sourceEndSec: 3,
+			},
+			{
+				id: "zoom_b",
+				startMs: 5000,
+				endMs: 6000,
+				depth: 2,
+				focus: { cx: 0.1, cy: 0.1 },
+				focusMode: "manual",
+				clipId: "clip_a",
+				sourceStartSec: 5,
+				sourceEndSec: 6,
+			},
+		],
+		annotations: [
+			{
+				id: "ann_a",
+				startMs: 1000,
+				endMs: 3000,
+				clipId: "clip_a",
+				sourceStartSec: 1,
+				sourceEndSec: 3,
+				type: "text",
+				content: "the target's own words",
+				position: { x: 10, y: 90 },
+				size: { width: 30, height: 20 },
+				style: {
+					color: "#ffffff",
+					backgroundColor: "transparent",
+					fontSize: 32,
+					fontFamily: "Inter",
+					fontWeight: "bold",
+					fontStyle: "normal",
+					textDecoration: "none",
+					textAlign: "center",
+					textAnimation: "none",
+				},
+				zIndex: 1,
+			},
+		],
+		legacyEditor: {
+			speedRegions: [{ id: "speed_a", startMs: 2000, endMs: 4000, speed: 1.5 }],
+		},
+	};
+
+	beforeEach(() => {
+		useProjectStore.getState().clear();
+		clearHistory();
+		for (const mock of Object.values(bridgeMocks)) mock.mockReset();
+		probeVideoDimensionsMock.mockResolvedValue({ width: 1920, height: 1080 });
+		bridgeMocks.save.mockImplementation(async (doc: typeof sampleDoc) => ({
+			success: true,
+			document: doc,
+		}));
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document: docWithRegions,
+			revision: 1,
+			status: "ready",
+			error: null,
+		});
+	});
+
+	afterEach(() => {
+		clearHistory();
+		vi.clearAllMocks();
+	});
+
+	it("writes a zoom's look onto the target and leaves its id, span and anchor alone", async () => {
+		const { result } = renderTimeline();
+
+		await act(async () => {
+			await result.current.applyRegionAttributes("zoom", ["zoom_b"], {
+				depth: 6,
+				focus: { cx: 0.2, cy: 0.8 },
+				focusMode: "auto",
+				rotationPreset: "iso",
+			});
+		});
+
+		const zoom = useProjectStore.getState().document?.zoomRanges.find((z) => z.id === "zoom_b");
+		expect(zoom).toMatchObject({
+			id: "zoom_b",
+			startMs: 5000,
+			endMs: 6000,
+			clipId: "clip_a",
+			sourceStartSec: 5,
+			sourceEndSec: 6,
+			depth: 6,
+			focusMode: "auto",
+			rotationPreset: "iso",
+		});
+		expect(zoom?.focus).toEqual({ cx: 0.2, cy: 0.8 });
+		// The pill it was copied FROM is untouched: this writes onto the target only.
+		expect(
+			useProjectStore.getState().document?.zoomRanges.find((z) => z.id === "zoom_a")?.depth,
+		).toBe(3);
+	});
+
+	it("pastes onto a multi-selection of the same kind in one undo step", async () => {
+		const { result } = renderTimeline();
+
+		await act(async () => {
+			await result.current.applyRegionAttributes("zoom", ["zoom_a", "zoom_b"], { depth: 6 });
+		});
+
+		expect(useProjectStore.getState().document?.zoomRanges.map((z) => z.depth)).toEqual([6, 6]);
+		// One save, one entry — not one per pill, which would take two Ctrl+Z to walk back.
+		expect(past).toHaveLength(1);
+		act(() => {
+			expect(undo()).toBe(true);
+		});
+		expect(useProjectStore.getState().document?.zoomRanges.map((z) => z.depth)).toEqual([3, 2]);
+	});
+
+	it("converts an annotation's type and parks the target's own content", async () => {
+		const { result } = renderTimeline();
+
+		await act(async () => {
+			await result.current.applyRegionAttributes("annotation", ["ann_a"], {
+				type: "blur",
+				content: "",
+				size: { width: 50, height: 50 },
+			});
+		});
+
+		const ann = useProjectStore.getState().document?.annotations[0];
+		expect(ann?.type).toBe("blur");
+		expect(ann?.content).toBe("");
+		// `convertAnnotationKind`'s parking, reached from the paste path: the words the
+		// target was showing come back if its type is switched to text again.
+		expect(ann?.textContent).toBe("the target's own words");
+		expect(ann?.size).toEqual({ width: 50, height: 50 });
+		// Position is "where", not "what" — the annotation must not jump.
+		expect(ann?.position).toEqual({ x: 10, y: 90 });
+		expect(ann?.startMs).toBe(1000);
+		expect(ann?.sourceStartSec).toBe(1);
+	});
+
+	it("writes a speed value onto the legacy speed region, span intact", async () => {
+		const { result } = renderTimeline();
+
+		await act(async () => {
+			await result.current.applyRegionAttributes("speed", ["speed_a"], { speed: 3 });
+		});
+
+		const legacy = useProjectStore.getState().document?.legacyEditor as {
+			speedRegions: Array<{ id: string; startMs: number; endMs: number; speed: number }>;
+		};
+		expect(legacy.speedRegions).toEqual([{ id: "speed_a", startMs: 2000, endMs: 4000, speed: 3 }]);
+	});
+
+	it("writes nothing, and records nothing, when there is nothing to paste", async () => {
+		// trim and cameraFullscreen reach here with an empty pick. A save would put an
+		// undo step on the stack that reverses no visible change.
+		const { result } = renderTimeline();
+		const before = useProjectStore.getState().document;
+
+		await act(async () => {
+			await result.current.applyRegionAttributes("cameraFullscreen", ["cf_a"], {});
+			await result.current.applyRegionAttributes("zoom", [], { depth: 6 });
+		});
+
+		expect(useProjectStore.getState().document).toBe(before);
+		expect(past).toHaveLength(0);
 	});
 });

@@ -15,7 +15,11 @@ import type {
 } from "../../src/lib/cliContracts";
 import { isDiagnosticModeEnabled } from "../diagnostics/main-log-buffer";
 import { approvedExportPaths, cliExportDestinations } from "../exportPolicy";
-import { getSelectedDesktopSource, registerIpcHandlers } from "../ipc/handlers";
+import {
+	getSelectedDesktopSource,
+	readableApprovedPath,
+	registerIpcHandlers,
+} from "../ipc/handlers";
 import { installPermissionPolicy } from "../securityPolicy";
 import { registerSttIpc } from "../stt";
 import { ASSET_BASE_URL_ARG } from "../windows";
@@ -375,7 +379,7 @@ export function runCli(command: CliCommand): void {
 
 			// Speech-to-text backs the captions command; registered by the GUI boot
 			// path (main.ts) rather than registerIpcHandlers.
-			registerSttIpc(ipcMain);
+			registerSttIpc(ipcMain, readableApprovedPath);
 			milestone("stt ipc registered");
 
 			// Registered by the GUI boot path (main.ts) rather than registerIpcHandlers;
@@ -383,7 +387,6 @@ export function runCli(command: CliCommand): void {
 			ipcMain.handle("set-locale", () => {
 				// Locale only affects GUI menus/tray, which do not exist in CLI mode.
 			});
-			ipcMain.handle("update-global-shortcut", () => ({ success: false }));
 
 			const request: CliRequest = command;
 			if (request.kind === "export") {

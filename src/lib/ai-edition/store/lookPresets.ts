@@ -111,6 +111,7 @@ export function lookFromDocument(doc: AxcutDocument, includeAspectRatio: boolean
 				smoothing: clamp01(s.cursor.smoothing),
 				motionBlur: clamp01(s.cursor.motionBlur),
 				clickBounce: clamp(s.cursor.clickBounce, 0, 5),
+				clickRing: clamp01(s.cursor.clickRing),
 				clipToBounds: s.cursor.clipToBounds,
 				// Unknown ids are kept here and caught in `withAvailableAssets`, which is where
 				// the user gets told a theme went missing.

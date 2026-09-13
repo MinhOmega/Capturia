@@ -31,7 +31,8 @@
 		"deleteSelected": "Xóa mục đã chọn",
 		"playPause": "Phát / Tạm dừng",
 		"copySelected": "Sao chép mục đã chọn",
-		"paste": "Dán"
+		"paste": "Dán",
+		"pasteAttributes": "Dán thuộc tính"
 	},
 	"fixedActions": {
 		"undo": "Hoàn tác",

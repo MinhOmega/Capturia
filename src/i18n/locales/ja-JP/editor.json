@@ -82,7 +82,8 @@
 		"kinds": {
 			"zoom": "ズーム",
 			"speed": "速度",
-			"annotation": "注釈"
+			"annotation": "注釈",
+			"audio": "オーディオ"
 		}
 	},
 	"topbar": {

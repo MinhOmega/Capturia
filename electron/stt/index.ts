@@ -577,12 +577,25 @@ export function _resetSttManagerForTests(): void {
  * and `invoke("stt:cancel")` to stop a run it no longer wants. Status events
  * fan out on `"stt:status"` (main → renderer push), scoped to the calling
  * `webContents` so two windows don't cross-talk.
+ *
+ * `readableApprovedPath` is the same gate the generic media reads spend (see
+ * `electron/ipc/handlers.ts`), injected rather than imported so this module keeps
+ * no dependency on the IPC layer. Without it `sourcePath` was a renderer-named
+ * file handed straight to ffmpeg — `/etc/hostname` included.
  */
-export function registerSttIpc(ipcMain: IpcMain): void {
+export function registerSttIpc(
+	ipcMain: IpcMain,
+	readableApprovedPath: (filePath?: string | null) => string | null,
+): void {
 	const manager = getSttManager();
 	ipcMain.handle(
 		"stt:transcribe",
 		async (event, req: SttTranscribeRequest): Promise<SttTranscribeResponse> => {
+			if (req?.sourcePath) {
+				const approved = readableApprovedPath(req.sourcePath);
+				if (!approved) throw new Error("Source path is not approved for transcription");
+				req = { ...req, sourcePath: approved };
+			}
 			const senderId = event.sender.id;
 			// Attach for the life of THIS request only. Overlapping requests each
 			// own their own sink, so neither can silence the other on the way out.

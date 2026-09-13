@@ -8,7 +8,6 @@ const bridgeMocks = vi.hoisted(() => ({
 	create: vi.fn(),
 	save: vi.fn(),
 	addAsset: vi.fn(),
-	removeAsset: vi.fn(),
 	listProjects: vi.fn(),
 }));
 
@@ -34,7 +33,6 @@ vi.mock("@/native/client", () => ({
 			create: bridgeMocks.create,
 			save: bridgeMocks.save,
 			addAsset: bridgeMocks.addAsset,
-			removeAsset: bridgeMocks.removeAsset,
 			listProjects: bridgeMocks.listProjects,
 		},
 	},
@@ -116,6 +114,39 @@ describe("useProjectStore", () => {
 		const state = useProjectStore.getState();
 		expect(state.status).toBe("error");
 		expect(state.error).toBe("not found");
+	});
+
+	/**
+	 * Two opens in flight at once — Ctrl+O twice, a double-click in the project list.
+	 * Whichever `get` resolved LAST used to win, so the store could end up holding the
+	 * first project's document, under its id, after the user asked for the second.
+	 */
+	it("loadProject keeps the project asked for last, whatever order the loads resolve in", async () => {
+		let resolveA: (value: unknown) => void = () => undefined;
+		bridgeMocks.get.mockImplementation((id: string) =>
+			id === "proj_a"
+				? new Promise((resolve) => {
+						resolveA = resolve;
+					})
+				: Promise.resolve({
+						success: true,
+						document: { ...sampleDoc, project: { ...sampleDoc.project, id: "proj_b" } },
+					}),
+		);
+
+		const a = useProjectStore.getState().loadProject("proj_a");
+		const b = useProjectStore.getState().loadProject("proj_b");
+		await b;
+		resolveA({
+			success: true,
+			document: { ...sampleDoc, project: { ...sampleDoc.project, id: "proj_a" } },
+		});
+		await a;
+
+		const state = useProjectStore.getState();
+		expect(state.projectId).toBe("proj_b");
+		expect(state.document?.project.id).toBe("proj_b");
+		expect(state.status).toBe("ready");
 	});
 
 	it("addAsset replaces the document and bumps revision", async () => {
@@ -508,12 +539,6 @@ describe("useProjectStore", () => {
 			expect(state.document?.project.title).toBe("Saved");
 			expect(state.dirty).toBe(false);
 		});
-	});
-
-	it("removeAsset requires a loaded project", async () => {
-		await expect(useProjectStore.getState().removeAsset("asset_x")).rejects.toThrow(
-			"No project loaded",
-		);
 	});
 
 	it("clear resets the store", async () => {

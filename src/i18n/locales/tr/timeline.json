@@ -11,7 +11,8 @@
 		"addSpeed": "Hız Ekle (S)",
 		"addCameraFullscreen": "Tam Ekran Kamera Ekle (C)",
 		"splitAtPlayhead": "Klibi oynatma çizgisinde böl",
-		"pasteAtPlayhead": "Oynatma çizgisine yapıştır"
+		"pasteAtPlayhead": "Oynatma çizgisine yapıştır",
+		"pasteAttributes": "Öznitelikleri yapıştır"
 	},
 	"hints": {
 		"pressZoom": "Yakınlaştırma eklemek için Z tuşuna basın",
@@ -96,6 +97,12 @@
 		"addedRoughCutPlural": "{{count}} ölü zaman kırpıldı",
 		"noRoughCuts": "Ölü zaman bulunamadı",
 		"noRoughCutsDescription": "Dökümde uzun duraklama veya dolgu sözcüğü yok ya da mevcut kırpmalar bunları zaten kapsıyor.",
+		"speedUpIdle": "Boş anları hızlandır",
+		"speedUpIdleHint": "Hiçbir şeyin olmadığı bölümlerde 3×",
+		"addedSpeedUp": "{{count}} boş bölüm hızlandırıldı",
+		"addedSpeedUpPlural": "{{count}} boş bölüm hızlandırıldı",
+		"noIdle": "Hızlandırılacak bir şey yok",
+		"noIdleDescription": "Bu kayıtta imlecin sabit durduğu ve kimsenin konuşmadığı uzun bir bölüm yok.",
 		"aiEnhanceRequested": "Yapay zeka aracısından ölü zamanları kırpması istendi",
 		"smartCutsWaiting": "Metne dökülüyor… birazdan hazır",
 		"smartCutsNeedsTranscript": "Bir döküm gerekiyor",

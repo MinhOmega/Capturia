@@ -1,4 +1,5 @@
 import { type ChildProcessByStdio, spawn } from "node:child_process";
+import { once } from "node:events";
 import { existsSync } from "node:fs";
 import { access, constants as fsConstants, readFile } from "node:fs/promises";
 import { createServer } from "node:net";
@@ -389,15 +390,11 @@ export class WhisperServerManager {
 		this.process = null;
 		this.port = null;
 		this.startedAtMs = null;
-		const exited = new Promise<void>((resolve) => {
-			child.once("exit", () => resolve());
-		});
+		// Listener attached before the signal, so an immediate exit is not missed.
+		const exited = once(child, "exit", { signal: AbortSignal.timeout(5_000) });
 		child.kill("SIGTERM");
 		try {
-			await Promise.race([
-				exited,
-				new Promise<void>((_, reject) => setTimeout(() => reject(new Error("timeout")), 5_000)),
-			]);
+			await exited;
 		} catch {
 			child.kill("SIGKILL");
 		}

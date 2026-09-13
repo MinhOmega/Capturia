@@ -18,6 +18,7 @@ import type {
 	RemuxStats,
 	SegmentationSupport,
 } from "../../native/compositor-view/addon";
+import { isPathWithinDir } from "../../recordingsFolder";
 
 /**
  * ESM-safe `require` for loading the native addon
@@ -84,7 +85,11 @@ function sceneAssetBaseDirs(): string[] {
 export function resolveSceneAssetPath(relativePath: string): string | null {
 	for (const base of sceneAssetBaseDirs()) {
 		const candidate = path.join(base, relativePath);
-		if (realExistsSync(candidate)) {
+		// `relativePath` comes out of the scene JSON, which the renderer authors, and
+		// `path.join` normalises a `../..` away silently — so the join alone would hand the
+		// addon any file on the machine to decode. Same containment rule the recordings
+		// roots use.
+		if (isPathWithinDir(candidate, base) && realExistsSync(candidate)) {
 			return candidate;
 		}
 	}
@@ -120,6 +125,9 @@ function resolveCursorSpritePaths(
  *  process, and the renderer has no business knowing the on-disk layout. */
 const SEGMENTATION_MODEL_ASSET = "mediapipe/selfie_segmentation/selfie_segmentation_landscape.onnx";
 
+/** The click highlight ring, under `public/cursors/` like every cursor sprite. */
+const CLICK_RING_ASSET = "cursors/ring.png";
+
 export function resolveSceneAssetPaths(sceneJson: string): string {
 	try {
 		const scene = JSON.parse(sceneJson) as {
@@ -127,6 +135,7 @@ export function resolveSceneAssetPaths(sceneJson: string): string {
 			cursor?: {
 				theme?: string;
 				cursorSprites?: Record<string, { path: string; hotspotX: number; hotspotY: number }>;
+				clickRingSprite?: { path: string; hotspotX: number; hotspotY: number };
 			};
 			webcamEffect?: {
 				mode?: string;
@@ -160,6 +169,19 @@ export function resolveSceneAssetPaths(sceneJson: string): string {
 		if (scene.cursor && typeof scene.cursor.theme === "string") {
 			scene.cursor.cursorSprites = resolveCursorSpritePaths(scene.cursor.theme);
 			changed = true;
+		}
+		// The ring travels like a cursor sprite: the renderer asks for it with a number
+		// (`cursor.clickRing`), this process says where the art is. Centred hotspot — the ring
+		// is concentric with the pointer's hotspot, it does not hang off it. Resolved even at
+		// strength 0, so that raising the slider live (a param push, no new scene) draws a ring
+		// on the very next frame instead of on the next commit. Missing file = no ring, same
+		// contract as a missing cursor sprite.
+		if (scene.cursor) {
+			const ring = resolveSceneAssetPath(CLICK_RING_ASSET);
+			if (ring) {
+				scene.cursor.clickRingSprite = { path: ring, hotspotX: 0.5, hotspotY: 0.5 };
+				changed = true;
+			}
 		}
 		// The scene asks for an effect; this process says where the model is. A model that
 		// does not resolve leaves `modelPath` unset, which turns the effect off in the

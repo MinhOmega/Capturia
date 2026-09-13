@@ -308,6 +308,10 @@
 	},
 	"audio": {
 		"outputGain": "输出电平",
+		"autoLevel": "自动调平",
+		"autoLevelDone": "已根据主片段将输出电平设为 {{gain}} dB。",
+		"autoLevelClamped": "主片段需要超过 ±{{limit}} dB — 已将输出电平设为 {{gain}} dB。",
+		"autoLevelFailed": "无法测量主片段的响度。",
 		"help": "调整音频输出电平。它在预览和导出中的效果完全一致。",
 		"reset": "重置音频",
 		"title": "音频"
@@ -328,6 +332,7 @@
 	"cursor": {
 		"smoothing": "平滑",
 		"clickBounce": "点击弹跳",
+		"clickRing": "点击高亮",
 		"help": "基于录制遥测数据的光标渲染：主题、大小、平滑、运动模糊和点击回弹。",
 		"clipToBoundsDescription": "将光标保持在视频画面内。关闭后光标可以超出边缘——在放大或平移时很有用。",
 		"size": "大小",

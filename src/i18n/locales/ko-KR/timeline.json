@@ -11,7 +11,8 @@
 		"addSpeed": "속도 추가 (S)",
 		"addCameraFullscreen": "전체 화면 카메라 추가 (C)",
 		"splitAtPlayhead": "재생 헤드에서 클립 분할",
-		"pasteAtPlayhead": "재생 헤드 위치에 붙여넣기"
+		"pasteAtPlayhead": "재생 헤드 위치에 붙여넣기",
+		"pasteAttributes": "속성 붙여넣기"
 	},
 	"hints": {
 		"pressZoom": "Z를 눌러 줌 추가",
@@ -96,6 +97,12 @@
 		"addedRoughCutPlural": "빈 구간 {{count}}개를 잘라냈습니다",
 		"noRoughCuts": "빈 구간을 찾을 수 없음",
 		"noRoughCutsDescription": "전사본에 긴 침묵이나 군말이 없거나, 기존 컷이 이미 해당 구간을 다루고 있습니다.",
+		"speedUpIdle": "대기 구간 빨리 감기",
+		"speedUpIdleHint": "아무 일도 없는 구간을 3배속으로",
+		"addedSpeedUp": "대기 구간 {{count}}개를 빨리 감았습니다",
+		"addedSpeedUpPlural": "대기 구간 {{count}}개를 빨리 감았습니다",
+		"noIdle": "빨리 감을 구간이 없음",
+		"noIdleDescription": "이 녹화에는 커서가 멈춰 있고 아무도 말하지 않는 긴 구간이 없습니다.",
 		"aiEnhanceRequested": "AI 에이전트에 빈 구간 컷을 요청했습니다",
 		"smartCutsWaiting": "받아쓰는 중… 곧 사용할 수 있습니다",
 		"smartCutsNeedsTranscript": "받아쓰기가 필요합니다",

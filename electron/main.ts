@@ -6,6 +6,7 @@ import {
 	BrowserWindow,
 	clipboard,
 	dialog,
+	type IpcMainEvent,
 	ipcMain,
 	Menu,
 	nativeImage,
@@ -62,7 +63,11 @@ import {
 import {
 	exportDiagnosticFile,
 	getSelectedDesktopSource,
+	pendingRecordingWrites,
+	readableApprovedPath,
+	recordingStreams,
 	registerIpcHandlers,
+	withDeadline,
 } from "./ipc/handlers";
 import { installMainProcessErrorGuards } from "./main-process-errors";
 import { normalizeExternalUrl } from "./navigationPolicy";
@@ -788,21 +793,16 @@ function startBackgroundUpdateTimer() {
  *  `finally` unreachable and `updateCheckInFlight` latched true for the rest of the session,
  *  silently turning every later check — menu, tray and HUD — into a no-op. */
 async function probeSelfUpdate(): Promise<UpdateOutcome> {
-	let timer: NodeJS.Timeout | undefined;
-	const timeout = new Promise<UpdateOutcome>((resolve) => {
-		timer = setTimeout(
-			() => resolve({ kind: "failed", error: new Error("self-update probe timed out") }),
-			30_000,
-		);
-		timer.unref?.();
-	});
 	try {
-		return await Promise.race([
+		// `checkForSelfUpdate` resolves on every error of its own, so the deadline is
+		// the only thing that can reject here.
+		return await withDeadline(
 			checkForSelfUpdate(getInstallChannel(), includePrereleases),
-			timeout,
-		]);
-	} finally {
-		if (timer) clearTimeout(timer);
+			30_000,
+			"self-update probe timed out",
+		);
+	} catch (error) {
+		return { kind: "failed", error: error instanceof Error ? error : new Error(String(error)) };
 	}
 }
 
@@ -1003,11 +1003,27 @@ ipcMain.on("set-has-unsaved-changes", (_, hasChanges: boolean) => {
 	editorHasUnsavedChanges = hasChanges;
 });
 
+/**
+ * Quit, unless a take is running.
+ *
+ * The two renderer-driven quits are the editor's in-app File menu and the HUD's close
+ * button, and both used to call `app.quit()` on whatever the renderer sent. A quit mid-take
+ * tears down the capture helpers while they are still writing, which leaves the user with a
+ * truncated recording and nothing to recover it from. Same veto the updater already applies
+ * (`blockedFromInstalling({ recording })` in auto-updater.ts) — an interrupted take is worth
+ * more than either convenience.
+ */
+function quitUnlessRecording(): void {
+	if (isRecording) {
+		console.warn("[quit] refused while a recording is in progress");
+		return;
+	}
+	app.quit();
+}
+
 // Quit requested from the editor's in-app File menu. Mirrors the native
 // menu's role:"quit" so the unsaved-changes close flow still runs.
-ipcMain.on("app-quit", () => {
-	app.quit();
-});
+ipcMain.on("app-quit", quitUnlessRecording);
 
 function forceCloseEditorWindow(windowToClose: BrowserWindow | null) {
 	if (!windowToClose || windowToClose.isDestroyed()) return;
@@ -1025,19 +1041,26 @@ function forceCloseEditorWindow(windowToClose: BrowserWindow | null) {
 }
 
 function createEditorWindowWrapper() {
-	if (mainWindow) {
-		isForceClosing = true;
-		mainWindow.close();
-		isForceClosing = false;
-		mainWindow = null;
-	}
+	// The editor opens BEFORE the HUD closes. The other order empties the window list,
+	// and `window-all-closed` below quits the app — while the take that asked for the
+	// editor may still be writing its manifest and sidecar.
+	const hudWindow = mainWindow;
 	mainWindow = createEditorWindow();
+	if (hudWindow) {
+		isForceClosing = true;
+		hudWindow.close();
+		isForceClosing = false;
+	}
 	editorHasUnsavedChanges = false;
 
 	mainWindow.on("close", (event) => {
-		if (isForceClosing || !editorHasUnsavedChanges || isCloseConfirmInFlight) return;
+		if (isForceClosing || !editorHasUnsavedChanges) return;
 
+		// Unsaved edits: this close never goes through unanswered. The in-flight check comes
+		// AFTER the veto, because falling through it closed the window behind the dialog the
+		// user was still looking at.
 		event.preventDefault();
+		if (isCloseConfirmInFlight) return;
 		isCloseConfirmInFlight = true;
 
 		const windowToClose = mainWindow;
@@ -1046,9 +1069,25 @@ function createEditorWindowWrapper() {
 		// Ask renderer to show the in-app close dialog.
 		windowToClose.webContents.send("request-close-confirm");
 
-		ipcMain.once("close-confirm-response", (event, choice: "save" | "discard" | "cancel") => {
-			if (event.sender.id !== windowToClose?.webContents.id) return;
+		// The answer may never arrive: View → Reload throws the dialog away mid-question,
+		// and another window's reply must not be taken for this one's. Either way the flag
+		// has to come back down — left up, the next close returns without preventDefault
+		// and the unsaved edits go silently.
+		function endCloseConfirm() {
 			isCloseConfirmInFlight = false;
+			ipcMain.removeListener("close-confirm-response", onCloseConfirmResponse);
+			windowToClose?.webContents.removeListener("did-start-loading", endCloseConfirm);
+			windowToClose?.removeListener("closed", endCloseConfirm);
+		}
+
+		windowToClose.webContents.once("did-start-loading", endCloseConfirm);
+		windowToClose.once("closed", endCloseConfirm);
+
+		// `on` + explicit removal, not `once`: a reply from a different window would
+		// otherwise consume the listener and leave this close unanswered for ever.
+		function onCloseConfirmResponse(event: IpcMainEvent, choice: "save" | "discard" | "cancel") {
+			if (event.sender.id !== windowToClose?.webContents.id) return;
+			endCloseConfirm();
 			if (!windowToClose || windowToClose.isDestroyed()) return;
 
 			if (choice === "save") {
@@ -1063,7 +1102,9 @@ function createEditorWindowWrapper() {
 				forceCloseEditorWindow(windowToClose);
 			}
 			// "cancel": flag reset, window stays open
-		});
+		}
+
+		ipcMain.on("close-confirm-response", onCloseConfirmResponse);
 	});
 }
 
@@ -1079,16 +1120,14 @@ function createSourceSelectorWindowWrapper() {
 }
 
 function createNotesWindowWrapper() {
-	{
-		notesWindow = createNotesWindow();
-		notesWindow.on("closed", () => {
-			notesWindow = null;
-			if (mainWindow && !mainWindow.isDestroyed()) {
-				mainWindow.webContents.send("notes-window-closed");
-			}
-		});
-		return notesWindow;
-	}
+	notesWindow = createNotesWindow();
+	notesWindow.on("closed", () => {
+		notesWindow = null;
+		if (mainWindow && !mainWindow.isDestroyed()) {
+			mainWindow.webContents.send("notes-window-closed");
+		}
+	});
+	return notesWindow;
 }
 
 function createCountdownOverlayWindowWrapper() {
@@ -1129,7 +1168,10 @@ app.on("activate", () => {
 	}
 });
 
-let sttShutdownPromise: Promise<void> | null = null;
+let sttShutdownPromise: Promise<unknown> | null = null;
+// Long enough for a manifest write and a container remux on a loaded disk, short enough
+// that a wedged finalisation cannot hold the app open for ever.
+const QUIT_FLUSH_TIMEOUT_MS = 10_000;
 let sttShutdownFinished = false;
 
 // Electron does not wait for an async event listener. Hold the first quit long
@@ -1146,9 +1188,16 @@ app.on("before-quit", (event) => {
 	if (sttShutdownFinished) return;
 	event.preventDefault();
 	if (sttShutdownPromise) return;
-	sttShutdownPromise = shutdownStt()
+	// Recording finalisations started before the quit are still writing the manifest, the
+	// cursor sidecar and the media links, and the open chunk streams still hold the take's
+	// tail. Quitting out from under them is how a stopped take leaves half a session on disk.
+	sttShutdownPromise = withDeadline(
+		Promise.allSettled([shutdownStt(), ...pendingRecordingWrites(), recordingStreams.endAll()]),
+		QUIT_FLUSH_TIMEOUT_MS,
+		"Timed out flushing recording writes before quit",
+	)
 		.catch((error) => {
-			console.error("[stt] Failed to stop whisper helper during app quit:", error);
+			console.error("[quit] Failed to flush before quitting:", error);
 		})
 		.finally(() => {
 			sttShutdownFinished = true;
@@ -1209,6 +1258,7 @@ appReady?.then(async () => {
 	// main-process logs in `npm run dev` output. Without this, the
 	// `[recorder:...]` lines from recorderHandle.ts are only visible in
 	// DevTools. One-time wire; no per-message cost beyond a single IPC hop.
+	const MAX_RENDERER_CONSOLE_CHARS = 8 * 1024;
 	const logChannels = ["log", "warn", "error"] as const;
 	for (const channel of logChannels) {
 		ipcMain.on(`renderer-console-${channel}`, (_event, ...args) => {
@@ -1216,7 +1266,9 @@ appReady?.then(async () => {
 				.map((arg) => (typeof arg === "string" ? arg : JSON.stringify(arg)))
 				.join(" ");
 			const stream = channel === "error" ? process.stderr : process.stdout;
-			stream.write(`[renderer:${channel}] ${text}\n`);
+			// Capped: this is a renderer-controlled string written straight to the process's
+			// own stdout, and a diagnostic line nobody can read is not worth an unbounded one.
+			stream.write(`[renderer:${channel}] ${text.slice(0, MAX_RENDERER_CONSOLE_CHARS)}\n`);
 		});
 	}
 
@@ -1240,9 +1292,7 @@ appReady?.then(async () => {
 		}
 	}
 
-	ipcMain.on("hud-overlay-close", () => {
-		app.quit();
-	});
+	ipcMain.on("hud-overlay-close", quitUnlessRecording);
 	ipcMain.handle("set-locale", (_, locale: string) => {
 		setMainLocale(locale);
 		setupApplicationMenu();
@@ -1392,7 +1442,7 @@ appReady?.then(async () => {
 	);
 
 	// Native STT (whisper.cpp + forced alignment) — single instance per app.
-	registerSttIpc(ipcMain);
+	registerSttIpc(ipcMain, readableApprovedPath);
 
 	// Kept, not discarded: this is the only registration most users ever get, and
 	// throwing the result away here is what left a dead hotkey reported to nobody.
