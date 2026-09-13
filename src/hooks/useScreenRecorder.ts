@@ -1060,7 +1060,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		[cursorCaptureMode, getRecordingDurationMs, persistRecordingMarkers],
 	);
 
-	const stopRecording = useRef(() => {
+	const stopRecordingNow = () => {
 		if (nativeWindowsRecording.current) {
 			void finalizeNativeWindowsRecording(false);
 			return;
@@ -1112,6 +1112,25 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				}
 			}
 		}
+	};
+
+	/**
+	 * The stop, behind a ref so the tray and helper-exit subscriptions below can
+	 * stay registered for the window's whole life.
+	 *
+	 * KEPT IN SYNC, because `useRef` has no lazy initialiser: its argument is
+	 * evaluated on every render but only the FIRST result is stored. Without the
+	 * effect, every stop ran the first render's closure, whose `finalizeRecording`
+	 * / `finalizeNativeMac|LinuxRecording` still saw `cursorCaptureMode` as the
+	 * hardcoded `"editable-overlay"` the prefs effect had not yet overwritten — so
+	 * a take recorded with the system cursor was stored as if the cursor were
+	 * still to be composited, and the editor drew a second one on top of it.
+	 *
+	 * In an effect, not during render, for the same reason as `tRef`.
+	 */
+	const stopRecording = useRef(stopRecordingNow);
+	useEffect(() => {
+		stopRecording.current = stopRecordingNow;
 	});
 
 	const safeHideCountdownOverlay = useCallback(async (runId: number) => {
@@ -1121,6 +1140,33 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			console.warn("Failed to hide countdown overlay:", error);
 		}
 	}, []);
+
+	/**
+	 * The three native finalizers behind a ref, so the subscription effect below
+	 * can depend on the MOUNT alone.
+	 *
+	 * Listing the callbacks themselves made the effect re-run — and its cleanup
+	 * fire — whenever one of them changed identity, which the macOS and Linux ones
+	 * do on every `cursorCaptureMode` change. That cleanup bumps `countdownRunId`,
+	 * clears `allowAutoFinalize` and discards any native recording in flight, so
+	 * clicking the HUD's cursor toggle during the 3-2-1 killed the take that was
+	 * starting: the overlay vanished, no recording began, and `countdownActive`
+	 * stayed true so the next Record press only cancelled the dead countdown. The
+	 * `tRef` comment above describes exactly this hazard for `t`; `cursorCaptureMode`
+	 * leaked through the same door.
+	 */
+	const finalizeNativeRef = useRef({
+		windows: finalizeNativeWindowsRecording,
+		mac: finalizeNativeMacRecording,
+		linux: finalizeNativeLinuxRecording,
+	});
+	useEffect(() => {
+		finalizeNativeRef.current = {
+			windows: finalizeNativeWindowsRecording,
+			mac: finalizeNativeMacRecording,
+			linux: finalizeNativeLinuxRecording,
+		};
+	});
 
 	useEffect(() => {
 		let cleanup: (() => void) | undefined;
@@ -1177,13 +1223,13 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			restarting.current = false;
 			discardRecordingId.current = null;
 			if (nativeWindowsRecording.current) {
-				void finalizeNativeWindowsRecording(true);
+				void finalizeNativeRef.current.windows(true);
 			}
 			if (nativeMacRecording.current) {
-				void finalizeNativeMacRecording(true);
+				void finalizeNativeRef.current.mac(true);
 			}
 			if (nativeLinuxRecording.current) {
-				void finalizeNativeLinuxRecording(true);
+				void finalizeNativeRef.current.linux(true);
 			}
 
 			if (
@@ -1210,13 +1256,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			webcamRecorder.current = null;
 			teardownMedia();
 		};
-	}, [
-		teardownMedia,
-		safeHideCountdownOverlay,
-		finalizeNativeWindowsRecording,
-		finalizeNativeMacRecording,
-		finalizeNativeLinuxRecording,
-	]);
+		// Both are `useCallback([])`, so this list is a mount/unmount lifetime and
+		// the cleanup above only ever runs when the window really goes away.
+	}, [teardownMedia, safeHideCountdownOverlay]);
 
 	const safeShowCountdownOverlay = async (value: number, runId: number) => {
 		try {

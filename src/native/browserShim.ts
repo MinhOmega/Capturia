@@ -632,6 +632,30 @@ function createShimBridgeClient() {
 
 export function installBrowserShims(): void {
 	if (typeof window === "undefined") return;
+	// DEV (and test) only. A packaged build has no browser mode: an editor window
+	// without `window.electronAPI` does not mean "opened in Chrome", it means the
+	// preload never attached — a blocked preload file, a sandbox or CSP regression.
+	// Standing in for it there turned a broken app into a working-LOOKING one:
+	// projects "saved" to localStorage, `pickExportSavePath` resolved
+	// `{ canceled: true }` so Export silently did nothing, every step reported
+	// success and nothing reached the disk.
+	//
+	// Read at call time, like `insertionsEnabled` and for the same reason: a
+	// module-level constant is captured at import and makes `vi.stubEnv` a no-op, so
+	// the one check that proves a release refuses would pass by not running.
+	//
+	// Refusing is what makes the failure visible: the first `window.electronAPI`
+	// call throws in render, and `AppErrorBoundary` turns that into a screen with a
+	// report button. The log below is there so the report says WHY.
+	if (!import.meta.env.DEV) {
+		if (isBrowserMode()) {
+			console.error(
+				"[capturia] no preload bridge in a packaged build — refusing to shim it. " +
+					"The window was opened without window.electronAPI; nothing would be written to disk.",
+			);
+		}
+		return;
+	}
 	if (!isBrowserMode()) return;
 	if (!(window as unknown as { electronAPI?: unknown }).electronAPI) {
 		(window as unknown as { electronAPI: unknown }).electronAPI = createShimElectronAPI();

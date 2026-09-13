@@ -19,6 +19,8 @@ let currentViewId: number | null = null;
 const listeners = new Set<() => void>();
 /** Derniers params poussés, par clé — rejoués à l'activation d'une vue (voir plus bas). */
 const lastParams = new Map<string, CompositorParamValue>();
+/** La dernière scène envoyée, et à quelle vue — voir `setNativeScene`. */
+let lastScene: { viewId: number; json: string } | null = null;
 
 /** Appelé par l'overlay quand la vue native est créée (id) ou détruite (null). */
 export function setCurrentNativeViewId(id: number | null): void {
@@ -80,6 +82,20 @@ export function setNativeScene(sceneJson: string): void {
 	if (currentViewId === null) {
 		return;
 	}
+	// Same bytes, same view → the native side already has this scene. The overlay
+	// rebuilds and ships the WHOLE scene on every document write, and a slider drag
+	// or a transcript keystroke is a write per frame — yet the slider's own value
+	// also goes out live through `setNativeParam`, so that per-frame scene was
+	// duplicate work all the way down: `deriveCaptionCues` over the transcript, one
+	// `projectRegionsToSource` per region kind, a `computeCompositeLayout` per clip,
+	// then hundreds of KB of JSON across the bridge.
+	//
+	// Keyed on the view as well as the JSON: a freshly created view has nothing, so
+	// an identical scene must still reach it.
+	if (lastScene?.viewId === currentViewId && lastScene.json === sceneJson) {
+		return;
+	}
+	lastScene = { viewId: currentViewId, json: sceneJson };
 	setCompositorScene(currentViewId, sceneJson).catch((error: unknown) => {
 		console.warn("[compositor-view] setNativeScene failed:", error);
 	});

@@ -267,6 +267,76 @@ describe("useTimeline.moveClip / duplicateClip (delegates to document/timeline.t
 	});
 });
 
+describe("useTimeline commits build on the store's document", () => {
+	const zoomDoc: AxcutDocument = {
+		...sampleDoc,
+		zoomRanges: [
+			{
+				id: "zoom_1",
+				startMs: 0,
+				endMs: 2000,
+				clipId: "clip_a",
+				sourceStartSec: 0,
+				sourceEndSec: 2,
+				depth: 3,
+				focus: { cx: 0.5, cy: 0.5 },
+				focusMode: "manual",
+			},
+		] as AxcutDocument["zoomRanges"],
+	};
+
+	beforeEach(() => {
+		useProjectStore.getState().clear();
+		for (const mock of Object.values(bridgeMocks)) mock.mockReset();
+		bridgeMocks.save.mockImplementation(async (doc: typeof sampleDoc) => ({
+			success: true,
+			document: doc,
+		}));
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document: zoomDoc,
+			revision: 1,
+			status: "ready",
+			error: null,
+		});
+	});
+
+	afterEach(() => {
+		vi.clearAllMocks();
+	});
+
+	/**
+	 * A pill drag holds the callback it captured at pointerdown, and writes land
+	 * between then and pointerup all the time — a background transcript save, a
+	 * duration probe, the agent. Building the next document from that captured
+	 * render's `document` wrote the pre-transcript snapshot back to disk.
+	 */
+	it("keeps a transcript that landed after the callback was captured", async () => {
+		const view = renderTimeline();
+		// The drag's handler, as the pointerdown captured it.
+		const updateZoomSpan = view.result.current.updateZoomSpan;
+
+		// A concurrent write, from outside this hook.
+		act(() => {
+			useProjectStore.setState({
+				document: {
+					...zoomDoc,
+					transcripts: [{ assetId: "asset_1", language: "en", segments: [], words: [] }],
+				},
+				revision: 2,
+			});
+		});
+
+		await act(async () => {
+			await updateZoomSpan("zoom_1", 0, 5000);
+		});
+
+		expect(useProjectStore.getState().document?.transcripts).toHaveLength(1);
+		const zoom = useProjectStore.getState().document?.zoomRanges[0];
+		expect(zoom).toMatchObject({ startMs: 0, endMs: 5000 });
+	});
+});
+
 describe("useTimeline backfills missing source dimensions on load", () => {
 	beforeEach(() => {
 		useProjectStore.getState().clear();
@@ -319,6 +389,96 @@ describe("useTimeline backfills missing source dimensions on load", () => {
 		});
 		expect(probeVideoDimensionsMock).not.toHaveBeenCalled();
 		expect(bridgeMocks.save).not.toHaveBeenCalled();
+	});
+
+	/**
+	 * The pass marks every asset it is about to probe, so results it drops are results
+	 * lost for the whole session — the clip stays out of the ratio picker, the output
+	 * resolution and the export badges until the app restarts. It used to drop them on
+	 * any document change: a slider write or a transcript landing re-entered the effect,
+	 * the cleanup set `cancelled`, and the next pass skipped the already-marked assets.
+	 */
+	it("keeps the results of a pass a concurrent document change interrupted", async () => {
+		const twoUnprobed: AxcutDocument = {
+			...sampleDoc,
+			assets: [
+				{ ...sampleDoc.assets[0], video: undefined },
+				{
+					id: "asset_2",
+					kind: "video",
+					label: "second.webm",
+					originalPath: "/tmp/second.webm",
+					durationSec: 12,
+					video: undefined,
+					cameraTrack: null,
+				},
+			],
+			timeline: {
+				...sampleDoc.timeline,
+				clips: [
+					sampleDoc.timeline.clips[0],
+					{
+						...sampleDoc.timeline.clips[0],
+						id: "clip_b",
+						assetId: "asset_2",
+						timelineStartSec: 10,
+						timelineEndSec: 20,
+					},
+				],
+			},
+		};
+		type Dims = { width: number; height: number };
+		const pending: Array<{ path: string; resolve: (dims: Dims | null) => void }> = [];
+		probeVideoDimensionsMock.mockImplementation(
+			(path: string) => new Promise((resolve) => pending.push({ path, resolve })),
+		);
+		// Whoever asks, however many times: each file always probes to its own size.
+		const flushProbes = async () => {
+			await act(async () => {
+				for (const probe of pending.splice(0)) {
+					probe.resolve(
+						probe.path.includes("second")
+							? { width: 1280, height: 720 }
+							: { width: 1920, height: 1080 },
+					);
+				}
+			});
+		};
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document: twoUnprobed,
+			revision: 1,
+			status: "ready",
+			error: null,
+		});
+
+		renderTimeline();
+		await waitFor(() => expect(pending).toHaveLength(1));
+
+		// The interruption: a write from outside the hook while probe #1 is in flight.
+		act(() => {
+			useProjectStore.setState({
+				document: { ...twoUnprobed, project: { ...twoUnprobed.project, title: "Renamed" } },
+				revision: 2,
+			});
+		});
+
+		// Let every probe any pass started settle — the pass is sequential, so a few
+		// rounds cover the second asset (and, before the fix, the duplicate pass).
+		for (let round = 0; round < 4; round++) await flushProbes();
+
+		await waitFor(() => expect(bridgeMocks.save).toHaveBeenCalled());
+		const assets = useProjectStore.getState().document?.assets ?? [];
+		expect(assets.find((a) => a.id === "asset_1")?.video).toMatchObject({
+			width: 1920,
+			height: 1080,
+		});
+		expect(assets.find((a) => a.id === "asset_2")?.video).toMatchObject({
+			width: 1280,
+			height: 720,
+		});
+		// And the write it was interrupted by is still there.
+		expect(useProjectStore.getState().document?.project.title).toBe("Renamed");
 	});
 
 	it("does not re-probe a used asset with no reachable file more than once", async () => {

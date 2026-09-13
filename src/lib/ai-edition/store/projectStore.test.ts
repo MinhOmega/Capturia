@@ -116,6 +116,39 @@ describe("useProjectStore", () => {
 		expect(state.error).toBe("not found");
 	});
 
+	/**
+	 * Two opens in flight at once — Ctrl+O twice, a double-click in the project list.
+	 * Whichever `get` resolved LAST used to win, so the store could end up holding the
+	 * first project's document, under its id, after the user asked for the second.
+	 */
+	it("loadProject keeps the project asked for last, whatever order the loads resolve in", async () => {
+		let resolveA: (value: unknown) => void = () => undefined;
+		bridgeMocks.get.mockImplementation((id: string) =>
+			id === "proj_a"
+				? new Promise((resolve) => {
+						resolveA = resolve;
+					})
+				: Promise.resolve({
+						success: true,
+						document: { ...sampleDoc, project: { ...sampleDoc.project, id: "proj_b" } },
+					}),
+		);
+
+		const a = useProjectStore.getState().loadProject("proj_a");
+		const b = useProjectStore.getState().loadProject("proj_b");
+		await b;
+		resolveA({
+			success: true,
+			document: { ...sampleDoc, project: { ...sampleDoc.project, id: "proj_a" } },
+		});
+		await a;
+
+		const state = useProjectStore.getState();
+		expect(state.projectId).toBe("proj_b");
+		expect(state.document?.project.id).toBe("proj_b");
+		expect(state.status).toBe("ready");
+	});
+
 	it("addAsset replaces the document and bumps revision", async () => {
 		useProjectStore.setState({
 			projectId: "proj_test",

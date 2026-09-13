@@ -116,4 +116,29 @@ describe("countdown length", () => {
 
 		expect(view.result.current.countdownSeconds).toBe(0);
 	});
+
+	/**
+	 * The HUD's cursor toggle stays live during the 3-2-1 (`controlsLocked` is
+	 * `recording || saving`, neither of which is true yet). While the unmount
+	 * effect listed the macOS/Linux finalizers — which close over
+	 * `cursorCaptureMode` — as dependencies, pressing it re-ran that effect's
+	 * CLEANUP, which bumps `countdownRunId`: the take silently never started.
+	 */
+	it("keeps counting when the cursor mode is toggled mid-countdown", async () => {
+		const view = await pressRecord();
+
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(1_000);
+		});
+		act(() => {
+			view.result.current.setCursorCaptureMode("system");
+		});
+
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(3_000);
+		});
+
+		expect(api.startNativeWindowsRecording).toHaveBeenCalledTimes(1);
+		expect(view.result.current.recording).toBe(true);
+	});
 });
