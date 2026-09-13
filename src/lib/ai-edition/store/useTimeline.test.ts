@@ -40,7 +40,6 @@ const bridgeMocks = vi.hoisted(() => ({
 	create: vi.fn(),
 	save: vi.fn(),
 	addAsset: vi.fn(),
-	removeAsset: vi.fn(),
 	listProjects: vi.fn(),
 }));
 
@@ -51,7 +50,6 @@ vi.mock("@/native/client", () => ({
 			create: bridgeMocks.create,
 			save: bridgeMocks.save,
 			addAsset: bridgeMocks.addAsset,
-			removeAsset: bridgeMocks.removeAsset,
 			listProjects: bridgeMocks.listProjects,
 		},
 	},

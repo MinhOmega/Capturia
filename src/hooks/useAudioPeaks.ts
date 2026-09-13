@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { materializeLocalSourceFile, releaseLocalSourceFile } from "@/lib/exporter/localSourceFile";
 import { MAX_IN_MEMORY_SOURCE_BYTES } from "@/lib/exporter/sourceFileLimits";
-import { loadFileAsArrayBuffer } from "@/lib/exporter/streamingDecoder";
+import { loadFileAsArrayBuffer } from "./loadFileAsArrayBuffer";
 import { computePeaksFromFileStreaming } from "./streamingAudioPeaks";
 
 let _audioCtx: AudioContext | null = null;

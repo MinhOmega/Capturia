@@ -9,16 +9,13 @@ import {
 	toFileUrl,
 	validateProjectData,
 } from "@/components/video-editor/projectPersistence";
-import type { AnnotationRegion, TrimRegion } from "@/components/video-editor/types";
+import type { AnnotationRegion } from "@/components/video-editor/types";
 import { extractMono16kFromVideoUrl } from "@/lib/captioning/extractMono16k";
 import { type SttRendererStatus, transcribeMono16kToSegments } from "@/lib/captioning/transcribe";
 import type { CliCaptionsRequest, CliDoneResult } from "@/lib/cliContracts";
 import { nativeBridgeClient } from "@/native";
 import { captionSegmentsToAnnotationRegions } from "./captionAnnotations";
-import {
-	shiftTrimRegionsMsForCaptionBuffer,
-	trimLeadingSilenceMono16k,
-} from "./vendor/leadingSilence";
+import { trimLeadingSilenceMono16k } from "./vendor/leadingSilence";
 
 /** Highest trailing number across existing region ids, so new ids never collide. */
 function nextNumericIdFrom(regions: { id: string }[]): number {
@@ -44,7 +41,6 @@ async function runCaptions(request: CliCaptionsRequest): Promise<CliDoneResult> 
 		throw new Error("Project file does not reference any recorded media");
 	}
 	const editor = normalizeProjectEditor(project.editor ?? {});
-	const trimRegions: TrimRegion[] = editor.trimRegions;
 
 	window.electronAPI.cliLog("info", "Extracting audio…");
 	const videoUrl = toFileUrl(media.screenVideoPath);
@@ -57,9 +53,6 @@ async function runCaptions(request: CliCaptionsRequest): Promise<CliDoneResult> 
 	if (speechSamples.length < 800) {
 		throw new Error("No speech detected in the project's audio");
 	}
-
-	const trimMs = Math.round(trimSec * 1000);
-	const trimRegionsForTranscribe = shiftTrimRegionsMsForCaptionBuffer(trimRegions, trimMs);
 
 	// `onStatus` now fires once per transcribed chunk, not once per phase, so log
 	// only on a phase change — otherwise a long transcription spams the CLI with
@@ -76,19 +69,19 @@ async function runCaptions(request: CliCaptionsRequest): Promise<CliDoneResult> 
 		},
 	};
 
-	let { segments: segmentsRaw, granularity } = await transcribeMono16kToSegments(speechSamples, {
-		trimRegions: trimRegionsForTranscribe,
-		...transcribeOptions,
-	});
+	let { segments: segmentsRaw, granularity } = await transcribeMono16kToSegments(
+		speechSamples,
+		transcribeOptions,
+	);
 	let transcribedFromTrimmedBuffer = true;
 
 	// Leading-silence trimming can return empty even when the full source has
 	// speech. Retry once against the untrimmed buffer before giving up.
 	if (segmentsRaw.length === 0 && trimSec > 0) {
-		({ segments: segmentsRaw, granularity } = await transcribeMono16kToSegments(samples, {
-			trimRegions,
-			...transcribeOptions,
-		}));
+		({ segments: segmentsRaw, granularity } = await transcribeMono16kToSegments(
+			samples,
+			transcribeOptions,
+		));
 		transcribedFromTrimmedBuffer = false;
 	}
 

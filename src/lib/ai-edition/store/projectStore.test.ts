@@ -8,7 +8,6 @@ const bridgeMocks = vi.hoisted(() => ({
 	create: vi.fn(),
 	save: vi.fn(),
 	addAsset: vi.fn(),
-	removeAsset: vi.fn(),
 	listProjects: vi.fn(),
 }));
 
@@ -34,7 +33,6 @@ vi.mock("@/native/client", () => ({
 			create: bridgeMocks.create,
 			save: bridgeMocks.save,
 			addAsset: bridgeMocks.addAsset,
-			removeAsset: bridgeMocks.removeAsset,
 			listProjects: bridgeMocks.listProjects,
 		},
 	},
@@ -508,12 +506,6 @@ describe("useProjectStore", () => {
 			expect(state.document?.project.title).toBe("Saved");
 			expect(state.dirty).toBe(false);
 		});
-	});
-
-	it("removeAsset requires a loaded project", async () => {
-		await expect(useProjectStore.getState().removeAsset("asset_x")).rejects.toThrow(
-			"No project loaded",
-		);
 	});
 
 	it("clear resets the store", async () => {

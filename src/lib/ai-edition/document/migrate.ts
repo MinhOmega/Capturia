@@ -1,5 +1,5 @@
-// Bidirectional migration between OpenScreen's v2 EditorProjectData and the
-// current AxcutDocument. See technical-documentation/architecture/document-model.md
+// Migration from OpenScreen's v2 EditorProjectData to the current
+// AxcutDocument. See technical-documentation/architecture/document-model.md
 // for the field-by-field mapping. The migration is pure (no DOM, no fs, no
 // network) — the renderer probes asset duration at runtime.
 //
@@ -9,19 +9,13 @@
 // for AI-edition. (schemaVersion 3->4 upgrades for already-existing v3
 // documents are handled transparently inside documentSchema itself.)
 
-import {
-	type EditorProjectData,
-	PROJECT_VERSION,
-	type ProjectEditorState,
-} from "@/components/video-editor/projectPersistence";
+import type { EditorProjectData } from "@/components/video-editor/projectPersistence";
 import type {
 	AnnotationRegion,
-	CropRegion,
 	SpeedRegion,
 	TrimRegion,
 	ZoomRegion,
 } from "@/components/video-editor/types";
-import type { ProjectMedia } from "@/lib/recordingSession";
 import {
 	type AxcutAnnotationRegion,
 	type AxcutDocument,
@@ -34,7 +28,6 @@ import {
 import { createId } from "./ids";
 
 const MS_TO_SEC = 1 / 1000;
-const SEC_TO_MS = 1000;
 
 interface MigrationOptions {
 	projectId?: string;
@@ -44,10 +37,6 @@ interface MigrationOptions {
 
 function msToSec(ms: number): number {
 	return Math.round(ms * MS_TO_SEC * 1000) / 1000;
-}
-
-function secToMs(sec: number): number {
-	return Math.round(sec * SEC_TO_MS);
 }
 
 function clampSec(sec: number): number {
@@ -64,15 +53,6 @@ function clampSec(sec: number): number {
  * still owns the legacy EditorProjectData → AxcutDocument translation.
  */
 export { migrateRawDocumentToCurrent } from "../schema";
-
-function toLegacyMedia(input: ProjectMedia | undefined): ProjectMedia | null {
-	if (!input) return null;
-	const media: ProjectMedia = { screenVideoPath: input.screenVideoPath };
-	if (input.webcamVideoPath) media.webcamVideoPath = input.webcamVideoPath;
-	if (typeof input.webcamOffsetMs === "number") media.webcamOffsetMs = input.webcamOffsetMs;
-	if (input.cursorCaptureMode) media.cursorCaptureMode = input.cursorCaptureMode;
-	return media;
-}
 
 /**
  * Migrate a v2 EditorProjectData into a v3 AxcutDocument. The single recording
@@ -251,110 +231,4 @@ export function migrateProjectDataToAxcutDocument(
 	};
 
 	return documentSchema.parse(migrateRawDocumentToCurrent(draft));
-}
-
-/**
- * Migrate a v3 AxcutDocument back to a v2 EditorProjectData. Used when the
- * user toggles AI-edition off after a project was opened as v3. Round-trip is
- * not perfectly lossless — trimRanges map back to trimRegions (1:1), but the
- * timeline rebuild for clip ranges is best-effort and the speed regions remain
- * in the legacyEditor envelope where the migration put them.
- */
-export function migrateAxcutDocumentToProjectData(input: AxcutDocument): EditorProjectData {
-	const document = input;
-	const assets = Array.isArray(document.assets) ? document.assets : [];
-	const primary = document.project?.primaryAssetId
-		? assets.find((a) => a.id === document.project.primaryAssetId)
-		: assets[0];
-	// ponytail: surface the camera track back to v2 so the legacy VideoEditor
-	// can still find the webcam path through `media.webcamVideoPath`.
-	const media: ProjectMedia | null = primary
-		? toLegacyMedia({
-				screenVideoPath: primary.originalPath,
-				...(primary.cameraTrack?.sourcePath
-					? { webcamVideoPath: primary.cameraTrack.sourcePath }
-					: {}),
-			})
-		: null;
-
-	const trimRegions: TrimRegion[] = (document.timeline?.trimRanges ?? []).map((region, index) => ({
-		id: region.id ?? `trim-${index + 1}`,
-		startMs: secToMs(clampSec(region.startSec ?? 0)),
-		endMs: secToMs(Math.max(clampSec(region.startSec ?? 0) + 0.001, clampSec(region.endSec ?? 0))),
-	}));
-
-	const editor: ProjectEditorState = {
-		wallpaper: "",
-		shadowIntensity: 0,
-		showBlur: false,
-		motionBlurAmount: 0,
-		borderRadius: 0,
-		padding: 50,
-		cropRegion: { x: 0, y: 0, width: 1, height: 1 } as CropRegion,
-		zoomRegions: [],
-		cameraFullscreenRegions: [],
-		autoZoomEnabled: false,
-		autoFocusAll: false,
-		trimRegions,
-		speedRegions: [],
-		annotationRegions: [],
-		aspectRatio: "16:9",
-		webcamLayoutPreset: "picture-in-picture",
-		webcamMaskShape: "rectangle",
-		webcamMirrored: false,
-		webcamReactiveZoom: true,
-		webcamSizePreset: 25,
-		webcamPosition: null,
-		exportQuality: "good",
-		exportFormat: "mp4",
-		gifFrameRate: 15,
-		gifLoop: true,
-		gifSizePreset: "medium",
-		cursorTheme: "",
-	};
-
-	const legacy = document.legacyEditor;
-	if (legacy && typeof legacy === "object") {
-		Object.assign(editor, legacy);
-	}
-
-	const reverseZoomRegions: ZoomRegion[] = (document.zoomRanges ?? []).map((region) => ({
-		id: region.id,
-		startMs: region.startMs ?? 0,
-		endMs: region.endMs ?? region.startMs ?? 0,
-		depth: region.depth,
-		focus: region.focus,
-		...(region.focusMode ? { focusMode: region.focusMode } : {}),
-		...(region.rotationPreset ? { rotationPreset: region.rotationPreset } : {}),
-		...(typeof region.customScale === "number" ? { customScale: region.customScale } : {}),
-		...(region.source ? { source: region.source } : {}),
-	}));
-	editor.zoomRegions = reverseZoomRegions;
-
-	const reverseAnnotationRegions: AnnotationRegion[] = (document.annotations ?? []).map(
-		(region) => ({
-			id: region.id,
-			startMs: region.startMs ?? 0,
-			endMs: region.endMs ?? region.startMs ?? 0,
-			type: region.type,
-			content: region.content,
-			...(region.textContent ? { textContent: region.textContent } : {}),
-			...(region.imageContent ? { imageContent: region.imageContent } : {}),
-			position: region.position,
-			size: region.size,
-			style: region.style,
-			zIndex: region.zIndex,
-			...(region.annotationSource ? { annotationSource: region.annotationSource } : {}),
-			...(region.figureData ? { figureData: region.figureData } : {}),
-			...(region.blurData ? { blurData: region.blurData } : {}),
-		}),
-	);
-	editor.annotationRegions = reverseAnnotationRegions;
-
-	return {
-		version: PROJECT_VERSION,
-		...(media ? { media } : {}),
-		editor,
-		...(primary ? { videoPath: primary.originalPath } : {}),
-	};
 }

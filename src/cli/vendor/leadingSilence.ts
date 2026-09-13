@@ -1,7 +1,6 @@
 // Vendored for the CLI: @/lib/captioning/leadingSilence was deleted in the 1.8 line. The CLI's captions command still trims leading silence before transcription, so the module lives on here verbatim.
 
 /** Caption path is always mono 16 kHz after `extractMono16kFromVideoUrl`. */
-import type { TrimRegion } from "@/components/video-editor/types";
 
 const SAMPLE_RATE = 16_000;
 
@@ -59,22 +58,4 @@ export function trimLeadingSilenceMono16k(samples: Float32Array): {
 		samples: samples.subarray(start),
 		trimSec: start / SAMPLE_RATE,
 	};
-}
-
-/**
- * When audio is trimmed from the front, Whisper times are relative to the shortened buffer.
- * Shift trim regions by the same offset so `segmentOverlapsTrim` still uses consistent coordinates.
- */
-export function shiftTrimRegionsMsForCaptionBuffer(
-	regions: TrimRegion[],
-	trimMs: number,
-): TrimRegion[] {
-	if (trimMs <= 0) return regions;
-	return regions
-		.map((r) => ({
-			...r,
-			startMs: Math.max(0, r.startMs - trimMs),
-			endMs: Math.max(0, r.endMs - trimMs),
-		}))
-		.filter((r) => r.endMs > r.startMs);
 }

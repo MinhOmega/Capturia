@@ -89,11 +89,7 @@ export default defineConfig({
 			output: {
 				manualChunks(id) {
 					if (id.includes("react-dom") || id.includes("/react/")) return "react-vendor";
-					if (
-						id.includes("mediabunny") ||
-						id.includes("mp4box") ||
-						id.includes("fix-webm-duration")
-					)
+					if (id.includes("mediabunny") || id.includes("fix-webm-duration"))
 						return "video-processing";
 				},
 			},
