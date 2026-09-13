@@ -1226,6 +1226,7 @@ appReady?.then(async () => {
 	// main-process logs in `npm run dev` output. Without this, the
 	// `[recorder:...]` lines from recorderHandle.ts are only visible in
 	// DevTools. One-time wire; no per-message cost beyond a single IPC hop.
+	const MAX_RENDERER_CONSOLE_CHARS = 8 * 1024;
 	const logChannels = ["log", "warn", "error"] as const;
 	for (const channel of logChannels) {
 		ipcMain.on(`renderer-console-${channel}`, (_event, ...args) => {
@@ -1233,7 +1234,9 @@ appReady?.then(async () => {
 				.map((arg) => (typeof arg === "string" ? arg : JSON.stringify(arg)))
 				.join(" ");
 			const stream = channel === "error" ? process.stderr : process.stdout;
-			stream.write(`[renderer:${channel}] ${text}\n`);
+			// Capped: this is a renderer-controlled string written straight to the process's
+			// own stdout, and a diagnostic line nobody can read is not worth an unbounded one.
+			stream.write(`[renderer:${channel}] ${text.slice(0, MAX_RENDERER_CONSOLE_CHARS)}\n`);
 		});
 	}
 

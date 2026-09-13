@@ -119,6 +119,17 @@ describe("quitting while a take is running", () => {
 		await vi.waitFor(() => expect(hoisted.onRecordingStateChange).not.toBeNull());
 	});
 
+	it("caps what a renderer console line can write to stdout", () => {
+		const write = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+		try {
+			hoisted.listeners.get("renderer-console-log")?.({}, "x".repeat(64 * 1024));
+			expect(write).toHaveBeenCalledOnce();
+			expect(String(write.mock.calls[0][0]).length).toBeLessThanOrEqual(8 * 1024 + 32);
+		} finally {
+			write.mockRestore();
+		}
+	});
+
 	it.each(["app-quit", "hud-overlay-close"])("%s is refused mid-recording", (channel) => {
 		setRecording(true);
 		hoisted.quit.mockClear();
