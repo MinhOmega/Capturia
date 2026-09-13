@@ -97,8 +97,18 @@ impl Backend {
 /// `CAPTURIA_LINUX_ENCODER` without duplicating the list.
 pub const LADDER: [Backend; 3] = [Backend::Vaapi, Backend::Vulkan, Backend::Software];
 
-/// Must run before anything creates a Vulkan instance — which, in this process,
-/// means before the first `av_hwdevice_ctx_create`.
+/// Must run at the TOP OF `main`, before any thread is spawned.
+///
+/// It is a `setenv`. glibc's `setenv` may reallocate `environ`, and every other thread
+/// in the process — the stdin reader, the portal/zbus thread, the evdev readers, the
+/// PipeWire audio thread, and Mesa's own workers — may be inside `getenv` at that
+/// instant. That is a use-after-free on `environ`, and it crashes inside whichever C
+/// library happened to be reading it. Calling this from `VideoEncoder::open` put the
+/// write on the FIRST CAPTURED FRAME, with all of those threads already running; the
+/// only safe moment is before the first `thread::spawn`.
+///
+/// It must also run before anything creates a Vulkan instance — which, in this process,
+/// means before the first `av_hwdevice_ctx_create`. The top of `main` satisfies both.
 ///
 /// Mesa gates RADV's video encode queues behind a perf-test flag; without it
 /// `h264_vulkan` fails with "Device does not support the VK_KHR_video_encode_queue
@@ -246,8 +256,8 @@ impl VideoEncoder {
         forced: Option<Backend>,
         mut on_attempt: impl FnMut(Backend, &str),
     ) -> Result<Self, String> {
-        prepare_environment();
-
+        // NOT `prepare_environment()` — see its doc comment. `main` has already run it,
+        // on a process that was still single-threaded.
         let candidates: Vec<Backend> = match forced {
             Some(backend) => vec![backend],
             None => LADDER.to_vec(),
@@ -1429,5 +1439,26 @@ mod tests {
         prepare_environment();
         assert_eq!(std::env::var("RADV_PERFTEST").unwrap(), value);
         std::env::remove_var("RADV_PERFTEST");
+
+        // And opening an encoder must NOT touch the environment: the `setenv` belongs at
+        // the top of `main`, where the process is still single-threaded. Same test
+        // function rather than its own, because two tests mutating the same variable
+        // would race with each other under the default parallel harness.
+        let _ = VideoEncoder::open(
+            VideoParams {
+                width: 320,
+                height: 240,
+                src_width: 320,
+                src_height: 240,
+                fps: 30,
+                bitrate: 200_000,
+            },
+            Some(Backend::Software),
+            |_, _| {},
+        );
+        assert!(
+            std::env::var("RADV_PERFTEST").is_err(),
+            "VideoEncoder::open wrote to the environment with threads live"
+        );
     }
 }

@@ -250,6 +250,12 @@ enum Message {
 }
 
 fn main() {
+    // FIRST STATEMENT, and it has to stay one: it is a `setenv`, and every thread this
+    // process later spawns (stdin reader, portal/zbus, evdev readers, PipeWire audio)
+    // plus Mesa's own workers read the environment concurrently. See
+    // `encoder::prepare_environment`.
+    encoder::prepare_environment();
+
     let debug = std::env::var("CAPTURIA_PIPEWIRE_DEBUG")
         .map(|value| !matches!(value.as_str(), "" | "0" | "false"))
         .unwrap_or(false);
