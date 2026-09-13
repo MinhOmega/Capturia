@@ -1777,3 +1777,187 @@ describe("useTimeline.selectRegion (shift-click toggle)", () => {
 		expect(result.current.selection).toBeNull();
 	});
 });
+
+// "Paste attributes" (C3): a copied region's payload written onto pills that already
+// exist. The thing under test is what does NOT move — id, span and clip anchor belong to
+// the target, and the whole paste has to be one undo step however many pills it touches.
+describe("useTimeline.applyRegionAttributes", () => {
+	const docWithRegions: AxcutDocument = {
+		...sampleDoc,
+		zoomRanges: [
+			{
+				id: "zoom_a",
+				startMs: 1000,
+				endMs: 3000,
+				depth: 3,
+				focus: { cx: 0.5, cy: 0.5 },
+				focusMode: "manual",
+				clipId: "clip_a",
+				sourceStartSec: 1,
+				sourceEndSec: 3,
+			},
+			{
+				id: "zoom_b",
+				startMs: 5000,
+				endMs: 6000,
+				depth: 2,
+				focus: { cx: 0.1, cy: 0.1 },
+				focusMode: "manual",
+				clipId: "clip_a",
+				sourceStartSec: 5,
+				sourceEndSec: 6,
+			},
+		],
+		annotations: [
+			{
+				id: "ann_a",
+				startMs: 1000,
+				endMs: 3000,
+				clipId: "clip_a",
+				sourceStartSec: 1,
+				sourceEndSec: 3,
+				type: "text",
+				content: "the target's own words",
+				position: { x: 10, y: 90 },
+				size: { width: 30, height: 20 },
+				style: {
+					color: "#ffffff",
+					backgroundColor: "transparent",
+					fontSize: 32,
+					fontFamily: "Inter",
+					fontWeight: "bold",
+					fontStyle: "normal",
+					textDecoration: "none",
+					textAlign: "center",
+					textAnimation: "none",
+				},
+				zIndex: 1,
+			},
+		],
+		legacyEditor: {
+			speedRegions: [{ id: "speed_a", startMs: 2000, endMs: 4000, speed: 1.5 }],
+		},
+	};
+
+	beforeEach(() => {
+		useProjectStore.getState().clear();
+		clearHistory();
+		for (const mock of Object.values(bridgeMocks)) mock.mockReset();
+		probeVideoDimensionsMock.mockResolvedValue({ width: 1920, height: 1080 });
+		bridgeMocks.save.mockImplementation(async (doc: typeof sampleDoc) => ({
+			success: true,
+			document: doc,
+		}));
+		useProjectStore.setState({
+			projectId: "proj_test",
+			document: docWithRegions,
+			revision: 1,
+			status: "ready",
+			error: null,
+		});
+	});
+
+	afterEach(() => {
+		clearHistory();
+		vi.clearAllMocks();
+	});
+
+	it("writes a zoom's look onto the target and leaves its id, span and anchor alone", async () => {
+		const { result } = renderTimeline();
+
+		await act(async () => {
+			await result.current.applyRegionAttributes("zoom", ["zoom_b"], {
+				depth: 6,
+				focus: { cx: 0.2, cy: 0.8 },
+				focusMode: "auto",
+				rotationPreset: "iso",
+			});
+		});
+
+		const zoom = useProjectStore.getState().document?.zoomRanges.find((z) => z.id === "zoom_b");
+		expect(zoom).toMatchObject({
+			id: "zoom_b",
+			startMs: 5000,
+			endMs: 6000,
+			clipId: "clip_a",
+			sourceStartSec: 5,
+			sourceEndSec: 6,
+			depth: 6,
+			focusMode: "auto",
+			rotationPreset: "iso",
+		});
+		expect(zoom?.focus).toEqual({ cx: 0.2, cy: 0.8 });
+		// The pill it was copied FROM is untouched: this writes onto the target only.
+		expect(
+			useProjectStore.getState().document?.zoomRanges.find((z) => z.id === "zoom_a")?.depth,
+		).toBe(3);
+	});
+
+	it("pastes onto a multi-selection of the same kind in one undo step", async () => {
+		const { result } = renderTimeline();
+
+		await act(async () => {
+			await result.current.applyRegionAttributes("zoom", ["zoom_a", "zoom_b"], { depth: 6 });
+		});
+
+		expect(useProjectStore.getState().document?.zoomRanges.map((z) => z.depth)).toEqual([6, 6]);
+		// One save, one entry — not one per pill, which would take two Ctrl+Z to walk back.
+		expect(past).toHaveLength(1);
+		act(() => {
+			expect(undo()).toBe(true);
+		});
+		expect(useProjectStore.getState().document?.zoomRanges.map((z) => z.depth)).toEqual([3, 2]);
+	});
+
+	it("converts an annotation's type and parks the target's own content", async () => {
+		const { result } = renderTimeline();
+
+		await act(async () => {
+			await result.current.applyRegionAttributes("annotation", ["ann_a"], {
+				type: "blur",
+				content: "",
+				size: { width: 50, height: 50 },
+			});
+		});
+
+		const ann = useProjectStore.getState().document?.annotations[0];
+		expect(ann?.type).toBe("blur");
+		expect(ann?.content).toBe("");
+		// `convertAnnotationKind`'s parking, reached from the paste path: the words the
+		// target was showing come back if its type is switched to text again.
+		expect(ann?.textContent).toBe("the target's own words");
+		expect(ann?.size).toEqual({ width: 50, height: 50 });
+		// Position is "where", not "what" — the annotation must not jump.
+		expect(ann?.position).toEqual({ x: 10, y: 90 });
+		expect(ann?.startMs).toBe(1000);
+		expect(ann?.sourceStartSec).toBe(1);
+	});
+
+	it("writes a speed value onto the legacy speed region, span intact", async () => {
+		const { result } = renderTimeline();
+
+		await act(async () => {
+			await result.current.applyRegionAttributes("speed", ["speed_a"], { speed: 3 });
+		});
+
+		const legacy = useProjectStore.getState().document?.legacyEditor as {
+			speedRegions: Array<{ id: string; startMs: number; endMs: number; speed: number }>;
+		};
+		expect(legacy.speedRegions).toEqual([{ id: "speed_a", startMs: 2000, endMs: 4000, speed: 3 }]);
+	});
+
+	it("writes nothing, and records nothing, when there is nothing to paste", async () => {
+		// trim and cameraFullscreen reach here with an empty pick. A save would put an
+		// undo step on the stack that reverses no visible change.
+		const { result } = renderTimeline();
+		const before = useProjectStore.getState().document;
+
+		await act(async () => {
+			await result.current.applyRegionAttributes("cameraFullscreen", ["cf_a"], {});
+			await result.current.applyRegionAttributes("zoom", [], { depth: 6 });
+		});
+
+		expect(useProjectStore.getState().document).toBe(before);
+		expect(past).toHaveLength(0);
+	});
+});
