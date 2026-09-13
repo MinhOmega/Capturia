@@ -4225,6 +4225,14 @@ export function registerIpcHandlers(
 	});
 
 	ipcMain.handle("reveal-in-folder", async (_, filePath: string) => {
+		// Reveal opens a file manager on whatever it is handed, so the renderer must not
+		// name it freely. The only two things it ever reveals are an export whose
+		// destination the user chose and a recording — which is exactly the union of the
+		// two approval sets, and nothing else on the machine.
+		if (!readableApprovedPath(filePath) && !approvedExportPaths.isApproved(filePath)) {
+			console.warn("Refused to reveal an unapproved path:", filePath);
+			return { success: false, error: "Path is not approved" };
+		}
 		try {
 			// showItemInFolder returns nothing, it throws on error
 			shell.showItemInFolder(filePath);
