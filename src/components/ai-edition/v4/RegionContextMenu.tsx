@@ -1,5 +1,6 @@
-// The timeline's right-click menu: Copy, Paste at playhead and Delete on a region pill, Split at
-// playhead on a clip. The Menu key and Shift+F10 open it too, for the selected pill.
+// The timeline's right-click menu: Copy, Paste at playhead, Paste attributes and Delete on a
+// region pill, Split at playhead on a clip. The Menu key and Shift+F10 open it too, for the
+// selected pill.
 //
 // It owns no editing logic. Every entry calls the function its keyboard shortcut calls —
 // handed down from the editor shell, or `tl.splitAtPlayhead` — and shows that shortcut's
@@ -29,6 +30,7 @@ export function RegionContextMenu({
 	tl,
 	onCopy,
 	onPaste,
+	onPasteAttributes,
 	onDelete,
 }: {
 	target: RegionMenuTarget | null;
@@ -36,6 +38,7 @@ export function RegionContextMenu({
 	tl: ReturnType<typeof useTimeline>;
 	onCopy?: () => void;
 	onPaste?: () => void;
+	onPasteAttributes?: () => void;
 	onDelete?: () => void;
 }) {
 	const t = useScopedT("timeline");
@@ -92,12 +95,35 @@ export function RegionContextMenu({
 					{
 						// Paste makes a NEW region at the playhead, like Ctrl+V; it never writes
 						// onto the pill that was clicked, so the label says where it lands and
-						// the clicked pill's kind does not gate it.
+						// the clicked pill's kind does not gate it. The entry below is the one
+						// that writes onto the clicked pill — two verbs on one clipboard, which
+						// is why this label has to name the playhead.
 						label: t("buttons.pasteAtPlayhead"),
 						binding: shortcuts.paste,
 						onSelect: () => onPaste?.(),
 						disabled: !clipboard.hasContent,
 					},
+					// Absent, not greyed, on the two kinds that are a bare span: a trim and a
+					// full-camera region have no attributes, so there is nothing a paste could
+					// write and nothing a disabled entry could promise for later.
+					...(target?.kind === "trim" || target?.kind === "cameraFullscreen"
+						? []
+						: [
+								{
+									label: t("buttons.pasteAttributes"),
+									binding: shortcuts.pasteAttributes,
+									onSelect: () => onPasteAttributes?.(),
+									// Attributes only mean anything WITHIN a kind — a zoom's depth is
+									// not an annotation's anything — and a mixed multi-selection is
+									// refused whole rather than applied to the pills that happen to
+									// match, which would change some of what the user picked with
+									// nothing on screen saying which.
+									disabled:
+										!clipboard.hasContent ||
+										clipboard.kind !== target?.kind ||
+										tl.multiSelection.some((h) => h.kind !== clipboard.kind),
+								},
+							]),
 					{
 						label: tc("actions.delete"),
 						binding: shortcuts.deleteSelected,

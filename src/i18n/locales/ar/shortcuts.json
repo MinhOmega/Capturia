@@ -31,7 +31,8 @@
 		"deleteSelected": "حذف المحدد",
 		"playPause": "تشغيل / إيقاف مؤقت",
 		"copySelected": "نسخ المحدد",
-		"paste": "لصق"
+		"paste": "لصق",
+		"pasteAttributes": "لصق الخصائص"
 	},
 	"fixedActions": {
 		"undo": "تراجع",

@@ -11,7 +11,8 @@
 		"addSpeed": "Thêm Tốc độ (S)",
 		"addCameraFullscreen": "Thêm Camera Toàn màn hình (C)",
 		"splitAtPlayhead": "Cắt clip tại đầu phát",
-		"pasteAtPlayhead": "Dán tại đầu phát"
+		"pasteAtPlayhead": "Dán tại đầu phát",
+		"pasteAttributes": "Dán thuộc tính"
 	},
 	"hints": {
 		"pressZoom": "Nhấn Z để thêm thu phóng",

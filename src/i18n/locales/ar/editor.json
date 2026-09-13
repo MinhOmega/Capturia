@@ -82,7 +82,8 @@
 		"kinds": {
 			"zoom": "تكبير",
 			"speed": "سرعة",
-			"annotation": "نص"
+			"annotation": "نص",
+			"audio": "الصوت"
 		}
 	},
 	"topbar": {

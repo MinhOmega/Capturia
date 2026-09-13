@@ -82,7 +82,8 @@
 		"kinds": {
 			"zoom": "缩放",
 			"speed": "速度",
-			"annotation": "标注"
+			"annotation": "标注",
+			"audio": "音频"
 		}
 	},
 	"topbar": {

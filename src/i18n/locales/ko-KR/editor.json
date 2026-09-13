@@ -82,7 +82,8 @@
 		"kinds": {
 			"zoom": "줌",
 			"speed": "속도",
-			"annotation": "주석"
+			"annotation": "주석",
+			"audio": "오디오"
 		}
 	},
 	"topbar": {
