@@ -9,7 +9,7 @@
 //! encodeur SOFTWARE (`libopenh264` H264 / `libkvazaar` H265 -- les seuls du
 //! build LGPL BtbN qui marchent sans device HW, VAAPI/Vulkan-encode = suivi),
 //! la frame composée est relue en RGBA (ring de staging à 2, cf.
-//! `Compositor::set_readback_depth`) puis convertie
+//! `Compositor::set_readback_yuv_depth`) puis convertie
 //! YUV420P par `sws_scale`. La marche de timeline est PARTAGÉE
 //! (`timeline_walk::walk_composited_timeline`) et le muxer passe par le shim C
 //! `sn_fmt_set_pb` (comme Windows/macOS). **L'audio AAC n'est pas encore muxé**
@@ -1065,7 +1065,7 @@ fn run_composited_multi_inner(
         .map(|scene| scene.audio_tracks.clone())
         .unwrap_or_default();
     // Ring de staging a 2 : l'export ne veut que du debit, une frame de latence
-    // ne se voit pas dans un fichier. Voir `Compositor::set_readback_depth` pour
+    // ne se voit pas dans un fichier. Voir `Compositor::set_readback_yuv_depth` pour
     // la raison pour laquelle la preview, elle, reste a 1.
     comp.set_readback_yuv_depth(2)?;
     // pts d'encodage : DECOUPLE de l'index de marche `n`, puisque la frame

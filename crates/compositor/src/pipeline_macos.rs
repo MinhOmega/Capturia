@@ -1,9 +1,9 @@
 //! Pipeline ffmpeg côté macOS — VideoToolbox (HW) + libopenh264 (software).
 //!
 //! Équivalent macOS de `pipeline_windows.rs` (D3D11VA + h264_amf zero-copy).
-//! Exporte la même surface publique : `Stats`, `FrameGuard`, `Decoder`, `VideoEncoder`,
-//! `ExportCodec`, `ExportParams`, `ClipSource`, et les points d'entrée `decode_frame_n`,
-//! `run_c0`, `run_preview_bench`, `run_composited`, `run_composited_multi`,
+//! Exporte la même surface publique : `Stats`, `Decoder`, `VideoEncoder`,
+//! `ExportCodec`, `ExportParams`, `ClipSource`, et les points d'entrée `run_c0`,
+//! `run_preview_bench`, `run_composited`, `run_composited_multi`,
 //! `probe_frame_count`.
 //!
 //! # Frame seam — adaptation macOS
@@ -48,16 +48,6 @@ pub struct Stats {
     pub wall_s: f64,
     pub fps: f64,
     pub video_duration_s: f64,
-}
-
-/// Garde RAII sur une AVFrame (la libère au Drop). Identique à
-/// `pipeline_windows::FrameGuard`.
-pub struct FrameGuard(pub *mut crate::ffi::AVFrame);
-
-impl Drop for FrameGuard {
-    fn drop(&mut self) {
-        unsafe { crate::ffi::av_frame_free(&mut self.0) };
-    }
 }
 
 /// Au-delà de cette distance vers l'avant, `Decoder::seek_to` repart d'une image clé
@@ -1049,11 +1039,6 @@ unsafe fn nv12_to_yuv420p(_src: *mut crate::ffi::AVFrame, _dst: *mut crate::ffi:
     // Le câblage memcpy plan-par-plan viendra avec le commit « export zero-copy » quand
     // un encodeur macOS en aura effectivement besoin — pour l'instant, NV12→YUV420P n'est
     // pas exercé (libopenh264 prend NV12, h264_videotoolbox prend VT).
-}
-
-/// C0 (§9) — stub symétrique à `pipeline_windows::run_c0`.
-pub fn decode_frame_n(_path: &str, _gpu: &Gpu, _n: u32) -> Result<FrameGuard> {
-    Err(anyhow!("pipeline_macos::decode_frame_n: non implémenté"))
 }
 
 pub fn run_c0(_screen: &str, _out: &str, _gpu: &Gpu) -> Result<Stats> {

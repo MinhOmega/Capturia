@@ -36,10 +36,6 @@ extern "C" {
     fn sn_fmt_stream(s: *mut AVFormatContext, i: i32) -> *mut AVStream;
 }
 
-/// `SEEK_SET` constant — la position de seek `av_seek_frame` interprète
-/// `timestamp` comme un timestamp absolu (AV_TIME_BASE = microsecondes).
-const SEEK_SET: i32 = 0;
-
 /// Ce que la boucle d'avance de `decode_at` doit faire de la frame qu'elle vient
 /// de décoder.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -366,7 +362,7 @@ impl SwDecoder {
     /// jusqu'à la frame DUE à cet instant : la dernière dont le pts est ≤ la
     /// cible, jamais une frame encore à venir (même invariant que
     /// `timeline_walk::frame_step`, cf. la boucle plus bas). Le seek est résolu
-    /// par `av_seek_frame` avec `SEEK_SET | BACKWARD` (cherche le keyframe
+    /// par `av_seek_frame` avec `AVSEEK_FLAG_BACKWARD` (cherche le keyframe
     /// précédent le timestamp demandé). Renvoie une `AVFrame` allouée par
     /// `av_frame_alloc` que le caller doit libérer via `free_frame` —
     /// ou laisser `vk_frames::VkFrames::present` consommer (qui réécrit
@@ -401,7 +397,9 @@ impl SwDecoder {
         // ~1,78 s, la webcam toutes les ~6,73 s, donc l'écart y est ~4x plus grand. Et
         // comme `live::Player::step` rattrape la webcam par une boucle monotone vers
         // l'avant, une fois garée dans le futur elle ne revient jamais — elle fige.
-        let seek_flags = SEEK_SET | AVSEEK_FLAG_BACKWARD;
+        // Pas d'autre flag : `av_seek_frame` interprète alors `timestamp` comme
+        // un timestamp absolu (AV_TIME_BASE = microsecondes).
+        let seek_flags = AVSEEK_FLAG_BACKWARD;
         let target_ts_seconds = target_ts / 1_000_000.0;
         let r = av_seek_frame(self.fmt, -1, target_ts as i64, seek_flags);
         if r < 0 {

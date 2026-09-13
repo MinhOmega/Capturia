@@ -41,59 +41,7 @@ use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM;
 use windows::Win32::Graphics::Dxgi::Common::DXGI_SAMPLE_DESC;
 use windows::Win32::Graphics::Dxgi::IDXGISurface;
 
-/// Tout ce dont le rendu d'un texte dépend. Sert aussi de clé de cache : deux specs égales
-/// donnent la même texture, donc `cache_key` couvre exactement ces champs.
-#[derive(Clone, PartialEq)]
-pub struct TextSpec {
-    pub content: String,
-    /// RGBA 0..1 (déjà parsé depuis la chaîne CSS côté appelant).
-    pub color: [f32; 4],
-    /// RGBA 0..1 ; alpha 0 = pas de fond (le CSS `transparent`).
-    pub background: [f32; 4],
-    pub font_size_px: f32,
-    pub font_family: String,
-    pub bold: bool,
-    pub italic: bool,
-    pub underline: bool,
-    /// "left" | "center" | "right".
-    pub align: String,
-    /// "top" | "center" | "bottom" — quelle arête du bloc est épinglée à la boîte.
-    /// "center" est le comportement historique (et celui des annotations) ; les
-    /// sous-titres passent "bottom" ou "top" pour que l'arête ancrée ne bouge pas
-    /// quand le texte gagne une ligne.
-    pub valign: String,
-    /// Taille de la boîte en px de sortie — la mise en page en dépend (retours à la ligne).
-    pub box_px: [u32; 2],
-}
-
-impl TextSpec {
-    /// FNV-1a sur les champs. Utilisé pour décider s'il faut re-rastériser ; volontairement
-    /// insensible à tout ce qui n'affecte pas les pixels (position, opacité d'animation…).
-    pub fn cache_key(&self) -> u64 {
-        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-        let mut mix = |bytes: &[u8]| {
-            for b in bytes {
-                h ^= *b as u64;
-                h = h.wrapping_mul(0x100_0000_01b3);
-            }
-        };
-        mix(self.content.as_bytes());
-        mix(self.font_family.as_bytes());
-        mix(&self.font_size_px.to_bits().to_le_bytes());
-        for c in self.color.iter().chain(self.background.iter()) {
-            mix(&c.to_bits().to_le_bytes());
-        }
-        mix(&[self.bold as u8, self.italic as u8, self.underline as u8]);
-        mix(self.align.as_bytes());
-        // Juste après `align`, mêmes octets et même position que sur les deux
-        // autres backends : deux specs ne différant que par l'alignement vertical
-        // rendraient sinon les pixels l'une de l'autre depuis le cache.
-        mix(self.valign.as_bytes());
-        mix(&self.box_px[0].to_le_bytes());
-        mix(&self.box_px[1].to_le_bytes());
-        h
-    }
-}
+pub use crate::text_plate::TextSpec;
 
 /// Chaîne UTF-16 terminée par un zéro, pour les API Win32 qui prennent un `PCWSTR`.
 fn wide(s: &str) -> Vec<u16> {

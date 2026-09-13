@@ -21,13 +21,6 @@ pub struct SceneClip {
     pub has_audio: bool,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WebcamPosition {
-    pub cx: f32,
-    pub cy: f32,
-}
-
 /// Placement de la webcam (preset + réglages).
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,8 +34,6 @@ pub struct SceneLayout {
     /// bloc découpent toujours un rectangle (côté app, cf. `computeCompositeLayout`).
     pub webcam_shape: String,
     pub webcam_mirror: bool,
-    /// position normalisée (0..1) du centre webcam, ou None → défaut du preset.
-    pub webcam_position: Option<WebcamPosition>,
     /// la webcam rétrécit pendant un zoom actif.
     pub webcam_reactive_zoom: bool,
     /// User-authored source crop for the camera. Absent keeps the full frame.
@@ -381,8 +372,6 @@ pub struct SceneCursor {
     pub motion_blur: f32,
     pub click_bounce: f32,
     pub clip_to_bounds: bool,
-    /// id du thème (jeu de sprites) — informatif ici : le natif consomme `cursor_sprites`.
-    pub theme: String,
     /// Sprites par état de curseur (`"arrow"`, `"text"`, `"pointer"`, `"resize-ew"`, …), chemins
     /// absolus résolus côté app (compositorViewService, même mécanisme que le wallpaper image).
     /// Le thème choisi n'y fournit que les états qu'il possède ; l'app complète le reste avec

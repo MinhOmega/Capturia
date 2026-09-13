@@ -1,11 +1,13 @@
-//! Le modèle de boîte de la plaque de fond d'un bloc de texte, partagé par les deux
-//! rastériseurs.
+//! Ce que les trois rastériseurs de texte partagent : la `TextSpec` qu'ils prennent
+//! tous en entrée (et son `cache_key`, une clé CROSS-PLATEFORME), et le modèle de
+//! boîte de la plaque de fond d'un bloc de texte.
 //!
-//! `text_windows.rs` (Direct2D) et `text_macos.rs` (CoreText) dessinent la même chose avec
-//! deux API qui n'ont rien en commun ; ce qu'elles PEUVENT partager, ce sont les trois
-//! nombres qui décident de l'allure du bloc. Ils vivent ici parce que c'est exactement le
-//! genre de constante qui dérive en silence quand elle est recopiée : rien dans un rendu
-//! Windows ne signale qu'une marge macOS a bougé, et personne ne compare les deux à l'œil.
+//! `text_windows.rs` (Direct2D), `text_macos.rs` (CoreText) et `text_linux.rs`
+//! (cosmic-text) dessinent la même chose avec des API qui n'ont rien en commun ; ce
+//! qu'elles PEUVENT partager, ce sont les trois nombres qui décident de l'allure du
+//! bloc. Ils vivent ici parce que c'est exactement le genre de constante qui dérive en
+//! silence quand elle est recopiée : rien dans un rendu Windows ne signale qu'une marge
+//! macOS a bougé, et personne ne compare les deux à l'œil.
 //!
 //! Les valeurs viennent du modèle de boîte de référence de l'app — le `<span>` que
 //! l'overlay DOM posait derrière le texte et son jumeau canvas
@@ -122,5 +124,69 @@ mod tests {
         assert_eq!(checked_box_px([MAX_BOX_PX, MAX_BOX_PX]).unwrap(), (MAX_BOX_PX, MAX_BOX_PX));
         // Une boîte dégénérée reste ramenée à 1 px, comme avant.
         assert_eq!(checked_box_px([0, 0]).unwrap(), (1, 1));
+    }
+}
+
+/// Tout ce dont le rendu d'un texte depend, et rien d'autre : deux specs egales
+/// donnent la meme texture, donc `cache_key` couvre exactement ces champs.
+///
+/// Partage par les trois rastériseurs (`text_windows`, `text_macos`,
+/// `text_linux`), qui le re-exportent. Les trois en portaient une copie
+/// caractere pour caractere, chacune avec un commentaire demandant aux deux
+/// autres de rester synchronisees -- ce que rien ne verifiait. Le `cache_key`
+/// est une cle CROSS-PLATEFORME : l'ordre des `mix` fait partie du contrat, pas
+/// du detail d'implementation d'un backend.
+#[derive(Clone, PartialEq)]
+pub struct TextSpec {
+    pub content: String,
+    /// RGBA 0..1 (deja parse depuis la chaine CSS cote appelant).
+    pub color: [f32; 4],
+    /// RGBA 0..1 ; alpha 0 = pas de fond (le CSS `transparent`).
+    pub background: [f32; 4],
+    pub font_size_px: f32,
+    pub font_family: String,
+    pub bold: bool,
+    pub italic: bool,
+    pub underline: bool,
+    /// "left" | "center" | "right".
+    pub align: String,
+    /// "top" | "center" | "bottom" -- quelle arete du bloc de texte est epinglee
+    /// a la boite. "center" est le comportement historique (et celui des
+    /// annotations, qui reproduisent `alignItems: center` de l'overlay web) ; les
+    /// sous-titres passent "bottom" ou "top" pour que l'arete ancree ne bouge pas
+    /// quand le texte gagne une ligne.
+    pub valign: String,
+    /// Taille de la boite en px de sortie -- la mise en page en depend (retours
+    /// a la ligne).
+    pub box_px: [u32; 2],
+}
+
+impl TextSpec {
+    /// FNV-1a sur les champs. Sert a decider s'il faut re-rasteriser ;
+    /// volontairement insensible a tout ce qui n'affecte pas les pixels
+    /// (position, opacite d'animation...).
+    pub fn cache_key(&self) -> u64 {
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        let mut mix = |bytes: &[u8]| {
+            for b in bytes {
+                h ^= *b as u64;
+                h = h.wrapping_mul(0x100_0000_01b3);
+            }
+        };
+        mix(self.content.as_bytes());
+        mix(self.font_family.as_bytes());
+        mix(&self.font_size_px.to_bits().to_le_bytes());
+        for c in self.color.iter().chain(self.background.iter()) {
+            mix(&c.to_bits().to_le_bytes());
+        }
+        mix(&[self.bold as u8, self.italic as u8, self.underline as u8]);
+        mix(self.align.as_bytes());
+        // Juste apres `align`, memes octets et meme position sur les trois
+        // backends : deux specs ne differant que par l'alignement vertical
+        // rendraient sinon les pixels l'une de l'autre depuis le cache.
+        mix(self.valign.as_bytes());
+        mix(&self.box_px[0].to_le_bytes());
+        mix(&self.box_px[1].to_le_bytes());
+        h
     }
 }

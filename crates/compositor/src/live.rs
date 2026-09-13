@@ -11,8 +11,8 @@
 //!   - avant : blit du RT vers le backbuffer du swapchain, `Present`.
 //!   - maintenant : `comp.readback_direct()` copie le RT directement vers la staging
 //!     `D3D11_USAGE_STAGING` (déjà dimensionnée à la résolution de rendu), `Map`/
-//!     `D3D11_MAP_READ`, copie ligne par ligne qui respecte `RowPitch` (même idiome que
-//!     `dump_nv12`/`dump_raw`), et stocke le `Vec<u8>` dans `Shared::latest_frame` pour
+//!     `D3D11_MAP_READ`, copie ligne par ligne qui respecte `RowPitch`), et stocke le
+//!     `Vec<u8>` dans `Shared::latest_frame` pour
 //!     le `read_frame` napi. Plus de resize intermédiaire (`blit_resized`) : le RT est
 //!     déjà à la taille voulue, CSS met à l'échelle vers la boîte du panneau côté JS.
 //!

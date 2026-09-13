@@ -1,5 +1,7 @@
 #include "webcam_capture.h"
 
+#include "hresult_log.h"
+
 #include <mfapi.h>
 #include <mferror.h>
 #include <propvarutil.h>
@@ -10,16 +12,6 @@
 #include <iostream>
 
 namespace {
-
-bool succeeded(HRESULT hr, const char* label) {
-    if (SUCCEEDED(hr)) {
-        return true;
-    }
-
-    std::cerr << "ERROR: " << label << " failed (hr=0x" << std::hex << hr << std::dec << ")"
-              << std::endl;
-    return false;
-}
 
 std::wstring readAllocatedString(IMFActivate* activate, REFGUID key) {
     WCHAR* value = nullptr;
