@@ -40,13 +40,11 @@ export function ShortcutsConfigDialog() {
 		shortcuts,
 		isMac,
 		isConfigOpen,
-		openConfig,
 		closeConfig,
 		setShortcuts,
 		persistShortcuts,
 		globalShortcutStatuses,
 	} = useShortcuts();
-	void openConfig;
 	const t = useScopedT("shortcuts");
 	const tc = useScopedT("common");
 

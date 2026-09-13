@@ -30,7 +30,7 @@ async function fetchWithTimeout(url: string, signal?: AbortSignal): Promise<Resp
 }
 
 /**
- * Load the editor video like `StreamingVideoDecoder`: Electron `readBinaryFile`
+ * Load the editor video like `loadFileAsArrayBuffer`: Electron `readBinaryFile`
  * for local paths (fetch(file://) is unreliable in the renderer), otherwise
  * HTTP/blob/data URLs via fetch.
  */

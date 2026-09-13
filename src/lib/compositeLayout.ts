@@ -5,20 +5,6 @@ export interface RenderRect {
 	height: number;
 }
 
-/** Floor for the reactive webcam multiplier so the camera never shrinks below ~35% at deep zoom. */
-export const WEBCAM_REACTIVE_ZOOM_MIN_SCALE = 0.35;
-
-/**
- * Maps the live zoom scale to a webcam size multiplier, inversely (2x zoom, half size; 3x, a
- * third) so the camera stays out of the way while zoomed and returns to full size as zoom eases
- * back. Clamped to a floor so it never disappears. appliedScale is already eased per frame, so
- * the camera animates in sync for free.
- */
-export function reactiveWebcamScale(zoomScale: number): number {
-	const safe = Number.isFinite(zoomScale) && zoomScale > 0 ? zoomScale : 1;
-	return Math.max(WEBCAM_REACTIVE_ZOOM_MIN_SCALE, Math.min(1, 1 / safe));
-}
-
 export interface StyledRenderRect extends RenderRect {
 	borderRadius: number;
 	maskShape?: import("@/components/video-editor/types").WebcamMaskShape;
@@ -74,13 +60,6 @@ export type WebcamLayoutPreset =
 /** Webcam size as a percentage of the canvas reference dimension (10–50). */
 export type WebcamSizePreset = number;
 
-export interface WebcamLayoutShadow {
-	color: string;
-	blur: number;
-	offsetX: number;
-	offsetY: number;
-}
-
 interface BorderRadiusRule {
 	max: number;
 	min: number;
@@ -111,16 +90,6 @@ export interface WebcamLayoutPresetDefinition {
 	label: string;
 	transform: OverlayTransform | BlockTransform;
 	borderRadius: BorderRadiusRule;
-	shadow: WebcamLayoutShadow | null;
-}
-
-/**
- * Presets whose camera box is welded to the screen. Their geometry is fully derived
- * from the screen capture's aspect ratio, so the webcam-size slider, the mask-shape
- * picker and the reactive "shrink on zoom" scaling have nothing to act on there.
- */
-export function isWebcamBlockLayout(preset: WebcamLayoutPreset = "picture-in-picture"): boolean {
-	return preset === "dual-frame" || preset === "vertical-stack";
 }
 
 /**
@@ -210,12 +179,6 @@ const WEBCAM_LAYOUT_PRESET_MAP: Record<WebcamLayoutPreset, WebcamLayoutPresetDef
 			min: 12,
 			fraction: 0.12,
 		},
-		shadow: {
-			color: "rgba(0,0,0,0.35)",
-			blur: 24,
-			offsetX: 0,
-			offsetY: 10,
-		},
 	},
 	"vertical-stack": {
 		label: "Top / bottom",
@@ -229,7 +192,6 @@ const WEBCAM_LAYOUT_PRESET_MAP: Record<WebcamLayoutPreset, WebcamLayoutPresetDef
 			min: 8,
 			fraction: 0.06,
 		},
-		shadow: null,
 	},
 	"dual-frame": {
 		label: "Side by side",
@@ -243,7 +205,6 @@ const WEBCAM_LAYOUT_PRESET_MAP: Record<WebcamLayoutPreset, WebcamLayoutPresetDef
 			min: 12,
 			fraction: 0.06,
 		},
-		shadow: null,
 	},
 	"no-webcam": {
 		label: "No Webcam",
@@ -258,7 +219,6 @@ const WEBCAM_LAYOUT_PRESET_MAP: Record<WebcamLayoutPreset, WebcamLayoutPresetDef
 			min: 0,
 			fraction: 0,
 		},
-		shadow: null,
 	},
 };
 
@@ -273,15 +233,6 @@ export function getWebcamLayoutPresetDefinition(
 	preset: WebcamLayoutPreset = "picture-in-picture",
 ): WebcamLayoutPresetDefinition {
 	return WEBCAM_LAYOUT_PRESET_MAP[preset];
-}
-
-export function getWebcamLayoutCssBoxShadow(
-	preset: WebcamLayoutPreset = "picture-in-picture",
-): string {
-	const shadow = getWebcamLayoutPresetDefinition(preset).shadow;
-	return shadow
-		? `${shadow.offsetX}px ${shadow.offsetY}px ${shadow.blur}px ${shadow.color}`
-		: "none";
 }
 
 export function computeCompositeLayout(params: {

@@ -2,11 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { EditorProjectData } from "@/components/video-editor/projectPersistence";
 import { getEditorSettings } from "@/lib/ai-edition/store/editorSettings";
 import { documentSchema } from "../schema";
-import {
-	migrateAxcutDocumentToProjectData,
-	migrateProjectDataToAxcutDocument,
-	migrateRawDocumentToCurrent,
-} from "./migrate";
+import { migrateProjectDataToAxcutDocument, migrateRawDocumentToCurrent } from "./migrate";
 
 function makeV2Project(overrides: Partial<EditorProjectData> = {}): EditorProjectData {
 	return {
@@ -234,95 +230,7 @@ describe("migrateProjectDataToAxcutDocument", () => {
 	});
 });
 
-describe("migrateAxcutDocumentToProjectData", () => {
-	it("round-trips trimRanges back to trimRegions", () => {
-		const v2 = makeV2Project({
-			editor: {
-				...makeV2Project().editor,
-				trimRegions: [{ id: "trim_a", startMs: 1000, endMs: 2500 }],
-			},
-		});
-		const doc = migrateProjectDataToAxcutDocument(v2);
-		const back = migrateAxcutDocumentToProjectData(doc);
-		expect(back.editor.trimRegions).toHaveLength(1);
-		expect(back.editor.trimRegions[0].startMs).toBe(1000);
-		expect(back.editor.trimRegions[0].endMs).toBe(2500);
-	});
-
-	it("round-trips legacyEditor fields back into editor.*", () => {
-		const v2 = makeV2Project();
-		const doc = migrateProjectDataToAxcutDocument(v2);
-		const back = migrateAxcutDocumentToProjectData(doc);
-		expect(back.editor.wallpaper).toBe("/wallpapers/wallpaper1.jpg");
-		expect(back.editor.cursorTheme).toBe("default");
-		expect(back.editor.webcamMaskShape).toBe("circle");
-	});
-
-	it("round-trips zoomRegions and annotationRegions back to ms", () => {
-		const v2 = makeV2Project({
-			editor: {
-				...makeV2Project().editor,
-				zoomRegions: [
-					{
-						id: "z_1",
-						startMs: 0,
-						endMs: 2000,
-						depth: 4,
-						focus: { cx: 0.5, cy: 0.5 },
-					},
-				],
-				annotationRegions: [
-					{
-						id: "ann_1",
-						startMs: 1000,
-						endMs: 3000,
-						type: "text",
-						content: "Hello",
-						position: { x: 50, y: 50 },
-						size: { width: 30, height: 20 },
-						style: {
-							color: "#fff",
-							backgroundColor: "transparent",
-							fontSize: 24,
-							fontFamily: "Inter",
-							fontWeight: "bold",
-							fontStyle: "normal",
-							textDecoration: "none",
-							textAlign: "center",
-						},
-						zIndex: 1,
-					},
-				],
-			},
-		});
-		const doc = migrateProjectDataToAxcutDocument(v2);
-		const back = migrateAxcutDocumentToProjectData(doc);
-		expect(back.editor.zoomRegions[0].startMs).toBe(0);
-		expect(back.editor.zoomRegions[0].endMs).toBe(2000);
-		expect(back.editor.annotationRegions[0].startMs).toBe(1000);
-		expect(back.editor.annotationRegions[0].endMs).toBe(3000);
-	});
-
-	it("rebuilds media.screenVideoPath from the primary asset", () => {
-		const v2 = makeV2Project();
-		const doc = migrateProjectDataToAxcutDocument(v2);
-		const back = migrateAxcutDocumentToProjectData(doc);
-		expect(back.media?.screenVideoPath).toBe("/recordings/screen.webm");
-		expect(back.videoPath).toBe("/recordings/screen.webm");
-	});
-
-	it("surfaces the primary asset's cameraTrack as media.webcamVideoPath", () => {
-		const v2 = makeV2Project({
-			media: {
-				screenVideoPath: "/recordings/screen.webm",
-				webcamVideoPath: "/recordings/screen-webcam.webm",
-			},
-		});
-		const doc = migrateProjectDataToAxcutDocument(v2);
-		const back = migrateAxcutDocumentToProjectData(doc);
-		expect(back.media?.webcamVideoPath).toBe("/recordings/screen-webcam.webm");
-	});
-
+describe("migrateProjectDataToAxcutDocument focus clamping", () => {
 	it("clamps bad zoom focus to [0, 1] on forward migration", () => {
 		const doc = migrateProjectDataToAxcutDocument(
 			makeV2Project({

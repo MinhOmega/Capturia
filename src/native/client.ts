@@ -13,17 +13,12 @@ import {
 	type AiEditionLlmProviderModelsResult,
 	type AiEditionLlmSnapshot,
 	type AiEditionProjectSummary,
-	type CursorCapabilities,
 	type CursorRecordingData,
-	type CursorTelemetryPoint,
 	NATIVE_BRIDGE_CHANNEL,
 	type NativeBridgeRequest,
 	type NativeBridgeResponse,
 	type NativePlatform,
-	type ProjectContext,
 	type ProjectFileResult,
-	type ProjectPathResult,
-	type SystemCapabilities,
 } from "./contracts";
 
 function createRequestId() {
@@ -44,7 +39,7 @@ function getElectronBridge() {
 	return window.electronAPI.invokeNativeBridge;
 }
 
-export async function invokeNativeBridge<TData = unknown>(
+async function invokeNativeBridge<TData = unknown>(
 	request: NativeBridgeRequest,
 ): Promise<NativeBridgeResponse<TData>> {
 	const invoke = getElectronBridge();
@@ -64,90 +59,26 @@ export async function requireNativeBridgeData<TData>(request: NativeBridgeReques
 }
 
 export const nativeBridgeClient = {
-	rawInvoke: invokeNativeBridge,
 	system: {
 		getPlatform: () =>
 			requireNativeBridgeData<NativePlatform>({
 				domain: "system",
 				action: "getPlatform",
 			}),
-		getAssetBasePath: () =>
-			requireNativeBridgeData<string | null>({
-				domain: "system",
-				action: "getAssetBasePath",
-			}),
-		getCapabilities: () =>
-			requireNativeBridgeData<SystemCapabilities>({
-				domain: "system",
-				action: "getCapabilities",
-			}),
 	},
 	project: {
-		getCurrentContext: () =>
-			requireNativeBridgeData<ProjectContext>({
-				domain: "project",
-				action: "getCurrentContext",
-			}),
-		saveProjectFile: (projectData: unknown, suggestedName?: string, existingProjectPath?: string) =>
-			requireNativeBridgeData<ProjectFileResult>({
-				domain: "project",
-				action: "saveProjectFile",
-				payload: {
-					projectData,
-					suggestedName,
-					existingProjectPath,
-				},
-			}),
-		loadProjectFile: (projectFolder?: string) =>
-			requireNativeBridgeData<ProjectFileResult>({
-				domain: "project",
-				action: "loadProjectFile",
-				payload: { projectFolder },
-			}),
-		loadCurrentProjectFile: () =>
-			requireNativeBridgeData<ProjectFileResult>({
-				domain: "project",
-				action: "loadCurrentProjectFile",
-			}),
 		loadProjectFileFromPath: (path: string) =>
 			requireNativeBridgeData<ProjectFileResult>({
 				domain: "project",
 				action: "loadProjectFileFromPath",
 				payload: { path },
 			}),
-		setCurrentVideoPath: (path: string) =>
-			requireNativeBridgeData<ProjectPathResult>({
-				domain: "project",
-				action: "setCurrentVideoPath",
-				payload: { path },
-			}),
-		getCurrentVideoPath: () =>
-			requireNativeBridgeData<ProjectPathResult>({
-				domain: "project",
-				action: "getCurrentVideoPath",
-			}),
-		clearCurrentVideoPath: () =>
-			requireNativeBridgeData<ProjectPathResult>({
-				domain: "project",
-				action: "clearCurrentVideoPath",
-			}),
 	},
 	cursor: {
-		getCapabilities: () =>
-			requireNativeBridgeData<CursorCapabilities>({
-				domain: "cursor",
-				action: "getCapabilities",
-			}),
 		getRecordingData: (videoPath?: string) =>
 			requireNativeBridgeData<CursorRecordingData>({
 				domain: "cursor",
 				action: "getRecordingData",
-				payload: videoPath ? { videoPath } : {},
-			}),
-		getTelemetry: (videoPath?: string) =>
-			requireNativeBridgeData<CursorTelemetryPoint[]>({
-				domain: "cursor",
-				action: "getTelemetry",
 				payload: videoPath ? { videoPath } : {},
 			}),
 	},
@@ -187,12 +118,6 @@ export const nativeBridgeClient = {
 				action: "document.addAsset",
 				payload: { projectId, path, label, kind },
 			}),
-		removeAsset: (projectId: string, assetId: string) =>
-			requireNativeBridgeData<AiEditionAssetResult>({
-				domain: "aiEdition",
-				action: "document.removeAsset",
-				payload: { projectId, assetId },
-			}),
 		llmGetSnapshot: () =>
 			requireNativeBridgeData<AiEditionLlmSnapshot>({
 				domain: "aiEdition",
@@ -209,12 +134,6 @@ export const nativeBridgeClient = {
 				domain: "aiEdition",
 				action: "llm.setApiKey",
 				payload: { providerId, apiKey },
-			}),
-		llmRemoveApiKey: (providerId: string) =>
-			requireNativeBridgeData<AiEditionDocumentResult>({
-				domain: "aiEdition",
-				action: "llm.removeApiKey",
-				payload: { providerId },
 			}),
 		llmDisconnect: (providerId: string) =>
 			requireNativeBridgeData<AiEditionLlmDisconnectResult>({
@@ -286,18 +205,6 @@ export const nativeBridgeClient = {
 				domain: "aiEdition",
 				action: "chat.rewind",
 				payload: { projectId, sessionId, messageId },
-			}),
-		chatContextUsage: (projectId: string, sessionId: string) =>
-			requireNativeBridgeData<AiEditionChatBudget | null>({
-				domain: "aiEdition",
-				action: "chat.contextUsage",
-				payload: { projectId, sessionId },
-			}),
-		chatCompactNow: (projectId: string, sessionId: string) =>
-			requireNativeBridgeData<AiEditionChatCompactResult | null>({
-				domain: "aiEdition",
-				action: "chat.compactNow",
-				payload: { projectId, sessionId },
 			}),
 		/** Translate transcript segments for the caption layer through the
 		 *  configured chat provider. Returns segmentId → translated text; the

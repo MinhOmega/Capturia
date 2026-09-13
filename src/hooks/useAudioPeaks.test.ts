@@ -25,7 +25,7 @@ vi.mock("@/lib/exporter/localSourceFile", () => ({
 	releaseLocalSourceFile: () => {},
 }));
 
-vi.mock("@/lib/exporter/streamingDecoder", () => ({
+vi.mock("./loadFileAsArrayBuffer", () => ({
 	loadFileAsArrayBuffer: async () => {
 		inMemoryCalls();
 		return { data: new ArrayBuffer(8) };

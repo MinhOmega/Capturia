@@ -1388,17 +1388,10 @@ export type UnsavedChoice = "save" | "discard" | "cancel";
 
 interface UnsavedChangesModalProps extends BaseModalProps {
 	action: "close" | "new" | "open" | "record";
-	busy?: boolean;
 	onChoose: (choice: UnsavedChoice) => void;
 }
 
-export function UnsavedChangesModal({
-	open,
-	onClose,
-	action,
-	busy,
-	onChoose,
-}: UnsavedChangesModalProps) {
+export function UnsavedChangesModal({ open, onClose, action, onChoose }: UnsavedChangesModalProps) {
 	const td = useScopedT("dialogs");
 	const tc = useScopedT("common");
 	const titleKeys: Record<UnsavedChangesModalProps["action"], string> = {
@@ -1449,7 +1442,6 @@ export function UnsavedChangesModal({
 					type="button"
 					className={`${styles.btn} ${styles.btnSecondary}`}
 					onClick={() => onChoose("cancel")}
-					disabled={busy}
 				>
 					{tc("actions.cancel")}
 				</button>
@@ -1457,7 +1449,6 @@ export function UnsavedChangesModal({
 					type="button"
 					className={`${styles.btn} ${styles.btnSecondary}`}
 					onClick={() => onChoose("discard")}
-					disabled={busy}
 				>
 					{td("modal.discard")}
 				</button>
@@ -1465,107 +1456,8 @@ export function UnsavedChangesModal({
 					type="button"
 					className={`${styles.btn} ${styles.btnPrimary}`}
 					onClick={() => onChoose("save")}
-					disabled={busy}
 				>
-					{busy ? td("modal.saving") : td("modal.saveAndContinue")}
-				</button>
-			</div>
-		</ModalShell>
-	);
-}
-
-export interface InsertSourceModalProps extends BaseModalProps {
-	assetLabel: string;
-	canAddBefore: boolean;
-	canAddAfter: boolean;
-	canSplit: boolean;
-	onAddBefore: () => void;
-	onAddAfter: () => void;
-	onSplit: () => void;
-}
-
-export function InsertSourceModal({
-	open,
-	onClose,
-	assetLabel,
-	canAddBefore,
-	canAddAfter,
-	canSplit,
-	onAddBefore,
-	onAddAfter,
-	onSplit,
-}: InsertSourceModalProps) {
-	const t = useScopedT("editor");
-	return (
-		<ModalShell
-			open={open}
-			onClose={onClose}
-			title={t("insertSourceDialog.title")}
-			subtitle={t("insertSourceDialog.subtitle", { assetLabel })}
-		>
-			<div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-				<button
-					type="button"
-					disabled={!canAddBefore}
-					onClick={onAddBefore}
-					style={{
-						padding: "12px 16px",
-						border: "1px solid var(--border)",
-						borderRadius: 10,
-						background: "var(--surface)",
-						color: "var(--fg-2)",
-						font: "500 13px/1.2 var(--font-body)",
-						cursor: canAddBefore ? "pointer" : "not-allowed",
-						textAlign: "left",
-						opacity: canAddBefore ? 1 : 0.5,
-					}}
-				>
-					<strong>{t("insertSourceDialog.addBefore")}</strong>
-					<div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
-						{t("insertSourceDialog.addBeforeDesc")}
-					</div>
-				</button>
-				<button
-					type="button"
-					disabled={!canAddAfter}
-					onClick={onAddAfter}
-					style={{
-						padding: "12px 16px",
-						border: "1px solid var(--border)",
-						borderRadius: 10,
-						background: "var(--surface)",
-						color: "var(--fg-2)",
-						font: "500 13px/1.2 var(--font-body)",
-						cursor: canAddAfter ? "pointer" : "not-allowed",
-						textAlign: "left",
-						opacity: canAddAfter ? 1 : 0.5,
-					}}
-				>
-					<strong>{t("insertSourceDialog.addAfter")}</strong>
-					<div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
-						{t("insertSourceDialog.addAfterDesc")}
-					</div>
-				</button>
-				<button
-					type="button"
-					disabled={!canSplit}
-					onClick={onSplit}
-					style={{
-						padding: "12px 16px",
-						border: "1px solid var(--border)",
-						borderRadius: 10,
-						background: "var(--surface)",
-						color: "var(--fg-2)",
-						font: "500 13px/1.2 var(--font-body)",
-						cursor: canSplit ? "pointer" : "not-allowed",
-						textAlign: "left",
-						opacity: canSplit ? 1 : 0.5,
-					}}
-				>
-					<strong>{t("insertSourceDialog.split")}</strong>
-					<div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
-						{t("insertSourceDialog.splitDesc")}
-					</div>
+					{td("modal.saveAndContinue")}
 				</button>
 			</div>
 		</ModalShell>
@@ -1576,7 +1468,6 @@ export interface ChatHistoryModalProps extends BaseModalProps {
 	sessions: Array<{ id: string; title: string; messageCount: number; createdAt: string }>;
 	activeSessionId: string | null;
 	onSelect: (id: string) => void;
-	onNew: () => void;
 }
 
 export function ChatHistoryModal({
@@ -1585,9 +1476,7 @@ export function ChatHistoryModal({
 	sessions,
 	activeSessionId,
 	onSelect,
-	onNew: _onNew,
 }: ChatHistoryModalProps) {
-	void _onNew;
 	const t = useScopedT("editor");
 	const tc = useScopedT("common");
 	return (

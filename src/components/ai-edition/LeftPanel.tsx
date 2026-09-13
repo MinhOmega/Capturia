@@ -1611,7 +1611,6 @@ export function ChatStripPanel() {
 				sessions={sessions}
 				activeSessionId={activeSessionId}
 				onSelect={selectSession}
-				onNew={newChat}
 			/>
 			{rewindFor && rewindFor.anchor
 				? createPortal(
