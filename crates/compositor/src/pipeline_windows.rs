@@ -590,20 +590,6 @@ impl Decoder {
         }
     }
 
-    /// Repositionne le flux à la première keyframe (t=0) et vide le codec — pour boucler
-    /// la playback sans réallouer les décodeurs. La fixture démarre sur un IDR (§11).
-    pub(crate) unsafe fn rewind(&mut self) -> Result<()> {
-        // Même règle que `seek_to` : tout repositionnement invalide le peek en attente.
-        // Il portait sur « la frame d'après l'ancienne position », qui n'a plus de sens
-        // ici — sans ça le `next()` suivant promouvait une frame décodée avant le rewind,
-        // avec son ancien `cur_pts`.
-        self.has_peek = false;
-        averr(av_seek_frame(self.fmt, self.vidx, 0, AVSEEK_FLAG_BACKWARD), "seek")?;
-        avcodec_flush_buffers(self.dctx);
-        self.sent_eof = false;
-        Ok(())
-    }
-
     /// Time_base du flux vidéo (secondes par unité de pts).
     unsafe fn tb_sec(&self) -> f64 {
         let tb = (*sn_fmt_stream(self.fmt, self.vidx)).time_base;
