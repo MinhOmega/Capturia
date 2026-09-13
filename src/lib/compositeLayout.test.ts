@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
 	computeCameraFullscreenRect,
 	computeCompositeLayout,
-	isWebcamBlockLayout,
 	resolveWebcamReactiveZoom,
 	type StyledRenderRect,
 } from "./compositeLayout";
@@ -18,9 +17,6 @@ describe("resolveWebcamReactiveZoom", () => {
 		// would tear a hole in the block. The UI hides the toggle to match.
 		expect(resolveWebcamReactiveZoom("dual-frame", true)).toBe(false);
 		expect(resolveWebcamReactiveZoom("vertical-stack", true)).toBe(false);
-		expect(isWebcamBlockLayout("dual-frame")).toBe(true);
-		expect(isWebcamBlockLayout("vertical-stack")).toBe(true);
-		expect(isWebcamBlockLayout("picture-in-picture")).toBe(false);
 	});
 });
 

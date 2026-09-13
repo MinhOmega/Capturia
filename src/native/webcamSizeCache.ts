@@ -55,13 +55,6 @@ export function getWebcamNativeSizeRevision(): number {
 	return revision;
 }
 
-/** Clear the entire cache (used by tests, or when the document is unloaded). */
-export function clearWebcamNativeSizeCache(): void {
-	if (sizes.size === 0) return;
-	sizes.clear();
-	notify();
-}
-
 /** Subscribe to any cache mutation. Returns an unsubscribe function. */
 export function subscribeWebcamNativeSize(listener: () => void): () => void {
 	listeners.add(listener);
