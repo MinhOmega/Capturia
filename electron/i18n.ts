@@ -64,8 +64,9 @@ const messages: Record<Locale, Record<Namespace, MessageMap>> = {
 let currentLocale: Locale = "en";
 
 export function setMainLocale(locale: string) {
-	// `hasOwn`, not `in`: `in` would also accept "toString" and friends.
-	if (Object.hasOwn(messages, locale)) currentLocale = locale as Locale;
+	// Own keys only: `locale in messages` would also accept "toString" and friends.
+	// `Object.hasOwn` would read better but the tsconfig target here is ES2020.
+	if (Object.keys(messages).includes(locale)) currentLocale = locale as Locale;
 }
 
 export function getMainLocale(): Locale {
