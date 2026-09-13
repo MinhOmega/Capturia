@@ -256,6 +256,9 @@ const DECLARED: WritePath[] = [
 	// The Edit Clip dialog's Apply: source range and crop composed into ONE save (#355),
 	// where they used to be two writes that overwrote each other.
 	w("src/lib/ai-edition/store/useTimeline.ts", "applyClipEdit", "save", "gesture"),
+	// "Paste attributes" from the pill menu or Ctrl+Shift+V. One save however many pills
+	// the selection holds, so the whole paste is a single undo step.
+	w("src/lib/ai-edition/store/useTimeline.ts", "applyRegionAttributes", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "addAnnotation", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "addCameraFullscreen", "save", "gesture"),
 	w("src/lib/ai-edition/store/useTimeline.ts", "addSpeed", "save", "gesture"),

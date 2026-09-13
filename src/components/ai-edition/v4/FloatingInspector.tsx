@@ -33,6 +33,10 @@ import {
 	toggleTextBackground,
 } from "@/lib/ai-edition/annotations/background";
 import {
+	type AnnotationKind,
+	convertAnnotationKind,
+} from "@/lib/ai-edition/annotations/convertKind";
+import {
 	type AnnotationTextAnimation,
 	TEXT_ANIMATION_VALUES,
 } from "@/lib/ai-edition/annotations/textAnimation";
@@ -308,7 +312,6 @@ function paneRow(label: string, control: React.ReactNode) {
 	);
 }
 
-type AnnotationKind = AxcutAnnotationRegion["type"];
 type ArrowDirectionKind = NonNullable<AxcutAnnotationRegion["figureData"]>["arrowDirection"];
 type AnnotationTextAlign = NonNullable<AxcutAnnotationRegion["style"]>["textAlign"];
 
@@ -332,37 +335,6 @@ const BLUR_DEFAULTS = {
 	intensity: 12,
 	blockSize: 12,
 } as const;
-
-/**
- * Patch à appliquer quand l'utilisateur change le type d'une annotation.
- *
- * `content` est un slot UNIQUE partagé par le texte et l'image : la zone de saisie y écrit, et le
- * rendu d'image y lit une data URL. Changer de type sans déplacer la valeur déversait donc le
- * base64 de l'image, souvent plusieurs mégaoctets, dans le champ texte. Chaque contenu est rangé
- * dans son slot typé (`textContent` / `imageContent`) en sortant et restauré en entrant, si bien
- * qu'un aller-retour entre deux types ne perd rien.
- */
-function convertAnnotationKind(
-	region: AxcutAnnotationRegion,
-	next: AnnotationKind,
-): Partial<AxcutAnnotationRegion> {
-	if (region.type === next) return {};
-	const parked: Partial<AxcutAnnotationRegion> =
-		region.type === "text"
-			? { textContent: region.content ?? "" }
-			: region.type === "image"
-				? { imageContent: region.content ?? "" }
-				: {};
-	// Flèche et flou n'ont pas de contenu : on vide `content` plutôt que d'y laisser traîner le
-	// texte ou le base64 du type précédent.
-	const restored =
-		next === "text"
-			? (region.textContent ?? "")
-			: next === "image"
-				? (region.imageContent ?? "")
-				: "";
-	return { ...parked, type: next, content: restored };
-}
 
 const ZOOM_DEPTHS = [1, 2, 3, 4, 5, 6] as const;
 // The ladder the shared editor already ships (`SPEED_OPTIONS`), plus 1× so the select can

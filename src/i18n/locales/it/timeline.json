@@ -11,7 +11,8 @@
 		"addSpeed": "Aggiungi velocità (S)",
 		"addCameraFullscreen": "Aggiungi Camera a schermo intero (C)",
 		"splitAtPlayhead": "Dividi la clip alla testina",
-		"pasteAtPlayhead": "Incolla alla testina"
+		"pasteAtPlayhead": "Incolla alla testina",
+		"pasteAttributes": "Incolla attributi"
 	},
 	"hints": {
 		"pressZoom": "Premi Z per aggiungere zoom",

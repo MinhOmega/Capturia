@@ -31,7 +31,8 @@
 		"deleteSelected": "删除所选",
 		"playPause": "播放 / 暂停",
 		"copySelected": "复制所选",
-		"paste": "粘贴"
+		"paste": "粘贴",
+		"pasteAttributes": "粘贴属性"
 	},
 	"fixedActions": {
 		"undo": "撤销",

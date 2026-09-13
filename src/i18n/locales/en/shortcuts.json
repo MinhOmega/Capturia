@@ -31,7 +31,8 @@
 		"deleteSelected": "Delete Selected",
 		"playPause": "Play / Pause",
 		"copySelected": "Copy Selected",
-		"paste": "Paste"
+		"paste": "Paste",
+		"pasteAttributes": "Paste Attributes"
 	},
 	"fixedActions": {
 		"undo": "Undo",
