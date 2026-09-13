@@ -11,7 +11,8 @@
 		"addSpeed": "Add Speed (S)",
 		"addCameraFullscreen": "Add Full Camera (C)",
 		"splitAtPlayhead": "Split Clip at Playhead",
-		"pasteAtPlayhead": "Paste at Playhead"
+		"pasteAtPlayhead": "Paste at Playhead",
+		"pasteAttributes": "Paste Attributes"
 	},
 	"hints": {
 		"pressZoom": "Press Z to add zoom",

@@ -11,7 +11,8 @@
 		"addSpeed": "Hız Ekle (S)",
 		"addCameraFullscreen": "Tam Ekran Kamera Ekle (C)",
 		"splitAtPlayhead": "Klibi oynatma çizgisinde böl",
-		"pasteAtPlayhead": "Oynatma çizgisine yapıştır"
+		"pasteAtPlayhead": "Oynatma çizgisine yapıştır",
+		"pasteAttributes": "Öznitelikleri yapıştır"
 	},
 	"hints": {
 		"pressZoom": "Yakınlaştırma eklemek için Z tuşuna basın",

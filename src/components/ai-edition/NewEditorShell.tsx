@@ -1183,6 +1183,47 @@ export function NewEditorShell() {
 		// would paste through a callback holding a stale document.
 	}, [saveDocument, tl, te]);
 
+	// The other paste: write the copied region's LOOK onto pills that already exist,
+	// keeping where they are (upstream #24). `pasteRegion` above is the one that makes a
+	// new region at the playhead; these are two different verbs on one clipboard, which
+	// is why they are two callbacks and two bindings rather than a mode.
+	const pasteRegionAttributes = useCallback(async () => {
+		const { pasteClipboard, pickPasteableAttributes } = await import(
+			"@/lib/ai-edition/store/regionClipboard"
+		);
+		const snapshot = pasteClipboard();
+		if (!snapshot) return;
+		// Empty for trim and cameraFullscreen — a span is all they are, so there is
+		// nothing to impose on another one. The menu hides on the same emptiness.
+		const attrs = pickPasteableAttributes(snapshot);
+		if (Object.keys(attrs).length === 0) return;
+
+		// An audio pill is selected through its own channel, never `selection` — same
+		// reason `handleCopyRegion` below has to ask twice.
+		const focused =
+			tl.selection ??
+			(tl.selectedAudioTrackId ? { kind: "audio" as const, id: tl.selectedAudioTrackId } : null);
+		const targets = tl.multiSelection.length > 1 ? tl.multiSelection : focused ? [focused] : [];
+		// A mixed selection is refused outright rather than applied to the pills that
+		// happen to match: the user picked four and would get two changed, with nothing
+		// on screen saying which two.
+		if (targets.length === 0 || targets.some((h) => h.kind !== snapshot.kind)) return;
+
+		await tl.applyRegionAttributes(
+			snapshot.kind,
+			targets.map((h) => h.id),
+			attrs,
+		);
+		// `editor.regionClipboard.pasted` and its `kinds` table shipped translated in all
+		// 13 locales for the legacy editor's attribute clipboard and have sat unused since;
+		// this is the feature they were written for, so it reuses them rather than adding a
+		// fourteenth way to say the same sentence. Only `kinds.audio` had to be added —
+		// trim and cameraFullscreen never reach here, having returned no attributes above.
+		toast.success(
+			te("regionClipboard.pasted", { region: te(`regionClipboard.kinds.${snapshot.kind}`) }),
+		);
+	}, [tl, te]);
+
 	// Copy the SELECTED pill. Reads the same arrays the lanes render, so what gets
 	// copied is what the user is looking at — the old version dug into the raw
 	// document with a ternary chain that mapped a trim to "zoom" and sent
@@ -1351,6 +1392,15 @@ export function NewEditorShell() {
 					return;
 				}
 			}
+			// BEFORE plain paste. The two bindings cannot collide as they ship —
+			// `matchesShortcut` compares Shift exactly — but both are rebindable, and if a
+			// user makes them ambiguous the chord with the extra modifier is the one they
+			// meant. Order is the whole guard; there is no tie-break anywhere else.
+			if (matchesShortcut(e, shortcuts.pasteAttributes, isMac)) {
+				e.preventDefault();
+				void pasteRegionAttributes();
+				return;
+			}
 			if (matchesShortcut(e, shortcuts.paste, isMac)) {
 				e.preventDefault();
 				// Paste what was COPIED. It used to fall back to `tl.clipSelection`,
@@ -1486,6 +1536,7 @@ export function NewEditorShell() {
 		deleteSelection,
 		handleSave,
 		pasteRegion,
+		pasteRegionAttributes,
 		tl,
 		promptUnsaved,
 		saveDocument,
@@ -1762,6 +1813,7 @@ export function NewEditorShell() {
 						onEditClip={setEditClipTarget}
 						onCopyRegion={handleCopyRegion}
 						onPasteRegion={pasteRegion}
+						onPasteRegionAttributes={pasteRegionAttributes}
 						onDeleteSelection={deleteSelection}
 					/>
 				</div>

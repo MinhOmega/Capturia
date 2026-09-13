@@ -82,7 +82,8 @@
 		"kinds": {
 			"zoom": "Zoom",
 			"speed": "Vitesse",
-			"annotation": "Annotation"
+			"annotation": "Annotation",
+			"audio": "Audio"
 		}
 	},
 	"topbar": {

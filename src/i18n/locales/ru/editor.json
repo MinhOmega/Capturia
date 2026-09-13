@@ -82,7 +82,8 @@
 		"kinds": {
 			"zoom": "Масштаб",
 			"speed": "Скорость",
-			"annotation": "Аннотация"
+			"annotation": "Аннотация",
+			"audio": "Аудио"
 		}
 	},
 	"topbar": {

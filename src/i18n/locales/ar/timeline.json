@@ -11,7 +11,8 @@
 		"addSpeed": "إضافة سرعة (S)",
 		"addCameraFullscreen": "إضافة كاميرا كاملة الشاشة (C)",
 		"splitAtPlayhead": "تقسيم المقطع عند رأس التشغيل",
-		"pasteAtPlayhead": "لصق عند رأس التشغيل"
+		"pasteAtPlayhead": "لصق عند رأس التشغيل",
+		"pasteAttributes": "لصق الخصائص"
 	},
 	"hints": {
 		"pressZoom": "اضغط Z لإضافة تكبير",
