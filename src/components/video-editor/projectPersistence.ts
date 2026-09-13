@@ -1,4 +1,4 @@
-import { normalizeTextAnimation } from "@/lib/annotationTextAnimation";
+import { normalizeTextAnimation } from "@/lib/ai-edition/annotations/textAnimation";
 import { normalizeBlurColor, normalizeBlurType } from "@/lib/blurEffects";
 import { normalizeCursorThemeId } from "@/lib/cursor/cursorThemes";
 import type { ExportFormat, ExportQuality, GifFrameRate, GifSizePreset } from "@/lib/exporter";
