@@ -308,6 +308,10 @@
 	},
 	"audio": {
 		"outputGain": "Output level",
+		"autoLevel": "Auto-level",
+		"autoLevelDone": "Output level set to {{gain}} dB from the main clip.",
+		"autoLevelClamped": "The main clip needs more than ±{{limit}} dB — output level set to {{gain}} dB.",
+		"autoLevelFailed": "Could not measure the main clip's loudness.",
 		"help": "Adjust the audio output level. It applies identically in the preview and the export.",
 		"reset": "Reset audio",
 		"title": "Audio"

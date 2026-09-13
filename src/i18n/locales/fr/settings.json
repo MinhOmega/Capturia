@@ -308,6 +308,10 @@
 	},
 	"audio": {
 		"outputGain": "Niveau de sortie",
+		"autoLevel": "Niveau auto",
+		"autoLevelDone": "Niveau de sortie réglé sur {{gain}} dB d’après le clip principal.",
+		"autoLevelClamped": "Le clip principal demande plus de ±{{limit}} dB — niveau de sortie réglé sur {{gain}} dB.",
+		"autoLevelFailed": "Impossible de mesurer le volume du clip principal.",
 		"help": "Ajustez le niveau de sortie audio. Il s’applique à l’identique dans l’aperçu et à l’export.",
 		"reset": "Réinitialiser l’audio",
 		"title": "Audio"
