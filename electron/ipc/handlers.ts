@@ -67,6 +67,7 @@ import { approvedExportPaths, batchExportPaths, hasAllowedExportExtension } from
 import { mainT } from "../i18n";
 import { getInstallChannel } from "../install-channel";
 import { RECORDINGS_DIR } from "../main";
+import { type AudioLoudnessResult, measureAudioLoudness } from "../media/audioLoudness";
 import { type AudioPeaksResult, getAudioPeaks } from "../media/audioPeaks";
 import {
 	readCursorRecordingFile as readCursorRecordingFileFrom,
@@ -4324,6 +4325,25 @@ export function registerIpcHandlers(
 			} catch (error) {
 				// A clip with no audio track lands here. Degrade quietly: the renderer
 				// draws no waveform, which is correct, and logs its own warning.
+				return { success: false, message: String(error) };
+			}
+		},
+	);
+
+	// Integrated loudness of a clip (see media/audioLoudness), for the Audio pane's
+	// Auto-level button. `lufs: null` means "no native ffmpeg here" — the pane hides
+	// the button; `success: false` means ffmpeg ran and found nothing to measure.
+	ipcMain.handle(
+		"measure-audio-loudness",
+		async (_, filePath: string): Promise<AudioLoudnessResult> => {
+			// Same approval gate as every other read of a renderer-supplied path.
+			const normalizedPath = readableApprovedPath(filePath);
+			if (!normalizedPath) {
+				return { success: false, message: "File path is not approved" };
+			}
+			try {
+				return { success: true, lufs: await measureAudioLoudness(normalizedPath) };
+			} catch (error) {
 				return { success: false, message: String(error) };
 			}
 		},
