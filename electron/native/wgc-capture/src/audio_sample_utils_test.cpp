@@ -639,11 +639,11 @@ int main() {
                 std::to_string(fromCold.size()));
     }
 
-    // WASAPI delivers no packets while a loopback source is silent; the capture
-    // layer synthesizes zero frames and pushes them through the SAME callback
-    // (emitSilenceFrames in wasapi_loopback_capture.cpp). Those frames have to be
-    // CONSUMED rather than skipped: skipping them would slide the decimation
-    // phase and shorten the take. Ragged packets, two silent stretches, and a
+    // A loopback source that is playing silence still delivers packets, flagged
+    // AUDCLNT_BUFFERFLAGS_SILENT; the capture layer substitutes zeros and pushes
+    // them through the SAME callback (wasapi_loopback_capture.cpp's captureLoop).
+    // Those frames have to be CONSUMED rather than skipped: skipping them would
+    // slide the decimation phase and shorten the take. Ragged packets, two silent stretches, and a
     // total that is deliberately not a multiple of the factor.
     {
         const size_t totalFrames = 7777;
