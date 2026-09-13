@@ -15,6 +15,15 @@ import { clearHistory, currentWriteEpoch, pushHistory } from "./undoStack";
 let documentSavesInFlight = 0;
 const documentSavesIdle: Array<() => void> = [];
 
+/**
+ * Which open is the current one. Two loads can be in flight at once — Ctrl+O twice,
+ * a double-click in the project list — and without this the one whose `get` resolved
+ * LAST won, so the store could end up holding project A's document under project A's
+ * id while the user had asked for B. `addAsset` samples `currentWriteEpoch()` for
+ * exactly this class of race; the load had nothing.
+ */
+let loadGeneration = 0;
+
 /** Outcome of `waitForDocumentSaves`: saves drained, or the wait gave up. */
 export type DocumentSavesWait = "idle" | "timeout";
 
@@ -289,12 +298,16 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 	lastSavedAt: null,
 
 	async loadProject(projectId) {
+		const generation = ++loadGeneration;
 		set({ status: "loading", error: null });
 		try {
 			const result = await nativeBridgeClient.aiEdition.get(projectId);
 			if (!result.success || !result.document) {
 				throw new Error(result.error ?? "Failed to load project");
 			}
+			// A later open took over while this one was in flight — its answer is the
+			// one the user is waiting for, and this one must not land on top of it.
+			if (generation !== loadGeneration) return;
 			const document = parseDocument(result.document);
 			set({
 				projectId,
@@ -308,6 +321,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 			});
 			clearHistory();
 		} catch (error) {
+			// Same reason: a superseded load's failure is not this project's failure, and
+			// parking `status: "error"` on top of a good one is a load that never happened.
+			if (generation !== loadGeneration) return;
 			set({
 				status: "error",
 				error: error instanceof Error ? error.message : String(error),
