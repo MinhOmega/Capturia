@@ -4,21 +4,11 @@ export {
 	type Mp4ExportSettings,
 } from "./mp4ExportSettings";
 export type {
-	ExportConfig,
 	ExportFormat,
 	ExportProgress,
 	ExportQuality,
-	ExportResult,
-	ExportSettings,
 	ExportVideoCodec,
-	GifExportConfig,
 	GifFrameRate,
 	GifSizePreset,
-	VideoFrameData,
 } from "./types";
-export {
-	GIF_FRAME_RATES,
-	GIF_SIZE_PRESETS,
-	isValidGifFrameRate,
-	VALID_GIF_FRAME_RATES,
-} from "./types";
+export { GIF_FRAME_RATES, GIF_SIZE_PRESETS } from "./types";
