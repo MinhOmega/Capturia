@@ -65,8 +65,35 @@ pub fn averr(ret: i32, ctx: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Un code de retour d'`av_read_frame` qui met fin à la lecture — EOF **ou** erreur.
+///
+/// La règle est la même pour tous les démuxages du crate : ce qui a déjà été lu est bon,
+/// donc une erreur en cours de fichier arrête la boucle au lieu de jeter le travail.
+/// `remux.rs` l'appliquait depuis toujours (un enregistrement coupé par un crash reste
+/// lisible), `audio.rs` non : il ne tolérait qu'`AVERROR_EOF` et propageait le reste, donc
+/// le clip s'exportait avec l'image et SANS une seconde de son (`audio_jobs.rs` traduisait
+/// l'`Err` en « silence conservé »). La règle vit ici pour qu'elle ne puisse plus diverger
+/// entre les deux.
+///
+/// Mesuré sur cette machine : un conteneur tronqué (matroska, mov, mp4, wav — et même lu
+/// à travers un tube non seekable) rend toujours `AVERROR_EOF`. Les codes qui passent par
+/// ici sont donc ceux des données corrompues et des erreurs d'E/S, pas ceux d'une simple
+/// coupure — raison pour laquelle aucune fixture ne peut les reproduire.
+pub fn read_ends_stream(ret: i32) -> bool {
+    ret < 0
+}
+
 #[cfg(test)]
 mod tests {
+    /// Le défaut : `== AVERROR_EOF` laissait passer les codes d'erreur vers un `?`.
+    #[test]
+    fn a_read_error_ends_the_stream_just_like_eof() {
+        assert!(super::read_ends_stream(super::AVERROR_EOF));
+        assert!(super::read_ends_stream(super::AVERROR_INVALIDDATA), "données corrompues");
+        assert!(super::read_ends_stream(-5), "EIO");
+        assert!(!super::read_ends_stream(0), "un paquet lu n'arrête rien");
+    }
+
     /// Les constantes Rust doivent valoir EXACTEMENT ce que les macros ffmpeg valent
     /// sur cette cible. C'est le test qui aurait attrapé le -11 en dur sur macOS avant
     /// qu'il ne se manifeste comme « la preview reste noire ».

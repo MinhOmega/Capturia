@@ -203,7 +203,7 @@ pub fn remux_to_seekable_matroska(input: &str, output: &str) -> Result<RemuxStat
         let mut packets: u64 = 0;
         loop {
             let r = av_read_frame(guard.ictx, guard.pkt);
-            if r < 0 {
+            if crate::ffi::read_ends_stream(r) {
                 // Fin de fichier ou flux tronqué : dans les deux cas on écrit le
                 // trailer sur ce qu'on a. Un enregistrement coupé net (crash,
                 // batterie) reste lisible et devient seekable jusqu'à sa coupure.

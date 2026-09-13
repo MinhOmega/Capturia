@@ -326,13 +326,20 @@ unsafe fn decode_clip_audio_inner(
     while tracks.iter().any(|t| !t.reached_end && !t.decoder_eof) {
         if !input_eof {
             let read = av_read_frame(fmt, packet);
-            if read == AVERROR_EOF {
+            // Fin de fichier OU flux illisible : dans les deux cas on garde ce qui a été
+            // décodé et on vide les décodeurs. Propager l'erreur perdait TOUT l'audio du
+            // clip — un enregistrement abîmé s'exportait avec l'image et en silence, alors
+            // que `remux.rs` applique la même règle côté conteneur et que l'image, elle,
+            // survivait. La règle vit dans `ffi::read_ends_stream`.
+            if crate::ffi::read_ends_stream(read) {
+                if read != AVERROR_EOF {
+                    eprintln!("[audio] lecture interrompue ({read}) : on garde le decode");
+                }
                 for track in tracks.iter_mut() {
                     avcodec_send_packet(track.dctx, ptr::null());
                 }
                 input_eof = true;
             } else {
-                averr(read, "audio av_read_frame")?;
                 let packet_stream = (*packet).stream_index;
                 if let Some(track) = tracks
                     .iter_mut()
