@@ -114,6 +114,14 @@ export function useNativeCompositorView(
 		// Fresh view (source or enablement changed) → the previous view's fatal error
 		// says nothing about this one.
 		setError(null);
+		// And neither does its id. The previous run's cleanup has just destroyed that
+		// view, but it left the id published: `NativeCompositorOverlay` kept handing it
+		// to `setCurrentNativeViewId`, so every scene/param/time call went to a view that
+		// no longer exists — and native answers `Ok(None)` for an unknown id, so nothing
+		// surfaced. Opening project B while `createCompositorView` rejects left A's id in
+		// place for good: a black canvas with `error` still null.
+		setViewId(null);
+		viewIdRef.current = null;
 
 		/** Resize the canvas's DRAWING BUFFER to match the offscreen render
 		 *  target's pixel dimensions. Setting `canvas.width` / `canvas.height`
