@@ -53,8 +53,23 @@ The panel around it:
 
 `Ctrl/Cmd + Z` undoes an agent edit exactly like a manual one.
 
-The **Smart zooms + cuts** entry in the timeline's auto-enhance menu is the same agent on a one-shot prompt. (The other entry, **Automatic zooms**, reads recorded cursor movement and needs no provider at all.)
+The **Smart cuts** entry in the timeline's [auto-enhance menu](./editing-timeline.md#auto-enhance) is the same agent on a one-shot prompt. Every other entry in that menu runs on this device and needs no provider at all.
 
 ## What else uses your provider
 
 [Caption translation](./captions.md#translation) is a single text-transform call against the same model — it doesn't run the agent loop and can't touch your document. Transcription and caption rendering stay entirely on-device either way.
+
+## Speech model
+
+The same **AI settings** panel carries one setting that needs no provider at all: which local Whisper model transcribes your audio. It ships three, and switching to one downloads it once:
+
+| Model | Size | Trade-off |
+|---|---|---|
+| **Fast** | 78 MB | Quickest, but misses more words in noisy or accented speech |
+| **Balanced** | 252 MB | Good accuracy at a moderate speed — the default |
+| **Accurate** | 547 MB | Best accuracy, and the slowest |
+
+Existing transcripts are kept when you switch; [regenerate one](./captions.md#transcribing) to put the new model to work. A model you no longer want can be deleted from its own card.
+
+![Speech model cards for Fast, Balanced, and Accurate, with Balanced active](/img/screens/speech-model.png)
+*Three local Whisper models, picked in AI settings and run on-device.*

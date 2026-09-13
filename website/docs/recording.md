@@ -23,8 +23,12 @@ The source picker button shows the currently selected screen or window (truncate
 
 - **Screens** — one card per display.
 - **Windows** — one card per open window, with its app icon.
+- **Area** — pick the screen, then drag a rectangle over it: the overlay shows the selection's pixel size, `Enter` confirms and `Esc` cancels. Not offered on Linux, where the desktop portal chooses the screen instead.
 
 Pick a thumbnail and hit **Share**. If no source is selected when you hit record, Capturia opens the picker first and starts recording automatically once you choose one.
+
+![Area selection overlay with a 940 × 530 rectangle drawn over the screen](/img/screens/area-recording.png)
+*Area recording: drag the rectangle, `Enter` to confirm.*
 
 ## Audio
 
@@ -50,6 +54,7 @@ This toggle isn't available on Linux, where only cursor *position* is captured (
 - **Pause / Resume** — available mid-recording.
 - **Restart** — throws away the current take and starts fresh.
 - **Cancel** — discards the current take without saving.
+- **Flag this moment** — drops a marker at the current time while recording; the timeline's [Zooms at flagged moments](./editing-timeline.md#auto-enhance) turns each flag into a zoom afterwards.
 - **Open Studio** — switches to the editor (hidden while recording).
 
 ## Countdown
@@ -59,10 +64,17 @@ Hitting record triggers a 3‑2‑1 countdown, rendered as a full-desktop overla
 ## Other HUD controls
 
 - **Layout toggle** — switches the HUD between horizontal and vertical, persisted across sessions.
-- **Settings** — device settings for the selected mic and camera without leaving the HUD.
+- **Settings** — device settings for the selected mic and camera without leaving the HUD, plus capture frame rate, resolution, and where takes are saved (see below).
 - **Notes** — opens a small rich-text scratchpad window, handy for a script or cue sheet while you record. It's saved locally between sessions.
 - **Language** — a locale picker (13 languages) that only affects the Capturia UI, not your recording.
 - Window controls to hide the HUD or quit the app.
+
+## Where recordings are saved
+
+HUD **Settings** has a **Save recordings to** row: **Change…** points new takes at any folder you like, **Reset** puts them back in the default one. Earlier recordings stay where they were saved. The same panel sets the capture **frame rate** and **resolution** — lower them if frames are dropped while recording.
+
+![HUD settings panel with frame rate, resolution, and a "Save recordings to" folder row](/img/screens/recordings-folder.png)
+*Capture settings, with the folder new recordings land in.*
 
 ## Recording from the editor (Rec mode)
 

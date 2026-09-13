@@ -51,4 +51,7 @@ The aspect-ratio picker in the timeline toolbar sets the shape of the frame; **O
 - **Screen recording** — jumps straight into [Rec mode](./recording.md#recording-from-the-editor-rec-mode).
 - **Import media** — opens the file picker.
 
-**Open project** lists your recent `.capturia` files with a search box, keyboard navigation, and a **Browse files…** escape hatch. You can also drop a `.capturia` file onto the empty editor.
+**Open project** lists your recent `.capturia` files with a search box, keyboard navigation, and a **Browse files…** escape hatch. Each row carries a poster frame grabbed from the project's own video, its duration, and when it was last saved, so you can recognise a take without opening it. You can also drop a `.capturia` file onto the empty editor.
+
+![Open project dialog listing three recent projects, each with a poster frame, duration, and date](/img/screens/project-posters.png)
+*Recent projects, each with a poster frame taken from its own footage.*

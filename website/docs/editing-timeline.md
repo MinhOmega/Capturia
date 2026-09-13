@@ -41,11 +41,16 @@ The **pencil** button on the same rail opens the **Edit clip** modal for the sel
 
 Selecting a region on the timeline (a zoom, trim, annotation, speed, or Full Camera block) replaces the facet body with an inspector for that region, described below alongside each region type.
 
+### Saved looks
+
+The palette icon in the header of every style pane saves the current background, effects, cursor, and caption styling as a named **look**, so the next project starts where this one ended. Apply one with a click, star one as the default for new projects, and tick **Include format (aspect ratio)** if the shape belongs to the look too. A look never carries anything tied to the footage — no regions, trims, zooms, crop, clips, transcript, or audio gain.
+
+![Saved looks popover on the Composition pane, with two presets and a save-as form](/img/screens/saved-looks.png)
+*Saved looks: apply, rename, or star one as the default for new projects.*
+
 ## Timeline toolbar
 
-- **Auto-enhance** (wand icon) — a menu with two one-shot passes:
-  - **Automatic zooms** — reads the recorded cursor movement and drops zoom regions on the moments where the cursor dwells. No network, no model.
-  - **Smart zooms + cuts** — hands the job to the AI agent instead, which needs a [connected provider](./ai-editing.md).
+- **Auto-enhance** (wand icon) — a menu of one-shot passes over the whole timeline, [described below](#auto-enhance).
 - **Speed** (`S`) — adds a speed-change region at the playhead.
 - **Comment** (`A`) — adds an annotation at the playhead.
 - **Trim** (`T`) — drops a two-second cut ("trim region") at the playhead. Drag its edges to resize, like any other region.
@@ -54,9 +59,36 @@ Selecting a region on the timeline (a zoom, trim, annotation, speed, or Full Cam
 - **Full Camera** (`C`) — adds a segment where the webcam takes the whole frame.
 - **Aspect ratio** — the output shape for preview and export: your clips' own shapes under **Original**, plus 16:9, 9:16, 1:1, 4:3, 4:5, 16:10, and 10:16.
 
-Drag a region's edges to resize, or drag the block to move it. Regions snap to the playhead, other region edges, and the timeline's start/end. `Ctrl/Cmd + C` / `Ctrl/Cmd + V` copies a selected region's attributes onto another region of the same kind.
+Drag a region's edges to resize, or drag the block to move it. Regions snap to the playhead, other region edges, and the timeline's start/end.
 
 `Shift` + scroll pans the timeline; `Ctrl`/`Cmd` + scroll zooms in and out. Both are shown as hints under the transport bar.
+
+### Auto-enhance
+
+The wand icon opens a menu of one-shot passes. Each one lands as a single undo step, and none of them runs on its own:
+
+- **Automatic zooms** — reads the recorded cursor movement and drops zoom regions on the moments where the cursor dwells. No network, no model.
+- **Zooms at flagged moments** — one zoom per flag you set while recording. Flags already covered by a zoom, or sitting inside a trim, are counted and skipped; with no flags in the take, the entry points you at the HUD button instead.
+- **Remove dead air** — cuts long pauses and filler sounds from the transcript's own word timings, on this device.
+- **Speed up idle time** — lays 3× speed regions over stretches where the cursor sits still and nobody is speaking.
+- **Smart cuts** — hands the job to the AI agent instead, which needs a [connected provider](./ai-editing.md).
+
+The last two transcript-driven entries stay disabled until the take has a transcript.
+
+![Auto-enhance menu with automatic zooms, zooms at flagged moments, and two entries waiting on a transcript](/img/screens/auto-enhance.png)
+*Auto-enhance, with the transcript-driven passes still transcribing.*
+
+![Timeline with four zoom regions lined up on the moments flagged during the recording](/img/screens/flag-zooms.png)
+*One zoom region per flag set while recording.*
+
+### Right-click menu
+
+Right-click a region pill for **Copy**, **Paste at playhead**, and **Delete**; right-click a clip for **Split at playhead**. The `Menu` key and `Shift + F10` open the same menu for the selected pill, and each entry shows the shortcut it runs.
+
+`Ctrl/Cmd + V` pastes a *new* region with the copied attributes and length at the playhead. To restyle a region you already have, select it and use **Paste attributes** (`Ctrl/Cmd + Shift + V`): the target keeps its place and span and takes everything else from the clipboard, in one undo step. A text annotation keeps its own words — only its look is pasted.
+
+![Right-click menu on a zoom region offering copy, paste at playhead, and delete](/img/screens/region-menu.png)
+*Right-click a region pill for copy, paste, and delete.*
 
 ### Zoom regions
 
@@ -108,8 +140,9 @@ The gear icon in the top bar opens the shortcuts dialog, where the configurable 
 | Add Full Camera | `C` |
 | Delete Selected | `Ctrl/Cmd + D` |
 | Play / Pause | `Space` |
-| Copy region attributes | `Ctrl/Cmd + C` |
-| Paste region attributes | `Ctrl/Cmd + V` |
+| Copy region | `Ctrl/Cmd + C` |
+| Paste region at playhead | `Ctrl/Cmd + V` |
+| Paste attributes onto the selected region | `Ctrl/Cmd + Shift + V` |
 
 Fixed (not reassignable):
 
