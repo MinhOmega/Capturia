@@ -2541,6 +2541,10 @@ impl Compositor {
             _tex: wgpu::Texture,
             _view: wgpu::TextureView,
             binds: Vec<wgpu::BindGroup>,
+            /// Anneau de clic : un seul tap, dessine AVANT le sprite (donc sous le
+            /// pointeur) et jamais dans la trainee, qui n'appartient qu'au pointeur.
+            _ring: Option<(wgpu::Buffer, wgpu::Texture, wgpu::TextureView)>,
+            ring_bind: Option<wgpu::BindGroup>,
         }
         let cursor_draw: Option<CursorDraw> = (|| {
             let track = cursor_ref.as_ref()?;
@@ -2607,15 +2611,21 @@ impl Compositor {
                     })
                     .collect()
             };
-            let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
-            let (mut bufs, mut binds) = (Vec::new(), Vec::new());
-            for placement in placements {
-                let cb = match placement {
+            // Un sprite de curseur, droit (mode 7) ou pose sur le plan incline (mode 13).
+            // Partage entre le pointeur, ses copies de trainee et l'anneau de clic : trois
+            // dessins qui ne different que par la taille, le pivot et l'opacite.
+            let sprite_cb = |placement: CursorPlacement,
+                             pw: f32,
+                             ph: f32,
+                             hotspot: [f32; 2],
+                             a: f32|
+             -> LayerCB {
+                match placement {
                     CursorPlacement::Upright { center } => LayerCB {
                         dst: cursor_sprite_dst(center, pw / rw, ph / rh, hotspot),
                         src: [0.0, 0.0, 1.0, 1.0],
                         mode: 7.0,
-                        color: [1.0, 1.0, 1.0, 1.0],
+                        color: [1.0, 1.0, 1.0, a],
                         fx: plan.clip,
                         ..Default::default()
                     },
@@ -2651,7 +2661,7 @@ impl Compositor {
                         dst: [min_x / rw, min_y / rh, bw / rw, bh / rh],
                         quad_px: [bw, bh],
                         mode: 13.0,
-                        color: [1.0, 1.0, 1.0, 1.0],
+                        color: [1.0, 1.0, 1.0, a],
                         fx: [tl0, tl1, tr0, tr1],
                         src_prev: [br0, br1, bl0, bl1],
                         // Le clip vit ici et NON dans `fx` (mode 7) : `fx` porte les coins.
@@ -2659,13 +2669,54 @@ impl Compositor {
                         ..Default::default()
                     }
                 }
+                }
+            };
+
+            // Anneau de clic : meme placement que le pointeur, donc meme suivi du zoom et
+            // de l'inclinaison. Le PNG est carre et son pivot centre, d'ou `size_px` sur
+            // les deux axes.
+            let ring = plan.ring.as_ref().and_then(|r| {
+                let sprite = scene_ref.as_ref()?.cursor.click_ring_sprite.as_ref()?;
+                let (rtex, _, _) = match self.cached_image(&sprite.path) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        eprintln!("[curseur] anneau \"{}\" : {e:#}", sprite.path);
+                        return None;
+                    }
                 };
+                let rview = rtex.create_view(&wgpu::TextureViewDescriptor::default());
+                let cb = sprite_cb(
+                    r.placement,
+                    r.size_px,
+                    r.size_px,
+                    [sprite.hotspot_x, sprite.hotspot_y],
+                    r.alpha,
+                );
+                let (rbuf, rbind) = self.make_bind(&cb, Some((&rview, &rview, &rview)), &dummy);
+                Some((rbuf, rtex, rview, rbind))
+            });
+
+            let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+            let (mut bufs, mut binds) = (Vec::new(), Vec::new());
+            for placement in placements {
+                let cb = sprite_cb(placement, pw, ph, hotspot, 1.0);
                 // Sprite RGBA au binding 1 (texY) que le mode 7 echantillonne.
                 let (buf, bind) = self.make_bind(&cb, Some((&view, &view, &view)), &dummy);
                 bufs.push(buf);
                 binds.push(bind);
             }
-            Some(CursorDraw { _bufs: bufs, _tex: tex, _view: view, binds })
+            let (ring_keep, ring_bind) = match ring {
+                Some((rbuf, rtex, rview, rbind)) => (Some((rbuf, rtex, rview)), Some(rbind)),
+                None => (None, None),
+            };
+            Some(CursorDraw {
+                _bufs: bufs,
+                _tex: tex,
+                _view: view,
+                binds,
+                _ring: ring_keep,
+                ring_bind,
+            })
         })();
         // Bind group de la passe de composition d'`accum` (layout du blur :
         // uniform + texture + sampler). Construit hors de la pass, comme les
@@ -2813,6 +2864,13 @@ impl Compositor {
             rpass.set_pipeline(&self.pipeline);
             for a in &ann_draws {
                 rpass.set_bind_group(0, &a.bind, &[]);
+                rpass.draw(0..4, 0..1);
+            }
+            // L'anneau de clic AVANT le pointeur : il doit passer dessous. Il est
+            // ici meme quand le pointeur part dans la passe de trainee, qui se
+            // composite apres celle-ci -- l'ordre tient dans les deux cas.
+            if let Some(bind) = cursor_draw.as_ref().and_then(|c| c.ring_bind.as_ref()) {
+                rpass.set_bind_group(0, bind, &[]);
                 rpass.draw(0..4, 0..1);
             }
             // Curseur en dernier : au-dessus de l'ecran et des annotations.

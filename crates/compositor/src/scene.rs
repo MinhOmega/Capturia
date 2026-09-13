@@ -394,6 +394,15 @@ pub struct SceneCursor {
     /// `#[serde(default)]` : champ ajouté après coup, absent des JSON de test existants.
     #[serde(default)]
     pub cursor_sprites: std::collections::HashMap<String, SceneCursorSprite>,
+    /// Force 0..1 de l'anneau de clic (0 = éteint, le défaut). Il est dessiné par la passe
+    /// CURSEUR et non comme une annotation : seul ce chemin suit la coupe du zoom.
+    /// `#[serde(default)]` : champ ajouté après coup, absent des payloads existants.
+    #[serde(default)]
+    pub click_ring: f32,
+    /// Sprite de l'anneau (PNG, pivot centré 0.5/0.5), chemin absolu résolu côté app comme
+    /// `cursor_sprites`. Absent → rien à dessiner, même avec `click_ring > 0`.
+    #[serde(default)]
+    pub click_ring_sprite: Option<SceneCursorSprite>,
 }
 
 /// Un sprite de curseur : image + point de pivot.
@@ -648,6 +657,26 @@ mod tests {
         assert!(scene.clips[0].has_audio);
         assert_eq!(scene.crop_by_clip.len(), 1);
         assert_eq!(scene.output.width, 1920);
+    }
+
+    /// Un payload écrit avant l'anneau de clic doit toujours parser : `clickRing` et son
+    /// sprite sont `#[serde(default)]`, donc absents = anneau éteint.
+    #[test]
+    fn cursor_click_ring_field_optional_in_payload() {
+        let json = r##"{"clips":[],"layout":{"preset":"no-webcam","webcamSize":1,"webcamShape":"rectangle","webcamMirror":false,"webcamPosition":null,"webcamReactiveZoom":false},"effects":{"padding":0,"blur":false,"shadow":0,"roundnessFrac":0,"motionBlur":0},"background":{"kind":"color","color":"#123456"},"zoomRegions":[],"cursor":{"show":true,"size":1,"smoothing":0,"motionBlur":0,"clickBounce":1,"clipToBounds":false,"theme":"default"},"cropByClip":[],"output":{"width":1280,"height":720,"fps":30}}"##;
+        let s = Scene::from_json(json).expect("parse sans clickRing");
+        assert_eq!(s.cursor.click_ring, 0.0);
+        assert!(s.cursor.click_ring_sprite.is_none());
+
+        let with_ring = json.replace(
+            r#""theme":"default""#,
+            r#""theme":"default","clickRing":0.8,"clickRingSprite":{"path":"/ring.png","hotspotX":0.5,"hotspotY":0.5}"#,
+        );
+        let s = Scene::from_json(&with_ring).expect("parse avec clickRing");
+        assert_eq!(s.cursor.click_ring, 0.8);
+        let sprite = s.cursor.click_ring_sprite.expect("sprite d'anneau");
+        assert_eq!(sprite.path, "/ring.png");
+        assert_eq!(sprite.hotspot_x, 0.5);
     }
 
     #[test]
