@@ -256,12 +256,6 @@ const DECLARED: WritePath[] = [
 	// The Edit Clip dialog's Apply: source range and crop composed into ONE save (#355),
 	// where they used to be two writes that overwrote each other.
 	w("src/lib/ai-edition/store/useTimeline.ts", "applyClipEdit", "save", "gesture"),
-	// "Paste attributes" from the pill menu or Ctrl+Shift+V. One save however many pills
-	// the selection holds, so the whole paste is a single undo step.
-	w("src/lib/ai-edition/store/useTimeline.ts", "applyRegionAttributes", "save", "gesture"),
-	// The idle-speedup pass, chosen from the same auto-enhance menu as the dead-air
-	// one. Never runs on import — only when the user picks it.
-	w("src/lib/ai-edition/store/useTimeline.ts", "addSpeedRegionsBulk", "save", "gesture"),
 	// The one door every hand edit in that hook now goes through — add/update/remove
 	// for zooms, trims, annotations, speed, camera-fullscreen, clips and audio tracks,
 	// including the offline dead-air pass chosen from the auto-enhance menu (a
