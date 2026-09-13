@@ -328,6 +328,7 @@
 	"cursor": {
 		"smoothing": "Yumuşatma",
 		"clickBounce": "Tıklama Sıçraması",
+		"clickRing": "Tıklama Vurgusu",
 		"help": "Kaydedilen telemetriden imleç çizimi: tema, boyut, yumuşatma, hareket bulanıklığı ve tıklama sıçraması.",
 		"clipToBoundsDescription": "İmleci video kare içinde tutar. İmlecin kenarları aşmasına izin vermek için kapatın — yakınlaştırma veya kaydırma yapılırken kullanışlıdır.",
 		"size": "Boyut",

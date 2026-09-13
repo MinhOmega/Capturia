@@ -3428,6 +3428,23 @@ export function CursorPane() {
 						onCommit={() => void commit()}
 					/>
 				) : null}
+				{supportsCursorClickEffects() ? (
+					<SliderCell
+						label={ts("cursor.clickRing")}
+						value={settings.cursor.clickRing * 100}
+						min={0}
+						max={100}
+						suffix="%"
+						disabled={!hasDocument}
+						onChange={(v) => {
+							setLive({ cursor: { clickRing: v / 100 } });
+							if (isNativeCompositorActive()) {
+								setNativeParam("cursorClickRing", v / 100);
+							}
+						}}
+						onCommit={() => void commit()}
+					/>
+				) : null}
 			</div>
 		</Pane>
 	);

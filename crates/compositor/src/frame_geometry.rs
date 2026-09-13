@@ -610,6 +610,8 @@ pub struct LiveParams {
     pub webcam_shape: u32,        // 0=rect, 1=circle, 2=square, 3=rounded (défaut)
     pub cursor_size_scale: f32,   // multiplie la taille du curseur (1 = défaut)
     pub cursor_bounce_scale: f32, // multiplie l'amplitude du click-bounce (1 = défaut, 0 = off)
+    /// 0..1 : opacité de l'anneau de clic (0 = éteint, le défaut).
+    pub cursor_ring_scale: f32,
     /// 0..1 : flou de mouvement DU CURSEUR (indépendant du motion blur écran/`cfg.mblur_n`).
     /// Approximé par le même mécanisme de traînée fantôme (taps décalés le long de la
     /// vélocité), pas par un flou gaussien variable comme le canvas web — plus simple à
@@ -661,6 +663,7 @@ impl Default for LiveParams {
             webcam_shape: 3,
             cursor_size_scale: 1.0,
             cursor_bounce_scale: 1.0,
+            cursor_ring_scale: 0.0,
             cursor_motion_blur: 0.0,
             has_webcam: true,
         }
@@ -698,6 +701,7 @@ pub fn live_params_from_scene(s: &crate::scene::Scene) -> LiveParams {
         webcam_shape: webcam_shape_code(&s.layout.webcam_shape),
         cursor_size_scale: s.cursor.size,
         cursor_bounce_scale: s.cursor.click_bounce,
+        cursor_ring_scale: s.cursor.click_ring,
         cursor_motion_blur: s.cursor.motion_blur,
         ..LiveParams::default()
     }
@@ -1206,6 +1210,19 @@ pub struct CursorPlan {
     pub clip: [f32; 4],
     /// État du curseur à cet instant (`arrow`, `pointer`, …) pour choisir le sprite.
     pub cursor_type: Option<String>,
+    /// Anneau de clic à dessiner SOUS le sprite, quand un clic est dans sa fenêtre.
+    pub ring: Option<CursorRingPlan>,
+}
+
+/// L'anneau de clic, prêt à dessiner : même placement que le curseur (donc même suivi du
+/// zoom et de l'inclinaison), une taille qui s'ouvre et une opacité qui s'éteint.
+#[derive(Clone, Copy)]
+pub struct CursorRingPlan {
+    pub placement: CursorPlacement,
+    /// Côté de l'anneau en px de sortie. Calculé sur la taille curseur SANS le bounce :
+    /// l'anneau doit s'ouvrir régulièrement, pas rebondir avec le pointeur.
+    pub size_px: f32,
+    pub alpha: f32,
 }
 
 /// Ce que `plan_cursor` doit savoir en plus de `FrameGeometry`.
@@ -1280,8 +1297,19 @@ pub fn plan_cursor(g: &FrameGeometry, input: &CursorPlanInput) -> Option<CursorP
 
     let lp = input.live;
     let bounce = 1.0 + (input.track.bounce(input.t) - 1.0) * lp.cursor_bounce_scale;
-    let size_px =
-        CURSOR_BASE_SIZE_FRAC * g.frame_min_px * lp.cursor_size_scale * bounce * g.padding_scale;
+    let base_px = CURSOR_BASE_SIZE_FRAC * g.frame_min_px * lp.cursor_size_scale * g.padding_scale;
+    let size_px = base_px * bounce;
+
+    // Anneau de clic : 0.6x -> 1.6x la taille du curseur pendant que l'opacité s'éteint.
+    let ring_strength = lp.cursor_ring_scale.clamp(0.0, 1.0);
+    let ring = (ring_strength > 0.0)
+        .then(|| input.track.ring(input.t))
+        .flatten()
+        .map(|p| CursorRingPlan {
+            placement,
+            size_px: base_px * (RING_START_SCALE + (RING_END_SCALE - RING_START_SCALE) * p),
+            alpha: ring_strength * (1.0 - p),
+        });
 
     let blur01 = lp.cursor_motion_blur.clamp(0.0, 1.0);
     let has_scene = input.scene.is_some();
@@ -1320,8 +1348,13 @@ pub fn plan_cursor(g: &FrameGeometry, input: &CursorPlanInput) -> Option<CursorP
         taps,
         clip,
         cursor_type: input.track.type_at(input.t).map(str::to_string),
+        ring,
     })
 }
+
+/// Bornes de l'ouverture de l'anneau de clic, en multiples de la taille du curseur.
+const RING_START_SCALE: f32 = 0.6;
+const RING_END_SCALE: f32 = 1.6;
 
 /// Poids d'un échantillon du flou de mouvement de curseur (0 = queue/passé, taps-1 = tête/courant).
 ///
@@ -2038,6 +2071,73 @@ mod tests {
             }
             assert!((sum - 1.0).abs() < 1e-5, "somme des poids = 1.0 pour taps={taps}, got {sum}");
         }
+    }
+
+    /// L'anneau de clic n'existe que si le slider est levé ET qu'un clic est dans sa
+    /// fenêtre ; il s'ouvre en grandissant pendant que son opacité s'éteint.
+    #[test]
+    fn plan_cursor_click_ring_gated_and_monotonic() {
+        let cfg = crate::config::all().pop().expect("cfg");
+        let track = crate::cursor::CursorTrack::new(
+            vec![(0.0, 0.5, 0.5), (2.0, 0.5, 0.5)],
+            vec![0.5],
+            vec![],
+        );
+        let scene = zoomed_golden_scene();
+        let fg = FrameGeometry {
+            scene_preset: None,
+            mb_taps: 1.0,
+            mb_amount: 0.0,
+            source_t: 0.0,
+            zoom_rotation: [0.0, 0.0, 0.0],
+            padding_scale: 1.0,
+            cut: [0.0, 0.0, 1.0, 1.0],
+            s_dst: [0.0, 0.0, 1.0, 1.0],
+            s_dst_prev: [0.0, 0.0, 1.0, 1.0],
+            s_ann: [0.0, 0.0, 1.0, 1.0],
+            s_radius: 0.0,
+            frame_min_px: 1080.0,
+            w_dst: [0.0, 0.0, 0.0, 0.0],
+            w_dst_prev: [0.0, 0.0, 0.0, 0.0],
+            w_px: [0.0, 0.0],
+            w_radius: 0.0,
+            shape_fade: 0.0,
+        };
+        let plan_at = |ring_scale: f32, t: f32| {
+            plan_cursor(
+                &fg,
+                &CursorPlanInput {
+                    render_px: [1920.0, 1080.0],
+                    u_max: 1.0,
+                    v_max: 1.0,
+                    cfg: &cfg,
+                    live: LiveParams { cursor_ring_scale: ring_scale, ..LiveParams::default() },
+                    scene: Some(&scene),
+                    track: &track,
+                    t,
+                },
+            )
+            .expect("plan cursor")
+        };
+
+        assert!(plan_at(0.0, 0.6).ring.is_none(), "slider à 0 : aucun anneau");
+        assert!(plan_at(1.0, 0.4).ring.is_none(), "avant le clic : aucun anneau");
+        assert!(plan_at(1.0, 0.9).ring.is_none(), "au-delà de la fenêtre : aucun anneau");
+
+        let mut prev_size = 0.0;
+        let mut prev_alpha = f32::MAX;
+        for step in 0..7 {
+            let t = 0.5 + step as f32 * 0.05;
+            let ring = plan_at(1.0, t).ring.expect("anneau dans la fenêtre");
+            assert!(ring.size_px > prev_size, "taille croissante : {} > {prev_size}", ring.size_px);
+            assert!(ring.alpha < prev_alpha, "opacité décroissante : {} < {prev_alpha}", ring.alpha);
+            prev_size = ring.size_px;
+            prev_alpha = ring.alpha;
+        }
+        // L'opacité suit le slider : à moitié levé, moitié moins opaque.
+        let full = plan_at(1.0, 0.5).ring.expect("anneau").alpha;
+        let half = plan_at(0.5, 0.5).ring.expect("anneau").alpha;
+        assert!((half - full * 0.5).abs() < 1e-5, "{half} = {full} / 2");
     }
 
     #[test]

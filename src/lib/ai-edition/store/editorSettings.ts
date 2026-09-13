@@ -13,6 +13,7 @@ import {
 	type CursorVisualSettings,
 	DEFAULT_CROP_REGION,
 	DEFAULT_CURSOR_CLICK_BOUNCE,
+	DEFAULT_CURSOR_CLICK_RING,
 	DEFAULT_CURSOR_CLIP_TO_BOUNDS,
 	DEFAULT_CURSOR_MOTION_BLUR,
 	DEFAULT_CURSOR_SIZE,
@@ -143,6 +144,7 @@ export const DEFAULT_EDITOR_SETTINGS: EditorSettingsSnapshot = {
 		smoothing: DEFAULT_CURSOR_SMOOTHING,
 		motionBlur: DEFAULT_CURSOR_MOTION_BLUR,
 		clickBounce: DEFAULT_CURSOR_CLICK_BOUNCE,
+		clickRing: DEFAULT_CURSOR_CLICK_RING,
 		clipToBounds: DEFAULT_CURSOR_CLIP_TO_BOUNDS,
 	},
 	cursorShow: true,
@@ -175,6 +177,7 @@ interface LegacyShape {
 	cursorSmoothing?: number;
 	cursorMotionBlur?: number;
 	cursorClickBounce?: number;
+	cursorClickRing?: number;
 	cursorClipToBounds?: boolean;
 	cursorShow?: boolean;
 	cursorTheme?: string;
@@ -205,6 +208,9 @@ export function getEditorSettings(doc: AxcutDocument | null | undefined): Editor
 		smoothing: num(legacy?.cursorSmoothing, DEFAULT_EDITOR_SETTINGS.cursor.smoothing),
 		motionBlur: num(legacy?.cursorMotionBlur, DEFAULT_EDITOR_SETTINGS.cursor.motionBlur),
 		clickBounce: num(legacy?.cursorClickBounce, DEFAULT_EDITOR_SETTINGS.cursor.clickBounce),
+		// Same 0-1 range the slider offers and `SceneCursor.clickRing` expects; a stored
+		// 5 would draw an opaque disc the compositor has no way to tone back down.
+		clickRing: clamp01(num(legacy?.cursorClickRing, DEFAULT_EDITOR_SETTINGS.cursor.clickRing)),
 		clipToBounds: bool(legacy?.cursorClipToBounds, DEFAULT_EDITOR_SETTINGS.cursor.clipToBounds),
 	};
 
@@ -307,6 +313,7 @@ function nextLegacy(current: LegacyShape | null, patch: EditorSettingsPatch): Le
 		if (c.smoothing !== undefined) next.cursorSmoothing = c.smoothing;
 		if (c.motionBlur !== undefined) next.cursorMotionBlur = c.motionBlur;
 		if (c.clickBounce !== undefined) next.cursorClickBounce = c.clickBounce;
+		if (c.clickRing !== undefined) next.cursorClickRing = c.clickRing;
 		if (c.clipToBounds !== undefined) next.cursorClipToBounds = c.clipToBounds;
 		if (c.theme !== undefined) next.cursorTheme = c.theme;
 		if (c.show !== undefined) next.cursorShow = c.show;

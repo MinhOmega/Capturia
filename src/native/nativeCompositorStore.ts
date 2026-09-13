@@ -145,6 +145,7 @@ export function pushAllNativeParams(settings: EditorSettingsSnapshot): void {
 	setNativeParam("cursorShow", settings.cursorShow);
 	setNativeParam("cursorSize", settings.cursor.size);
 	setNativeParam("cursorClickBounce", settings.cursor.clickBounce);
+	setNativeParam("cursorClickRing", settings.cursor.clickRing);
 	setNativeParam("cursorSmoothing", settings.cursor.smoothing);
 	setNativeParam("cursorMotionBlur", settings.cursor.motionBlur);
 }

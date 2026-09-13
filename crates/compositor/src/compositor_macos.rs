@@ -2136,6 +2136,26 @@ impl Compositor {
                     .map(|s| s.cursor.cursor_sprites.clone())
                     .unwrap_or_default();
                 let kind = plan.cursor_type.as_deref();
+                // Anneau de clic : sa propre passe, AVANT le pointeur — il doit passer
+                // dessous, et il n'entre jamais dans la traînée, qui n'appartient qu'au
+                // pointeur. Parité `compositor_linux.rs` / `compositor_windows.rs`.
+                if let (Some(ring), Some(sprite)) = (
+                    plan.ring.as_ref(),
+                    scene_ref.as_ref().and_then(|s| s.cursor.click_ring_sprite.as_ref()),
+                ) {
+                    let e = self.begin_pass(cmd_buf, &self.rt, None, &self.pipeline_main)?;
+                    if let Err(err) = self.draw_cursor_sprite(
+                        e,
+                        ring.placement,
+                        ring.size_px,
+                        ring.alpha,
+                        sprite,
+                        plan.clip,
+                    ) {
+                        eprintln!("[compositor] anneau de clic \"{}\" : {err:#}", sprite.path);
+                    }
+                    e.end_encoding();
+                }
                 if plan.taps <= 1 {
                     let e = self.begin_pass(cmd_buf, &self.rt, None, &self.pipeline_main)?;
                     self.draw_cur_themed(e, &sprites, kind, plan.placement, plan.size_px, 1.0, plan.clip);

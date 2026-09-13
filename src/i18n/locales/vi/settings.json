@@ -328,6 +328,7 @@
 	"cursor": {
 		"smoothing": "Làm mượt",
 		"clickBounce": "Nảy khi nhấp",
+		"clickRing": "Vòng sáng khi nhấp",
 		"help": "Cách vẽ con trỏ từ dữ liệu đã ghi: chủ đề, kích thước, làm mượt, mờ chuyển động và hiệu ứng nảy khi nhấp.",
 		"clipToBoundsDescription": "Giữ con trỏ bên trong khung hình video. Tắt để cho phép con trỏ vượt ra ngoài mép — hữu ích khi phóng to hoặc lia máy.",
 		"size": "Kích thước",

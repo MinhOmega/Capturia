@@ -47,6 +47,19 @@ describe("getEditorSettings", () => {
 		expect(snap.cursor.size).toBe(DEFAULT_CURSOR_SIZE);
 	});
 
+	it("keeps the click ring off by default and clamps a stored value to 0..1", () => {
+		expect(getEditorSettings(baseDoc).cursor.clickRing).toBe(0);
+		expect(
+			getEditorSettings({ ...baseDoc, legacyEditor: { cursorClickRing: 5 } }).cursor.clickRing,
+		).toBe(1);
+		expect(
+			getEditorSettings({ ...baseDoc, legacyEditor: { cursorClickRing: -2 } }).cursor.clickRing,
+		).toBe(0);
+		expect(
+			getEditorSettings({ ...baseDoc, legacyEditor: { cursorClickRing: 0.4 } }).cursor.clickRing,
+		).toBe(0.4);
+	});
+
 	it("returns the defaults when the document is null", () => {
 		const snap = getEditorSettings(null);
 		expect(snap).toEqual(DEFAULT_EDITOR_SETTINGS);
