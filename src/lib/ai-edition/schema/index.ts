@@ -208,8 +208,8 @@ export const clipSchema = z
 		assetId: z.string().min(1),
 		sourceStartSec: z.number().nonnegative(),
 		// ponytail: optional because v2 migrations have unknown asset duration at
-		// migration time. The renderer fills this in once StreamingVideoDecoder probes
-		// the file (Phase 1+).
+		// migration time. The renderer fills this in once it probes the file
+		// (Phase 1+).
 		sourceEndSec: z.number().nonnegative().optional(),
 		timelineStartSec: z.number().nonnegative(),
 		timelineEndSec: z.number().nonnegative(),

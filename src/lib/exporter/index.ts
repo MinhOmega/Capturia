@@ -3,7 +3,6 @@ export {
 	calculateMp4ExportSettings,
 	type Mp4ExportSettings,
 } from "./mp4ExportSettings";
-export { StreamingVideoDecoder } from "./streamingDecoder";
 export type {
 	ExportConfig,
 	ExportFormat,
