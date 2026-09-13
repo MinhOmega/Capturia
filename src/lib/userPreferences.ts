@@ -12,7 +12,15 @@ import {
 	isMicrophoneGain,
 	type MicrophoneGain,
 } from "@/lib/captureSettings";
-import type { ExportFormat, ExportQuality } from "@/lib/exporter";
+import {
+	type ExportFormat,
+	type ExportQuality,
+	type ExportVideoCodec,
+	GIF_SIZE_PRESETS,
+	type GifFrameRate,
+	type GifSizePreset,
+	isValidGifFrameRate,
+} from "@/lib/exporter";
 import { type AspectRatio, isAspectRatio } from "@/utils/aspectRatioUtils";
 
 const PREFS_KEY = "openscreen_user_preferences";
@@ -26,6 +34,20 @@ export interface UserPreferences {
 	exportQuality: ExportQuality;
 	/** Default export format */
 	exportFormat: ExportFormat;
+	/** Default MP4 frame rate */
+	exportFps: 24 | 30 | 60;
+	/** Default MP4 codec. Only what the native exporter accepts — "vp9" is rejected
+	 *  by the pipeline, so a stored one falls back to H.264 instead of failing a run. */
+	exportCodec: Exclude<ExportVideoCodec, "vp9">;
+	/** Aspect ratios ticked for the last export; null means "follow the document" */
+	exportRatios: AspectRatio[] | null;
+	/** Default GIF options */
+	exportGif: {
+		frameRate: GifFrameRate;
+		size: GifSizePreset;
+		loop: boolean;
+		dither: boolean;
+	};
 	/** Folder used for the most recent successful export, if any */
 	exportFolder: string | null;
 	/** Folder of the most recently opened project, if any */
@@ -51,6 +73,11 @@ export const DEFAULT_PREFS: UserPreferences = {
 	aspectRatio: DEFAULT_EDITOR_LAYOUT_SETTINGS.aspectRatio,
 	exportQuality: DEFAULT_EXPORT_SETTINGS.quality,
 	exportFormat: DEFAULT_EXPORT_SETTINGS.format,
+	// The export dialog's own opening state before it remembered anything.
+	exportFps: 60,
+	exportCodec: "h264",
+	exportRatios: null,
+	exportGif: { frameRate: 15, size: "medium", loop: true, dither: false },
 	exportFolder: null,
 	projectFolder: null,
 	trayLayout: "horizontal",
@@ -73,6 +100,24 @@ export function safeJsonParse(text: string | null): Record<string, unknown> | nu
 	} catch {
 		return null;
 	}
+}
+
+/** Per-field fallback for the stored GIF options — a partial or malformed object keeps
+ *  the fields it does carry instead of losing the lot. */
+function readGifPrefs(raw: unknown): UserPreferences["exportGif"] {
+	const stored = (raw ?? {}) as Record<string, unknown>;
+	return {
+		frameRate:
+			typeof stored.frameRate === "number" && isValidGifFrameRate(stored.frameRate)
+				? stored.frameRate
+				: DEFAULT_PREFS.exportGif.frameRate,
+		size:
+			typeof stored.size === "string" && stored.size in GIF_SIZE_PRESETS
+				? (stored.size as GifSizePreset)
+				: DEFAULT_PREFS.exportGif.size,
+		loop: typeof stored.loop === "boolean" ? stored.loop : DEFAULT_PREFS.exportGif.loop,
+		dither: typeof stored.dither === "boolean" ? stored.dither : DEFAULT_PREFS.exportGif.dither,
+	};
 }
 
 /** Load preferences from localStorage, falling back to defaults for missing or invalid fields. */
@@ -104,6 +149,22 @@ export function loadUserPreferences(): UserPreferences {
 			raw.exportFormat === "gif" || raw.exportFormat === "mp4"
 				? (raw.exportFormat as ExportFormat)
 				: DEFAULT_PREFS.exportFormat,
+		exportFps:
+			raw.exportFps === 24 || raw.exportFps === 30 || raw.exportFps === 60
+				? raw.exportFps
+				: DEFAULT_PREFS.exportFps,
+		// "vp9" is a valid `ExportVideoCodec` the native pipeline refuses, so it is
+		// rejected here rather than in every reader.
+		exportCodec:
+			raw.exportCodec === "h264" || raw.exportCodec === "h265"
+				? raw.exportCodec
+				: DEFAULT_PREFS.exportCodec,
+		// Ratios the current document does not offer are dropped by the reader, which is
+		// the only place that knows the document; here only the shape is checked.
+		exportRatios: Array.isArray(raw.exportRatios)
+			? raw.exportRatios.filter(isAspectRatio)
+			: DEFAULT_PREFS.exportRatios,
+		exportGif: readGifPrefs(raw.exportGif),
 		exportFolder:
 			typeof raw.exportFolder === "string" && raw.exportFolder.length > 0
 				? raw.exportFolder
