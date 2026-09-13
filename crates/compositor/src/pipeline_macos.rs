@@ -127,12 +127,17 @@ impl Decoder {
 
     pub fn open_with(path: &str, gpu: &Gpu, intent: DecodeIntent) -> Result<Decoder> {
         unsafe {
-            let mut fmt: *mut crate::ffi::AVFormatContext = ptr::null_mut();
+            // RAII : tout `?` entre l'ouverture et le `Ok(Decoder { .. })` final -- un
+            // fichier sans flux vidéo, un codec sans décodeur -- fuitait le contexte ET son
+            // descripteur de fichier. `release()` cède la propriété au `Decoder`, dont le
+            // `Drop` ferme comme avant.
+            let mut open = crate::ffi::InputGuard::empty();
             let cpath = CString::new(path)?;
             crate::ffi::averr(
-                crate::ffi::avformat_open_input(&mut fmt, cpath.as_ptr(), ptr::null_mut(), ptr::null_mut()),
+                crate::ffi::avformat_open_input(&mut open.0, cpath.as_ptr(), ptr::null_mut(), ptr::null_mut()),
                 "open_input",
             )?;
+            let fmt = open.0;
             crate::ffi::averr(
                 crate::ffi::avformat_find_stream_info(fmt, ptr::null_mut()),
                 "find_stream_info",
@@ -288,7 +293,7 @@ impl Decoder {
             )?;
 
             Ok(Decoder {
-                fmt,
+                fmt: open.release(),
                 dctx,
                 hwdev,
                 vidx,

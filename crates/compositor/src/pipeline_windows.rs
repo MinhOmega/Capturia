@@ -2874,12 +2874,15 @@ unsafe fn drain_encoder(
 /// si présent (le cas de la fixture MP4), sinon estimé par durée × cadence, sinon fallback.
 pub fn probe_frame_count(path: &str) -> Result<u64> {
     unsafe {
-        let mut fmt: *mut AVFormatContext = ptr::null_mut();
+        // RAII : `find_stream_info` en erreur laissait le contexte et son descripteur
+        // ouverts, et la barre de progression repartait sur `FIXTURE_FRAMES`.
+        let mut open = crate::ffi::InputGuard::empty();
         let cpath = CString::new(path)?;
         averr(
-            avformat_open_input(&mut fmt, cpath.as_ptr(), ptr::null_mut(), ptr::null_mut()),
+            avformat_open_input(&mut open.0, cpath.as_ptr(), ptr::null_mut(), ptr::null_mut()),
             "open_input",
         )?;
+        let fmt = open.0;
         averr(avformat_find_stream_info(fmt, ptr::null_mut()), "find_stream_info")?;
         let vidx = av_find_best_stream(fmt, AVMediaType::AVMEDIA_TYPE_VIDEO, -1, -1, ptr::null_mut(), 0);
         let mut n: u64 = 0;
@@ -2898,7 +2901,7 @@ pub fn probe_frame_count(path: &str) -> Result<u64> {
                 }
             }
         }
-        avformat_close_input(&mut fmt);
+        drop(open);
         if n == 0 {
             n = crate::compositor::FIXTURE_FRAMES as u64;
         }

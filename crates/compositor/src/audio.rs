@@ -241,12 +241,16 @@ unsafe fn decode_clip_audio_inner(
     source_start_sec: f64,
     source_end_sec: f64,
 ) -> Result<Option<PlanarPcm>> {
-    let mut fmt: *mut AVFormatContext = ptr::null_mut();
+    // RAII : `find_stream_info` et tout `?` plus bas fuitaient le contexte ET son
+    // descripteur de fichier. Un export de 200 clips dont un au codec inconnu perdait
+    // 200 fd dans le processus principal, qui, lui, ne redémarre pas.
+    let mut open = crate::ffi::InputGuard::empty();
     let cpath = CString::new(path)?;
     averr(
-        avformat_open_input(&mut fmt, cpath.as_ptr(), ptr::null_mut(), ptr::null_mut()),
+        avformat_open_input(&mut open.0, cpath.as_ptr(), ptr::null_mut(), ptr::null_mut()),
         "audio open_input",
     )?;
+    let fmt = open.0;
     averr(avformat_find_stream_info(fmt, ptr::null_mut()), "audio find_stream_info")?;
     // Énumération de toutes les pistes audio (voir le commentaire de `decode_clip_audio`).
     let mut audio_stream_count = 0usize;
@@ -268,7 +272,6 @@ unsafe fn decode_clip_audio_inner(
         }
         let mut dctx = avcodec_alloc_context3(decoder);
         if dctx.is_null() {
-            avformat_close_input(&mut fmt);
             bail!("audio avcodec_alloc_context3");
         }
         if avcodec_parameters_to_context(dctx, codecpar) < 0
@@ -294,7 +297,6 @@ unsafe fn decode_clip_audio_inner(
         });
     }
     if tracks.is_empty() {
-        avformat_close_input(&mut fmt);
         if audio_stream_count > 0 {
             bail!("audio : {audio_stream_count} piste(s) présentes, aucune décodable");
         }
@@ -316,8 +318,14 @@ unsafe fn decode_clip_audio_inner(
         }
     }
 
-    let mut packet = av_packet_alloc();
-    let mut frame = av_frame_alloc();
+    // Mêmes gardes que le contexte, et le null-check qui manquait : `av_packet_alloc`
+    // peut rendre NULL, et `av_read_frame` le déréférence sans demander.
+    let pkt_guard = PacketGuard(av_packet_alloc());
+    let frame_guard = FrameGuard(av_frame_alloc());
+    let (packet, frame) = (pkt_guard.0, frame_guard.0);
+    if packet.is_null() || frame.is_null() {
+        bail!("audio av_packet_alloc/av_frame_alloc");
+    }
     let mut input_eof = false;
 
     // Une seule passe de démux alimente tous les décodeurs : chaque paquet est routé vers la
@@ -401,10 +409,6 @@ unsafe fn decode_clip_audio_inner(
             r.flush(&mut track.decoded)?;
         }
     }
-
-    av_frame_free(&mut frame);
-    av_packet_free(&mut packet);
-    avformat_close_input(&mut fmt);
 
     let target_samples = (((source_end_sec - source_start_sec).max(0.0)
         * AUDIO_OUTPUT_SAMPLE_RATE as f64)
@@ -885,6 +889,17 @@ impl Drop for FilterGraphGuard {
     fn drop(&mut self) {
         if !self.0.is_null() {
             unsafe { avfilter_graph_free(&mut self.0) };
+        }
+    }
+}
+
+/// RAII : libère le paquet de démultiplexage même en sortie précoce sur erreur.
+struct PacketGuard(*mut AVPacket);
+
+impl Drop for PacketGuard {
+    fn drop(&mut self) {
+        if !self.0.is_null() {
+            unsafe { av_packet_free(&mut self.0) };
         }
     }
 }
