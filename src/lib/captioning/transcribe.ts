@@ -1,4 +1,3 @@
-import type { TrimRegion } from "@/components/video-editor/types";
 import type { SttWordSegment } from "../../../electron/stt/transcriptionContract";
 
 export interface CaptionSegment {
@@ -99,7 +98,6 @@ export function transcribeSourceFileToSegments(
 }
 
 export interface TranscribeOptions {
-	trimRegions?: TrimRegion[];
 	onStatus?: (status: SttRendererStatus) => void;
 	signal?: AbortSignal;
 	language?: string;
