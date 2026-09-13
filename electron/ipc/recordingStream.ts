@@ -90,6 +90,15 @@ export class RecordingStreamRegistry {
 		await unlink(filePath).catch(() => undefined);
 	}
 
+	/**
+	 * End every open stream, resolving once they have flushed. The quit path calls this:
+	 * a take whose chunks are still being appended keeps what reached disk instead of
+	 * losing the tail (and the descriptor) to the process going away.
+	 */
+	async endAll(): Promise<void> {
+		await Promise.all([...this.streams.keys()].map((fileName) => this.endStream(fileName)));
+	}
+
 	private async endStream(fileName: string): Promise<void> {
 		const ws = this.streams.get(fileName)?.ws;
 		if (!ws) {

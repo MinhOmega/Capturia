@@ -31,6 +31,21 @@ describe("RecordingStreamRegistry", () => {
 		expect(await registry.finalize("rec.webm")).toBe(false);
 	});
 
+	it("endAll flushes and closes every open stream, so a quit keeps what was recorded", async () => {
+		const registry = new RecordingStreamRegistry();
+		await registry.open("a.webm", pathFor("a.webm"));
+		await registry.open("b.webm", pathFor("b.webm"));
+		await registry.append("a.webm", Buffer.from("take a"));
+		await registry.append("b.webm", Buffer.from("take b"));
+
+		await registry.endAll();
+
+		expect(registry.has("a.webm")).toBe(false);
+		expect(registry.has("b.webm")).toBe(false);
+		expect(await readFile(pathFor("a.webm"), "utf8")).toBe("take a");
+		expect(await readFile(pathFor("b.webm"), "utf8")).toBe("take b");
+	});
+
 	it("reports not-streamed when no stream was opened", async () => {
 		const registry = new RecordingStreamRegistry();
 		expect(await registry.finalize("missing.webm")).toBe(false);

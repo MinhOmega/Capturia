@@ -158,7 +158,7 @@ const GET_SOURCES_TIMEOUT_MS = 30_000;
  * whole available remedy: an unbounded await leaves a caller with no error and no
  * way out, which is strictly worse than a late failure it can report.
  */
-function withDeadline<T>(work: Promise<T>, ms: number, message: string): Promise<T> {
+export function withDeadline<T>(work: Promise<T>, ms: number, message: string): Promise<T> {
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	return Promise.race([
 		work,
@@ -167,6 +167,32 @@ function withDeadline<T>(work: Promise<T>, ms: number, message: string): Promise
 		}),
 	]).finally(() => clearTimeout(timer)) as Promise<T>;
 }
+
+// Recording finalisations (sidecar, remux, manifest, media links) still running. A quit
+// that does not wait for these cuts the write off mid-file, which is how a stopped take
+// ends up with a manifest that names a video the editor cannot open.
+const pendingWrites = new Set<Promise<unknown>>();
+
+/** In-flight recording finalisations, for the quit path to wait on. */
+export function pendingRecordingWrites(): Promise<unknown>[] {
+	return [...pendingWrites];
+}
+
+/** Run a finalisation step so `before-quit` can wait for it. */
+async function trackRecordingWrite<T>(work: () => Promise<T>): Promise<T> {
+	const promise = work();
+	pendingWrites.add(promise);
+	try {
+		return await promise;
+	} finally {
+		pendingWrites.delete(promise);
+	}
+}
+
+// On-disk write streams for in-progress recordings, keyed by output file name. Chunks
+// append as they arrive so the renderer never buffers the full video (#616). Module scope
+// so the quit path can flush what is still open (see `endAll`).
+export const recordingStreams = new RecordingStreamRegistry();
 
 // Paths the user approved via file picker or project load (i.e. outside the default dirs).
 const approvedPaths = new Set<string>();
@@ -2660,10 +2686,12 @@ export function registerIpcHandlers(
 			// session that produced the pixels, so there is no separate sampler
 			// to stop and no clock offset to correct — the two are one recording.
 			if (cursorCaptureMode === "editable-overlay" && result.cursor.samples.length > 0) {
-				await fs.writeFile(
-					`${result.path}.cursor.json`,
-					JSON.stringify(result.cursor, null, 2),
-					"utf-8",
+				await trackRecordingWrite(() =>
+					fs.writeFile(
+						`${result.path}.cursor.json`,
+						JSON.stringify(result.cursor, null, 2),
+						"utf-8",
+					),
 				);
 			}
 
@@ -2679,8 +2707,10 @@ export function registerIpcHandlers(
 				path.dirname(result.path),
 				`${path.parse(result.path).name}${RECORDING_SESSION_SUFFIX}`,
 			);
-			await fs.writeFile(sessionManifestPath, JSON.stringify(session_, null, 2), "utf-8");
-			await registerRecordingMediaLinks(result.path, { cursorCaptureMode });
+			await trackRecordingWrite(async () => {
+				await fs.writeFile(sessionManifestPath, JSON.stringify(session_, null, 2), "utf-8");
+				await registerRecordingMediaLinks(result.path, { cursorCaptureMode });
+			});
 
 			console.info("[native-linux] capture stored", {
 				path: result.path,
@@ -3332,7 +3362,7 @@ export function registerIpcHandlers(
 			if (cursorCaptureMode === "editable-overlay") {
 				compactPendingCursorTelemetryPauseRanges(nativeWindowsPauseRanges);
 				shiftPendingCursorTelemetry(nativeWindowsCursorOffsetMs);
-				await writePendingCursorTelemetry(screenVideoPath);
+				await trackRecordingWrite(() => writePendingCursorTelemetry(screenVideoPath));
 			}
 			let webcamVideoPath: string | undefined;
 			if (preferredWebcamPath) {
@@ -3366,8 +3396,10 @@ export function registerIpcHandlers(
 				path.dirname(screenVideoPath),
 				`${path.parse(screenVideoPath).name}${RECORDING_SESSION_SUFFIX}`,
 			);
-			await fs.writeFile(sessionManifestPath, JSON.stringify(session, null, 2), "utf-8");
-			await registerRecordingMediaLinks(screenVideoPath, { webcamVideoPath, cursorCaptureMode });
+			await trackRecordingWrite(async () => {
+				await fs.writeFile(sessionManifestPath, JSON.stringify(session, null, 2), "utf-8");
+				await registerRecordingMediaLinks(screenVideoPath, { webcamVideoPath, cursorCaptureMode });
+			});
 
 			return {
 				success: true,
@@ -3438,7 +3470,7 @@ export function registerIpcHandlers(
 			if (cursorCaptureMode === "editable-overlay") {
 				compactPendingCursorTelemetryPauseRanges(nativeMacPauseRanges);
 				shiftPendingCursorTelemetry(nativeMacCursorOffsetMs);
-				await writePendingCursorTelemetry(screenVideoPath);
+				await trackRecordingWrite(() => writePendingCursorTelemetry(screenVideoPath));
 			}
 
 			const session: RecordingSession = {
@@ -3453,8 +3485,10 @@ export function registerIpcHandlers(
 				path.dirname(screenVideoPath),
 				`${path.parse(screenVideoPath).name}${RECORDING_SESSION_SUFFIX}`,
 			);
-			await fs.writeFile(sessionManifestPath, JSON.stringify(session, null, 2), "utf-8");
-			await registerRecordingMediaLinks(screenVideoPath, { cursorCaptureMode });
+			await trackRecordingWrite(async () => {
+				await fs.writeFile(sessionManifestPath, JSON.stringify(session, null, 2), "utf-8");
+				await registerRecordingMediaLinks(screenVideoPath, { cursorCaptureMode });
+			});
 
 			return {
 				success: true,
@@ -3482,11 +3516,6 @@ export function registerIpcHandlers(
 		}
 	});
 
-	// On-disk write streams for in-progress recordings, keyed by output file name.
-	// Chunks append as they arrive so the renderer never buffers the full video (#616).
-	// Declared here because both the webcam attach below and store-recorded-session
-	// finalize through the same registry.
-	const recordingStreams = new RecordingStreamRegistry();
 	registerRecordingStreamHandlers(ipcMain, recordingStreams, resolveRecordingOutputPath);
 
 	/** A take file's path at stop: where its stream was opened, if it streamed — never
@@ -3706,7 +3735,7 @@ export function registerIpcHandlers(
 			if (webcamStreamed && webcamVideoPath) {
 				patches.push(repairRecordingContainer(webcamVideoPath, payload.durationMs));
 			}
-			await Promise.all(patches);
+			await trackRecordingWrite(() => Promise.all(patches));
 		}
 
 		const webcamOffsetMs =
@@ -3728,19 +3757,20 @@ export function registerIpcHandlers(
 		// fresh-take auto-zoom reads that file the moment it imports -- an empty read there
 		// is indistinguishable from a take with no dwell, so the zooms are silently
 		// skipped.
-		await writePendingCursorTelemetry(screenVideoPath);
-		setCurrentRecordingSessionState(session);
-		currentProjectPath = null;
-
-		const sessionManifestPath = path.join(
-			path.dirname(screenVideoPath),
-			`${path.parse(payload.screen.fileName).name}${RECORDING_SESSION_SUFFIX}`,
-		);
-		await fs.writeFile(sessionManifestPath, JSON.stringify(session, null, 2), "utf-8");
-		await registerRecordingMediaLinks(screenVideoPath, {
-			webcamVideoPath,
-			webcamOffsetMs,
-			cursorCaptureMode,
+		await trackRecordingWrite(async () => {
+			await writePendingCursorTelemetry(screenVideoPath);
+			setCurrentRecordingSessionState(session);
+			currentProjectPath = null;
+			const sessionManifestPath = path.join(
+				path.dirname(screenVideoPath),
+				`${path.parse(payload.screen.fileName).name}${RECORDING_SESSION_SUFFIX}`,
+			);
+			await fs.writeFile(sessionManifestPath, JSON.stringify(session, null, 2), "utf-8");
+			await registerRecordingMediaLinks(screenVideoPath, {
+				webcamVideoPath,
+				webcamOffsetMs,
+				cursorCaptureMode,
+			});
 		});
 
 		return {

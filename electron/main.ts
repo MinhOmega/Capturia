@@ -62,7 +62,10 @@ import {
 import {
 	exportDiagnosticFile,
 	getSelectedDesktopSource,
+	pendingRecordingWrites,
+	recordingStreams,
 	registerIpcHandlers,
+	withDeadline,
 } from "./ipc/handlers";
 import { installMainProcessErrorGuards } from "./main-process-errors";
 import { normalizeExternalUrl } from "./navigationPolicy";
@@ -1129,7 +1132,10 @@ app.on("activate", () => {
 	}
 });
 
-let sttShutdownPromise: Promise<void> | null = null;
+let sttShutdownPromise: Promise<unknown> | null = null;
+// Long enough for a manifest write and a container remux on a loaded disk, short enough
+// that a wedged finalisation cannot hold the app open for ever.
+const QUIT_FLUSH_TIMEOUT_MS = 10_000;
 let sttShutdownFinished = false;
 
 // Electron does not wait for an async event listener. Hold the first quit long
@@ -1146,9 +1152,16 @@ app.on("before-quit", (event) => {
 	if (sttShutdownFinished) return;
 	event.preventDefault();
 	if (sttShutdownPromise) return;
-	sttShutdownPromise = shutdownStt()
+	// Recording finalisations started before the quit are still writing the manifest, the
+	// cursor sidecar and the media links, and the open chunk streams still hold the take's
+	// tail. Quitting out from under them is how a stopped take leaves half a session on disk.
+	sttShutdownPromise = withDeadline(
+		Promise.allSettled([shutdownStt(), ...pendingRecordingWrites(), recordingStreams.endAll()]),
+		QUIT_FLUSH_TIMEOUT_MS,
+		"Timed out flushing recording writes before quit",
+	)
 		.catch((error) => {
-			console.error("[stt] Failed to stop whisper helper during app quit:", error);
+			console.error("[quit] Failed to flush before quitting:", error);
 		})
 		.finally(() => {
 			sttShutdownFinished = true;
