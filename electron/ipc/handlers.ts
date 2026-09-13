@@ -4850,6 +4850,7 @@ export function registerIpcHandlers(
 		resolveAssetBasePath,
 		resolveVideoPath: (videoPath?: string | null) =>
 			normalizeVideoSourcePath(videoPath ?? currentVideoPath),
+		readableApprovedPath,
 		loadCursorRecordingData: readCursorRecordingFile,
 		loadCursorTelemetry: readCursorTelemetryFile,
 		// compositor view's createView needs the renderer-owning

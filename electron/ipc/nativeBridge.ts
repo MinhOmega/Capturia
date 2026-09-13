@@ -41,6 +41,10 @@ export interface NativeBridgeContext {
 	clearCurrentVideoPath: () => ProjectPathResult;
 	resolveAssetBasePath: () => string | null;
 	resolveVideoPath: (videoPath?: string | null) => string | null;
+	/** `readableApprovedPath` from `ipc/handlers.ts` — the approval a renderer-named media
+	 *  path has to spend before anything here opens it. Injected because handlers.ts imports
+	 *  this module, so importing it back would close the cycle. */
+	readableApprovedPath: (filePath?: string | null) => string | null;
 	loadCursorRecordingData: (
 		videoPath: string,
 	) => Promise<import("../../src/native/contracts").CursorRecordingData>;
@@ -104,6 +108,9 @@ export interface NativeBridgeContext {
 	) => import("../../src/native/contracts").AiEditionChatSessionSummary | null;
 	deleteAiEditionChatSession: (projectId: string, sessionId: string) => boolean;
 }
+
+/** How every writer and reader of the cursor sidecar spells it: `<videoPath>.cursor.json`. */
+const CURSOR_SIDECAR_SUFFIX = ".cursor.json";
 
 function normalizePlatform(platform: NodeJS.Platform): NativePlatform {
 	if (platform === "darwin" || platform === "win32") {
@@ -259,6 +266,30 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 		compositorViewService.cancelExport();
 	});
 
+	/**
+	 * The compositor addon opens every path it is handed, and all of them arrive from a
+	 * renderer that runs with `webSecurity: false`. So each one spends the same approval
+	 * the generic media reads spend. An absent or empty path is not a source at all (no
+	 * webcam on a clip, no cursor track) and needs none.
+	 *
+	 * `<media>.cursor.json` is not media itself: it is approved through the media it sits
+	 * beside, which is how every other reader of that sidecar reaches it.
+	 */
+	const mediaSourceApproved = (filePath: unknown): boolean => {
+		if (!filePath) return true;
+		if (typeof filePath !== "string") return false;
+		const media = filePath.endsWith(CURSOR_SIDECAR_SUFFIX)
+			? filePath.slice(0, -CURSOR_SIDECAR_SUFFIX.length)
+			: filePath;
+		return context.readableApprovedPath(media) !== null;
+	};
+	const unapprovedMedia = (...paths: unknown[]): boolean =>
+		paths.some((filePath) => {
+			if (mediaSourceApproved(filePath)) return false;
+			console.warn("Refused an unapproved media source from the renderer:", filePath);
+			return true;
+		});
+
 	ipcMain.handle(NATIVE_BRIDGE_CHANNEL, async (event, request: unknown) => {
 		if (!isBridgeRequest(request)) {
 			return createErrorResponse(undefined, "INVALID_REQUEST", "Invalid native bridge request.");
@@ -362,6 +393,19 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 					const action = request.action as string;
 					switch (request.action) {
 						case "createView": {
+							if (
+								unapprovedMedia(
+									request.payload.screenPath,
+									request.payload.webcamPath,
+									request.payload.cursorPath,
+								)
+							) {
+								return createErrorResponse(
+									requestId,
+									"INVALID_REQUEST",
+									"Media source was not approved.",
+								);
+							}
 							const id = compositorViewService.createView(request.payload.rect, {
 								screenPath: request.payload.screenPath,
 								webcamPath: request.payload.webcamPath,
@@ -413,6 +457,13 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 							compositorViewService.setScene(request.payload.id, request.payload.sceneJson);
 							return createSuccessResponse(requestId, { ok: true });
 						case "setActiveClip":
+							if (unapprovedMedia(request.payload.screenPath, request.payload.webcamPath)) {
+								return createErrorResponse(
+									requestId,
+									"INVALID_REQUEST",
+									"Media source was not approved.",
+								);
+							}
 							compositorViewService.setActiveClip(
 								request.payload.id,
 								request.payload.screenPath,
@@ -426,6 +477,20 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 							compositorViewService.destroyView(request.payload.id);
 							return createSuccessResponse(requestId, { ok: true });
 						case "exportMulti": {
+							if (
+								unapprovedMedia(
+									...(request.payload.clips ?? []).flatMap((clip) => [
+										clip.screenPath,
+										clip.webcamPath,
+									]),
+								)
+							) {
+								return createErrorResponse(
+									requestId,
+									"INVALID_REQUEST",
+									"Media source was not approved.",
+								);
+							}
 							if (!exportDestinationAllowed(request.payload.outPath)) {
 								return createErrorResponse(
 									requestId,
@@ -455,6 +520,20 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 							return createSuccessResponse(requestId, stats);
 						}
 						case "exportGif": {
+							if (
+								unapprovedMedia(
+									...(request.payload.clips ?? []).flatMap((clip) => [
+										clip.screenPath,
+										clip.webcamPath,
+									]),
+								)
+							) {
+								return createErrorResponse(
+									requestId,
+									"INVALID_REQUEST",
+									"Media source was not approved.",
+								);
+							}
 							if (!exportDestinationAllowed(request.payload.outPath)) {
 								return createErrorResponse(
 									requestId,
@@ -517,16 +596,28 @@ export function registerNativeBridgeHandlers(context: NativeBridgeContext) {
 								requestId,
 								await aiEditionService.deleteProject(request.payload.projectId),
 							);
-						case "document.addAsset":
+						case "document.addAsset": {
+							// Before the document stores it, not after: an unapproved path written into
+							// the project launders itself — the next `getProject` runs it through
+							// `approveDocumentMedia` and it is approved from then on.
+							const assetPath = context.readableApprovedPath(request.payload.path);
+							if (!assetPath) {
+								return createErrorResponse(
+									requestId,
+									"INVALID_REQUEST",
+									"Asset path was not approved.",
+								);
+							}
 							return createSuccessResponse(
 								requestId,
 								await aiEditionService.addAsset(
 									request.payload.projectId,
-									request.payload.path,
+									assetPath,
 									request.payload.label,
 									request.payload.kind,
 								),
 							);
+						}
 						case "document.removeAsset":
 							return createSuccessResponse(
 								requestId,
