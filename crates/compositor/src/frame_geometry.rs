@@ -782,8 +782,21 @@ pub struct FrameGeometry {
 /// Metal et D3D (leur `draw_annotations` prend le rect en paramètre). Seul Linux part
 /// directement de `FrameGeometry`. Passer `s_dst` ici reste donc possible sur deux
 /// backends sur trois — d'où le nom du paramètre côté appelants, et les tests.
+///
+/// La taille est **bornée au cadre de sortie** : `w`/`h` viennent du JSON de scène, non
+/// vérifié, et les trois backends en font un `box_px` puis un `vec![0u8; w * h * 4]`. Un
+/// `{"w": 100}` (unités relatives, donc 100 × la largeur) rendait 192 000 px à 1080p, soit
+/// 83 Go d'allocation ; `1e9` saturait le `as u32` et faisait déborder le produit. Le
+/// plafond est ici parce que c'est le seul point par où les trois passent — un `min` dans
+/// chaque backend serait trois fois le même oubli en puissance. `min` traite aussi le NaN :
+/// `f32::min(NaN, 1.0) == 1.0`.
 pub fn annotation_dst_in(anchor: [f32; 4], x: f32, y: f32, w: f32, h: f32) -> [f32; 4] {
-    [anchor[0] + x * anchor[2], anchor[1] + y * anchor[3], w * anchor[2], h * anchor[3]]
+    [
+        anchor[0] + x * anchor[2],
+        anchor[1] + y * anchor[3],
+        (w * anchor[2]).min(1.0),
+        (h * anchor[3]).min(1.0),
+    ]
 }
 
 impl FrameGeometry {
@@ -1621,6 +1634,23 @@ mod tests {
                  si les deux coïncident, ce test ne prouve plus rien"
             );
         }
+    }
+
+    /// Une annotation ne peut pas être plus grande que le cadre de sortie.
+    ///
+    /// `w`/`h` viennent du JSON de scène : `{"w": 100}` en unités relatives faisait
+    /// 192 000 px de large à 1080p, donc `vec![0u8; 192_000 * 108_000 * 4]` dans le
+    /// rastériseur de texte. Le plafond est ici, pas dans les trois backends.
+    #[test]
+    fn an_annotation_box_is_clamped_to_the_output_frame() {
+        let dst = annotation_dst_in([0.0, 0.0, 1.0, 1.0], 0.0, 0.0, 100.0, 100.0);
+        assert!(dst[2] <= 1.0 && dst[3] <= 1.0, "boîte non bornée : {dst:?}");
+        // Un `w` non fini ne doit pas non plus passer en `as u32` chez l'appelant.
+        let nan = annotation_dst_in([0.0, 0.0, 1.0, 1.0], 0.0, 0.0, f32::NAN, f32::INFINITY);
+        assert!(nan[2] <= 1.0 && nan[3] <= 1.0, "boîte non finie : {nan:?}");
+        // Et une boîte normale n'est pas touchée.
+        let ok = annotation_dst_in([0.1, 0.2, 0.8, 0.5], 0.0, 0.0, 0.5, 0.5);
+        assert_eq!([ok[2], ok[3]], [0.4, 0.25]);
     }
 
     /// **Le golden iso-render.**

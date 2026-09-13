@@ -53,6 +53,26 @@ pub fn layout_width(box_w: f32, font_px: f32) -> f32 {
     (box_w - padding(font_px).0 * 2.0).max(1.0)
 }
 
+/// Plafond d'un côté de la boîte de texte, en pixels de sortie.
+///
+/// 8192 = la limite `max_texture_dimension_2d` par défaut de wgpu/D3D11 : au-delà, la
+/// texture serait de toute façon refusée par le device, après l'allocation CPU.
+pub const MAX_BOX_PX: u32 = 8192;
+
+/// `spec.box_px` validé, tel que `w * h * 4` tient dans un `usize` et dans le device.
+///
+/// Les trois rastériseurs allouent `w * h * 4` octets d'après une boîte issue du JSON de
+/// scène. `annotation_dst_in` borne déjà la boîte au cadre de sortie, mais rien n'oblige
+/// un futur appelant à passer par là — et une texture plus grande que le device échoue
+/// plus tard et plus mal. La garde est ici plutôt que recopiée trois fois.
+pub fn checked_box_px(box_px: [u32; 2]) -> anyhow::Result<(u32, u32)> {
+    let (w, h) = (box_px[0].max(1), box_px[1].max(1));
+    if w > MAX_BOX_PX || h > MAX_BOX_PX {
+        anyhow::bail!("boîte de texte {w}x{h} px au-delà du plafond {MAX_BOX_PX}");
+    }
+    Ok((w, h))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -90,5 +110,17 @@ mod tests {
         // Boîte plus étroite que ses propres marges : une largeur nulle ou négative ferait
         // boucler la mise en page au lieu de simplement déborder.
         assert!(layout_width(4.0, 200.0) >= 1.0);
+    }
+
+    /// Une boîte venue du JSON de scène ne doit jamais devenir un `vec![0u8; w * h * 4]`
+    /// de plusieurs gigaoctets, ni faire déborder le produit.
+    #[test]
+    fn an_absurd_box_is_refused_rather_than_allocated() {
+        assert!(checked_box_px([u32::MAX, u32::MAX]).is_err());
+        assert!(checked_box_px([MAX_BOX_PX + 1, 10]).is_err());
+        assert!(checked_box_px([10, MAX_BOX_PX + 1]).is_err());
+        assert_eq!(checked_box_px([MAX_BOX_PX, MAX_BOX_PX]).unwrap(), (MAX_BOX_PX, MAX_BOX_PX));
+        // Une boîte dégénérée reste ramenée à 1 px, comme avant.
+        assert_eq!(checked_box_px([0, 0]).unwrap(), (1, 1));
     }
 }
