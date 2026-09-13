@@ -56,8 +56,10 @@ describe("pickPasteableAttributes", () => {
 			kind: "annotation",
 			region: {
 				...placement,
-				type: "text",
-				content: "Hello",
+				// An image: `content` IS the payload here (the data URL the renderer reads),
+				// so it travels. The text case is the exception, pinned below.
+				type: "image",
+				content: "data:image/png;base64,PAYLOAD",
 				// Parking slots, filled by a past type conversion. Carrying them would
 				// overwrite what the TARGET parked.
 				textContent: "Hello",
@@ -71,8 +73,8 @@ describe("pickPasteableAttributes", () => {
 		});
 
 		expect(attrs).toEqual({
-			type: "text",
-			content: "Hello",
+			type: "image",
+			content: "data:image/png;base64,PAYLOAD",
 			size: { width: 40, height: 25 },
 			style: { color: "#ff0000", fontSize: 48 },
 			blurData: { mode: "mosaic", blockSize: 12 },
@@ -81,6 +83,48 @@ describe("pickPasteableAttributes", () => {
 		expect("textContent" in attrs).toBe(false);
 		expect("imageContent" in attrs).toBe(false);
 		expect("zIndex" in attrs).toBe(false);
+	});
+
+	// `content` is one slot holding a different thing per type, so it is an attribute for
+	// some types and the user's own work for exactly one. Copying a caption to reuse its
+	// font and colour must not retype the target: "paste attributes" means the look.
+	it("drops a text annotation's words but keeps the payload of the types that use the same slot", () => {
+		const fromText = pickPasteableAttributes({
+			kind: "annotation",
+			region: {
+				...placement,
+				type: "text",
+				content: "the SOURCE's words",
+				style: { color: "#ff0000", fontSize: 48 },
+				size: { width: 40, height: 25 },
+			},
+		});
+
+		// The look travels; the words stay with whoever wrote them.
+		expect(fromText).toEqual({
+			type: "text",
+			style: { color: "#ff0000", fontSize: 48 },
+			size: { width: 40, height: 25 },
+		});
+		expect("content" in fromText).toBe(false);
+
+		// A figure keeps its arrow in `figureData` and leaves `content` empty, so there is
+		// nothing of the user's in the slot and no reason to special-case it.
+		const fromFigure = pickPasteableAttributes({
+			kind: "annotation",
+			region: {
+				...placement,
+				type: "figure",
+				content: "",
+				figureData: { arrowDirection: "up", color: "#34B27B", strokeWidth: 6 },
+			},
+		});
+
+		expect(fromFigure).toEqual({
+			type: "figure",
+			content: "",
+			figureData: { arrowDirection: "up", color: "#34B27B", strokeWidth: 6 },
+		});
 	});
 
 	it("takes a speed region's speed and nothing else", () => {

@@ -60,6 +60,14 @@ export function pickPasteableAttributes(snap: RegionSnapshot): Record<string, un
 	const region = snap.region as Record<string, unknown>;
 	const picked: Record<string, unknown> = {};
 	for (const key of PASTEABLE_KEYS[snap.kind]) {
+		// `content` is a single slot holding a DIFFERENT thing per type: for text it is
+		// the user's words, for an image the data URL, and for a figure or a blur it is
+		// empty (they carry `figureData` / `blurData` instead — see sceneDescription's
+		// per-type branches). Only for text is it something the target wrote itself, so
+		// only there is imposing it wrong: somebody copying a caption to reuse its font
+		// and colour means the LOOK, and would not expect the words to follow. Dropped
+		// from a text source, kept everywhere it is the payload.
+		if (key === "content" && region.type === "text") continue;
 		// `undefined` means the source never had it; writing it would clear the
 		// target's own value rather than copy anything.
 		if (region[key] !== undefined) picked[key] = region[key];
