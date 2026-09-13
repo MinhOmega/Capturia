@@ -1075,16 +1075,14 @@ function createSourceSelectorWindowWrapper() {
 }
 
 function createNotesWindowWrapper() {
-	{
-		notesWindow = createNotesWindow();
-		notesWindow.on("closed", () => {
-			notesWindow = null;
-			if (mainWindow && !mainWindow.isDestroyed()) {
-				mainWindow.webContents.send("notes-window-closed");
-			}
-		});
-		return notesWindow;
-	}
+	notesWindow = createNotesWindow();
+	notesWindow.on("closed", () => {
+		notesWindow = null;
+		if (mainWindow && !mainWindow.isDestroyed()) {
+			mainWindow.webContents.send("notes-window-closed");
+		}
+	});
+	return notesWindow;
 }
 
 function createCountdownOverlayWindowWrapper() {

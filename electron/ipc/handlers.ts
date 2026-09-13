@@ -3519,90 +3519,85 @@ export function registerIpcHandlers(
 		payload: AttachNativeMacWebcamRecordingInput,
 	) => {
 		try {
-			{
-				const screenVideoPath = normalizeVideoSourcePath(payload.screenVideoPath);
-				if (!screenVideoPath || !isWithinRecordingRoots(screenVideoPath)) {
-					return {
-						success: false,
-						error: `Native ${platformLabel} webcam attachment requires a recording output path.`,
-					};
-				}
-
-				await fs.access(screenVideoPath, fsConstants.R_OK);
-
-				if (!payload.webcam?.fileName) {
-					return {
-						success: false,
-						error: `Native ${platformLabel} webcam attachment is missing video data.`,
-					};
-				}
-
-				const webcamVideoPath = takeFilePath(
-					payload.webcam.fileName,
-					path.dirname(screenVideoPath),
-				);
-				// A streamed webcam arrives with an empty buffer: its bytes are already on
-				// disk, so close the stream and keep the file rather than writing it here.
-				// Nothing multi-gigabyte crosses IPC or gets flattened into one Buffer (#253).
-				const webcamStreamed = await finalizeRecordingFile(
-					recordingStreams,
-					payload.webcam.fileName,
-					webcamVideoPath,
-					payload.webcam.videoData,
-				);
-				// Mirrors finalizeRecordingFile's own condition, so this fires exactly when
-				// it wrote nothing and the session would point at a file that isn't there.
-				if (
-					!webcamStreamed &&
-					!(payload.webcam.videoData && payload.webcam.videoData.byteLength > 0)
-				) {
-					return {
-						success: false,
-						error: `Native ${platformLabel} webcam attachment is missing video data.`,
-					};
-				}
-				// Streamed files lack the WebM Duration header, which the editor needs to
-				// scale its timeline. Best-effort: a failed repair leaves the clip intact.
-				if (webcamStreamed && isValidDurationMs(payload.durationMs)) {
-					await repairRecordingContainer(webcamVideoPath, payload.durationMs);
-				}
-
-				const createdAt =
-					typeof payload.recordingId === "number" && Number.isFinite(payload.recordingId)
-						? payload.recordingId
-						: Date.now();
-				const cursorCaptureMode = normalizeCursorCaptureMode(payload.cursorCaptureMode);
-				const webcamOffsetMs = Number.isFinite(payload.webcamOffsetMs)
-					? payload.webcamOffsetMs
-					: undefined;
-				const session: RecordingSession = {
-					screenVideoPath,
-					webcamVideoPath,
-					createdAt,
-					...(webcamOffsetMs !== undefined ? { webcamOffsetMs } : {}),
-					...(cursorCaptureMode ? { cursorCaptureMode } : {}),
-				};
-				setCurrentRecordingSessionState(session);
-				currentProjectPath = null;
-
-				const sessionManifestPath = path.join(
-					path.dirname(screenVideoPath),
-					`${path.parse(screenVideoPath).name}${RECORDING_SESSION_SUFFIX}`,
-				);
-				await fs.writeFile(sessionManifestPath, JSON.stringify(session, null, 2), "utf-8");
-				await registerRecordingMediaLinks(screenVideoPath, {
-					webcamVideoPath,
-					webcamOffsetMs,
-					cursorCaptureMode,
-				});
-
+			const screenVideoPath = normalizeVideoSourcePath(payload.screenVideoPath);
+			if (!screenVideoPath || !isWithinRecordingRoots(screenVideoPath)) {
 				return {
-					success: true,
-					path: screenVideoPath,
-					session,
-					message: `Native ${platformLabel} webcam recording attached successfully`,
+					success: false,
+					error: `Native ${platformLabel} webcam attachment requires a recording output path.`,
 				};
 			}
+
+			await fs.access(screenVideoPath, fsConstants.R_OK);
+
+			if (!payload.webcam?.fileName) {
+				return {
+					success: false,
+					error: `Native ${platformLabel} webcam attachment is missing video data.`,
+				};
+			}
+
+			const webcamVideoPath = takeFilePath(payload.webcam.fileName, path.dirname(screenVideoPath));
+			// A streamed webcam arrives with an empty buffer: its bytes are already on
+			// disk, so close the stream and keep the file rather than writing it here.
+			// Nothing multi-gigabyte crosses IPC or gets flattened into one Buffer (#253).
+			const webcamStreamed = await finalizeRecordingFile(
+				recordingStreams,
+				payload.webcam.fileName,
+				webcamVideoPath,
+				payload.webcam.videoData,
+			);
+			// Mirrors finalizeRecordingFile's own condition, so this fires exactly when
+			// it wrote nothing and the session would point at a file that isn't there.
+			if (
+				!webcamStreamed &&
+				!(payload.webcam.videoData && payload.webcam.videoData.byteLength > 0)
+			) {
+				return {
+					success: false,
+					error: `Native ${platformLabel} webcam attachment is missing video data.`,
+				};
+			}
+			// Streamed files lack the WebM Duration header, which the editor needs to
+			// scale its timeline. Best-effort: a failed repair leaves the clip intact.
+			if (webcamStreamed && isValidDurationMs(payload.durationMs)) {
+				await repairRecordingContainer(webcamVideoPath, payload.durationMs);
+			}
+
+			const createdAt =
+				typeof payload.recordingId === "number" && Number.isFinite(payload.recordingId)
+					? payload.recordingId
+					: Date.now();
+			const cursorCaptureMode = normalizeCursorCaptureMode(payload.cursorCaptureMode);
+			const webcamOffsetMs = Number.isFinite(payload.webcamOffsetMs)
+				? payload.webcamOffsetMs
+				: undefined;
+			const session: RecordingSession = {
+				screenVideoPath,
+				webcamVideoPath,
+				createdAt,
+				...(webcamOffsetMs !== undefined ? { webcamOffsetMs } : {}),
+				...(cursorCaptureMode ? { cursorCaptureMode } : {}),
+			};
+			setCurrentRecordingSessionState(session);
+			currentProjectPath = null;
+
+			const sessionManifestPath = path.join(
+				path.dirname(screenVideoPath),
+				`${path.parse(screenVideoPath).name}${RECORDING_SESSION_SUFFIX}`,
+			);
+			await fs.writeFile(sessionManifestPath, JSON.stringify(session, null, 2), "utf-8");
+			await registerRecordingMediaLinks(screenVideoPath, {
+				webcamVideoPath,
+				webcamOffsetMs,
+				cursorCaptureMode,
+			});
+
+			return {
+				success: true,
+				path: screenVideoPath,
+				session,
+				message: `Native ${platformLabel} webcam recording attached successfully`,
+			};
 		} catch (error) {
 			console.error(`Failed to attach native ${platformLabel} webcam recording:`, error);
 			return {
@@ -4110,7 +4105,8 @@ export function registerIpcHandlers(
 					filters: [
 						{
 							name: mainT("dialogs", "fileDialogs.videoFiles"),
-							extensions: ["webm", "mp4", "mov", "avi", "mkv", "m4v", "wmv", "flv", "ts"],
+							// Derived from the gate that validates the pick, so the two cannot drift.
+							extensions: [...ALLOWED_IMPORT_VIDEO_EXTENSIONS].map((e) => e.slice(1)),
 						},
 						{ name: mainT("dialogs", "fileDialogs.allFiles"), extensions: ["*"] },
 					],
@@ -4160,7 +4156,7 @@ export function registerIpcHandlers(
 					filters: [
 						{
 							name: mainT("dialogs", "fileDialogs.audioFiles"),
-							extensions: ["mp3", "wav", "m4a", "aac", "flac", "ogg", "opus"],
+							extensions: [...ALLOWED_IMPORT_AUDIO_EXTENSIONS].map((e) => e.slice(1)),
 						},
 						{ name: mainT("dialogs", "fileDialogs.allFiles"), extensions: ["*"] },
 					],
