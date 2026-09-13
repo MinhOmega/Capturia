@@ -64,6 +64,7 @@ import {
 	exportDiagnosticFile,
 	getSelectedDesktopSource,
 	pendingRecordingWrites,
+	readableApprovedPath,
 	recordingStreams,
 	registerIpcHandlers,
 	withDeadline,
@@ -1007,11 +1008,27 @@ ipcMain.on("set-has-unsaved-changes", (_, hasChanges: boolean) => {
 	editorHasUnsavedChanges = hasChanges;
 });
 
+/**
+ * Quit, unless a take is running.
+ *
+ * The two renderer-driven quits are the editor's in-app File menu and the HUD's close
+ * button, and both used to call `app.quit()` on whatever the renderer sent. A quit mid-take
+ * tears down the capture helpers while they are still writing, which leaves the user with a
+ * truncated recording and nothing to recover it from. Same veto the updater already applies
+ * (`blockedFromInstalling({ recording })` in auto-updater.ts) — an interrupted take is worth
+ * more than either convenience.
+ */
+function quitUnlessRecording(): void {
+	if (isRecording) {
+		console.warn("[quit] refused while a recording is in progress");
+		return;
+	}
+	app.quit();
+}
+
 // Quit requested from the editor's in-app File menu. Mirrors the native
 // menu's role:"quit" so the unsaved-changes close flow still runs.
-ipcMain.on("app-quit", () => {
-	app.quit();
-});
+ipcMain.on("app-quit", quitUnlessRecording);
 
 function forceCloseEditorWindow(windowToClose: BrowserWindow | null) {
 	if (!windowToClose || windowToClose.isDestroyed()) return;
@@ -1248,6 +1265,7 @@ appReady?.then(async () => {
 	// main-process logs in `npm run dev` output. Without this, the
 	// `[recorder:...]` lines from recorderHandle.ts are only visible in
 	// DevTools. One-time wire; no per-message cost beyond a single IPC hop.
+	const MAX_RENDERER_CONSOLE_CHARS = 8 * 1024;
 	const logChannels = ["log", "warn", "error"] as const;
 	for (const channel of logChannels) {
 		ipcMain.on(`renderer-console-${channel}`, (_event, ...args) => {
@@ -1255,7 +1273,9 @@ appReady?.then(async () => {
 				.map((arg) => (typeof arg === "string" ? arg : JSON.stringify(arg)))
 				.join(" ");
 			const stream = channel === "error" ? process.stderr : process.stdout;
-			stream.write(`[renderer:${channel}] ${text}\n`);
+			// Capped: this is a renderer-controlled string written straight to the process's
+			// own stdout, and a diagnostic line nobody can read is not worth an unbounded one.
+			stream.write(`[renderer:${channel}] ${text.slice(0, MAX_RENDERER_CONSOLE_CHARS)}\n`);
 		});
 	}
 
@@ -1279,9 +1299,7 @@ appReady?.then(async () => {
 		}
 	}
 
-	ipcMain.on("hud-overlay-close", () => {
-		app.quit();
-	});
+	ipcMain.on("hud-overlay-close", quitUnlessRecording);
 	ipcMain.handle("set-locale", (_, locale: string) => {
 		setMainLocale(locale);
 		setupApplicationMenu();
@@ -1431,7 +1449,7 @@ appReady?.then(async () => {
 	);
 
 	// Native STT (whisper.cpp + forced alignment) — single instance per app.
-	registerSttIpc(ipcMain);
+	registerSttIpc(ipcMain, readableApprovedPath);
 
 	// Kept, not discarded: this is the only registration most users ever get, and
 	// throwing the result away here is what left a dead hotkey reported to nobody.
