@@ -216,3 +216,40 @@ describe("before-quit", () => {
 		}
 	});
 });
+
+describe("editor close confirmation", () => {
+	/** An editor window with unsaved edits that has just asked the renderer to confirm. */
+	async function editorAwaitingAnswer() {
+		const booted = await bootMain();
+		booted.createEditorWindowWrapper();
+		const editor = windowsMock.created.at(-1) as FakeWindow;
+		booted.ipcMain.emit("set-has-unsaved-changes", {}, true);
+
+		const firstClose = { preventDefault: vi.fn() };
+		editor.emit("close", firstClose);
+		expect(firstClose.preventDefault).toHaveBeenCalled();
+		expect(editor.webContents.send).toHaveBeenCalledWith("request-close-confirm");
+		return { ...booted, editor };
+	}
+
+	it("still guards the close when another window answers the confirm", async () => {
+		const { ipcMain, editor } = await editorAwaitingAnswer();
+
+		ipcMain.emit("close-confirm-response", { sender: { id: 987_654 } }, "discard");
+
+		const secondClose = { preventDefault: vi.fn() };
+		editor.emit("close", secondClose);
+		expect(secondClose.preventDefault).toHaveBeenCalled();
+	});
+
+	it("still guards the close after the editor reloads without answering", async () => {
+		const { editor } = await editorAwaitingAnswer();
+
+		// View → Reload: the in-app dialog is gone, so the answer is never coming.
+		editor.webContents.emit("did-start-loading");
+
+		const secondClose = { preventDefault: vi.fn() };
+		editor.emit("close", secondClose);
+		expect(secondClose.preventDefault).toHaveBeenCalled();
+	});
+});

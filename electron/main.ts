@@ -6,6 +6,7 @@ import {
 	BrowserWindow,
 	clipboard,
 	dialog,
+	type IpcMainEvent,
 	ipcMain,
 	Menu,
 	nativeImage,
@@ -1038,9 +1039,13 @@ function createEditorWindowWrapper() {
 	editorHasUnsavedChanges = false;
 
 	mainWindow.on("close", (event) => {
-		if (isForceClosing || !editorHasUnsavedChanges || isCloseConfirmInFlight) return;
+		if (isForceClosing || !editorHasUnsavedChanges) return;
 
+		// Unsaved edits: this close never goes through unanswered. The in-flight check comes
+		// AFTER the veto, because falling through it closed the window behind the dialog the
+		// user was still looking at.
 		event.preventDefault();
+		if (isCloseConfirmInFlight) return;
 		isCloseConfirmInFlight = true;
 
 		const windowToClose = mainWindow;
@@ -1049,9 +1054,25 @@ function createEditorWindowWrapper() {
 		// Ask renderer to show the in-app close dialog.
 		windowToClose.webContents.send("request-close-confirm");
 
-		ipcMain.once("close-confirm-response", (event, choice: "save" | "discard" | "cancel") => {
-			if (event.sender.id !== windowToClose?.webContents.id) return;
+		// The answer may never arrive: View → Reload throws the dialog away mid-question,
+		// and another window's reply must not be taken for this one's. Either way the flag
+		// has to come back down — left up, the next close returns without preventDefault
+		// and the unsaved edits go silently.
+		function endCloseConfirm() {
 			isCloseConfirmInFlight = false;
+			ipcMain.removeListener("close-confirm-response", onCloseConfirmResponse);
+			windowToClose?.webContents.removeListener("did-start-loading", endCloseConfirm);
+			windowToClose?.removeListener("closed", endCloseConfirm);
+		}
+
+		windowToClose.webContents.once("did-start-loading", endCloseConfirm);
+		windowToClose.once("closed", endCloseConfirm);
+
+		// `on` + explicit removal, not `once`: a reply from a different window would
+		// otherwise consume the listener and leave this close unanswered for ever.
+		function onCloseConfirmResponse(event: IpcMainEvent, choice: "save" | "discard" | "cancel") {
+			if (event.sender.id !== windowToClose?.webContents.id) return;
+			endCloseConfirm();
 			if (!windowToClose || windowToClose.isDestroyed()) return;
 
 			if (choice === "save") {
@@ -1066,7 +1087,9 @@ function createEditorWindowWrapper() {
 				forceCloseEditorWindow(windowToClose);
 			}
 			// "cancel": flag reset, window stays open
-		});
+		}
+
+		ipcMain.on("close-confirm-response", onCloseConfirmResponse);
 	});
 }
 
