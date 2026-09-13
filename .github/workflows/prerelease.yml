@@ -82,8 +82,8 @@ jobs:
           NEXT: ${{ steps.version.outputs.next }}
         run: |
           set -euo pipefail
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name  "MinhOmega"
+          git config user.email "49482201+MinhOmega@users.noreply.github.com"
           # ONE release branch per STABLE version (release/vX.Y.Z), created at rc.1 and
           # FROZEN until promote publishes the stable tag. Later RCs (rc.2, rc.3, ...) are
           # cut from this same branch, so they carry the rc.1 snapshot plus any
