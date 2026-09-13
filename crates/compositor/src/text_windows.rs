@@ -159,7 +159,7 @@ impl TextRasterizer {
         dev: &ID3D11Device,
         spec: &TextSpec,
     ) -> Result<ID3D11ShaderResourceView> {
-        let (w, h) = (spec.box_px[0].max(1), spec.box_px[1].max(1));
+        let (w, h) = crate::text_plate::checked_box_px(spec.box_px)?;
         if spec.content.is_empty() {
             bail!("texte vide");
         }

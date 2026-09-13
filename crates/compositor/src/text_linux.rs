@@ -123,7 +123,7 @@ impl TextRasterizer {
     /// view. `gpu` fournit le device/queue wgpu (passe au rasterize comme cote
     /// macOS). Le cache par `cache_key()` est gere par le caller (compositor).
     pub fn rasterize(&self, gpu: &Gpu, spec: &TextSpec) -> Result<RasterizedGlyphs> {
-        let (w, h) = (spec.box_px[0].max(1), spec.box_px[1].max(1));
+        let (w, h) = crate::text_plate::checked_box_px(spec.box_px)?;
         let atlas = self.build_atlas(spec)?;
 
         Self::upload(gpu, &atlas.pixels, w, h, atlas.plate)
@@ -138,7 +138,7 @@ impl TextRasterizer {
     /// `placement.top` inverse). Tant que ce code vivait derriere un `&Gpu`, il
     /// etait intestable sans peripherique. Il ne l'est plus.
     pub fn build_atlas(&self, spec: &TextSpec) -> Result<TextAtlas> {
-        let (w, h) = (spec.box_px[0].max(1), spec.box_px[1].max(1));
+        let (w, h) = crate::text_plate::checked_box_px(spec.box_px)?;
         if spec.content.is_empty() {
             bail!("text_linux::rasterize: texte vide");
         }
@@ -434,6 +434,17 @@ mod tests {
         (0..w)
             .filter(|x| (0..h).any(|y| atlas[y * w + x] > 16))
             .collect()
+    }
+
+    /// Une boite issue du JSON de scene ne doit pas devenir une allocation de
+    /// plusieurs gigaoctets : `build_atlas` alloue `w * h` octets et le caller
+    /// `w * h * 4` sur les deux autres backends.
+    #[test]
+    fn an_absurd_box_is_refused_before_the_atlas_is_allocated() {
+        let r = TextRasterizer::new().expect("rasteriseur");
+        let mut s = spec("Bonjour", "center");
+        s.box_px = [u32::MAX, u32::MAX];
+        assert!(r.build_atlas(&s).is_err(), "boite u32::MAX acceptee");
     }
 
     #[test]

@@ -211,17 +211,6 @@ fn export_gif_inner(
 		.with_context(|| format!("export_gif: create {}", out_path.display()))?;
 	let mut writer = BufWriter::new(file);
 
-	// GIF frame delay in centiseconds (= 1/100 s). `fps` →
-	// `100 / fps` cs per frame, rounded to the nearest unit the
-	// GIF spec supports. u16 caps at 65535 — 10.9 minutes per
-	// frame, plenty.
-	//
-	// ponytail: integer centiseconds can't express every fps exactly
-	// (12 → 8 cs → 12.5 fps). `video_duration_s` below is computed
-	// from the delays actually written, so the reported duration never
-	// disagrees with the file. Fractional accumulation if a viewer ever
-	// cares about the ~4% drift.
-	let delay_cs: u16 = (100_u32 / fps).max(1) as u16;
 
 	// Pre-allocate the per-frame index buffer. Reused across
 	// frames so we don't hit the allocator in the hot loop.
@@ -301,7 +290,7 @@ fn export_gif_inner(
 					}
 
 					// Per-frame palette (GIF local palette, written by `write_frame`).
-					gw.write_frame(&indices, &palette_rgb, delay_cs, fps)?;
+					gw.write_frame(&indices, &palette_rgb, delay_cs_at(frame_index, fps), fps)?;
 					progress(frame_index + 1);
 					Ok(())
 				},
@@ -319,14 +308,37 @@ fn export_gif_inner(
 
 	let wall_s = t0.elapsed().as_secs_f64();
 	let fps_actual = if wall_s > 0.0 { frames as f64 / wall_s } else { 0.0 };
-	// From the delays actually written, not from the requested fps — see the
-	// `delay_cs` note above.
-	let video_duration_s = frames as f64 * (delay_cs as f64 / 100.0);
+	// From the delays actually written, not from the requested fps — the
+	// cumulative form IS the sum of the per-frame delays, by construction.
+	let video_duration_s = elapsed_cs(frames, fps) as f64 / 100.0;
 	let file_bytes = std::fs::metadata(out_path).map(|m| m.len()).unwrap_or(0);
 
 	Ok(GifStats { frames, wall_s, fps: fps_actual, video_duration_s, file_bytes })
 }
 
+
+/// Total delay, in centiseconds, of the first `n` frames at `fps`.
+///
+/// The GIF spec measures delays in whole centiseconds, and most fps values do not
+/// divide 100: at 30 fps, `100 / 30` truncates to 3 cs, so the file plays at 33.3 fps
+/// and a 60 s clip runs out in 54 s. 40 fps was 25 % fast. Keeping the exact cumulative
+/// time and taking differences (Bresenham) spreads the remainder over the frames
+/// instead of dropping it on every one of them, so the total is right to ±½ cs however
+/// many frames there are.
+fn elapsed_cs(n: u64, fps: u32) -> u64 {
+	let fps = fps.max(1) as u64;
+	// round(n * 100 / fps), in integers.
+	(n * 200 + fps) / (2 * fps)
+}
+
+/// Delay written in frame `n`'s Graphics Control Extension.
+///
+/// `max(1)`: a 0 cs delay means "as fast as the viewer can" in practice, which is not a
+/// speed at all. Above 100 fps the spec simply cannot express the cadence — the clamp
+/// is the ceiling of the format, not of this code.
+fn delay_cs_at(n: u64, fps: u32) -> u16 {
+	(elapsed_cs(n + 1, fps) - elapsed_cs(n, fps)).max(1).min(u16::MAX as u64) as u16
+}
 
 // =====================================================================
 // GIF89a format writer (pure std::io::Write).
@@ -972,6 +984,33 @@ fn map_to_indices_dithered(
 mod tests {
 	use super::*;
 	use std::io::Cursor;
+
+	/// One second of frames must last one second, whatever the fps.
+	///
+	/// `100 / fps` in whole centiseconds made 30 fps play 11 % fast and 40 fps 25 % fast:
+	/// the walk still emits `fps` frames per source second, so the shortfall is pure
+	/// speed-up. The per-frame delays are unequal by design — their SUM is the contract.
+	#[test]
+	fn a_second_of_frames_lasts_a_second_at_every_fps() {
+		for fps in [1u32, 10, 12, 24, 25, 30, 40, 50, 60] {
+			let sum: u64 = (0..fps as u64).map(|i| delay_cs_at(i, fps) as u64).sum();
+			assert!(
+				(sum as i64 - 100).abs() <= 1,
+				"{fps} fps: une seconde dure {sum} cs au lieu de 100"
+			);
+			// And it stays true over a long clip, which is where truncation showed:
+			// 60 s at 30 fps used to end at 54 s.
+			let n = fps as u64 * 60;
+			let long: u64 = (0..n).map(|i| delay_cs_at(i, fps) as u64).sum();
+			assert!(
+				(long as i64 - 6000).abs() <= 1,
+				"{fps} fps: 60 s durent {long} cs au lieu de 6000"
+			);
+			// The reported duration is read off the same accumulator, so it cannot
+			// disagree with the delays actually written.
+			assert_eq!(elapsed_cs(n, fps), long, "{fps} fps: durée annoncée ≠ écrite");
+		}
+	}
 
 	/// The most basic round-trip: write a 2×2 frame and check the
 	/// file is well-formed GIF89a. No decode — we just walk the

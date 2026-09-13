@@ -65,8 +65,119 @@ pub fn averr(ret: i32, ctx: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// RAII pour un `AVFormatContext` d'entrée : le ferme quel que soit le chemin de sortie.
+///
+/// Un `avformat_open_input` réussi tient un **descripteur de fichier**. Chaque `?` posé
+/// entre l'ouverture et la fermeture explicite en fuite donc un, dans le processus
+/// principal d'Electron qui vit des heures : ouvrir 200 clips dont un seul est illisible
+/// suffisait à consommer 200 fd, et la fuite se manifestait plus tard, ailleurs, en
+/// `EMFILE` sur un fichier sans rapport.
+///
+/// Même forme que `RemuxGuard` (`remux.rs`), `FrameGuard` et `FilterGraphGuard`
+/// (`audio.rs`), mais ici plutôt que dans un module de plateforme : les trois pipelines et
+/// le décodage audio démultiplexent tous, et c'est le seul endroit qu'ils partagent.
+/// `Drop` ne peut pas faillir, donc l'erreur de fermeture est ignorée — on est déjà en
+/// train de rendre une erreur au caller quand ça arrive.
+pub struct InputGuard(pub *mut AVFormatContext);
+
+impl InputGuard {
+    /// Guard vide, à remplir par `avformat_open_input(&mut guard.0, …)`.
+    pub fn empty() -> InputGuard {
+        InputGuard(std::ptr::null_mut())
+    }
+
+    /// Cède le contexte à l'appelant, qui en devient responsable.
+    ///
+    /// Pour le chemin de succès d'un `open` qui range le contexte dans la structure
+    /// qu'il rend — sans ça, le guard le fermerait au `return`.
+    pub fn release(mut self) -> *mut AVFormatContext {
+        std::mem::replace(&mut self.0, std::ptr::null_mut())
+    }
+}
+
+impl Drop for InputGuard {
+    fn drop(&mut self) {
+        if !self.0.is_null() {
+            unsafe { avformat_close_input(&mut self.0) };
+        }
+    }
+}
+
+/// RAII pour les ressources de muxage de sortie : contexte, fichier ouvert, paquet.
+///
+/// Même problème que `InputGuard`, côté écriture, et une conséquence de plus : `avio_open`
+/// tient le fichier de sortie, donc un `?` survenu pendant la marche de timeline (codec
+/// absent, dossier disparu, annulation) laissait un MP4 sans `moov` sur le disque **et**
+/// son descripteur ouvert — sur Windows, `discard_partial_output` échouait alors à le
+/// supprimer (ffmpeg n'ouvre pas en `FILE_SHARE_DELETE`) et l'utilisateur gardait un
+/// fichier illisible portant son nom.
+///
+/// `pb` n'est pas un champ : il est déjà dans `octx`, et le lire au moment du `Drop` évite
+/// la seule chose qui puisse désynchroniser les deux.
+///
+/// Linux garde son `Muxer` à lui : il porte en plus l'`AVStream` et l'encodeur AAC parce
+/// qu'il est DÉPLACÉ vers le thread d'encodage. Les deux autres pipelines encodent sur
+/// place et n'ont besoin que de ces trois pointeurs.
+pub struct OutputGuard {
+    pub octx: *mut AVFormatContext,
+    pub opkt: *mut AVPacket,
+}
+
+impl OutputGuard {
+    /// Guard qui possède `octx` dès son `avformat_alloc_output_context2`.
+    pub fn new(octx: *mut AVFormatContext) -> OutputGuard {
+        OutputGuard { octx, opkt: std::ptr::null_mut() }
+    }
+}
+
+impl Drop for OutputGuard {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.opkt.is_null() {
+                av_packet_free(&mut self.opkt);
+            }
+            if !self.octx.is_null() {
+                let mut pb = sn_fmt_get_pb(self.octx);
+                if !pb.is_null() {
+                    avio_closep(&mut pb);
+                    sn_fmt_set_pb(self.octx, std::ptr::null_mut());
+                }
+                avformat_free_context(self.octx);
+                self.octx = std::ptr::null_mut();
+            }
+        }
+    }
+}
+
+/// Un code de retour d'`av_read_frame` qui met fin à la lecture — EOF **ou** erreur.
+///
+/// La règle est la même pour tous les démuxages du crate : ce qui a déjà été lu est bon,
+/// donc une erreur en cours de fichier arrête la boucle au lieu de jeter le travail.
+/// `remux.rs` l'appliquait depuis toujours (un enregistrement coupé par un crash reste
+/// lisible), `audio.rs` non : il ne tolérait qu'`AVERROR_EOF` et propageait le reste, donc
+/// le clip s'exportait avec l'image et SANS une seconde de son (`audio_jobs.rs` traduisait
+/// l'`Err` en « silence conservé »). La règle vit ici pour qu'elle ne puisse plus diverger
+/// entre les deux.
+///
+/// Mesuré sur cette machine : un conteneur tronqué (matroska, mov, mp4, wav — et même lu
+/// à travers un tube non seekable) rend toujours `AVERROR_EOF`. Les codes qui passent par
+/// ici sont donc ceux des données corrompues et des erreurs d'E/S, pas ceux d'une simple
+/// coupure — raison pour laquelle aucune fixture ne peut les reproduire.
+pub fn read_ends_stream(ret: i32) -> bool {
+    ret < 0
+}
+
 #[cfg(test)]
 mod tests {
+    /// Le défaut : `== AVERROR_EOF` laissait passer les codes d'erreur vers un `?`.
+    #[test]
+    fn a_read_error_ends_the_stream_just_like_eof() {
+        assert!(super::read_ends_stream(super::AVERROR_EOF));
+        assert!(super::read_ends_stream(super::AVERROR_INVALIDDATA), "données corrompues");
+        assert!(super::read_ends_stream(-5), "EIO");
+        assert!(!super::read_ends_stream(0), "un paquet lu n'arrête rien");
+    }
+
     /// Les constantes Rust doivent valoir EXACTEMENT ce que les macros ffmpeg valent
     /// sur cette cible. C'est le test qui aurait attrapé le -11 en dur sur macOS avant
     /// qu'il ne se manifeste comme « la preview reste noire ».

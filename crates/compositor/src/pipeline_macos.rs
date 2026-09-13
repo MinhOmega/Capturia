@@ -127,12 +127,17 @@ impl Decoder {
 
     pub fn open_with(path: &str, gpu: &Gpu, intent: DecodeIntent) -> Result<Decoder> {
         unsafe {
-            let mut fmt: *mut crate::ffi::AVFormatContext = ptr::null_mut();
+            // RAII : tout `?` entre l'ouverture et le `Ok(Decoder { .. })` final -- un
+            // fichier sans flux vidéo, un codec sans décodeur -- fuitait le contexte ET son
+            // descripteur de fichier. `release()` cède la propriété au `Decoder`, dont le
+            // `Drop` ferme comme avant.
+            let mut open = crate::ffi::InputGuard::empty();
             let cpath = CString::new(path)?;
             crate::ffi::averr(
-                crate::ffi::avformat_open_input(&mut fmt, cpath.as_ptr(), ptr::null_mut(), ptr::null_mut()),
+                crate::ffi::avformat_open_input(&mut open.0, cpath.as_ptr(), ptr::null_mut(), ptr::null_mut()),
                 "open_input",
             )?;
+            let fmt = open.0;
             crate::ffi::averr(
                 crate::ffi::avformat_find_stream_info(fmt, ptr::null_mut()),
                 "find_stream_info",
@@ -288,7 +293,7 @@ impl Decoder {
             )?;
 
             Ok(Decoder {
-                fmt,
+                fmt: open.release(),
                 dctx,
                 hwdev,
                 vidx,
@@ -1144,6 +1149,12 @@ fn run_composited_multi_inner(
             "alloc_output_context2",
         )?;
     }
+    // RAII dès l'alloc : tout `?` d'ici à la fin -- la marche de timeline, `enc.send`,
+    // l'encodage audio, une annulation -- sautait le démontage plus bas et laissait `octx`,
+    // le paquet et SURTOUT le fichier ouvert par `avio_open`. C'est ce descripteur qui
+    // faisait échouer la suppression de `partial_output` (ffmpeg n'ouvre pas en
+    // `FILE_SHARE_DELETE`), donc survivre un MP4 tronqué et sans `moov`.
+    let mut mux = crate::ffi::OutputGuard::new(octx);
     let ostream = unsafe { crate::ffi::avformat_new_stream(octx, ptr::null()) };
     if ostream.is_null() {
         bail!("avformat_new_stream");
@@ -1180,7 +1191,11 @@ fn run_composited_multi_inner(
     let mut audio_jobs: ClipAudioJobs<Option<PlanarPcm>> = ClipAudioJobs::new(clips.len());
     let mut clip_frame_counts: Vec<u64> = vec![0; clips.len()];
 
-    let mut opkt = unsafe { crate::ffi::av_packet_alloc() };
+    mux.opkt = unsafe { crate::ffi::av_packet_alloc() };
+    if mux.opkt.is_null() {
+        bail!("av_packet_alloc");
+    }
+    let opkt = mux.opkt;
 
     // La marche de timeline est PARTAGÉE (`timeline_walk`) : c'est elle qui décide quelle
     // frame source appartient à quelle frame de sortie, en tenant compte des régions de
@@ -1281,10 +1296,9 @@ fn run_composited_multi_inner(
             crate::ffi::av_write_trailer(octx),
             "write_trailer",
         )?;
-        crate::ffi::avio_closep(&mut pb);
-        crate::ffi::avformat_free_context(octx);
-        crate::ffi::av_packet_free(&mut opkt);
     }
+    // Même ordre qu'avant : le guard ferme le fichier puis libère le contexte et le paquet.
+    drop(mux);
 
     let wall_s = t0.elapsed().as_secs_f64();
     drop(_finalize);

@@ -422,7 +422,8 @@ impl TextRasterizer {
     /// alors que le `metal::Texture` local était droppé au `return`, soit un
     /// `id<MTLTexture>` déjà relâché.
     pub unsafe fn rasterize(&self, gpu: &Gpu, spec: &TextSpec) -> Result<metal::Texture> {
-        let (w, h) = (spec.box_px[0].max(1) as usize, spec.box_px[1].max(1) as usize);
+        let (w, h) = crate::text_plate::checked_box_px(spec.box_px)?;
+        let (w, h) = (w as usize, h as usize);
         if spec.content.is_empty() {
             bail!("text_macos::rasterize: texte vide");
         }
